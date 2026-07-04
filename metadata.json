@@ -1,0 +1,6 @@
+{
+  "name": "Mess ERP",
+  "description": "A complete, production-ready enterprise resource planning system for Bangladeshi Bachelor Messes, supporting real-time meal tracking, market logs, deposit settlements, and automated billing with comprehensive auditing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
