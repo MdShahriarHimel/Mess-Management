@@ -902,14 +902,38 @@ export default function App() {
       SUPERUSER: Record<string, string>;
       ASSISTANT_SUPERUSER: Record<string, string>;
     };
+    startDate?: string;
+    endDate?: string;
   }>({
     enabled: false,
     candidates: [],
     votes: {
       SUPERUSER: {},
       ASSISTANT_SUPERUSER: {}
-    }
+    },
+    startDate: "",
+    endDate: ""
   });
+
+  // Mess Branch deletion states
+  const [selectedMessToDelete, setSelectedMessToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
+  const [activePreviewTab, setActivePreviewTab] = useState<"login" | "home">("login");
+
+  // Election form configuration states
+  const [electionEnabled, setElectionEnabled] = useState(false);
+  const [electionStartDate, setElectionStartDate] = useState("");
+  const [electionEndDate, setElectionEndDate] = useState("");
+  const [electionCandidates, setElectionCandidates] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (elections) {
+      setElectionEnabled(!!elections.enabled);
+      setElectionStartDate(elections.startDate || "");
+      setElectionEndDate(elections.endDate || "");
+      setElectionCandidates(elections.candidates || []);
+    }
+  }, [elections]);
 
   const fetchMesses = async (token: string) => {
     try {
@@ -1024,6 +1048,30 @@ export default function App() {
     if (!newMessName.trim()) return;
     await handleUpdateSettings({ messName: newMessName });
     alert("Mess name successfully updated to: " + newMessName);
+  };
+
+  const handleConfigureElection = async (params: { enabled: boolean; candidates: string[]; startDate?: string; endDate?: string }) => {
+    try {
+      const response = await fetch("/api/elections/configure", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify(params)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setElections(data.elections);
+        alert("Democracy ballot configuration saved successfully!");
+      } else {
+        const err = await response.json();
+        alert(err.error || "Failed to update election parameters");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error saving election settings.");
+    }
   };
 
   // Fetch session data
@@ -2433,7 +2481,7 @@ export default function App() {
                                 });
                                 if (listResp.ok) {
                                   const listData = await listResp.json();
-                                  setMesses(listData);
+                                  setMesses(listData.messes || []);
                                 }
                               }
                             } else {
@@ -2465,6 +2513,140 @@ export default function App() {
                         </button>
                       </form>
                     </div>
+
+                    {/* List of Managed Mess Branches for Deletion */}
+                    <div className="border-t border-slate-800/60 pt-4 mt-4">
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block font-display">Manage & Clean Up Branches</h4>
+                      
+                      {messes.length <= 1 ? (
+                        <p className="text-[10px] text-slate-500 italic">No additional managed branches currently available to delete.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {messes.map((m) => {
+                            const isDefault = m.id === "default";
+                            const isActive = m.id === activeMessId;
+                            return (
+                              <div key={m.id} className="flex justify-between items-center p-2 rounded bg-slate-950/40 border border-slate-900">
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-bold text-slate-200">{m.name}</span>
+                                  <span className="text-[8px] font-mono text-slate-500 uppercase">
+                                    ID: {m.id} {isDefault && "• DEFAULT"} {isActive && "• ACTIVE"}
+                                  </span>
+                                </div>
+                                <div className="flex gap-2">
+                                  {isDefault ? (
+                                    <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[8px] text-slate-500 font-bold uppercase">
+                                      System Protected
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedMessToDelete(m);
+                                        setDeleteConfirmationInput("");
+                                      }}
+                                      className="px-2 py-1 bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-900/40 hover:border-red-500 rounded text-[9px] font-bold uppercase transition-all cursor-pointer"
+                                    >
+                                      Archive / Delete
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Secondary verification modal/form for deleting a branch */}
+                    {selectedMessToDelete && (
+                      <div className="mt-4 p-4 rounded-xl bg-red-950/10 border border-red-500/20 text-slate-300">
+                        <h4 className="text-xs font-bold text-red-400 mb-1 flex items-center gap-1.5 uppercase font-display">
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                          Danger: Permanent Deletion Verification
+                        </h4>
+                        <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
+                          You are about to delete the branch <strong className="text-red-400">"{selectedMessToDelete.name}"</strong>. This will permanently purge its transactions, member lists, meals tracking, food menus, audit logs, and settings. <strong>This action cannot be undone.</strong>
+                        </p>
+                        
+                        <div className="space-y-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Please type <span className="text-red-400 font-bold">"{selectedMessToDelete.name}"</span> to confirm:
+                            </label>
+                            <input
+                              type="text"
+                              value={deleteConfirmationInput}
+                              onChange={(e) => setDeleteConfirmationInput(e.target.value)}
+                              placeholder={selectedMessToDelete.name}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-red-950 text-xs text-white focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedMessToDelete(null);
+                                setDeleteConfirmationInput("");
+                              }}
+                              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-lg text-xs font-semibold cursor-pointer transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deleteConfirmationInput !== selectedMessToDelete.name}
+                              onClick={async () => {
+                                if (deleteConfirmationInput !== selectedMessToDelete.name) return;
+                                try {
+                                  const response = await fetch(`/api/admin/messes/${selectedMessToDelete.id}`, {
+                                    method: "DELETE",
+                                    headers: {
+                                      "Authorization": `Bearer ${sessionToken}`
+                                    }
+                                  });
+                                  if (response.ok) {
+                                    alert(`Branch "${selectedMessToDelete.name}" has been successfully deleted.`);
+                                    
+                                    // If we deleted the active branch, reload the entire workspace to reset standard database context to default
+                                    if (selectedMessToDelete.id === activeMessId) {
+                                      window.location.reload();
+                                    } else {
+                                      // Otherwise, just refresh the list of messes cleanly without reloading!
+                                      if (sessionToken) {
+                                        const listResp = await fetch("/api/admin/messes", {
+                                          headers: { "Authorization": `Bearer ${sessionToken}` }
+                                        });
+                                        if (listResp.ok) {
+                                          const listData = await listResp.json();
+                                          setMesses(listData.messes || []);
+                                        }
+                                      }
+                                      setSelectedMessToDelete(null);
+                                      setDeleteConfirmationInput("");
+                                    }
+                                  } else {
+                                    const err = await response.json();
+                                    alert(err.error || "Failed to delete mess branch");
+                                  }
+                                } catch (err) {
+                                  console.error(err);
+                                  alert("Error occurred while deleting branch.");
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${
+                                deleteConfirmationInput === selectedMessToDelete.name
+                                  ? "bg-red-600 hover:bg-red-500 text-white cursor-pointer"
+                                  : "bg-red-950/20 text-red-500/50 border border-red-950/40 cursor-not-allowed"
+                              }`}
+                            >
+                              Confirm Permanent Deletion
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2496,6 +2678,113 @@ export default function App() {
                           {curr}
                         </button>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Democracy & Superuser Voting System Configuration */}
+                {currentUser.role === UserRole.ADMIN && (
+                  <div className={`p-5 rounded-2xl border lg:col-span-2 ${
+                    isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+                  }`}>
+                    <h3 className="text-sm font-bold font-display text-cyan-300 mb-1 uppercase tracking-wider flex items-center gap-1.5">
+                      <Vote className="w-4 h-4 text-cyan-400" />
+                      Democracy & Superuser Voting System
+                    </h3>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      Configure parameters for democratic Superuser/Assistant Superuser election ballots. Define the voting dates, turn the ballot on/off, and select candidates from active members.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Left: General Settings */}
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Ballot Status</label>
+                          <select
+                            value={electionEnabled ? "enabled" : "disabled"}
+                            onChange={(e) => setElectionEnabled(e.target.value === "enabled")}
+                            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                          >
+                            <option value="disabled">Disabled (Ballot Closed)</option>
+                            <option value="enabled">Enabled (Ballot Open/Active)</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Voting Start Date & Time</label>
+                          <input
+                            type="datetime-local"
+                            value={electionStartDate}
+                            onChange={(e) => setElectionStartDate(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Voting End Date & Time</label>
+                          <input
+                            type="datetime-local"
+                            value={electionEndDate}
+                            onChange={(e) => setElectionEndDate(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Right: Candidates Checklist */}
+                      <div className="space-y-2 border border-slate-800/80 rounded-xl p-3 bg-slate-950/40">
+                        <label className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block font-display">Eligible Candidates Checklist</label>
+                        <p className="text-[10px] text-slate-500 leading-snug">
+                          Check all members who are allowed to run for the Superuser / Assistant Superuser position. If none are checked, all members are eligible.
+                        </p>
+                        
+                        <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 mt-2">
+                          {membersList.length === 0 ? (
+                            <p className="text-[10px] text-slate-500 font-mono italic">No members found in this mess branch.</p>
+                          ) : (
+                            membersList.map((m) => {
+                              const isChecked = electionCandidates.includes(m.id);
+                              return (
+                                <label key={m.id} className="flex items-center gap-2 p-1.5 rounded bg-slate-950 hover:bg-slate-900 border border-slate-900/60 cursor-pointer transition-all">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setElectionCandidates(prev => [...prev, m.id]);
+                                      } else {
+                                        setElectionCandidates(prev => prev.filter(id => id !== m.id));
+                                      }
+                                    }}
+                                    className="accent-cyan-500 cursor-pointer"
+                                  />
+                                  <div className="flex-1 flex justify-between items-center text-[11px]">
+                                    <span className="font-bold text-slate-200">{m.nickname}</span>
+                                    <span className="text-[9px] font-mono text-slate-500 uppercase">{m.role}</span>
+                                  </div>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await handleConfigureElection({
+                            enabled: electionEnabled,
+                            startDate: electionStartDate,
+                            endDate: electionEndDate,
+                            candidates: electionCandidates
+                          });
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 font-bold text-xs text-white rounded-xl cursor-pointer transition-all uppercase tracking-wider"
+                      >
+                        Apply Democracy Settings
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3373,6 +3662,199 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Real-time Layout Preview Panel */}
+                      <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-6 mt-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                          <div>
+                            <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Real-Time Miniaturized Layout Preview
+                            </h4>
+                            <p className="text-[11px] text-slate-400">
+                              See how your customizations look live before saving them to the system.
+                            </p>
+                          </div>
+                          
+                          <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                            <button
+                              type="button"
+                              onClick={() => setActivePreviewTab("login")}
+                              className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer ${
+                                activePreviewTab === "login"
+                                  ? "bg-cyan-500 text-white shadow"
+                                  : "text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              Login Screen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActivePreviewTab("home")}
+                              className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all cursor-pointer ${
+                                activePreviewTab === "home"
+                                  ? "bg-cyan-500 text-white shadow"
+                                  : "text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              Home Dashboard Banner
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/60">
+                          {activePreviewTab === "login" ? (
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] text-slate-500 font-mono mb-2 uppercase">Simulated Login Preview (Scale ~30%)</span>
+                              <div 
+                                style={(() => {
+                                  if (!loginCustomization) return {};
+                                  if (loginCustomization.backgroundType === "color") {
+                                    return { backgroundColor: loginCustomization.backgroundColor || "#020617" };
+                                  }
+                                  if (loginCustomization.backgroundType === "image") {
+                                    return {
+                                      backgroundImage: `url(${loginCustomization.backgroundImageUrl || ""})`,
+                                      backgroundSize: "cover",
+                                      backgroundPosition: "center"
+                                    };
+                                  }
+                                  // Preset background themes
+                                  switch (loginCustomization.backgroundTheme) {
+                                    case "cosmic-void":
+                                      return { background: "linear-gradient(to bottom, #1e1b4b, #03001e, #0f172a)" };
+                                    case "midnight-nebula":
+                                      return { background: "linear-gradient(to right, #000428, #004e92)" };
+                                    case "cyberpunk-grid":
+                                      return { background: "linear-gradient(135deg, #0f172a, #1e1b4b)", border: "1px solid #22d3ee30" };
+                                    case "sunset-glow":
+                                      return { background: "linear-gradient(to bottom right, #4c0519, #451a03)" };
+                                    case "ocean-depth":
+                                      return { background: "linear-gradient(to bottom, #083344, #172554)" };
+                                    case "forest-whisper":
+                                      return { background: "linear-gradient(to bottom, #064e3b, #022c22)" };
+                                    case "neon-shallows":
+                                      return { background: "linear-gradient(to bottom right, #06b6d4, #0f172a)" };
+                                    case "deep-space":
+                                      return { background: "linear-gradient(to bottom, #020617, #0f172a)" };
+                                    default:
+                                      return { background: "#0f172a" };
+                                  }
+                                })()}
+                                className={`w-full max-w-sm h-64 rounded-xl relative overflow-hidden flex flex-col items-center justify-center p-4 border border-slate-800 transition-all ${
+                                  loginCustomization?.fontStyle === "mono" ? "font-mono" :
+                                  loginCustomization?.fontStyle === "serif" ? "font-serif" :
+                                  loginCustomization?.fontStyle === "display" ? "font-display" : "font-sans"
+                                }`}
+                              >
+                                {/* Mini form container */}
+                                <div 
+                                  style={{ 
+                                    backgroundColor: loginCustomization?.cardBg || "rgba(15, 23, 42, 0.6)", 
+                                    color: loginCustomization?.textColor || "#ffffff",
+                                    borderColor: loginCustomization?.accentColor ? `${loginCustomization.accentColor}30` : "rgba(34, 211, 238, 0.2)"
+                                  }}
+                                  className="w-[85%] p-3 rounded-lg border shadow-lg backdrop-blur-sm flex flex-col items-center text-center transition-all"
+                                >
+                                  {loginCustomization?.showBrandingIcon !== false && (
+                                    <div 
+                                      style={{ color: loginCustomization?.accentColor || "#22d3ee" }}
+                                      className="w-5 h-5 rounded-full bg-slate-950/40 border border-slate-800 flex items-center justify-center mb-1 text-[8px] font-bold font-mono"
+                                    >
+                                      B
+                                    </div>
+                                  )}
+                                  <h5 className="text-[10px] font-black tracking-tight" style={{ color: loginCustomization?.textColor || "#ffffff" }}>
+                                    {loginCustomization?.title || "Mess ERP"}
+                                  </h5>
+                                  <p className="text-[6px] text-slate-400 font-medium tracking-wide uppercase mt-0.5">
+                                    {loginCustomization?.subtitle || "BENGAL BACHELOR ERP ENGINE"}
+                                  </p>
+
+                                  <div className="w-full mt-2 space-y-1">
+                                    <div className="h-4 bg-slate-950/60 border border-slate-800 rounded px-1.5 flex items-center text-[5px] text-slate-400">
+                                      <span>Username / Phone</span>
+                                    </div>
+                                    <div className="h-4 bg-slate-950/60 border border-slate-800 rounded px-1.5 flex items-center text-[5px] text-slate-400">
+                                      <span>Password</span>
+                                    </div>
+                                  </div>
+
+                                  <button 
+                                    type="button"
+                                    style={{ 
+                                      background: `linear-gradient(to right, ${loginCustomization?.accentColor || "#06b6d4"}, ${loginCustomization?.accentColor || "#0891b2"}dd)`
+                                    }}
+                                    className="w-full h-4 mt-2 text-[5px] font-black text-white rounded uppercase tracking-wide flex items-center justify-center"
+                                  >
+                                    SIGN IN PORTAL
+                                  </button>
+
+                                  {loginCustomization?.showGoogleLogin !== false && (
+                                    <div className="w-full mt-1.5 pt-1.5 border-t border-slate-800/40 flex items-center justify-center">
+                                      <div className="h-3.5 px-2 bg-slate-950/80 border border-slate-800 rounded flex items-center justify-center gap-1 text-[4px] text-slate-300 w-full cursor-pointer">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                                        <span>SIGN IN WITH GOOGLE</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] text-slate-500 font-mono mb-2 uppercase">Simulated Dashboard Welcome Banner Preview (Scale ~40%)</span>
+                              <div className="w-full max-w-lg p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-col justify-center">
+                                <div 
+                                  style={{
+                                    backgroundColor: homeCustomization?.cardBg || "rgba(30, 41, 59, 0.4)",
+                                    color: homeCustomization?.textColor || "#ffffff"
+                                  }}
+                                  className={`p-4 rounded-xl border border-slate-800/60 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 transition-all ${
+                                    homeCustomization?.fontStyle === "mono" ? "font-mono" :
+                                    homeCustomization?.fontStyle === "serif" ? "font-serif" :
+                                    homeCustomization?.fontStyle === "display" ? "font-display" : "font-sans"
+                                  }`}
+                                >
+                                  {/* Glow effect */}
+                                  <div className="absolute right-0 top-0 w-24 h-24 bg-radial-gradient opacity-30 pointer-events-none"></div>
+
+                                  <div className="relative z-10 flex-1">
+                                    <span className="text-[6px] font-bold tracking-widest text-orange-500 uppercase flex items-center gap-1 mb-0.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping"></span>
+                                      LIVE ACCESS GRANTED
+                                    </span>
+                                    <h4 className="text-[11px] font-black tracking-tight flex items-center gap-1">
+                                      {homeCustomization?.welcomeTitle ? (
+                                        homeCustomization.welcomeTitle.replace("{nickname}", currentUser.nickname)
+                                      ) : (
+                                        `Assalamu Alaikum, ${currentUser.nickname}!`
+                                      )}
+                                      <span className="text-[5px] font-mono font-bold uppercase text-orange-500 bg-orange-500/10 px-1 rounded border border-orange-500/20">
+                                        {currentUser.role}
+                                      </span>
+                                    </h4>
+                                    <p className="text-[7px] text-slate-400 mt-0.5 max-w-sm leading-relaxed">
+                                      {homeCustomization?.welcomeSubtitle || "Welcome to the Mess ERP Hub. Check details, submit your market expenses, track meals, and manage monthly balances with ease."}
+                                    </p>
+                                  </div>
+
+                                  <div className="relative z-10">
+                                    <span 
+                                      className="px-2 py-0.5 rounded border text-[6px] font-semibold flex items-center gap-1"
+                                      style={{ 
+                                        borderColor: homeCustomization?.accentColor ? `${homeCustomization.accentColor}30` : "rgba(34, 211, 238, 0.2)",
+                                        color: homeCustomization?.accentColor || "#22d3ee" 
+                                      }}
+                                    >
+                                      <span>JULY 2026</span>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-4 flex justify-end">

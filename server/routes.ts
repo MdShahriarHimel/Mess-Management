@@ -1736,11 +1736,13 @@ router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, 
     return;
   }
 
-  const { enabled, candidates } = req.body;
+  const { enabled, candidates, startDate, endDate } = req.body;
   const elections = loadElections();
   
   if (enabled !== undefined) elections.enabled = !!enabled;
   if (candidates !== undefined) elections.candidates = candidates;
+  if (startDate !== undefined) elections.startDate = startDate;
+  if (endDate !== undefined) elections.endDate = endDate;
 
   saveElections(elections);
   
@@ -1749,7 +1751,7 @@ router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, 
     req.user!.nickname,
     "CONFIGURE_ELECTION",
     "Previous Configuration",
-    JSON.stringify({ enabled, candidates }),
+    JSON.stringify({ enabled, candidates, startDate, endDate }),
     `Admin configured election settings for mess ${getActiveMessId()}`
   );
 
@@ -1769,6 +1771,23 @@ router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: 
   if (!elections.enabled) {
     res.status(403).json({ error: "Elections are currently disabled by the Admin for this mess." });
     return;
+  }
+
+  // Check start/end dates
+  const now = new Date();
+  if (elections.startDate) {
+    const start = new Date(elections.startDate);
+    if (now < start) {
+      res.status(400).json({ error: `Voting has not started yet. It starts on ${start.toLocaleString()}` });
+      return;
+    }
+  }
+  if (elections.endDate) {
+    const end = new Date(elections.endDate);
+    if (now > end) {
+      res.status(400).json({ error: `Voting has ended. It closed on ${end.toLocaleString()}` });
+      return;
+    }
   }
 
   // Ensure candidate is authorized
