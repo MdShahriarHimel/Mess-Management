@@ -13,6 +13,17 @@ interface DepositsProps {
   members: Member[];
   isDarkMode: boolean;
   onRefresh: () => void;
+  currencySymbol?: string;
+  customColors?: {
+    cashDepositBg: string;
+    cashDepositBorder: string;
+    settlementBg: string;
+    settlementBorder: string;
+    sidebarBg: string;
+    headerBg: string;
+    cardBg: string;
+    accentColor: string;
+  };
 }
 
 export default function Deposits({ 
@@ -20,7 +31,9 @@ export default function Deposits({
   currentMonthId, 
   members, 
   isDarkMode, 
-  onRefresh 
+  onRefresh,
+  currencySymbol = "৳",
+  customColors
 }: DepositsProps) {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -136,17 +149,30 @@ export default function Deposits({
       </div>
 
       {/* Stats row */}
-      <div className={`p-4 rounded-xl border flex justify-between items-center ${
-        isDarkMode ? "bg-slate-900/30 border-cyan-500/10 text-white" : "bg-white border-slate-200 text-slate-800"
-      }`}>
+      <div 
+        style={{
+          backgroundColor: customColors?.cashDepositBg || undefined,
+          borderColor: customColors?.cashDepositBorder || undefined
+        }}
+        className={`p-4 rounded-xl border flex justify-between items-center ${
+          customColors?.cashDepositBg ? "" : (isDarkMode ? "bg-slate-900/30 border-cyan-500/10" : "bg-white border-slate-200")
+        } ${isDarkMode ? "text-white" : "text-slate-800"}`}
+      >
         <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">CUMULATIVE MONTHLY DEPOSITS REGISTERED</span>
-        <span className="text-xl font-black font-mono text-cyan-400">৳ {totalDepositedSum}</span>
+        <span className="text-xl font-black font-mono text-cyan-400">{currencySymbol} {totalDepositedSum}</span>
       </div>
 
       {/* Table list */}
-      <div className={`p-5 rounded-2xl border ${
-        isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-      }`} id="deposits-history-panel">
+      <div 
+        style={{
+          backgroundColor: customColors?.cashDepositBg || undefined,
+          borderColor: customColors?.cashDepositBorder || undefined
+        }}
+        className={`p-5 rounded-2xl border ${
+          customColors?.cashDepositBg ? "" : (isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm")
+        } ${isDarkMode ? "text-white" : "text-slate-800"}`} 
+        id="deposits-history-panel"
+      >
         <h3 className="text-xs font-bold font-display text-orange-500 uppercase tracking-wider mb-4">
           All Registered Deposits
         </h3>
@@ -157,7 +183,7 @@ export default function Deposits({
               <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
                 <th className="py-3 px-4">Member Nickname</th>
                 <th className="py-3 px-4">Date Collected</th>
-                <th className="py-3 px-4 text-right">Amount Deposited (৳)</th>
+                <th className="py-3 px-4 text-right">Amount Deposited ({currencySymbol})</th>
                 <th className="py-3 px-4 text-center">Audited Recorder</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -175,7 +201,7 @@ export default function Deposits({
                     <tr key={d.id} className="hover:bg-cyan-500/5">
                       <td className="py-3 px-4 font-bold text-cyan-400">{targetM?.nickname || "Unknown"}</td>
                       <td className="py-3 px-4 font-mono">{d.date}</td>
-                      <td className="py-3 px-4 text-right font-extrabold font-mono text-cyan-400">৳ {d.amount}</td>
+                      <td className="py-3 px-4 text-right font-extrabold font-mono text-cyan-400">{currencySymbol} {d.amount}</td>
                       <td className="py-3 px-4 text-center text-slate-500 font-mono text-[10px]">{recorder?.nickname || "System Seeder"}</td>
                       <td className="py-3 px-4 text-right">
                         {isManagerOrAdmin && (
@@ -229,7 +255,7 @@ export default function Deposits({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Deposit Amount (৳ Taka)</label>
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Deposit Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   required

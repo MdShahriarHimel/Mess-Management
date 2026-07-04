@@ -18,6 +18,17 @@ interface FinanceSettlementProps {
   reportSummary: any;
   onRefresh: () => void;
   months?: MessMonth[];
+  currencySymbol?: string;
+  customColors?: {
+    cashDepositBg: string;
+    cashDepositBorder: string;
+    settlementBg: string;
+    settlementBorder: string;
+    sidebarBg: string;
+    headerBg: string;
+    cardBg: string;
+    accentColor: string;
+  };
 }
 
 export default function FinanceSettlement({ 
@@ -27,7 +38,9 @@ export default function FinanceSettlement({
   isDarkMode, 
   reportSummary,
   onRefresh,
-  months = []
+  months = [],
+  currencySymbol = "৳",
+  customColors
 }: FinanceSettlementProps) {
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
@@ -878,9 +891,16 @@ export default function FinanceSettlement({
       </div>
 
       {/* 1. MEMBERS SETTLEMENT TABLE SHEET */}
-      <div className={`p-5 rounded-2xl border ${
-        isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-      }`} id="members-balance-sheet">
+      <div 
+        style={{
+          backgroundColor: customColors?.settlementBg || undefined,
+          borderColor: customColors?.settlementBorder || undefined
+        }}
+        className={`p-5 rounded-2xl border ${
+          customColors?.settlementBg ? "" : (isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm")
+        } ${isDarkMode ? "text-white" : "text-slate-800"}`}
+        id="members-balance-sheet"
+      >
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-sm font-bold font-display text-orange-500 uppercase tracking-wider">
             Individual Month Balance Sheet
@@ -895,12 +915,12 @@ export default function FinanceSettlement({
             <thead>
               <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
                 <th className="py-3 px-4">Nickname</th>
-                <th className="py-3 px-4 text-right">Deposited (৳)</th>
-                <th className="py-3 px-4 text-right">Market (৳)</th>
+                <th className="py-3 px-4 text-right">Deposited ({currencySymbol})</th>
+                <th className="py-3 px-4 text-right">Market ({currencySymbol})</th>
                 <th className="py-3 px-4 text-center">Meals Count</th>
-                <th className="py-3 px-4 text-right">Meal Cost (৳)</th>
-                <th className="py-3 px-4 text-right">Management (৳)</th>
-                <th className="py-3 px-4 text-right">Current Balance (৳)</th>
+                <th className="py-3 px-4 text-right">Meal Cost ({currencySymbol})</th>
+                <th className="py-3 px-4 text-right">Management ({currencySymbol})</th>
+                <th className="py-3 px-4 text-right">Current Balance ({currencySymbol})</th>
                 <th className="py-3 px-4 text-right">Return / Refund Status</th>
               </tr>
             </thead>
@@ -926,22 +946,22 @@ export default function FinanceSettlement({
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
                         {m.nickname}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono">৳ {m.deposit}</td>
-                      <td className="py-3.5 px-4 text-right font-mono">৳ {m.market}</td>
+                      <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.deposit}</td>
+                      <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.market}</td>
                       <td className="py-3.5 px-4 text-center font-mono font-semibold text-cyan-400">{m.mealsCount}</td>
-                      <td className="py-3.5 px-4 text-right font-mono">৳ {m.mealCost}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-500">৳ {m.holdingPaid}</td>
+                      <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.mealCost}</td>
+                      <td className="py-3.5 px-4 text-right font-mono text-slate-500">{currencySymbol} {m.holdingPaid}</td>
                       <td className={`py-3.5 px-4 text-right font-mono font-extrabold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                        ৳ {m.balance}
+                        {currencySymbol} {m.balance}
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         {isPositive ? (
                           <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-extrabold font-mono text-[10px]">
-                            RECEIVES: ৳ {m.return}
+                            RECEIVES: {currencySymbol} {m.return}
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-extrabold font-mono text-[10px]">
-                            OWES: ৳ {Math.abs(m.return)}
+                            OWES: {currencySymbol} {Math.abs(m.return)}
                           </span>
                         )}
                       </td>

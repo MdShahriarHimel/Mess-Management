@@ -1552,7 +1552,11 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     superUserCanInviteMembers,
     superUserCanArchiveMembers,
     superUserCanEditMeals,
-    roleAnimations
+    roleAnimations,
+    currencySymbol,
+    customColors,
+    messAnimations,
+    dashboardVisibility
   } = req.body;
 
   if (siteColor !== undefined) currentSettings.siteColor = siteColor;
@@ -1565,6 +1569,10 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (superUserCanArchiveMembers !== undefined) currentSettings.superUserCanArchiveMembers = superUserCanArchiveMembers;
   if (superUserCanEditMeals !== undefined) currentSettings.superUserCanEditMeals = superUserCanEditMeals;
   if (roleAnimations !== undefined) currentSettings.roleAnimations = roleAnimations;
+  if (currencySymbol !== undefined) currentSettings.currencySymbol = currencySymbol;
+  if (customColors !== undefined) currentSettings.customColors = { ...currentSettings.customColors, ...customColors };
+  if (messAnimations !== undefined) currentSettings.messAnimations = { ...currentSettings.messAnimations, ...messAnimations };
+  if (dashboardVisibility !== undefined) currentSettings.dashboardVisibility = { ...currentSettings.dashboardVisibility, ...dashboardVisibility };
 
   if (messName !== undefined) {
     if (role !== UserRole.ADMIN) {
