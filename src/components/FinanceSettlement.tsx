@@ -573,7 +573,7 @@ export default function FinanceSettlement({
     const mealsToSave: any[] = [];
     activeMembers.forEach(member => {
       datesList.forEach(d => {
-        const total = spreadsheetData[member.id]?.[d] !== undefined ? spreadsheetData[member.id][d] : 2;
+        const total = spreadsheetData[member.id]?.[d] !== undefined ? spreadsheetData[member.id][d] : 0;
         // Split total into lunch and dinner
         const lunch = total / 2;
         const dinner = total / 2;
@@ -1078,7 +1078,7 @@ export default function FinanceSettlement({
 
                       {/* Date Cells */}
                       {datesList.map((d) => {
-                        const val = spreadsheetData[member.id]?.[d] !== undefined ? spreadsheetData[member.id][d] : 2;
+                        const val = spreadsheetData[member.id]?.[d] !== undefined ? spreadsheetData[member.id][d] : 0;
                         return (
                           <td key={d} className="p-0 border border-slate-850 text-center bg-slate-950/10 min-w-12">
                             {canEditSpreadsheet ? (

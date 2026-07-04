@@ -49,7 +49,7 @@ export default function MealsTracker({
         
         // Default entries for active members
         activeMembers.forEach(m => {
-          map[m.id] = { lunch: 1, dinner: 1 }; // Default to 1 meal each by default
+          map[m.id] = { lunch: 0, dinner: 0 }; // Default to 0 meal each by default
         });
 
         // Overlay actual saved meals
@@ -271,7 +271,7 @@ export default function MealsTracker({
                 </tr>
               ) : (
                 activeMembers.map((member) => {
-                  const data = mealsData[member.id] || { lunch: 1, dinner: 1 };
+                  const data = mealsData[member.id] || { lunch: 0, dinner: 0 };
                   return (
                     <tr 
                       key={member.id} 
