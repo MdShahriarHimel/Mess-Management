@@ -399,6 +399,367 @@ const AmbientAnimationOverlay = ({
         animationFrameId = requestAnimationFrame(render);
       };
       render();
+    } else if (animations.effectType === "rain") {
+      const drops: Array<{ x: number; y: number; length: number; speed: number; opacity: number }> = [];
+      for (let i = 0; i < 100; i++) {
+        drops.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          length: Math.random() * 20 + 10,
+          speed: (Math.random() * 10 + 15) * speedMultiplier,
+          opacity: Math.random() * 0.4 + 0.1
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        ctx.strokeStyle = "rgba(14, 165, 233, 0.7)";
+        ctx.lineWidth = 1.5;
+
+        for (let i = 0; i < drops.length; i++) {
+          const d = drops[i];
+          ctx.beginPath();
+          ctx.globalAlpha = d.opacity;
+          ctx.moveTo(d.x, d.y);
+          ctx.lineTo(d.x, d.y + d.length);
+          ctx.stroke();
+
+          d.y += d.speed;
+          if (d.y > height) {
+            d.y = -20;
+            d.x = Math.random() * width;
+          }
+        }
+        ctx.globalAlpha = 1.0;
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "fire") {
+      const embers: Array<{ x: number; y: number; r: number; vy: number; vx: number; alpha: number; life: number; color: string }> = [];
+      const colors = ["#f97316", "#ef4444", "#f59e0b", "#ffedd5"];
+      
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        // Spawn embers at bottom
+        if (embers.length < 80) {
+          embers.push({
+            x: Math.random() * width,
+            y: height + Math.random() * 20,
+            r: Math.random() * 3.5 + 1.5,
+            vy: - (Math.random() * 2 + 1) * speedMultiplier,
+            vx: (Math.random() - 0.5) * 1.5 * speedMultiplier,
+            alpha: 1.0,
+            life: Math.random() * 100 + 50,
+            color: colors[Math.floor(Math.random() * colors.length)]
+          });
+        }
+
+        for (let i = embers.length - 1; i >= 0; i--) {
+          const e = embers[i];
+          e.x += e.vx;
+          e.y += e.vy;
+          e.life -= speedMultiplier;
+          e.alpha = Math.max(0, e.life / 150);
+
+          if (e.life <= 0 || e.y < 0) {
+            embers.splice(i, 1);
+            continue;
+          }
+
+          ctx.beginPath();
+          ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+          ctx.fillStyle = e.color;
+          ctx.globalAlpha = e.alpha;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = e.color;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "pulse") {
+      const waves: Array<{ r: number; alpha: number; speed: number; x: number; y: number }> = [];
+      let counter = 0;
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        
+        counter += speedMultiplier;
+        if (counter % 40 < 1) {
+          waves.push({
+            r: 5,
+            alpha: 0.8,
+            speed: 2.5 * speedMultiplier,
+            x: mouse.active ? mouse.x : width / 2,
+            y: mouse.active ? mouse.y : height / 2
+          });
+        }
+
+        ctx.lineWidth = 2.5;
+        for (let i = waves.length - 1; i >= 0; i--) {
+          const w = waves[i];
+          w.r += w.speed;
+          w.alpha -= 0.006 * speedMultiplier;
+
+          if (w.alpha <= 0 || w.r > width) {
+            waves.splice(i, 1);
+            continue;
+          }
+
+          ctx.beginPath();
+          ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(34, 211, 238, ${w.alpha})`;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = "rgba(34, 211, 238, 0.5)";
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "particles") {
+      const parts: Array<{ x: number; y: number; r: number; vx: number; vy: number; color: string }> = [];
+      const colors = ["#22d3ee", "#a78bfa", "#f43f5e", "#10b981"];
+      for (let i = 0; i < 60; i++) {
+        parts.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * 4 + 1.5,
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: (Math.random() - 0.5) * 1.5,
+          color: colors[Math.floor(Math.random() * colors.length)]
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          
+          if (mouse.active) {
+            const dx = mouse.x - p.x;
+            const dy = mouse.y - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 300) {
+              p.vx += (dx / dist) * 0.04 * speedMultiplier;
+              p.vy += (dy / dist) * 0.04 * speedMultiplier;
+            }
+          }
+
+          p.x += p.vx * speedMultiplier;
+          p.y += p.vy * speedMultiplier;
+          p.vx *= 0.98;
+          p.vy *= 0.98;
+
+          if (p.x < 0) p.x = width;
+          if (p.x > width) p.x = 0;
+          if (p.y < 0) p.y = height;
+          if (p.y > height) p.y = 0;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = 0.6;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "matrix-red") {
+      const columns = Math.floor(width / 20) + 1;
+      const yPositions = Array(columns).fill(0);
+
+      const render = () => {
+        ctx.fillStyle = "rgba(15, 5, 5, 0.08)";
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.fillStyle = "#ef4444";
+        ctx.font = "14px monospace";
+
+        for (let i = 0; i < yPositions.length; i++) {
+          const text = String.fromCharCode(33 + Math.floor(Math.random() * 93));
+          const x = i * 20;
+          const y = yPositions[i];
+          ctx.fillText(text, x, y);
+
+          if (y > 100 + Math.random() * 10000) {
+            yPositions[i] = 0;
+          } else {
+            yPositions[i] += 15 * speedMultiplier;
+          }
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "aurora") {
+      let phase = 0;
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        
+        phase += 0.003 * speedMultiplier;
+        const grad = ctx.createLinearGradient(0, 0, width, 0);
+        grad.addColorStop(0, "rgba(16, 185, 129, 0)");
+        grad.addColorStop(0.3, `rgba(16, 185, 129, ${Math.abs(Math.sin(phase)) * 0.15})`);
+        grad.addColorStop(0.5, `rgba(6, 182, 212, ${Math.abs(Math.sin(phase + 1)) * 0.15})`);
+        grad.addColorStop(0.7, `rgba(139, 92, 246, ${Math.abs(Math.cos(phase)) * 0.12})`);
+        grad.addColorStop(1, "rgba(139, 92, 246, 0)");
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(0, height * 0.1);
+        for (let x = 0; x <= width; x += 30) {
+          const y = height * 0.35 + Math.sin(x * 0.004 + phase) * 120 + Math.cos(x * 0.002 + phase) * 60;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(width, height * 0.95);
+        ctx.lineTo(0, height * 0.95);
+        ctx.closePath();
+        ctx.fill();
+
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "jellyfish") {
+      const jellies: Array<{ x: number; y: number; r: number; speed: number; pulseCycle: number; color: string }> = [];
+      const colors = ["rgba(167, 139, 250, 0.22)", "rgba(34, 211, 238, 0.22)", "rgba(244, 63, 94, 0.22)"];
+      for (let i = 0; i < 8; i++) {
+        jellies.push({
+          x: Math.random() * width,
+          y: height + Math.random() * 100,
+          r: Math.random() * 15 + 15,
+          speed: (Math.random() * 0.4 + 0.3) * speedMultiplier,
+          pulseCycle: Math.random() * Math.PI * 2,
+          color: colors[Math.floor(Math.random() * colors.length)]
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < jellies.length; i++) {
+          const j = jellies[i];
+          j.pulseCycle += 0.03 * speedMultiplier;
+          const scale = 1 + Math.sin(j.pulseCycle) * 0.2;
+          
+          j.y -= j.speed * (1 + Math.sin(j.pulseCycle) * 0.4);
+
+          if (j.y < -50) {
+            j.y = height + 50;
+            j.x = Math.random() * width;
+          }
+
+          ctx.beginPath();
+          ctx.arc(j.x, j.y, j.r * scale, Math.PI, 0, false);
+          ctx.fillStyle = j.color;
+          ctx.fill();
+
+          // draw tentacles
+          ctx.beginPath();
+          ctx.strokeStyle = j.color;
+          ctx.lineWidth = 1.5;
+          for (let t = -3; t <= 3; t++) {
+            const tx = j.x + (t * j.r * 0.25);
+            ctx.moveTo(tx, j.y);
+            ctx.quadraticCurveTo(
+              tx + Math.sin(j.pulseCycle) * 10,
+              j.y + j.r * 1.5,
+              tx + Math.cos(j.pulseCycle + t) * 5,
+              j.y + j.r * 2.5
+            );
+          }
+          ctx.stroke();
+        }
+
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "leaves") {
+      const leaves: Array<{ x: number; y: number; r: number; speed: number; angle: number; angleSpeed: number; color: string }> = [];
+      const colors = ["#d97706", "#b45309", "#ea580c", "#ca8a04"];
+      for (let i = 0; i < 25; i++) {
+        leaves.push({
+          x: Math.random() * width,
+          y: Math.random() * height - height,
+          r: Math.random() * 8 + 6,
+          speed: (Math.random() * 0.8 + 0.5) * speedMultiplier,
+          angle: Math.random() * Math.PI * 2,
+          angleSpeed: (Math.random() * 0.02 - 0.01) * speedMultiplier,
+          color: colors[Math.floor(Math.random() * colors.length)]
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < leaves.length; i++) {
+          const lf = leaves[i];
+          lf.y += lf.speed;
+          lf.x += Math.sin(lf.angle) * 0.5 * speedMultiplier;
+          lf.angle += lf.angleSpeed;
+
+          if (lf.y > height + 20) {
+            lf.y = -20;
+            lf.x = Math.random() * width;
+          }
+
+          ctx.save();
+          ctx.translate(lf.x, lf.y);
+          ctx.rotate(lf.angle);
+          ctx.fillStyle = lf.color;
+          
+          ctx.beginPath();
+          ctx.moveTo(0, -lf.r);
+          ctx.quadraticCurveTo(lf.r * 0.6, -lf.r * 0.5, 0, lf.r);
+          ctx.quadraticCurveTo(-lf.r * 0.6, -lf.r * 0.5, 0, -lf.r);
+          ctx.fill();
+          
+          ctx.restore();
+        }
+
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "laser") {
+      let laserY = 0;
+      let laserDir = 1;
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        
+        laserY += 1.5 * laserDir * speedMultiplier;
+        if (laserY > height) {
+          laserY = height;
+          laserDir = -1;
+        } else if (laserY < 0) {
+          laserY = 0;
+          laserDir = 1;
+        }
+
+        const grad = ctx.createLinearGradient(0, laserY - 15, 0, laserY + 15);
+        grad.addColorStop(0, "rgba(6, 182, 212, 0)");
+        grad.addColorStop(0.5, "rgba(6, 182, 212, 0.45)");
+        grad.addColorStop(1, "rgba(6, 182, 212, 0)");
+
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, laserY - 15, width, 30);
+
+        // Core laser line
+        ctx.strokeStyle = "rgba(34, 211, 238, 0.8)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, laserY);
+        ctx.lineTo(width, laserY);
+        ctx.stroke();
+
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
     }
 
     return () => {
@@ -449,7 +810,10 @@ export default function App() {
     sidebarBg: "#0f172a",
     headerBg: "#0f172a",
     cardBg: "#1e293b",
-    accentColor: "#22d3ee"
+    accentColor: "#22d3ee",
+    siteAccentColorRgb: "#22d3ee",
+    typographyHighlightRgb: "#67e8f9",
+    layoutScaleColorRgb: "#a78bfa"
   });
 
   // Animations/Effects
@@ -972,6 +1336,7 @@ export default function App() {
     mono: { sans: '"JetBrains Mono", monospace', display: '"JetBrains Mono", monospace' },
     serif: { sans: '"Georgia", serif', display: '"Georgia", serif' },
     display: { sans: '"Space Grotesk", sans-serif', display: '"Space Grotesk", sans-serif' },
+    custom: { sans: '"Outfit", system-ui, sans-serif', display: '"Space Grotesk", sans-serif' },
   };
 
   const fontSizeMap: Record<string, string> = {
@@ -981,7 +1346,57 @@ export default function App() {
     xlarge: "font-size: 16.5px !important;",
   };
 
-  const colors = colorMap[siteColor] || colorMap.cyan;
+  const hexToRgb = (hex: string): string => {
+    if (!hex) return "6, 182, 212";
+    let clean = hex.replace("#", "");
+    if (clean.length === 3) {
+      clean = clean.split("").map(c => c + c).join("");
+    }
+    if (clean.length === 6) {
+      const r = parseInt(clean.substring(0, 2), 16);
+      const g = parseInt(clean.substring(2, 4), 16);
+      const b = parseInt(clean.substring(4, 6), 16);
+      return `${r}, ${g}, ${b}`;
+    }
+    return "6, 182, 212";
+  };
+
+  const lightenDarkenColor = (hex: string, percent: number) => {
+    let usePound = false;
+    if (hex[0] === "#") {
+      hex = hex.slice(1);
+      usePound = true;
+    }
+    try {
+      const num = parseInt(hex, 16);
+      let r = (num >> 16) + percent;
+      if (r > 255) r = 255;
+      else if (r < 0) r = 0;
+      let b = ((num >> 8) & 0x00FF) + percent;
+      if (b > 255) b = 255;
+      else if (b < 0) b = 0;
+      let g = (num & 0x0000FF) + percent;
+      if (g > 255) g = 255;
+      else if (g < 0) g = 0;
+      return (usePound ? "#" : "") + (g | (b << 8) | (r << 16)).toString(16).padStart(6, "0");
+    } catch (e) {
+      return (usePound ? "#" : "") + hex;
+    }
+  };
+
+  const getCustomColorMap = () => {
+    const hex = customColors?.siteAccentColorRgb || "#22d3ee";
+    const rgb = hexToRgb(hex);
+    return {
+      rgb,
+      c300: lightenDarkenColor(hex, 40),
+      c400: hex,
+      c500: lightenDarkenColor(hex, -20),
+      c600: lightenDarkenColor(hex, -40)
+    };
+  };
+
+  const colors = siteColor === "custom" ? getCustomColorMap() : (colorMap[siteColor] || colorMap.cyan);
   const fonts = fontStyleMap[fontStyle] || fontStyleMap.sans;
   const sizeStyle = fontSizeMap[fontSize] || fontSizeMap.normal;
 
@@ -1083,6 +1498,77 @@ export default function App() {
         backgroundAttachment: "fixed"
       };
     }
+    if (theme === "neon-shallows") {
+      return {
+        background: "linear-gradient(135deg, #020617 0%, #064e3b 25%, #4c0519 75%, #020617 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "sahara-sand") {
+      return {
+        background: "linear-gradient(135deg, #0f0502 0%, #2a0800 35%, #451a03 70%, #170500 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "deep-space") {
+      return {
+        background: "radial-gradient(circle at 30% 20%, #030712 0%, #09090b 60%, #020202 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "electric-indigo") {
+      return {
+        background: "linear-gradient(180deg, #03000a 0%, #050014 40%, #1e1b4b 80%, #03000a 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "magma-flow") {
+      return {
+        background: "linear-gradient(135deg, #000000 0%, #1c0202 40%, #450a0a 75%, #020000 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "cyber-emerald") {
+      return {
+        background: "#010502",
+        backgroundImage: `
+          linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+          radial-gradient(circle at center, rgba(6, 78, 59, 0.15) 0%, #010502 85%)
+        `,
+        backgroundSize: "32px 32px, 32px 32px, 100% 100%",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "sakura-blossom") {
+      return {
+        background: "linear-gradient(135deg, #0a0104 0%, #20010c 35%, #4c051e 70%, #0a0104 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "ice-glacier") {
+      return {
+        background: "linear-gradient(135deg, #010a14 0%, #021a30 40%, #083344 80%, #010a14 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "bento-grid-dark") {
+      return {
+        background: "#09090b",
+        backgroundImage: `
+          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
+        `,
+        backgroundSize: "60px 60px",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "solar-storm") {
+      return {
+        background: "linear-gradient(135deg, #080200 0%, #240a00 35%, #431407 75%, #080200 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
 
     return {};
   };
@@ -1110,6 +1596,8 @@ export default function App() {
           --custom-header-bg: ${customColors?.headerBg || "#0f172a"};
           --custom-card-bg: ${customColors?.cardBg || "#1e293b"};
           --custom-accent-color: ${customColors?.accentColor || "#22d3ee"};
+          --custom-typography-highlight: ${customColors?.typographyHighlightRgb || "#67e8f9"};
+          --custom-layout-scale-color: ${customColors?.layoutScaleColorRgb || "#a78bfa"};
         }
         body, html {
           ${sizeStyle}
@@ -1146,6 +1634,14 @@ export default function App() {
             box-shadow: 0 0 12px ${customColors?.accentColor || colors.c400}80 !important;
           }
         ` : ""}
+        ${fontStyle === "custom" ? `
+          h1, h2, h3, h4, .font-display, .text-cyan-300, .text-cyan-400 {
+            color: ${customColors?.typographyHighlightRgb || "#67e8f9"} !important;
+          }
+        ` : ""}
+        .scale-indicator-dot {
+          background-color: ${customColors?.layoutScaleColorRgb || "#a78bfa"} !important;
+        }
       `}</style>
       
       <AmbientAnimationOverlay animations={messAnimations} />
@@ -1955,6 +2451,7 @@ export default function App() {
                           <option value="violet">Violet Velvet</option>
                           <option value="rose">Rose Quartz</option>
                           <option value="blue">Sapphire Blue</option>
+                          <option value="custom">Custom RGB Color Palette</option>
                         </select>
                       </div>
 
@@ -1970,12 +2467,16 @@ export default function App() {
                           <option value="mono">Brutalist Technical (JetBrains Mono)</option>
                           <option value="serif">Elegant Editorial (Georgia)</option>
                           <option value="display">Clean Geometry (Space Grotesk)</option>
+                          <option value="custom">Custom RGB Typography Palette</option>
                         </select>
                       </div>
 
                       {/* Font Size Scaling Option */}
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-orange-500 uppercase tracking-wider block">Application Layout Scale</label>
+                        <label className="text-[10px] font-bold text-orange-500 uppercase tracking-wider block flex items-center gap-1.5">
+                          Application Layout Scale
+                          <span className="w-2 h-2 rounded-full scale-indicator-dot inline-block animate-pulse"></span>
+                        </label>
                         <select
                           value={fontSize}
                           onChange={(e) => setFontSize(e.target.value)}
@@ -2135,6 +2636,60 @@ export default function App() {
                               />
                             </div>
                           </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Site Accent Color Palette</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="color"
+                                value={customColors?.siteAccentColorRgb ? (customColors.siteAccentColorRgb.startsWith("#") ? customColors.siteAccentColorRgb.slice(0, 7) : "#22d3ee") : "#22d3ee"}
+                                onChange={(e) => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: e.target.value }))}
+                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
+                              />
+                              <input
+                                type="text"
+                                value={customColors?.siteAccentColorRgb || ""}
+                                onChange={(e) => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: e.target.value }))}
+                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Typography Highlight Palette</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="color"
+                                value={customColors?.typographyHighlightRgb ? (customColors.typographyHighlightRgb.startsWith("#") ? customColors.typographyHighlightRgb.slice(0, 7) : "#67e8f9") : "#67e8f9"}
+                                onChange={(e) => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: e.target.value }))}
+                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
+                              />
+                              <input
+                                type="text"
+                                value={customColors?.typographyHighlightRgb || ""}
+                                onChange={(e) => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: e.target.value }))}
+                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Layout Scale Color Palette</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="color"
+                                value={customColors?.layoutScaleColorRgb ? (customColors.layoutScaleColorRgb.startsWith("#") ? customColors.layoutScaleColorRgb.slice(0, 7) : "#a78bfa") : "#a78bfa"}
+                                onChange={(e) => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: e.target.value }))}
+                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
+                              />
+                              <input
+                                type="text"
+                                value={customColors?.layoutScaleColorRgb || ""}
+                                onChange={(e) => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: e.target.value }))}
+                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -2242,6 +2797,15 @@ export default function App() {
                                 <option value="bubbles">Interactive Repelling Bubbles (Physics!)</option>
                                 <option value="snow">Gentle Winter Snowfall</option>
                                 <option value="fireflies">Twilight Glowing Fireflies</option>
+                                <option value="rain">Heavy Autumn Rain</option>
+                                <option value="fire">Flickering Campfire Embers</option>
+                                <option value="pulse">Ambient Heartbeat Wave</option>
+                                <option value="particles">Floating Cosmic Dust (Gravity!)</option>
+                                <option value="matrix-red">Red Cyber Defense Code</option>
+                                <option value="aurora">Luminous Northern Lights</option>
+                                <option value="jellyfish">Mystical Deep Sea Jellyfish</option>
+                                <option value="leaves">Swaying Autumn Golden Leaves</option>
+                                <option value="laser">Moving Vertical Laser Scanners</option>
                               </select>
                             </div>
 
@@ -2275,6 +2839,16 @@ export default function App() {
                                 <option value="ocean-depth">Ocean Depths (Teal Marine)</option>
                                 <option value="forest-whisper">Forest Whisper (Cozy Evergreen)</option>
                                 <option value="aurora-borealis">Aurora Lights (Boreal Glow)</option>
+                                <option value="neon-shallows">Retro Neon Shallows (Cyan-Pink Glow)</option>
+                                <option value="sahara-sand">Sahara Dune Dust (Warm Gold)</option>
+                                <option value="deep-space">Deep Space Eclipse (Pure Obsidian)</option>
+                                <option value="electric-indigo">Electric Indigo Wave (Cobalt)</option>
+                                <option value="magma-flow">Volcanic Magma Flow (Molten Crimson)</option>
+                                <option value="cyber-emerald">Matrix Green Cyber (Emerald Grid)</option>
+                                <option value="sakura-blossom">Sakura Blossom Garden (Pastel Pink)</option>
+                                <option value="ice-glacier">Arctic Glacier Shelf (Cyan Ice)</option>
+                                <option value="bento-grid-dark">Monochrome Bento Grid (Minimal Carbon)</option>
+                                <option value="solar-storm">Solar Storm Flares (Solar Amber)</option>
                                 <option value="custom">Custom Image Background URL</option>
                               </select>
                             </div>

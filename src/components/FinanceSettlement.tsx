@@ -44,6 +44,27 @@ export default function FinanceSettlement({
 }: FinanceSettlementProps) {
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
+  const renderMemberPhotoBeforeName = (memberId: string, name: string) => {
+    const found = members.find(m => m.id === memberId);
+    const photo = found ? found.photo : null;
+    const initial = name ? name.charAt(0).toUpperCase() : "M";
+    if (photo) {
+      return (
+        <img 
+          src={photo} 
+          alt="" 
+          referrerPolicy="no-referrer"
+          className="w-5 h-5 rounded-full object-cover border border-cyan-500/40 shrink-0" 
+        />
+      );
+    }
+    return (
+      <div className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-[9px] font-extrabold uppercase font-mono shrink-0">
+        {initial}
+      </div>
+    );
+  };
+
   // Excel and PDF State Managers
   const [showLedgerPDFModal, setShowLedgerPDFModal] = useState(false);
   const [pdfIncludeContactInfo, setPdfIncludeContactInfo] = useState(false);
@@ -942,8 +963,8 @@ export default function FinanceSettlement({
                       className="hover:bg-cyan-500/5 cursor-pointer transition-colors"
                       title="Click to view detailed accountings"
                     >
-                      <td className="py-3.5 px-4 font-bold text-slate-300 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                      <td className="py-3.5 px-4 font-bold text-slate-300 flex items-center gap-2">
+                        {renderMemberPhotoBeforeName(m.memberId, m.nickname)}
                         {m.nickname}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.deposit}</td>
@@ -1070,8 +1091,8 @@ export default function FinanceSettlement({
                     <tr key={member.id} className="hover:bg-cyan-500/5 transition-colors group">
                       {/* Left Column: Member name - Sticky! */}
                       <td className="sticky left-0 z-10 font-bold px-3 py-2.5 text-xs text-slate-200 bg-slate-900 border-r border-slate-850 min-w-[120px] shadow-[2px_0_5px_rgba(0,0,0,0.3)]">
-                        <div className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                        <div className="flex items-center gap-2">
+                          {renderMemberPhotoBeforeName(member.id, member.name)}
                           {member.nickname}
                         </div>
                       </td>
@@ -1145,7 +1166,10 @@ export default function FinanceSettlement({
                     return (
                       <tr key={b.id} className="hover:bg-cyan-500/5">
                         <td className="py-3 px-3 font-bold text-slate-200">{b.name}</td>
-                        <td className="py-3 px-3 text-cyan-400 font-semibold">{collector?.nickname || "Admin"}</td>
+                        <td className="py-3 px-3 text-cyan-400 font-semibold flex items-center gap-1.5">
+                          {collector && renderMemberPhotoBeforeName(collector.id, collector.name)}
+                          {collector?.nickname || "Admin"}
+                        </td>
                         <td className="py-3 px-3 text-right font-extrabold font-mono">৳ {b.amount}</td>
                         <td className="py-3 px-3 text-center">
                           <button
@@ -1274,6 +1298,7 @@ export default function FinanceSettlement({
               <div>
                 <h3 className="text-lg font-bold font-display text-cyan-400 uppercase tracking-wide flex items-center gap-2">
                   <UserCheck className="text-orange-500" />
+                  {renderMemberPhotoBeforeName(selectedMemberForAccountings.memberId || selectedMemberForAccountings.id, selectedMemberForAccountings.name)}
                   Individual Accountings: {selectedMemberForAccountings.nickname}
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
