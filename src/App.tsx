@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
-  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload
+  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award
 } from "lucide-react";
 
 // Components
@@ -20,6 +20,7 @@ import Deposits from "./components/Deposits.tsx";
 import FinanceSettlement from "./components/FinanceSettlement.tsx";
 import AuditLogs from "./components/AuditLogs.tsx";
 import Notices from "./components/Notices.tsx";
+import Democracy from "./components/Democracy.tsx";
 
 // Types
 import { Member, MessMonth, UserRole } from "./types.js";
@@ -860,6 +861,56 @@ export default function App() {
   const [dropdownOptions, setDropdownOptions] = useState<string[]>(["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"]);
   const [translations, setTranslations] = useState<Record<string, string>>({});
 
+  // Login page customizer
+  const [loginCustomization, setLoginCustomization] = useState({
+    title: "Mess ERP",
+    subtitle: "BENGAL BACHELOR ERP ENGINE",
+    fontStyle: "sans",
+    backgroundType: "theme",
+    backgroundTheme: "neon-shallows",
+    backgroundColor: "#020617",
+    backgroundImageUrl: "",
+    showBrandingIcon: true,
+    showGoogleLogin: true,
+    cardBg: "rgba(15, 23, 42, 0.6)",
+    textColor: "#ffffff",
+    accentColor: "#22d3ee",
+    animationType: "pulse"
+  });
+
+  // Home page customizer
+  const [homeCustomization, setHomeCustomization] = useState({
+    welcomeTitle: "Dashboard Overview",
+    welcomeSubtitle: "BENGAL BACHELOR COOPERATIVE ECOSYSTEM",
+    fontStyle: "sans",
+    backgroundType: "theme",
+    backgroundTheme: "neon-shallows",
+    backgroundColor: "#020617",
+    backgroundImageUrl: "",
+    cardBg: "rgba(30, 41, 59, 0.4)",
+    textColor: "#ffffff",
+    accentColor: "#22d3ee",
+    showQuickActions: true,
+    showBanner: true
+  });
+
+  // Elections/Ballot voting states
+  const [elections, setElections] = useState<{
+    enabled: boolean;
+    candidates: string[];
+    votes: {
+      SUPERUSER: Record<string, string>;
+      ASSISTANT_SUPERUSER: Record<string, string>;
+    };
+  }>({
+    enabled: false,
+    candidates: [],
+    votes: {
+      SUPERUSER: {},
+      ASSISTANT_SUPERUSER: {}
+    }
+  });
+
   const fetchMesses = async (token: string) => {
     try {
       const response = await fetch("/api/admin/messes", {
@@ -872,6 +923,20 @@ export default function App() {
       }
     } catch (e) {
       console.error("Failed to fetch messes:", e);
+    }
+  };
+
+  const fetchElections = async (token: string) => {
+    try {
+      const response = await fetch("/api/elections", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setElections(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch elections:", e);
     }
   };
 
@@ -897,6 +962,8 @@ export default function App() {
         if (data.messAnimations) setMessAnimations(prev => ({ ...prev, ...data.messAnimations }));
         if (data.dashboardVisibility) setDashboardVisibility(prev => ({ ...prev, ...data.dashboardVisibility }));
         if (data.dateRestrictions) setDateRestrictions(prev => ({ ...prev, ...data.dateRestrictions }));
+        if (data.loginCustomization) setLoginCustomization(prev => ({ ...prev, ...data.loginCustomization }));
+        if (data.homeCustomization) setHomeCustomization(prev => ({ ...prev, ...data.homeCustomization }));
       }
     } catch (e) {
       console.error("Failed to fetch settings:", e);
@@ -932,6 +999,8 @@ export default function App() {
           if (s.messAnimations) setMessAnimations(s.messAnimations);
           if (s.dashboardVisibility) setDashboardVisibility(s.dashboardVisibility);
           if (s.dateRestrictions) setDateRestrictions(s.dateRestrictions);
+          if (s.loginCustomization) setLoginCustomization(s.loginCustomization);
+          if (s.homeCustomization) setHomeCustomization(s.homeCustomization);
         }
         return true;
       } else {
@@ -1036,6 +1105,7 @@ export default function App() {
       fetchMonthsAndMembers(sessionToken);
       fetchSettings(sessionToken);
       fetchMesses(sessionToken);
+      fetchElections(sessionToken);
     }
   }, [sessionToken]);
 
@@ -1407,7 +1477,7 @@ export default function App() {
         {/* Glow backgrounds */}
         <div className="absolute left-1/4 top-1/4 w-96 h-96 bg-radial-gradient opacity-20 animate-pulse pointer-events-none"></div>
         <div className="absolute right-1/4 bottom-1/4 w-96 h-96 bg-radial-gradient opacity-25 animate-pulse pointer-events-none"></div>
-        <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} />
+        <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
       </div>
     );
   }
@@ -1421,6 +1491,7 @@ export default function App() {
     { id: "market", label: t("Market Logs"), icon: <ShoppingCart size={16} /> },
     { id: "deposits", label: t("Cash Deposits"), icon: <DollarSign size={16} /> },
     { id: "finance", label: t("Settlement Sheet"), icon: <FileSpreadsheet size={16} /> },
+    { id: "democracy", label: t("Democracy Ballot"), icon: <Vote size={16} /> },
     { id: "notices", label: t("Notices"), icon: <Bell size={16} /> },
     { id: "audit", label: t("Audit Log"), icon: <Shield size={16} /> },
     { id: "settings", label: t("ERP Control Panel"), icon: <Settings size={16} /> }
@@ -1893,6 +1964,7 @@ export default function App() {
               triggerRefresh={handleRefreshAll}
               months={months}
               onChangeMonth={setCurrentMonthId}
+              homeCustomization={homeCustomization}
             />
           )}
 
@@ -1976,6 +2048,21 @@ export default function App() {
             <AuditLogs 
               currentUser={currentUser}
               isDarkMode={isDarkMode}
+            />
+          )}
+
+          {activeTab === "democracy" && (
+            <Democracy 
+              currentUser={currentUser}
+              isDarkMode={isDarkMode}
+              members={membersList}
+              elections={elections}
+              sessionToken={sessionToken}
+              onRefresh={() => {
+                fetchElections(sessionToken);
+                fetchMonthsAndMembers(sessionToken);
+              }}
+              currencySymbol={currencySymbol}
             />
           )}
 
@@ -3012,6 +3099,280 @@ export default function App() {
 
                         </div>
                       </div>
+
+                      {/* Login Page Customizer */}
+                      <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-4">
+                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Login Page Customizer</h4>
+                        <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                          Customize every single layout parameter of the Login Screen. Set custom fonts, background themes, custom brand text, animations, and toggle interactive elements.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Login Title</label>
+                            <input
+                              type="text"
+                              value={loginCustomization?.title || ""}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, title: e.target.value }))}
+                              placeholder="Mess ERP"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Login Subtitle</label>
+                            <input
+                              type="text"
+                              value={loginCustomization?.subtitle || ""}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, subtitle: e.target.value }))}
+                              placeholder="BENGAL BACHELOR ERP ENGINE"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Font Style Preset</label>
+                            <select
+                              value={loginCustomization?.fontStyle || "sans"}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, fontStyle: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            >
+                              <option value="sans">Modern Sans (Inter)</option>
+                              <option value="mono">Brutalist Technical (Fira Code)</option>
+                              <option value="serif">Elegant Editorial (Georgia)</option>
+                              <option value="display">Clean Geometry (Space Grotesk)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Background Type</label>
+                            <select
+                              value={loginCustomization?.backgroundType || "theme"}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundType: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            >
+                              <option value="theme">Preset Background Theme</option>
+                              <option value="color">Flat Solid Color</option>
+                              <option value="image">Custom Background Image URL</option>
+                            </select>
+                          </div>
+
+                          {loginCustomization?.backgroundType === "theme" && (
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Background Theme</label>
+                              <select
+                                value={loginCustomization?.backgroundTheme || "neon-shallows"}
+                                onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundTheme: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                              >
+                                <option value="default">Default Standard Slate</option>
+                                <option value="cosmic-void">Cosmic Void (Deep Purple)</option>
+                                <option value="midnight-nebula">Midnight Nebula</option>
+                                <option value="cyberpunk-grid">Cyberpunk Grid</option>
+                                <option value="sunset-glow">Sunset Velvet</option>
+                                <option value="ocean-depth">Ocean Depths</option>
+                                <option value="forest-whisper">Forest Whisper</option>
+                                <option value="neon-shallows">Retro Neon Shallows</option>
+                                <option value="deep-space">Deep Space Obsidian</option>
+                              </select>
+                            </div>
+                          )}
+
+                          {loginCustomization?.backgroundType === "color" && (
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Background Color (Hex)</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="color"
+                                  value={loginCustomization?.backgroundColor || "#020617"}
+                                  onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                                  className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
+                                />
+                                <input
+                                  type="text"
+                                  value={loginCustomization?.backgroundColor || ""}
+                                  onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                                  className="flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {loginCustomization?.backgroundType === "image" && (
+                            <div className="space-y-1.5 col-span-1 sm:col-span-2">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Background Image URL</label>
+                              <input
+                                type="text"
+                                value={loginCustomization?.backgroundImageUrl || ""}
+                                onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundImageUrl: e.target.value }))}
+                                placeholder="https://images.unsplash.com/photo-..."
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                              />
+                            </div>
+                          )}
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Login Form Card Bg</label>
+                            <input
+                              type="text"
+                              value={loginCustomization?.cardBg || ""}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, cardBg: e.target.value }))}
+                              placeholder="rgba(15, 23, 42, 0.8)"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Primary Text Color</label>
+                            <input
+                              type="text"
+                              value={loginCustomization?.textColor || ""}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, textColor: e.target.value }))}
+                              placeholder="#ffffff"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accent Glow Color</label>
+                            <input
+                              type="text"
+                              value={loginCustomization?.accentColor || ""}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, accentColor: e.target.value }))}
+                              placeholder="#22d3ee"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Login Animation</label>
+                            <select
+                              value={loginCustomization?.animationType || "fade"}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, animationType: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            >
+                              <option value="none">None (Static Form)</option>
+                              <option value="fade">Subtle Elegant Fade-In</option>
+                              <option value="slide">Dynamic Slide-Up Entrance</option>
+                              <option value="pulse">Soft Cyclic Pulsing Wave</option>
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-5">
+                            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2 rounded border border-slate-900 w-full">
+                              <input
+                                type="checkbox"
+                                checked={!!loginCustomization?.showBrandingIcon}
+                                onChange={(e) => setLoginCustomization(prev => ({ ...prev, showBrandingIcon: e.target.checked }))}
+                                className="accent-cyan-500 cursor-pointer"
+                              />
+                              <span className="text-[11px] text-slate-300 font-medium">Show Brand Icon</span>
+                            </label>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-5">
+                            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2 rounded border border-slate-900 w-full">
+                              <input
+                                type="checkbox"
+                                checked={!!loginCustomization?.showGoogleLogin}
+                                onChange={(e) => setLoginCustomization(prev => ({ ...prev, showGoogleLogin: e.target.checked }))}
+                                className="accent-cyan-500 cursor-pointer"
+                              />
+                              <span className="text-[11px] text-slate-300 font-medium">Show Google Login</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Home Page / Welcome Banner Customizer */}
+                      <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-4">
+                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Home/Dashboard Screen Customizer</h4>
+                        <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                          Modify the primary greeting card, typography, and card-level branding styles for the Home dashboard. Use <code className="text-cyan-400 font-mono font-bold text-[10px] bg-slate-950 px-1 py-0.5 rounded">{"{nickname}"}</code> in title to dynamically reference the user.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Welcome Banner Title</label>
+                            <input
+                              type="text"
+                              value={homeCustomization?.welcomeTitle || ""}
+                              onChange={(e) => setHomeCustomization(prev => ({ ...prev, welcomeTitle: e.target.value }))}
+                              placeholder="Assalamu Alaikum, {nickname}!"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Welcome Banner Subtitle</label>
+                            <input
+                              type="text"
+                              value={homeCustomization?.welcomeSubtitle || ""}
+                              onChange={(e) => setHomeCustomization(prev => ({ ...prev, welcomeSubtitle: e.target.value }))}
+                              placeholder="Welcome to the Mess ERP Hub..."
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Font Style Preset</label>
+                            <select
+                              value={homeCustomization?.fontStyle || "sans"}
+                              onChange={(e) => setHomeCustomization(prev => ({ ...prev, fontStyle: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            >
+                              <option value="sans">Modern Sans (Outfit)</option>
+                              <option value="mono">Brutalist Technical (Fira Code)</option>
+                              <option value="serif">Elegant Editorial (Georgia)</option>
+                              <option value="display">Clean Geometry (Space Grotesk)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Card Background Color</label>
+                            <input
+                              type="text"
+                              value={homeCustomization?.cardBg || ""}
+                              onChange={(e) => setHomeCustomization(prev => ({ ...prev, cardBg: e.target.value }))}
+                              placeholder="rgba(30, 41, 59, 0.4)"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Text Color (Hex or CSS)</label>
+                            <input
+                              type="text"
+                              value={homeCustomization?.textColor || ""}
+                              onChange={(e) => setHomeCustomization(prev => ({ ...prev, textColor: e.target.value }))}
+                              placeholder="#ffffff"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accent Glow Color</label>
+                            <input
+                              type="text"
+                              value={homeCustomization?.accentColor || ""}
+                              onChange={(e) => setHomeCustomization(prev => ({ ...prev, accentColor: e.target.value }))}
+                              placeholder="#22d3ee"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-5">
+                            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2 rounded border border-slate-900 w-full">
+                              <input
+                                type="checkbox"
+                                checked={homeCustomization?.showBanner !== false}
+                                onChange={(e) => setHomeCustomization(prev => ({ ...prev, showBanner: e.target.checked }))}
+                                className="accent-cyan-500 cursor-pointer"
+                              />
+                              <span className="text-[11px] text-slate-300 font-medium">Render Welcome Banner</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
 
                     <div className="mt-4 flex justify-end">
@@ -3025,9 +3386,11 @@ export default function App() {
                             customColors, 
                             dashboardVisibility, 
                             messAnimations,
-                            dateRestrictions
+                            dateRestrictions,
+                            loginCustomization,
+                            homeCustomization
                           });
-                          alert("UI Theme customisations, animations, color palettes, and dashboard visibility configurations applied successfully.");
+                          alert("UI Customisations, Login layout, Home dashboard settings, and animation templates saved & applied successfully.");
                         }}
                         className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 font-bold text-xs text-white rounded-xl cursor-pointer transition-all shrink-0 uppercase font-display tracking-wide"
                       >

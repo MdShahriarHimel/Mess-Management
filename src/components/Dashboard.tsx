@@ -19,6 +19,20 @@ interface DashboardProps {
   triggerRefresh: () => void;
   months?: any[];
   onChangeMonth?: (monthId: string) => void;
+  homeCustomization?: {
+    welcomeTitle?: string;
+    welcomeSubtitle?: string;
+    fontStyle?: string;
+    backgroundType?: string;
+    backgroundTheme?: string;
+    backgroundColor?: string;
+    backgroundImageUrl?: string;
+    cardBg?: string;
+    textColor?: string;
+    accentColor?: string;
+    showQuickActions?: boolean;
+    showBanner?: boolean;
+  };
 }
 
 export default function Dashboard({ 
@@ -29,7 +43,8 @@ export default function Dashboard({
   reportSummary,
   triggerRefresh,
   months = [],
-  onChangeMonth
+  onChangeMonth,
+  homeCustomization
 }: DashboardProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -238,50 +253,69 @@ export default function Dashboard({
       </div>
       
       {/* Welcome Banner */}
-      <div className={`p-6 rounded-2xl border transition-all relative overflow-hidden ${
-        isDarkMode 
-          ? "glass-panel cyan-glow text-white" 
-          : "glass-panel-light text-slate-800 shadow-md"
-      }`} id="dashboard-banner">
-        {/* Glow effect */}
-        <div className="absolute right-0 top-0 w-64 h-64 bg-radial-gradient opacity-30 pointer-events-none"></div>
+      {homeCustomization?.showBanner !== false && (
+        <div 
+          style={{
+            backgroundColor: homeCustomization?.cardBg || undefined,
+            color: homeCustomization?.textColor || undefined
+          }}
+          className={`p-6 rounded-2xl border transition-all relative overflow-hidden ${
+            isDarkMode 
+              ? "glass-panel cyan-glow text-white" 
+              : "glass-panel-light text-slate-800 shadow-md"
+          } ${
+            homeCustomization?.fontStyle === "mono" ? "font-mono" :
+            homeCustomization?.fontStyle === "serif" ? "font-serif" :
+            homeCustomization?.fontStyle === "display" ? "font-display" : ""
+          }`} 
+          id="dashboard-banner"
+        >
+          {/* Glow effect */}
+          <div className="absolute right-0 top-0 w-64 h-64 bg-radial-gradient opacity-30 pointer-events-none"></div>
 
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
-          <div>
-            <span className="text-xs font-bold tracking-widest text-orange-500 uppercase flex items-center gap-1.5 mb-1">
-              <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping"></span>
-              LIVE ACCESS GRANTED
-            </span>
-            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight font-display flex flex-wrap items-center gap-2">
-              Assalamu Alaikum, <span className="text-cyan-400">{currentUser.nickname}</span>!
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
-                {currentUser.role}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
+            <div>
+              <span className="text-xs font-bold tracking-widest text-orange-500 uppercase flex items-center gap-1.5 mb-1">
+                <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping"></span>
+                LIVE ACCESS GRANTED
               </span>
-            </h2>
-            <p className={`text-xs mt-1 max-w-xl ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
-              Welcome to the <span className="font-semibold text-cyan-500">Mess ERP Hub</span>. Check details, submit your market expenses, track meals, and manage monthly balances with ease.
-            </p>
-            {currentUser.assignedTask ? (
-              <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs text-orange-400 font-medium">
-                <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                <span><strong>Work Assigned:</strong> {currentUser.assignedTask}</span>
-              </div>
-            ) : (
-              <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-500/5 border border-slate-500/10 text-xs text-slate-400">
-                <span>No specific mess duties assigned currently.</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 ${
-              isDarkMode ? "bg-slate-900/80 border-cyan-500/20 text-cyan-300" : "bg-cyan-50 border-cyan-200 text-cyan-700"
-            }`}>
-              <Calendar size={14} />
-              {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </span>
+              <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight flex flex-wrap items-center gap-2">
+                {homeCustomization?.welcomeTitle ? (
+                  homeCustomization.welcomeTitle.replace("{nickname}", currentUser.nickname)
+                ) : (
+                  `Assalamu Alaikum, ${currentUser.nickname}!`
+                )}
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+                  {currentUser.role}
+                </span>
+              </h2>
+              <p className={`text-xs mt-1 max-w-xl ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
+                {homeCustomization?.welcomeSubtitle || "Welcome to the Mess ERP Hub. Check details, submit your market expenses, track meals, and manage monthly balances with ease."}
+              </p>
+              {currentUser.assignedTask ? (
+                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs text-orange-400 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                  <span><strong>Work Assigned:</strong> {currentUser.assignedTask}</span>
+                </div>
+              ) : (
+                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-500/5 border border-slate-500/10 text-xs text-slate-400">
+                  <span>No specific mess duties assigned currently.</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 ${
+                isDarkMode ? "bg-slate-900/80 border-cyan-500/20 text-cyan-300" : "bg-cyan-50 border-cyan-200 text-cyan-700"
+              }`}
+                style={{ borderColor: homeCustomization?.accentColor ? `${homeCustomization.accentColor}30` : undefined, color: homeCustomization?.accentColor || undefined }}
+              >
+                <Calendar size={14} />
+                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Your Personal Meal Summary */}
       <div className={`p-6 rounded-2xl border transition-all ${

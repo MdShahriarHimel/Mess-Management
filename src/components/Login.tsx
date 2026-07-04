@@ -3,16 +3,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound } from "lucide-react";
 import { Member } from "../types.js";
 
 interface LoginProps {
   onLoginSuccess: (token: string, user: Member) => void;
   isDarkMode: boolean;
+  customization?: {
+    title: string;
+    subtitle: string;
+    fontStyle: string;
+    showBrandingIcon: boolean;
+    showGoogleLogin: boolean;
+    cardBg?: string;
+    textColor?: string;
+    accentColor?: string;
+    animationType?: string;
+  };
 }
 
-export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
+export default function Login({ onLoginSuccess, isDarkMode, customization }: LoginProps) {
   const [activeTab, setActiveTab] = useState<"login" | "activate">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,6 +31,46 @@ export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const [liveCustomization, setLiveCustomization] = useState<any>(customization || null);
+
+  useEffect(() => {
+    if (customization) {
+      setLiveCustomization(customization);
+      return;
+    }
+    const fetchPublicSettings = async () => {
+      try {
+        const res = await fetch("/api/settings/public");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.loginCustomization) {
+            setLiveCustomization(data.loginCustomization);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch public settings:", e);
+      }
+    };
+    fetchPublicSettings();
+  }, [customization]);
+
+  const title = liveCustomization?.title || "Mess ERP";
+  const subtitle = liveCustomization?.subtitle || "BENGAL BACHELOR ERP ENGINE";
+  const fontStyle = liveCustomization?.fontStyle || "sans";
+  const showBrandingIcon = liveCustomization?.showBrandingIcon !== false;
+  const showGoogleLogin = liveCustomization?.showGoogleLogin !== false;
+  const accentColor = liveCustomization?.accentColor || "#22d3ee";
+  const animationType = liveCustomization?.animationType || "pulse";
+
+  const fontClass = 
+    fontStyle === "mono" ? "font-mono" : 
+    fontStyle === "serif" ? "font-serif" : 
+    fontStyle === "display" ? "font-display" : "font-sans";
+
+  const animationClass = 
+    animationType === "pulse" ? "animate-pulse" : 
+    animationType === "bounce" ? "animate-bounce" : "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,22 +139,39 @@ export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
 
   return (
     <div className="w-full max-w-md mx-auto" id="login-container">
-      <div className={`p-8 rounded-2xl border transition-all duration-300 ${
-        isDarkMode 
-          ? "glass-panel cyan-glow text-white" 
-          : "glass-panel-light shadow-xl text-slate-800"
-      }`}>
+      <div 
+        style={{
+          backgroundColor: liveCustomization?.cardBg || undefined,
+          color: liveCustomization?.textColor || undefined
+        }}
+        className={`p-8 rounded-2xl border transition-all duration-300 ${fontClass} ${
+          isDarkMode 
+            ? "glass-panel cyan-glow text-white" 
+            : "glass-panel-light shadow-xl text-slate-800"
+        }`}
+      >
         
         {/* Header branding */}
         <div className="text-center mb-8" id="login-header">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 mb-4 animate-pulse">
-            <KeyRound size={32} />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent">
-            Mess ERP
+          {showBrandingIcon && (
+            <div 
+              style={{ borderColor: `${accentColor}40`, color: accentColor }}
+              className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 border mb-4 ${animationClass}`}
+            >
+              <KeyRound size={32} />
+            </div>
+          )}
+          <h1 
+            style={{ 
+              color: liveCustomization?.accentColor || undefined,
+              backgroundImage: liveCustomization?.accentColor ? "none" : undefined
+            }}
+            className="text-3xl font-bold tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent"
+          >
+            {title}
           </h1>
           <p className={`text-xs mt-1 font-mono ${isDarkMode ? "text-cyan-300/60" : "text-slate-500"}`}>
-            BENGAL BACHELOR ERP ENGINE
+            {subtitle}
           </p>
         </div>
 
@@ -117,6 +185,10 @@ export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
                 ? "border-cyan-400 text-cyan-400 font-bold"
                 : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
             }`}
+            style={{
+              borderColor: activeTab === "login" ? accentColor : undefined,
+              color: activeTab === "login" ? accentColor : undefined,
+            }}
           >
             SIGN IN
           </button>
@@ -128,6 +200,10 @@ export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
                 ? "border-cyan-400 text-cyan-400 font-bold"
                 : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
             }`}
+            style={{
+              borderColor: activeTab === "activate" ? accentColor : undefined,
+              color: activeTab === "activate" ? accentColor : undefined,
+            }}
           >
             ACTIVATE ACCOUNT
           </button>
@@ -224,7 +300,10 @@ export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
             id="auth-submit-btn"
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold tracking-wide text-sm shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+            className="w-full py-2.5 rounded-xl text-white font-bold tracking-wide text-sm shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+            style={{
+              background: `linear-gradient(to right, ${accentColor}, ${accentColor}dd)`
+            }}
           >
             {loading ? (
               <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -238,7 +317,7 @@ export default function Login({ onLoginSuccess, isDarkMode }: LoginProps) {
         </form>
 
         {/* Google Sign-In button for login tab */}
-        {activeTab === "login" && (
+        {activeTab === "login" && showGoogleLogin && (
           <>
             <div className="flex items-center my-4">
               <div className="flex-1 border-t border-cyan-500/10"></div>

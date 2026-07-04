@@ -1520,13 +1520,50 @@ function loadSettings() {
       allowPreviousMarket: true,
       allowFutureMealPlanner: true,
       allowPreviousMealPlanner: true
+    },
+    loginCustomization: {
+      title: "Mess ERP",
+      subtitle: "BENGAL BACHELOR ERP ENGINE",
+      fontStyle: "sans", // sans, mono, serif, display
+      backgroundType: "theme", // "theme", "color", "image"
+      backgroundTheme: "neon-shallows",
+      backgroundColor: "#020617",
+      backgroundImageUrl: "",
+      showBrandingIcon: true,
+      showGoogleLogin: true,
+      cardBg: "rgba(15, 23, 42, 0.6)",
+      textColor: "#ffffff",
+      accentColor: "#22d3ee",
+      animationType: "pulse" // pulse, bounce, fade, none
+    },
+    homeCustomization: {
+      welcomeTitle: "Dashboard Overview",
+      welcomeSubtitle: "BENGAL BACHELOR COOPERATIVE ECOSYSTEM",
+      fontStyle: "sans", // sans, mono, serif, display
+      backgroundType: "theme",
+      backgroundTheme: "neon-shallows",
+      backgroundColor: "#020617",
+      backgroundImageUrl: "",
+      cardBg: "rgba(30, 41, 59, 0.4)",
+      textColor: "#ffffff",
+      accentColor: "#22d3ee",
+      showQuickActions: true,
+      showBanner: true
     }
   };
   try {
     if (fs.existsSync(file)) {
       const data = fs.readFileSync(file, "utf-8");
       const parsed = JSON.parse(data);
-      return { ...defaultSettings, ...parsed };
+      return { 
+        ...defaultSettings, 
+        ...parsed,
+        customColors: { ...defaultSettings.customColors, ...(parsed.customColors || {}) },
+        messAnimations: { ...defaultSettings.messAnimations, ...(parsed.messAnimations || {}) },
+        dashboardVisibility: { ...defaultSettings.dashboardVisibility, ...(parsed.dashboardVisibility || {}) },
+        loginCustomization: { ...defaultSettings.loginCustomization, ...(parsed.loginCustomization || {}) },
+        homeCustomization: { ...defaultSettings.homeCustomization, ...(parsed.homeCustomization || {}) }
+      };
     }
   } catch (e) {
     console.error("Error loading settings:", e);
@@ -1549,6 +1586,21 @@ function saveSettings(settings: any) {
     console.error("Error saving settings:", e);
   }
 }
+
+// Public settings (Unauthenticated) for customizing login page
+router.get("/settings/public", (req: Request, res: Response) => {
+  const s = loadSettings();
+  res.json({
+    messName: s.messName,
+    siteColor: s.siteColor,
+    fontSize: s.fontSize,
+    fontStyle: s.fontStyle,
+    logoText: s.logoText,
+    customColors: s.customColors,
+    messAnimations: s.messAnimations,
+    loginCustomization: s.loginCustomization
+  });
+});
 
 router.get("/settings", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   res.json(loadSettings());
@@ -1586,7 +1638,9 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     customColors,
     messAnimations,
     dashboardVisibility,
-    dateRestrictions
+    dateRestrictions,
+    loginCustomization,
+    homeCustomization
   } = req.body;
 
   if (siteColor !== undefined) currentSettings.siteColor = siteColor;
@@ -1604,6 +1658,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (messAnimations !== undefined) currentSettings.messAnimations = { ...currentSettings.messAnimations, ...messAnimations };
   if (dashboardVisibility !== undefined) currentSettings.dashboardVisibility = { ...currentSettings.dashboardVisibility, ...dashboardVisibility };
   if (dateRestrictions !== undefined) currentSettings.dateRestrictions = { ...currentSettings.dateRestrictions, ...dateRestrictions };
+  if (loginCustomization !== undefined) currentSettings.loginCustomization = { ...currentSettings.loginCustomization, ...loginCustomization };
+  if (homeCustomization !== undefined) currentSettings.homeCustomization = { ...currentSettings.homeCustomization, ...homeCustomization };
 
   if (messName !== undefined) {
     if (role !== UserRole.ADMIN) {
@@ -1626,20 +1682,25 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 });
 
 // ---------------------------------------------------------
-// ELECTIONS & VOTING ENDPOINTS
+// ELECTIONS & VOTING ENDPOINTS (INDIVIDUAL MESS SUPPORT)
 // ---------------------------------------------------------
-const ELECTIONS_FILE = path.join(process.cwd(), "data", "elections.json");
-
 function loadElections() {
+  const messId = getActiveMessId();
   const defaultElections = {
+    enabled: false,
+    candidates: [] as string[], // Candidate member IDs
     votes: {
       SUPERUSER: {} as Record<string, string>, // voterId -> candidateId
       ASSISTANT_SUPERUSER: {} as Record<string, string> // voterId -> candidateId
     }
   };
+  const file = messId === "default"
+    ? path.join(process.cwd(), "data", "elections.json")
+    : path.join(process.cwd(), "data", `elections_${messId}.json`);
+
   try {
-    if (fs.existsSync(ELECTIONS_FILE)) {
-      const data = fs.readFileSync(ELECTIONS_FILE, "utf-8");
+    if (fs.existsSync(file)) {
+      const data = fs.readFileSync(file, "utf-8");
       return { ...defaultElections, ...JSON.parse(data) };
     }
   } catch (e) {
@@ -1649,8 +1710,17 @@ function loadElections() {
 }
 
 function saveElections(elections: any) {
+  const messId = getActiveMessId();
+  const file = messId === "default"
+    ? path.join(process.cwd(), "data", "elections.json")
+    : path.join(process.cwd(), "data", `elections_${messId}.json`);
+
   try {
-    fs.writeFileSync(ELECTIONS_FILE, JSON.stringify(elections, null, 2), "utf-8");
+    const dir = path.dirname(file);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(file, JSON.stringify(elections, null, 2), "utf-8");
   } catch (e) {
     console.error(e);
   }
@@ -1658,6 +1728,32 @@ function saveElections(elections: any) {
 
 router.get("/elections", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   res.json(loadElections());
+});
+
+router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.role !== UserRole.ADMIN) {
+    res.status(403).json({ error: "Only the main Admin can configure elections." });
+    return;
+  }
+
+  const { enabled, candidates } = req.body;
+  const elections = loadElections();
+  
+  if (enabled !== undefined) elections.enabled = !!enabled;
+  if (candidates !== undefined) elections.candidates = candidates;
+
+  saveElections(elections);
+  
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "CONFIGURE_ELECTION",
+    "Previous Configuration",
+    JSON.stringify({ enabled, candidates }),
+    `Admin configured election settings for mess ${getActiveMessId()}`
+  );
+
+  res.json({ success: true, elections });
 });
 
 router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
@@ -1670,6 +1766,17 @@ router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: 
   }
 
   const elections = loadElections();
+  if (!elections.enabled) {
+    res.status(403).json({ error: "Elections are currently disabled by the Admin for this mess." });
+    return;
+  }
+
+  // Ensure candidate is authorized
+  if (elections.candidates.length > 0 && !elections.candidates.includes(candidateId)) {
+    res.status(400).json({ error: "This member is not an active candidate in the election." });
+    return;
+  }
+
   if (!elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER"]) {
     elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER"] = {};
   }
@@ -1885,6 +1992,51 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   setActiveMessId(messId);
   logAudit(req.user!.id, req.user!.nickname, "SWITCH_MESS_SCOPE", "Previous", messId, `Switched current ERP database scope to: ${found.name}`);
   res.json({ success: true, activeMessId: messId, name: found.name });
+});
+
+router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.role !== UserRole.ADMIN) {
+    res.status(403).json({ error: "Only the main Admin can delete messes." });
+    return;
+  }
+
+  const { id } = req.params;
+  if (id === "default") {
+    res.status(400).json({ error: "Cannot delete the default main mess." });
+    return;
+  }
+
+  const data = loadMesses();
+  const index = data.messes.findIndex((m: any) => m.id === id);
+  if (index === -1) {
+    res.status(404).json({ error: "Mess not found." });
+    return;
+  }
+
+  const deletedMess = data.messes[index];
+  data.messes.splice(index, 1);
+  saveMesses(data);
+
+  // If we are deleting the currently active mess, switch back to default
+  const activeMessId = getActiveMessId();
+  if (activeMessId === id) {
+    setActiveMessId("default");
+  }
+
+  // Delete associated files
+  try {
+    const backupFile = path.join(process.cwd(), "data", `database_backup_${id}.json`);
+    const settingsFile = path.join(process.cwd(), "data", `settings_${id}.json`);
+    const electionsFile = path.join(process.cwd(), "data", `elections_${id}.json`);
+    if (fs.existsSync(backupFile)) fs.unlinkSync(backupFile);
+    if (fs.existsSync(settingsFile)) fs.unlinkSync(settingsFile);
+    if (fs.existsSync(electionsFile)) fs.unlinkSync(electionsFile);
+  } catch (e) {
+    console.error("Failed to delete mess-specific data files:", e);
+  }
+
+  logAudit(req.user!.id, req.user!.nickname, "DELETE_MESS", deletedMess.name, "None", `Deleted mess: ${deletedMess.name}`);
+  res.json({ success: true, messes: data.messes, activeMessId: getActiveMessId() });
 });
 
 // ---------------------------------------------------------
