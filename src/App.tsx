@@ -24,7 +24,19 @@ import Notices from "./components/Notices.tsx";
 // Types
 import { Member, MessMonth, UserRole } from "./types.js";
 
-const AmbientAnimationOverlay = ({ animations }: { animations: { enableEffect: boolean, effectType: string, animationSpeed: string } }) => {
+const AmbientAnimationOverlay = ({ 
+  animations 
+}: { 
+  animations: { 
+    enableEffect: boolean; 
+    effectType: string; 
+    animationSpeed: string;
+    backgroundTheme?: string;
+    customBackgroundUrl?: string;
+    backgroundOpacity?: number;
+    interactiveBubbles?: boolean;
+  } 
+}) => {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
   React.useEffect(() => {
@@ -45,7 +57,36 @@ const AmbientAnimationOverlay = ({ animations }: { animations: { enableEffect: b
     };
     window.addEventListener("resize", handleResize);
 
+    // Mouse coordinates tracking
+    const mouse = { x: -1000, y: -1000, active: false };
+    const handleMouseMove = (e: MouseEvent) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      mouse.active = true;
+    };
+    const handleMouseLeave = () => {
+      mouse.active = false;
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseleave", handleMouseLeave);
+
     const speedMultiplier = animations.animationSpeed === "slow" ? 0.5 : animations.animationSpeed === "fast" ? 2 : 1;
+
+    // Sparks array for interactive trailing
+    const sparks: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; color: string }> = [];
+
+    const createSpark = (x: number, y: number) => {
+      const colors = ["#22d3ee", "#f43f5e", "#10b981", "#fb923c", "#a78bfa", "#eab308"];
+      sparks.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 4 * speedMultiplier,
+        vy: (Math.random() - 0.5) * 4 * speedMultiplier - 1,
+        r: Math.random() * 3 + 1.5,
+        alpha: 1.0,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    };
 
     if (animations.effectType === "matrix") {
       const columns = Math.floor(width / 20) + 1;
@@ -119,11 +160,252 @@ const AmbientAnimationOverlay = ({ animations }: { animations: { enableEffect: b
         animationFrameId = requestAnimationFrame(render);
       };
       render();
+    } else if (animations.effectType === "stars") {
+      // Twinkling stars + Interactive mouse sparks
+      const stars: Array<{ x: number; y: number; r: number; alpha: number; speed: number; direction: number }> = [];
+      for (let i = 0; i < 80; i++) {
+        stars.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * 1.8 + 0.6,
+          alpha: Math.random(),
+          speed: (Math.random() * 0.02 + 0.005) * speedMultiplier,
+          direction: Math.random() > 0.5 ? 1 : -1
+        });
+      }
+
+      let lastSparkTime = 0;
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        // Render static twinkling stars
+        for (let i = 0; i < stars.length; i++) {
+          const s = stars[i];
+          s.alpha += s.speed * s.direction;
+          if (s.alpha >= 1) {
+            s.alpha = 1;
+            s.direction = -1;
+          } else if (s.alpha <= 0.1) {
+            s.alpha = 0.1;
+            s.direction = 1;
+          }
+
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 255, 255, ${s.alpha})`;
+          ctx.shadowBlur = 4;
+          ctx.shadowColor = "#ffffff";
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0; // reset
+
+        // Create interactive trail sparks when mouse moves
+        if (mouse.active) {
+          const now = Date.now();
+          if (now - lastSparkTime > 30) {
+            createSpark(mouse.x, mouse.y);
+            lastSparkTime = now;
+          }
+        }
+
+        // Draw and update sparks
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const sp = sparks[i];
+          sp.x += sp.vx;
+          sp.y += sp.vy;
+          sp.alpha -= 0.02;
+
+          if (sp.alpha <= 0) {
+            sparks.splice(i, 1);
+            continue;
+          }
+
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+          ctx.fillStyle = sp.color;
+          ctx.globalAlpha = sp.alpha;
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = sp.color;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "bubbles") {
+      // Floating bubbles that repel from mouse cursor
+      const bubbles: Array<{ x: number; y: number; vx: number; vy: number; r: number; color: string; buoyancy: number }> = [];
+      const colors = ["rgba(34, 211, 238, 0.25)", "rgba(167, 139, 250, 0.25)", "rgba(16, 185, 129, 0.25)", "rgba(244, 63, 94, 0.25)"];
+
+      for (let i = 0; i < 40; i++) {
+        bubbles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 1,
+          vy: - (Math.random() * 0.8 + 0.4),
+          r: Math.random() * 12 + 6,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          buoyancy: Math.random() * 0.05 + 0.02
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < bubbles.length; i++) {
+          const b = bubbles[i];
+
+          // Basic physics
+          b.y += b.vy * speedMultiplier;
+          b.x += b.vx * speedMultiplier;
+
+          // Gentle bounce on vertical/horizontal borders
+          if (b.x - b.r < 0) { b.x = b.r; b.vx *= -1; }
+          if (b.x + b.r > width) { b.x = width - b.r; b.vx *= -1; }
+
+          // Repulsion logic when mouse is near
+          if (mouse.active) {
+            const dx = b.x - mouse.x;
+            const dbY = b.y - mouse.y;
+            const dist = Math.sqrt(dx * dx + dbY * dbY);
+            if (dist < 130) {
+              const force = (130 - dist) / 130;
+              b.vx += (dx / dist) * force * 1.8 * speedMultiplier;
+              b.vy += (dbY / dist) * force * 1.8 * speedMultiplier;
+            }
+          }
+
+          // Friction to keep things from getting chaotic
+          b.vx *= 0.94;
+          b.vy *= 0.94;
+
+          // Re-apply steady buoyancy drift
+          b.vy -= b.buoyancy * speedMultiplier;
+          if (b.vy < -2.5) b.vy = -2.5;
+
+          // Wrap back to bottom
+          if (b.y + b.r < -10) {
+            b.y = height + b.r + 20;
+            b.x = Math.random() * width;
+            b.vx = (Math.random() - 0.5) * 1;
+            b.vy = - (Math.random() * 0.8 + 0.4);
+          }
+
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fillStyle = b.color;
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.lineWidth = 1;
+          ctx.fill();
+          ctx.stroke();
+
+          // Highlight shine inside bubble
+          ctx.beginPath();
+          ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.15, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.fill();
+        }
+
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "snow") {
+      // Falling winter snowflakes
+      const flakes: Array<{ x: number; y: number; r: number; d: number; speed: number }> = [];
+      for (let i = 0; i < 60; i++) {
+        flakes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * 3.5 + 1.2,
+          d: Math.random() * 50,
+          speed: (Math.random() * 0.7 + 0.3) * speedMultiplier
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < flakes.length; i++) {
+          const f = flakes[i];
+          f.y += f.speed;
+          f.x += Math.sin(f.d) * 0.4 * speedMultiplier;
+          f.d += 0.01;
+
+          if (f.y > height) {
+            flakes[i] = {
+              ...f,
+              y: -10,
+              x: Math.random() * width,
+              speed: (Math.random() * 0.7 + 0.3) * speedMultiplier
+            };
+          }
+
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+          ctx.shadowBlur = 3;
+          ctx.shadowColor = "#ffffff";
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "fireflies") {
+      // Cozy drifting glowing fireflies
+      const flies: Array<{ x: number; y: number; r: number; vx: number; vy: number; alpha: number; cycle: number; color: string }> = [];
+      for (let i = 0; i < 35; i++) {
+        flies.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * 2.2 + 1.5,
+          vx: (Math.random() - 0.5) * 0.8 * speedMultiplier,
+          vy: (Math.random() - 0.5) * 0.8 * speedMultiplier,
+          alpha: Math.random(),
+          cycle: Math.random() * Math.PI,
+          color: "rgba(234, 179, 8, 0.7)" // Cozy warm yellow
+        });
+      }
+
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        for (let i = 0; i < flies.length; i++) {
+          const f = flies[i];
+          f.x += f.vx;
+          f.y += f.vy;
+          f.cycle += 0.02 * speedMultiplier;
+          f.alpha = (Math.sin(f.cycle) + 1) / 2; // fade in / out nicely
+
+          // boundary wrapping
+          if (f.x < 0) f.x = width;
+          if (f.x > width) f.x = 0;
+          if (f.y < 0) f.y = height;
+          if (f.y > height) f.y = 0;
+
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+          ctx.fillStyle = f.color;
+          ctx.globalAlpha = f.alpha;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = "rgba(234, 179, 8, 0.9)";
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
     }
 
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseleave", handleMouseLeave);
     };
   }, [animations]);
 
@@ -134,7 +416,7 @@ const AmbientAnimationOverlay = ({ animations }: { animations: { enableEffect: b
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0 opacity-[0.22]"
+      className="fixed inset-0 pointer-events-none z-0 opacity-[0.32]"
     />
   );
 };
@@ -173,9 +455,12 @@ export default function App() {
   // Animations/Effects
   const [messAnimations, setMessAnimations] = useState({
     enableEffect: false,
-    effectType: "none", // "none", "matrix", "neon", "confetti"
+    effectType: "none", // "none", "matrix", "neon", "confetti", "stars", "bubbles", "snow", "fireflies"
     animationSpeed: "normal",
-    accentGlow: true
+    accentGlow: true,
+    backgroundTheme: "default", // "default", "cosmic-void", "midnight-nebula", "cyberpunk-grid", "sunset-glow", "ocean-depth", "forest-whisper", "aurora-borealis", "custom"
+    customBackgroundUrl: "",
+    backgroundOpacity: 20
   });
 
   // Dashboard Visibility rules
@@ -735,10 +1020,84 @@ export default function App() {
     return true;
   });
 
+  const getThemeBgStyle = () => {
+    const theme = messAnimations?.backgroundTheme || "default";
+    const customUrl = messAnimations?.customBackgroundUrl || "";
+    const opacity = (messAnimations?.backgroundOpacity ?? 20) / 100;
+
+    if (theme === "custom" && customUrl) {
+      return {
+        backgroundImage: `linear-gradient(rgba(10, 15, 30, ${1 - opacity}), rgba(10, 15, 30, ${1 - opacity})), url("${customUrl}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed",
+        backgroundRepeat: "no-repeat"
+      };
+    }
+
+    if (theme === "cosmic-void") {
+      return {
+        background: "radial-gradient(circle at 50% 50%, #1e1b4b 0%, #090514 70%, #020005 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "midnight-nebula") {
+      return {
+        background: "linear-gradient(135deg, #020617 0%, #1e1b4b 30%, #581c87 60%, #4a044e 85%, #020617 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "cyberpunk-grid") {
+      return {
+        background: "#030008",
+        backgroundImage: `
+          linear-gradient(rgba(139, 92, 246, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(139, 92, 246, 0.05) 1px, transparent 1px),
+          radial-gradient(circle at center, rgba(14, 116, 144, 0.15) 0%, #030008 80%)
+        `,
+        backgroundSize: "40px 40px, 40px 40px, 100% 100%",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "sunset-glow") {
+      return {
+        background: "linear-gradient(135deg, #180020 0%, #3b0764 40%, #701a75 70%, #9a3412 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "ocean-depth") {
+      return {
+        background: "linear-gradient(180deg, #022c22 0%, #042f2e 30%, #115e59 70%, #064e3b 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "forest-whisper") {
+      return {
+        background: "linear-gradient(135deg, #022c22 0%, #064e3b 40%, #14532d 80%, #052e16 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (theme === "aurora-borealis") {
+      return {
+        background: "linear-gradient(135deg, #020617 0%, #043530 30%, #0f172a 60%, #1e1b4b 80%, #020617 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+
+    return {};
+  };
+
   return (
-    <div className={`min-h-screen transition-all duration-300 flex flex-col md:flex-row ${
-      isDarkMode ? "bg-slate-950 text-white font-sans" : "bg-slate-50 text-slate-800 font-sans"
-    }`}>
+    <div 
+      style={getThemeBgStyle()}
+      className={`min-h-screen transition-all duration-300 flex flex-col md:flex-row ${
+        isDarkMode && (!messAnimations?.backgroundTheme || messAnimations?.backgroundTheme === "default") 
+          ? "bg-slate-950 text-white font-sans" 
+          : !isDarkMode && (!messAnimations?.backgroundTheme || messAnimations?.backgroundTheme === "default")
+            ? "bg-slate-50 text-slate-800 font-sans"
+            : "text-white font-sans" // Force elegant high-contrast dark style text if immersive themes are active
+      }`}
+    >
       <style>{`
         :root {
           --color-cyan-300: ${colors.c300} !important;
@@ -1851,48 +2210,121 @@ export default function App() {
 
                       {/* Mess Animations/Effects config */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Interactive Mess Animation Effects</h4>
+                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Interactive Mess Themes & Animation Effects</h4>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
-                          Admins can activate custom ambient animation overlays on active branches (e.g. Dhaka or Chittagong) 
+                          Admins can activate custom ambient animation overlays and immersive background styles on active branches (e.g. Dhaka or Chittagong) 
                           to personalize the branch's aesthetic experience.
                         </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
-                            <input
-                              type="checkbox"
-                              checked={messAnimations?.enableEffect}
-                              onChange={(e) => setMessAnimations(prev => ({ ...prev, enableEffect: e.target.checked }))}
-                              className="accent-cyan-500 cursor-pointer"
-                            />
-                            <span className="text-xs text-slate-300 font-medium">Enable Animated Overlay</span>
-                          </label>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                              <input
+                                type="checkbox"
+                                checked={messAnimations?.enableEffect}
+                                onChange={(e) => setMessAnimations(prev => ({ ...prev, enableEffect: e.target.checked }))}
+                                className="accent-cyan-500 cursor-pointer"
+                              />
+                              <span className="text-xs text-slate-300 font-medium">Enable Animated Overlay</span>
+                            </label>
 
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Effect Type</label>
-                            <select
-                              value={messAnimations?.effectType || "none"}
-                              onChange={(e) => setMessAnimations(prev => ({ ...prev, effectType: e.target.value }))}
-                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                            >
-                              <option value="none">None (Standard Flat UI)</option>
-                              <option value="matrix">Digital Matrix Rain</option>
-                              <option value="neon">Pulsing Cyberpunk Neon Glow</option>
-                              <option value="confetti">Celebratory Confetti Fall</option>
-                            </select>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Effect Type</label>
+                              <select
+                                value={messAnimations?.effectType || "none"}
+                                onChange={(e) => setMessAnimations(prev => ({ ...prev, effectType: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                              >
+                                <option value="none">None (Standard Flat UI)</option>
+                                <option value="matrix">Digital Matrix Rain</option>
+                                <option value="neon">Pulsing Cyberpunk Neon Glow</option>
+                                <option value="confetti">Celebratory Confetti Fall</option>
+                                <option value="stars">Interactive Sparkling Stars (Trail!)</option>
+                                <option value="bubbles">Interactive Repelling Bubbles (Physics!)</option>
+                                <option value="snow">Gentle Winter Snowfall</option>
+                                <option value="fireflies">Twilight Glowing Fireflies</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Animation Speed</label>
+                              <select
+                                value={messAnimations?.animationSpeed || "normal"}
+                                onChange={(e) => setMessAnimations(prev => ({ ...prev, animationSpeed: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                              >
+                                <option value="slow">Relaxed (Slow)</option>
+                                <option value="normal">Standard (Normal)</option>
+                                <option value="fast">Hyper (Fast)</option>
+                              </select>
+                            </div>
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Animation Speed</label>
-                            <select
-                              value={messAnimations?.animationSpeed || "normal"}
-                              onChange={(e) => setMessAnimations(prev => ({ ...prev, animationSpeed: e.target.value }))}
-                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                            >
-                              <option value="slow">Relaxed (Slow)</option>
-                              <option value="normal">Standard (Normal)</option>
-                              <option value="fast">Hyper (Fast)</option>
-                            </select>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Background Theme</label>
+                              <select
+                                value={messAnimations?.backgroundTheme || "default"}
+                                onChange={(e) => setMessAnimations(prev => ({ ...prev, backgroundTheme: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                              >
+                                <option value="default">Default (Standard Slate)</option>
+                                <option value="cosmic-void">Cosmic Void (Deep Purple)</option>
+                                <option value="midnight-nebula">Midnight Nebula (Nebulous violet)</option>
+                                <option value="cyberpunk-grid">Cyberpunk Neon Grid (Techno)</option>
+                                <option value="sunset-glow">Sunset Velvet (Warm Amber)</option>
+                                <option value="ocean-depth">Ocean Depths (Teal Marine)</option>
+                                <option value="forest-whisper">Forest Whisper (Cozy Evergreen)</option>
+                                <option value="aurora-borealis">Aurora Lights (Boreal Glow)</option>
+                                <option value="custom">Custom Image Background URL</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-1 col-span-1 sm:col-span-2">
+                              {messAnimations?.backgroundTheme === "custom" ? (
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Custom Image URL</label>
+                                  <input
+                                    type="text"
+                                    placeholder="https://images.unsplash.com/... or relative path"
+                                    value={messAnimations?.customBackgroundUrl || ""}
+                                    onChange={(e) => setMessAnimations(prev => ({ ...prev, customBackgroundUrl: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="space-y-1 opacity-40">
+                                  <label className="text-[10px] font-bold text-slate-500 block uppercase font-display">Custom Image URL (Disabled)</label>
+                                  <input
+                                    type="text"
+                                    disabled
+                                    placeholder="Select Custom Background Theme to edit"
+                                    className="w-full px-3 py-2 rounded-lg bg-slate-950/40 border border-slate-900 text-xs text-slate-600 cursor-not-allowed focus:outline-none"
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </div>
+
+                          {messAnimations?.backgroundTheme === "custom" && (
+                            <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-950/40 space-y-2">
+                              <div className="flex justify-between items-center">
+                                <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Background Blend Opacity</label>
+                                <span className="text-xs font-mono font-bold text-cyan-400">{messAnimations?.backgroundOpacity ?? 20}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="5"
+                                max="95"
+                                step="5"
+                                value={messAnimations?.backgroundOpacity ?? 20}
+                                onChange={(e) => setMessAnimations(prev => ({ ...prev, backgroundOpacity: parseInt(e.target.value) }))}
+                                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                              />
+                              <p className="text-[10px] text-slate-500 leading-tight">
+                                Adjust how prominently the background image shows through. Lower values make it more subtle, preventing UI text reading issues.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
 
