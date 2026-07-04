@@ -13,9 +13,19 @@ interface FoodMenuProps {
   currentUser: Member;
   currentMonthId: string;
   isDarkMode: boolean;
+  dateRestrictions?: {
+    allowFutureMeals?: boolean;
+    allowPreviousMeals?: boolean;
+    allowFutureDeposits?: boolean;
+    allowPreviousDeposits?: boolean;
+    allowFutureMarket?: boolean;
+    allowPreviousMarket?: boolean;
+    allowFutureMealPlanner?: boolean;
+    allowPreviousMealPlanner?: boolean;
+  };
 }
 
-export default function FoodMenu({ currentUser, currentMonthId, isDarkMode }: FoodMenuProps) {
+export default function FoodMenu({ currentUser, currentMonthId, isDarkMode, dateRestrictions }: FoodMenuProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [lunchVegetable, setLunchVegetable] = useState("");
   const [lunchMain, setLunchMain] = useState("");
@@ -88,6 +98,24 @@ export default function FoodMenu({ currentUser, currentMonthId, isDarkMode }: Fo
     setError(null);
     setSuccess(null);
 
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isFutureDate = selectedDate > todayStr;
+    const isPastDate = selectedDate < todayStr;
+
+    const allowFuture = dateRestrictions?.allowFutureMealPlanner ?? true;
+    const allowPast = dateRestrictions?.allowPreviousMealPlanner ?? true;
+
+    if (isFutureDate && !allowFuture) {
+      setError("Action Blocked: Future date entries are locked by administrators for meal planning.");
+      setLoading(false);
+      return;
+    }
+    if (isPastDate && !allowPast) {
+      setError("Action Blocked: Past date entries are locked by administrators for meal planning.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch("/api/foodmenu", {
         method: "POST",
@@ -133,6 +161,15 @@ export default function FoodMenu({ currentUser, currentMonthId, isDarkMode }: Fo
   // Every user can edit the food menu
   const canEditMenu = true;
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isFutureDate = selectedDate > todayStr;
+  const isPastDate = selectedDate < todayStr;
+
+  const allowFuture = dateRestrictions?.allowFutureMealPlanner ?? true;
+  const allowPast = dateRestrictions?.allowPreviousMealPlanner ?? true;
+
+  const isRestrictedByDate = (isFutureDate && !allowFuture) || (isPastDate && !allowPast);
+
   return (
     <div className="space-y-6" id="food-menu-wrapper">
       
@@ -173,14 +210,29 @@ export default function FoodMenu({ currentUser, currentMonthId, isDarkMode }: Fo
                 
                 {!editMode && (
                   <button
+                    disabled={isRestrictedByDate}
                     onClick={() => setEditMode(true)}
-                    className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 cursor-pointer text-xs flex items-center gap-1 font-bold"
+                    className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 font-bold ${
+                      isRestrictedByDate
+                        ? "opacity-40 cursor-not-allowed bg-slate-800 border-slate-700 text-slate-500"
+                        : "bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 cursor-pointer"
+                    }`}
+                    title={isRestrictedByDate ? "Editing for this date is restricted by admin" : "Edit meal arrangements"}
                   >
                     <Edit size={13} /> EDIT
                   </button>
                 )}
               </div>
             </div>
+
+            {isRestrictedByDate && (
+              <div className="mb-4 p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>
+                  <strong>Access Restricted:</strong> {isFutureDate ? "Future" : "Past"} date editing is disabled by administrators for this section.
+                </span>
+              </div>
+            )}
 
             {error && (
               <div className="mb-4 p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">

@@ -15,6 +15,16 @@ interface MarketLogsProps {
   members: Member[];
   isDarkMode: boolean;
   onRefresh: () => void;
+  dateRestrictions?: {
+    allowFutureMeals?: boolean;
+    allowPreviousMeals?: boolean;
+    allowFutureDeposits?: boolean;
+    allowPreviousDeposits?: boolean;
+    allowFutureMarket?: boolean;
+    allowPreviousMarket?: boolean;
+    allowFutureMealPlanner?: boolean;
+    allowPreviousMealPlanner?: boolean;
+  };
 }
 
 export default function MarketLogs({ 
@@ -22,7 +32,8 @@ export default function MarketLogs({
   currentMonthId, 
   members, 
   isDarkMode, 
-  onRefresh 
+  onRefresh,
+  dateRestrictions
 }: MarketLogsProps) {
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -36,6 +47,12 @@ export default function MarketLogs({
   const [description, setDescription] = useState("");
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [isExtra, setIsExtra] = useState(false);
+
+  // Lunch & Dinner arrangements for the selected Shopping Date
+  const [lunchVegetable, setLunchVegetable] = useState("");
+  const [lunchMain, setLunchMain] = useState("");
+  const [dinnerVegetable, setDinnerVegetable] = useState("");
+  const [dinnerMain, setDinnerMain] = useState("");
   
   // Duty Schedule form states
   const [scheduleMemberId, setScheduleMemberId] = useState("");
@@ -75,6 +92,36 @@ export default function MarketLogs({
     fetchMarketsAndSchedules();
   }, [currentMonthId]);
 
+  // Load existing food menu for the selected shopping date
+  useEffect(() => {
+    const fetchMenuForDate = async () => {
+      if (!currentMonthId || !date) return;
+      try {
+        const response = await fetch(`/api/foodmenu/${currentMonthId}`, {
+          headers: { "Authorization": `Bearer ${currentUser.id}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const todayMenu = data.menu?.find((item: any) => item.date === date);
+          if (todayMenu) {
+            setLunchVegetable(todayMenu.lunchVegetable || "");
+            setLunchMain(todayMenu.lunchMain || "");
+            setDinnerVegetable(todayMenu.dinnerVegetable || "");
+            setDinnerMain(todayMenu.dinnerMain || "");
+          } else {
+            setLunchVegetable("");
+            setLunchMain("");
+            setDinnerVegetable("");
+            setDinnerMain("");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load food menu for date:", e);
+      }
+    };
+    fetchMenuForDate();
+  }, [date, currentMonthId, currentUser.id]);
+
   // Handle Photo selection and base64 resizing
   const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -107,6 +154,10 @@ export default function MarketLogs({
     setDescription("");
     setReceiptUrl(null);
     setIsExtra(false);
+    setLunchVegetable("");
+    setLunchMain("");
+    setDinnerVegetable("");
+    setDinnerMain("");
     setError(null);
   };
 
@@ -116,7 +167,26 @@ export default function MarketLogs({
     setLoading(true);
     setError(null);
 
-    // Check constraint: members can log ONLY for their assigned dates (contained in duties under task matching "Market") OR as extra market expenses
+    // 1. Validate date restrictions
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isFutureDate = date > todayStr;
+    const isPastDate = date < todayStr;
+
+    const allowFuture = dateRestrictions?.allowFutureMarket ?? true;
+    const allowPast = dateRestrictions?.allowPreviousMarket ?? true;
+
+    if (isFutureDate && !allowFuture) {
+      setError("Action Blocked: Future date entries are locked by administrators for market logs.");
+      setLoading(false);
+      return;
+    }
+    if (isPastDate && !allowPast) {
+      setError("Action Blocked: Past date entries are locked by administrators for market logs.");
+      setLoading(false);
+      return;
+    }
+
+    // 2. Validate user assignment rules
     const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
     const isAssignedDay = duties.some(d => d.memberId === currentUser.id && d.name.toLowerCase().includes("market"));
     const allowed = isManagerOrAdmin || isAssignedDay || isExtra;
@@ -127,7 +197,36 @@ export default function MarketLogs({
       return;
     }
 
+    // 3. Enforce Lunch & Dinner arrangements for that shopping date
+    if (!lunchVegetable.trim() || !lunchMain.trim() || !dinnerVegetable.trim() || !dinnerMain.trim()) {
+      setError("Forbidden: You must fill out both Lunch and Dinner arrangements (vegetable + main course) for this shopping date before you can submit your bazar expenditure.");
+      setLoading(false);
+      return;
+    }
+
     try {
+      // 4. Save food menu arrangements first
+      const menuResponse = await fetch("/api/foodmenu", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({
+          monthId: currentMonthId,
+          date,
+          lunchVegetable,
+          lunchMain,
+          dinnerVegetable,
+          dinnerMain
+        })
+      });
+      if (!menuResponse.ok) {
+        const errData = await menuResponse.json();
+        throw new Error(errData.error || "Failed to update food menu arrangements first.");
+      }
+
+      // 5. Save market expense entry
       const response = await fetch("/api/markets", {
         method: "POST",
         headers: {
@@ -168,6 +267,24 @@ export default function MarketLogs({
       alert("Please select a member and date");
       return;
     }
+
+    // Validate date restrictions for scheduling
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isFutureSchedule = scheduleDate > todayStr;
+    const isPastSchedule = scheduleDate < todayStr;
+
+    const allowFuture = dateRestrictions?.allowFutureMarket ?? true;
+    const allowPast = dateRestrictions?.allowPreviousMarket ?? true;
+
+    if (isFutureSchedule && !allowFuture) {
+      alert("Action Blocked: Future date entries are locked by administrators for market duties.");
+      return;
+    }
+    if (isPastSchedule && !allowPast) {
+      alert("Action Blocked: Past date entries are locked by administrators for market duties.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -514,6 +631,73 @@ export default function MarketLogs({
                     onChange={handleReceiptUpload}
                     className="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-500/10 file:text-cyan-400 file:cursor-pointer hover:file:bg-cyan-500/20"
                   />
+                </div>
+              </div>
+
+              {/* Daily Meal Arrangement - Required to log bazar expenditure */}
+              <div className="p-3 rounded-lg border border-cyan-500/10 bg-cyan-500/5 space-y-2.5">
+                <div className="flex items-center gap-1.5 border-b border-cyan-500/10 pb-1.5">
+                  <Sparkles size={14} className="text-cyan-400" />
+                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
+                    Required: Lunch & Dinner Arrangement
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  You must enter the meal items planned/arranged for this market date before you can log your expense.
+                </p>
+
+                {/* Lunch arrangement */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-extrabold text-orange-400 uppercase tracking-wider block">Lunch (দুপুর)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="শাক-সবজি / ভাজি"
+                      value={lunchVegetable}
+                      onChange={(e) => setLunchVegetable(e.target.value)}
+                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
+                      }`}
+                    />
+                    <input
+                      type="text"
+                      required
+                      placeholder="মাছ / মাংস (Main)"
+                      value={lunchMain}
+                      onChange={(e) => setLunchMain(e.target.value)}
+                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* Dinner arrangement */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-extrabold text-orange-400 uppercase tracking-wider block">Dinner (রাত)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="শাক-সবজি / ভাজি"
+                      value={dinnerVegetable}
+                      onChange={(e) => setDinnerVegetable(e.target.value)}
+                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
+                      }`}
+                    />
+                    <input
+                      type="text"
+                      required
+                      placeholder="মাছ / মাংস (Main)"
+                      value={dinnerMain}
+                      onChange={(e) => setDinnerMain(e.target.value)}
+                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
+                      }`}
+                    />
+                  </div>
                 </div>
               </div>
 

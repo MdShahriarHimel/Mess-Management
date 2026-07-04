@@ -24,6 +24,16 @@ interface DepositsProps {
     cardBg: string;
     accentColor: string;
   };
+  dateRestrictions?: {
+    allowFutureMeals?: boolean;
+    allowPreviousMeals?: boolean;
+    allowFutureDeposits?: boolean;
+    allowPreviousDeposits?: boolean;
+    allowFutureMarket?: boolean;
+    allowPreviousMarket?: boolean;
+    allowFutureMealPlanner?: boolean;
+    allowPreviousMealPlanner?: boolean;
+  };
 }
 
 export default function Deposits({ 
@@ -33,7 +43,8 @@ export default function Deposits({
   isDarkMode, 
   onRefresh,
   currencySymbol = "৳",
-  customColors
+  customColors,
+  dateRestrictions
 }: DepositsProps) {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -69,6 +80,23 @@ export default function Deposits({
       alert("Please enter member and amount");
       return;
     }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isFutureDate = date > todayStr;
+    const isPastDate = date < todayStr;
+
+    const allowFuture = dateRestrictions?.allowFutureDeposits ?? false;
+    const allowPast = dateRestrictions?.allowPreviousDeposits ?? true;
+
+    if (isFutureDate && !allowFuture) {
+      alert("Action Blocked: Cash deposits cannot be made for future dates.");
+      return;
+    }
+    if (isPastDate && !allowPast) {
+      alert("Action Blocked: Cash deposits cannot be made for past dates.");
+      return;
+    }
+
     setLoading(true);
 
     try {

@@ -1078,22 +1078,23 @@ export default function FinanceSettlement({
 
                       {/* Date Cells */}
                       {datesList.map((d) => {
-                        const val = spreadsheetData[member.id]?.[d] !== undefined ? spreadsheetData[member.id][d] : 0;
+                        const val = spreadsheetData[member.id]?.[d];
+                        const isBlank = val === undefined || val === null || val === 0;
                         return (
                           <td key={d} className="p-0 border border-slate-850 text-center bg-slate-950/10 min-w-12">
-                            {canEditSpreadsheet ? (
+                             {canEditSpreadsheet ? (
                               <input
                                 type="number"
                                 step="0.5"
                                 min="0"
                                 max="10"
-                                value={val}
+                                value={isBlank ? "" : val}
                                 onChange={(e) => handleCellChange(member.id, d, e.target.value)}
-                                className={`w-12 text-center bg-transparent border-0 focus:bg-slate-800 focus:ring-1 focus:ring-cyan-500 p-1.5 text-xs font-mono font-extrabold transition-all rounded outline-none ${getCellColorClass(val)}`}
+                                className={`w-12 text-center bg-transparent border-0 focus:bg-slate-800 focus:ring-1 focus:ring-cyan-500 p-1.5 text-xs font-mono font-extrabold transition-all rounded outline-none ${getCellColorClass(val || 0)}`}
                               />
                             ) : (
-                              <span className={`block py-1.5 text-center font-mono text-xs font-extrabold ${getCellColorClass(val)}`}>
-                                {val}
+                              <span className={`block py-1.5 text-center font-mono text-xs font-extrabold ${getCellColorClass(val || 0)}`}>
+                                {isBlank ? "" : val}
                               </span>
                             )}
                           </td>

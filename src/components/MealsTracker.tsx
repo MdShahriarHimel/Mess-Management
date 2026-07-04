@@ -15,6 +15,16 @@ interface MealsTrackerProps {
   members: Member[];
   isDarkMode: boolean;
   onRefresh: () => void;
+  dateRestrictions?: {
+    allowFutureMeals?: boolean;
+    allowPreviousMeals?: boolean;
+    allowFutureDeposits?: boolean;
+    allowPreviousDeposits?: boolean;
+    allowFutureMarket?: boolean;
+    allowPreviousMarket?: boolean;
+    allowFutureMealPlanner?: boolean;
+    allowPreviousMealPlanner?: boolean;
+  };
 }
 
 export default function MealsTracker({ 
@@ -22,7 +32,8 @@ export default function MealsTracker({
   currentMonthId, 
   members, 
   isDarkMode, 
-  onRefresh 
+  onRefresh,
+  dateRestrictions
 }: MealsTrackerProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [mealsData, setMealsData] = useState<Record<string, { lunch: number; dinner: number }>>({});
@@ -152,11 +163,26 @@ export default function MealsTracker({
   const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
   const todayStr = new Date().toISOString().split("T")[0];
   const isFutureDate = selectedDate > todayStr;
-  const canEditMeals = isManagerOrAdmin && (!isFutureDate || currentUser.role === UserRole.ADMIN);
+  const isPastDate = selectedDate < todayStr;
+
+  const allowFuture = dateRestrictions?.allowFutureMeals ?? false;
+  const allowPast = dateRestrictions?.allowPreviousMeals ?? true;
+
+  const isRestrictedByDate = (isFutureDate && !allowFuture) || (isPastDate && !allowPast);
+  const canEditMeals = isManagerOrAdmin && !isRestrictedByDate;
 
   return (
     <div className="space-y-6" id="meals-tracker-wrapper">
       
+      {isRestrictedByDate && (
+        <div className="p-3.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs flex items-center gap-2">
+          <AlertTriangle size={16} className="shrink-0" />
+          <span>
+            <strong>Access Restricted:</strong> {isFutureDate ? "Future" : "Past"} date editing is disabled by administrators for this section.
+          </span>
+        </div>
+      )}
+
       {/* Title block */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -322,7 +348,7 @@ export default function MealsTracker({
                             min="0"
                             max="50"
                             disabled={isLocked || !canEditMeals}
-                            value={data.lunch}
+                            value={data.lunch === 0 ? "" : data.lunch}
                             onChange={(e) => {
                               const raw = e.target.value;
                               if (raw === "") {
@@ -384,7 +410,7 @@ export default function MealsTracker({
                             min="0"
                             max="50"
                             disabled={isLocked || !canEditMeals}
-                            value={data.dinner}
+                            value={data.dinner === 0 ? "" : data.dinner}
                             onChange={(e) => {
                               const raw = e.target.value;
                               if (raw === "") {

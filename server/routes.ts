@@ -633,6 +633,25 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
   res.json({ success: true, month: updatedMonth });
 });
 
+// Delete Month (Admin and Super User only)
+router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { id } = req.params;
+  const db = loadDB();
+  const index = db.months.findIndex(m => m.id === id);
+
+  if (index === -1) {
+    res.status(404).json({ error: "Month not found" });
+    return;
+  }
+
+  const name = db.months[index].name;
+  db.months.splice(index, 1);
+  saveDB();
+
+  logAudit(req.user!.id, req.user!.nickname, "DELETE_MONTH", "None", name, `Deleted month cycle ${name}`);
+  res.json({ success: true });
+});
+
 // ---------------------------------------------------------
 // MEALS API
 // ---------------------------------------------------------
@@ -1491,6 +1510,16 @@ function loadSettings() {
       MANAGER: { animation: "bounce", color: "text-yellow-400", glow: true },
       PARTIAL_MANAGER: { animation: "none", color: "text-emerald-400", glow: false },
       MEMBER: { animation: "none", color: "text-slate-400", glow: false }
+    },
+    dateRestrictions: {
+      allowFutureMeals: false,
+      allowPreviousMeals: true,
+      allowFutureDeposits: false,
+      allowPreviousDeposits: true,
+      allowFutureMarket: true,
+      allowPreviousMarket: true,
+      allowFutureMealPlanner: true,
+      allowPreviousMealPlanner: true
     }
   };
   try {
@@ -1556,7 +1585,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     currencySymbol,
     customColors,
     messAnimations,
-    dashboardVisibility
+    dashboardVisibility,
+    dateRestrictions
   } = req.body;
 
   if (siteColor !== undefined) currentSettings.siteColor = siteColor;
@@ -1573,6 +1603,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (customColors !== undefined) currentSettings.customColors = { ...currentSettings.customColors, ...customColors };
   if (messAnimations !== undefined) currentSettings.messAnimations = { ...currentSettings.messAnimations, ...messAnimations };
   if (dashboardVisibility !== undefined) currentSettings.dashboardVisibility = { ...currentSettings.dashboardVisibility, ...dashboardVisibility };
+  if (dateRestrictions !== undefined) currentSettings.dateRestrictions = { ...currentSettings.dateRestrictions, ...dateRestrictions };
 
   if (messName !== undefined) {
     if (role !== UserRole.ADMIN) {

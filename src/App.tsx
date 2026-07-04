@@ -188,6 +188,18 @@ export default function App() {
     showAnalytics: true
   });
 
+  // Date restrictions config
+  const [dateRestrictions, setDateRestrictions] = useState({
+    allowFutureMeals: false,
+    allowPreviousMeals: true,
+    allowFutureDeposits: false,
+    allowPreviousDeposits: true,
+    allowFutureMarket: true,
+    allowPreviousMarket: true,
+    allowFutureMealPlanner: true,
+    allowPreviousMealPlanner: true
+  });
+
   const [messes, setMesses] = useState<{ id: string, name: string }[]>([]);
   const [activeMessId, setActiveMessId] = useState("default");
 
@@ -235,6 +247,7 @@ export default function App() {
         if (data.customColors) setCustomColors(prev => ({ ...prev, ...data.customColors }));
         if (data.messAnimations) setMessAnimations(prev => ({ ...prev, ...data.messAnimations }));
         if (data.dashboardVisibility) setDashboardVisibility(prev => ({ ...prev, ...data.dashboardVisibility }));
+        if (data.dateRestrictions) setDateRestrictions(prev => ({ ...prev, ...data.dateRestrictions }));
       }
     } catch (e) {
       console.error("Failed to fetch settings:", e);
@@ -269,6 +282,7 @@ export default function App() {
           if (s.customColors) setCustomColors(s.customColors);
           if (s.messAnimations) setMessAnimations(s.messAnimations);
           if (s.dashboardVisibility) setDashboardVisibility(s.dashboardVisibility);
+          if (s.dateRestrictions) setDateRestrictions(s.dateRestrictions);
         }
         return true;
       } else {
@@ -425,9 +439,29 @@ export default function App() {
   };
 
   // Settings: Add month function
-  const [newMonthName, setNewMonthName] = useState("");
-  const [newMonthStart, setNewMonthStart] = useState("");
-  const [newMonthEnd, setNewMonthEnd] = useState("");
+  const getMonthDefaults = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const startVal = `${year}-${pad(month + 1)}-01T12:00`;
+    const nextMonthDate = new Date(year, month + 1, 1);
+    const endVal = `${nextMonthDate.getFullYear()}-${pad(nextMonthDate.getMonth() + 1)}-01T12:00`;
+    
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const nameVal = `${monthNames[month]} ${year}`;
+    return { nameVal, startVal, endVal };
+  };
+
+  const [newMonthName, setNewMonthName] = useState(() => getMonthDefaults().nameVal);
+  const [newMonthStart, setNewMonthStart] = useState(() => getMonthDefaults().startVal);
+  const [newMonthEnd, setNewMonthEnd] = useState(() => getMonthDefaults().endVal);
+
+  const [editingMonthId, setEditingMonthId] = useState<string | null>(null);
+  const [editMonthName, setEditMonthName] = useState("");
+  const [editMonthStart, setEditMonthStart] = useState("");
+  const [editMonthEnd, setEditMonthEnd] = useState("");
+
   const handleCreateMonth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMonthName || !newMonthStart || !newMonthEnd || !sessionToken) return;
@@ -448,13 +482,67 @@ export default function App() {
 
       if (response.ok) {
         alert("Success: New month cycle added!");
-        setNewMonthName("");
-        setNewMonthStart("");
-        setNewMonthEnd("");
+        const defaults = getMonthDefaults();
+        setNewMonthName(defaults.nameVal);
+        setNewMonthStart(defaults.startVal);
+        setNewMonthEnd(defaults.endVal);
         fetchMonthsAndMembers(sessionToken);
       } else {
         const data = await response.json();
         alert(data.error || "Failed to create cycle");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateMonthCycle = async (monthId: string) => {
+    if (!sessionToken || !editMonthName || !editMonthStart || !editMonthEnd) return;
+    try {
+      const response = await fetch(`/api/months/${monthId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({
+          name: editMonthName,
+          startDate: editMonthStart,
+          endDate: editMonthEnd
+        })
+      });
+
+      if (response.ok) {
+        alert("Success: Month cycle updated!");
+        setEditingMonthId(null);
+        fetchMonthsAndMembers(sessionToken);
+        fetchReportSummary();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to update cycle");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteMonthCycle = async (monthId: string) => {
+    if (!sessionToken) return;
+    try {
+      const response = await fetch(`/api/months/${monthId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${sessionToken}`
+        }
+      });
+
+      if (response.ok) {
+        alert("Success: Month cycle deleted!");
+        fetchMonthsAndMembers(sessionToken);
+        fetchReportSummary();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to delete cycle");
       }
     } catch (e) {
       console.error(e);
@@ -971,6 +1059,7 @@ export default function App() {
               members={membersList}
               isDarkMode={isDarkMode}
               onRefresh={handleRefreshAll}
+              dateRestrictions={dateRestrictions}
             />
           )}
 
@@ -979,6 +1068,7 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               isDarkMode={isDarkMode}
+              dateRestrictions={dateRestrictions}
             />
           )}
 
@@ -989,6 +1079,7 @@ export default function App() {
               members={membersList}
               isDarkMode={isDarkMode}
               onRefresh={handleRefreshAll}
+              dateRestrictions={dateRestrictions}
             />
           )}
 
@@ -1001,6 +1092,7 @@ export default function App() {
               onRefresh={handleRefreshAll}
               currencySymbol={currencySymbol}
               customColors={customColors}
+              dateRestrictions={dateRestrictions}
             />
           )}
 
@@ -1050,7 +1142,7 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
                 {/* Months management cycle rules */}
-                {currentUser.role === UserRole.ADMIN && (
+                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
                   <div className={`p-5 rounded-2xl border ${
                     isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
                   }`}>
@@ -1112,31 +1204,118 @@ export default function App() {
                   </p>
 
                   <div className="space-y-3">
-                    {months.map(m => (
-                      <div key={m.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-950/20 border border-slate-900 text-xs">
-                        <div>
-                          <p className="font-bold">{m.name}</p>
-                          <p className="text-[10px] text-slate-500">Starts: {new Date(m.startDate).toLocaleDateString()}</p>
+                    {months.map(m => {
+                      const isEditing = editingMonthId === m.id;
+                      const hasAdminPrivileges = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER;
+                      
+                      return (
+                        <div key={m.id} className="p-3 rounded-lg bg-slate-950/20 border border-slate-900 text-xs space-y-3">
+                          {isEditing ? (
+                            <div className="space-y-3">
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-bold text-orange-500 uppercase tracking-wide">Month Name</label>
+                                <input
+                                  type="text"
+                                  value={editMonthName}
+                                  onChange={(e) => setEditMonthName(e.target.value)}
+                                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-orange-500 uppercase tracking-wide">Starts</label>
+                                  <input
+                                    type="datetime-local"
+                                    value={editMonthStart}
+                                    onChange={(e) => setEditMonthStart(e.target.value)}
+                                    className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-orange-500 uppercase tracking-wide">Ends</label>
+                                  <input
+                                    type="datetime-local"
+                                    value={editMonthEnd}
+                                    onChange={(e) => setEditMonthEnd(e.target.value)}
+                                    className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingMonthId(null)}
+                                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-300"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMonthCycle(m.id)}
+                                  className="px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-[10px] font-bold text-white"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <p className="font-bold text-slate-200">{m.name}</p>
+                                <p className="text-[10px] text-slate-500">
+                                  {new Date(m.startDate).toLocaleDateString()} {new Date(m.startDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(m.endDate).toLocaleDateString()} {new Date(m.endDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </p>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                {hasAdminPrivileges && (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setEditingMonthId(m.id);
+                                        setEditMonthName(m.name);
+                                        setEditMonthStart(m.startDate.slice(0, 16));
+                                        setEditMonthEnd(m.endDate.slice(0, 16));
+                                      }}
+                                      className="px-2 py-1 rounded bg-slate-900 border border-slate-800 hover:border-cyan-500 text-[10px] text-slate-300 transition-all cursor-pointer"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`Are you sure you want to delete the month cycle "${m.name}"? Previous logs/deposits will NOT be automatically purged, but the month cycle context will be removed.`)) {
+                                          handleDeleteMonthCycle(m.id);
+                                        }
+                                      }}
+                                      className="px-2 py-1 rounded bg-rose-950/35 border border-rose-900/40 hover:border-rose-600 text-[10px] text-rose-400 transition-all cursor-pointer"
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                                
+                                {hasAdminPrivileges ? (
+                                  <button
+                                    onClick={() => handleToggleMonthLock(m.id, m.isLocked)}
+                                    className={`px-3 py-1 rounded text-[10px] font-bold tracking-wider cursor-pointer transition-all ${
+                                      m.isLocked 
+                                        ? "bg-rose-500/15 border border-rose-500/30 text-rose-400 hover:bg-rose-500/25" 
+                                        : "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25"
+                                    }`}
+                                  >
+                                    {m.isLocked ? "LOCKED" : "ACTIVE"}
+                                  </button>
+                                ) : (
+                                  <span className={`px-2.5 py-0.5 rounded font-bold font-mono text-[10px] ${m.isLocked ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+                                    {m.isLocked ? "LOCKED" : "ACTIVE"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        
-                        {currentUser.role === UserRole.ADMIN ? (
-                          <button
-                            onClick={() => handleToggleMonthLock(m.id, m.isLocked)}
-                            className={`px-3 py-1 rounded text-[10px] font-bold tracking-wider cursor-pointer ${
-                              m.isLocked 
-                                ? "bg-rose-500/15 border border-rose-500/30 text-rose-400" 
-                                : "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400"
-                            }`}
-                          >
-                            {m.isLocked ? "LOCKED (Click Unlock)" : "ACTIVE (Click Lock)"}
-                          </button>
-                        ) : (
-                          <span className={`px-2.5 py-0.5 rounded font-bold font-mono text-[10px] ${m.isLocked ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"}`}>
-                            {m.isLocked ? "LOCKED" : "ACTIVE"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1716,6 +1895,117 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Calendar & Date Access Rules config */}
+                      <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
+                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Calendar Date & Input Permission Rules</h4>
+                        <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                          Control how calendar dates behave. Specify which sections allow inputs on future or past dates. This restricts normal user actions while preserving admin flexibility where necessary.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          
+                          {/* Meals Tracker */}
+                          <div className="p-3 rounded-lg bg-slate-950/40 border border-slate-900 space-y-2">
+                            <p className="text-xs font-bold text-slate-200">Daily Meals Tracker</p>
+                            <div className="space-y-1.5">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowFutureMeals}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowFutureMeals: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow logging future meals</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowPreviousMeals}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowPreviousMeals: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow modifying past meals</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Deposits */}
+                          <div className="p-3 rounded-lg bg-slate-950/40 border border-slate-900 space-y-2">
+                            <p className="text-xs font-bold text-slate-200">Cash Deposits</p>
+                            <div className="space-y-1.5">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowFutureDeposits}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowFutureDeposits: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow future deposit dates</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowPreviousDeposits}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowPreviousDeposits: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow past deposit dates</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Market */}
+                          <div className="p-3 rounded-lg bg-slate-950/40 border border-slate-900 space-y-2">
+                            <p className="text-xs font-bold text-slate-200">Market Schedule & Expenses</p>
+                            <div className="space-y-1.5">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowFutureMarket}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowFutureMarket: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow future market scheduling</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowPreviousMarket}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowPreviousMarket: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow past expense entries</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Meal Planner */}
+                          <div className="p-3 rounded-lg bg-slate-950/40 border border-slate-900 space-y-2">
+                            <p className="text-xs font-bold text-slate-200">Meal Planner & Food Statistics</p>
+                            <div className="space-y-1.5">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowFutureMealPlanner}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowFutureMealPlanner: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow future meal planning</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={dateRestrictions?.allowPreviousMealPlanner}
+                                  onChange={(e) => setDateRestrictions(prev => ({ ...prev, allowPreviousMealPlanner: e.target.checked }))}
+                                  className="accent-cyan-500 cursor-pointer"
+                                />
+                                <span className="text-[11px] text-slate-300">Allow past menu views</span>
+                              </label>
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-4 flex justify-end">
@@ -1728,7 +2018,8 @@ export default function App() {
                             fontSize, 
                             customColors, 
                             dashboardVisibility, 
-                            messAnimations 
+                            messAnimations,
+                            dateRestrictions
                           });
                           alert("UI Theme customisations, animations, color palettes, and dashboard visibility configurations applied successfully.");
                         }}
