@@ -189,8 +189,32 @@ export async function initializeDbCache() {
   }
 }
 
+let isSyncing = false;
+let pendingSyncCache: DatabaseSchema | null = null;
+
 // Background sync function
 async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
+  if (isSyncing) {
+    pendingSyncCache = cache;
+    return;
+  }
+  isSyncing = true;
+  
+  try {
+    await doActualSync(cache);
+  } finally {
+    isSyncing = false;
+    if (pendingSyncCache) {
+      const nextCache = pendingSyncCache;
+      pendingSyncCache = null;
+      setTimeout(() => {
+        syncCacheToPostgresDirectly(nextCache);
+      }, 50);
+    }
+  }
+}
+
+async function doActualSync(cache: DatabaseSchema) {
   try {
     if (cache.members.length > 0) {
       for (const item of cache.members) {
@@ -265,7 +289,16 @@ async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
     }
 
     // Clean up dynamic tables and bulk insert
-    await db.execute(sql`TRUNCATE meals, food_menus, market_entries, deposits, bills, duties, manager_holdings, manager_ratings, notices, audit_logs;`);
+    await db.execute(sql`DELETE FROM meals;`);
+    await db.execute(sql`DELETE FROM food_menus;`);
+    await db.execute(sql`DELETE FROM market_entries;`);
+    await db.execute(sql`DELETE FROM deposits;`);
+    await db.execute(sql`DELETE FROM bills;`);
+    await db.execute(sql`DELETE FROM duties;`);
+    await db.execute(sql`DELETE FROM manager_holdings;`);
+    await db.execute(sql`DELETE FROM manager_ratings;`);
+    await db.execute(sql`DELETE FROM notices;`);
+    await db.execute(sql`DELETE FROM audit_logs;`);
 
     if (cache.meals.length > 0) {
       await db.insert(mealsTable).values(cache.meals.map(item => ({

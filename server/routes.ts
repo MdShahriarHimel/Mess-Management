@@ -1200,7 +1200,7 @@ router.get("/holdings/:monthId", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ holdings });
 });
 
-router.post("/holdings", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/holdings", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
   const { monthId, memberId, amount } = req.body;
   if (!monthId || !memberId || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, and Amount are required" });
@@ -1620,6 +1620,18 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     return;
   }
 
+  // Admin-only customizer fields check
+  const adminOnlyFields = [
+    'siteColor', 'fontSize', 'fontStyle', 'logoText',
+    'customColors', 'messAnimations', 'dashboardVisibility',
+    'dateRestrictions', 'loginCustomization', 'homeCustomization'
+  ];
+  const hasAdminOnlyField = adminOnlyFields.some(field => req.body[field] !== undefined);
+  if (hasAdminOnlyField && role !== UserRole.ADMIN) {
+    res.status(403).json({ error: "Only the main Admin can modify visual layout, themes, customizers, and animation settings" });
+    return;
+  }
+
   const currentSettings = loadSettings();
   const { 
     messName, 
@@ -1688,10 +1700,16 @@ function loadElections() {
   const messId = getActiveMessId();
   const defaultElections = {
     enabled: false,
+    topic: "Superuser selection",
+    subject: "options",
+    voteType: "superuser" as "superuser" | "custom",
+    options: [] as string[],
     candidates: [] as string[], // Candidate member IDs
+    isFinal: false,
     votes: {
       SUPERUSER: {} as Record<string, string>, // voterId -> candidateId
-      ASSISTANT_SUPERUSER: {} as Record<string, string> // voterId -> candidateId
+      ASSISTANT_SUPERUSER: {} as Record<string, string>, // voterId -> candidateId
+      CUSTOM: {} as Record<string, string> // voterId -> custom option
     }
   };
   const file = messId === "default"
@@ -1731,18 +1749,54 @@ router.get("/elections", authMiddleware, (req: AuthenticatedRequest, res: Respon
 });
 
 router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can configure elections." });
+  const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER];
+  if (!allowedRoles.includes(req.user!.role)) {
+    res.status(403).json({ error: "Only the Admin, Manager, and Super User can configure elections." });
     return;
   }
 
-  const { enabled, candidates, startDate, endDate } = req.body;
+  const { enabled, candidates, startDate, endDate, topic, subject, voteType, options, isFinal, resetVotes } = req.body;
   const elections = loadElections();
   
   if (enabled !== undefined) elections.enabled = !!enabled;
   if (candidates !== undefined) elections.candidates = candidates;
   if (startDate !== undefined) elections.startDate = startDate;
   if (endDate !== undefined) elections.endDate = endDate;
+  if (topic !== undefined) {
+    // If the topic has changed, let's assume it's a new election/poll, so we clear out existing votes!
+    if (elections.topic !== topic) {
+      elections.votes = {
+        SUPERUSER: {},
+        ASSISTANT_SUPERUSER: {},
+        CUSTOM: {}
+      };
+      elections.isFinal = false;
+    }
+    elections.topic = topic;
+  }
+  if (subject !== undefined) elections.subject = subject;
+  if (voteType !== undefined) {
+    if (elections.voteType !== voteType) {
+      elections.votes = {
+        SUPERUSER: {},
+        ASSISTANT_SUPERUSER: {},
+        CUSTOM: {}
+      };
+      elections.isFinal = false;
+    }
+    elections.voteType = voteType;
+  }
+  if (options !== undefined) elections.options = options;
+  if (isFinal !== undefined) elections.isFinal = !!isFinal;
+
+  if (resetVotes) {
+    elections.votes = {
+      SUPERUSER: {},
+      ASSISTANT_SUPERUSER: {},
+      CUSTOM: {}
+    };
+    elections.isFinal = false;
+  }
 
   saveElections(elections);
   
@@ -1751,25 +1805,25 @@ router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, 
     req.user!.nickname,
     "CONFIGURE_ELECTION",
     "Previous Configuration",
-    JSON.stringify({ enabled, candidates, startDate, endDate }),
-    `Admin configured election settings for mess ${getActiveMessId()}`
+    JSON.stringify({ enabled, candidates, startDate, endDate, topic, subject, voteType }),
+    `Authorized personnel (${req.user!.role}) configured election/voting settings: ${topic}`
   );
 
   res.json({ success: true, elections });
 });
 
 router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const { roleType, candidateId } = req.body; // roleType: "SUPERUSER" or "ASSISTANT_SUPERUSER"
+  const { roleType, candidateId } = req.body; // roleType: "SUPERUSER", "ASSISTANT_SUPERUSER" or "CUSTOM"
   const voterId = req.user!.id;
 
-  if (!["SUPERUSER", "ASSISTANT_SUPERUSER"].includes(roleType)) {
-    res.status(400).json({ error: "Invalid role type for election." });
+  if (!["SUPERUSER", "ASSISTANT_SUPERUSER", "CUSTOM"].includes(roleType)) {
+    res.status(400).json({ error: "Invalid role type or vote type for election." });
     return;
   }
 
   const elections = loadElections();
   if (!elections.enabled) {
-    res.status(403).json({ error: "Elections are currently disabled by the Admin for this mess." });
+    res.status(403).json({ error: "Elections/polls are currently disabled or closed." });
     return;
   }
 
@@ -1790,17 +1844,27 @@ router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: 
     }
   }
 
-  // Ensure candidate is authorized
-  if (elections.candidates.length > 0 && !elections.candidates.includes(candidateId)) {
-    res.status(400).json({ error: "This member is not an active candidate in the election." });
-    return;
+  // Ensure candidate/option is authorized
+  if (roleType === "CUSTOM") {
+    if (elections.options && elections.options.length > 0 && !elections.options.includes(candidateId)) {
+      res.status(400).json({ error: "This option is not a valid choice in the ballot." });
+      return;
+    }
+  } else {
+    if (elections.candidates.length > 0 && !elections.candidates.includes(candidateId)) {
+      res.status(400).json({ error: "This member is not an active candidate in the election." });
+      return;
+    }
   }
 
-  if (!elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER"]) {
-    elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER"] = {};
+  if (!elections.votes) {
+    elections.votes = { SUPERUSER: {}, ASSISTANT_SUPERUSER: {}, CUSTOM: {} };
+  }
+  if (!elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER" | "CUSTOM"]) {
+    elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER" | "CUSTOM"] = {};
   }
 
-  elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER"][voterId] = candidateId;
+  elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER" | "CUSTOM"][voterId] = candidateId;
   saveElections(elections);
 
   logAudit(
@@ -1809,21 +1873,42 @@ router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: 
     "CAST_DEMOCRATIC_VOTE",
     "None",
     JSON.stringify({ roleType, candidateId }),
-    `Casted democratic ballot for election position ${roleType}`
+    `Casted democratic ballot for ${roleType === "CUSTOM" ? elections.topic : roleType}: ${candidateId}`
   );
 
   res.json({ success: true, elections });
 });
 
 router.post("/elections/resolve", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can resolve democratic elections." });
+  const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER];
+  if (!allowedRoles.includes(req.user!.role)) {
+    res.status(403).json({ error: "Only the Admin, Manager, and Super User can resolve democratic elections." });
     return;
   }
 
-  const { targetRole, winnerId } = req.body; // targetRole: SUPERUSER or ASSISTANT_SUPERUSER
-  if (![UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(targetRole)) {
+  const { targetRole, winnerId } = req.body; // targetRole: SUPERUSER, ASSISTANT_SUPERUSER, or CUSTOM
+  if (![UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, "CUSTOM"].includes(targetRole)) {
     res.status(400).json({ error: "Invalid target role." });
+    return;
+  }
+
+  const elections = loadElections();
+
+  if (targetRole === "CUSTOM") {
+    elections.isFinal = true;
+    elections.enabled = false;
+    saveElections(elections);
+
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "RESOLVE_ELECTION_CUSTOM",
+      "None",
+      elections.topic,
+      `Democratically resolved custom ballot: ${elections.topic}. Winning option: ${winnerId}`
+    );
+
+    res.json({ success: true, elections, message: `Successfully finalized poll: ${elections.topic}!` });
     return;
   }
 
@@ -1838,9 +1923,10 @@ router.post("/elections/resolve", authMiddleware, (req: AuthenticatedRequest, re
   winner.role = targetRole;
   saveDB();
 
-  // Reset the votes for this role
-  const elections = loadElections();
+  // Reset the votes for this role and mark finalized
   elections.votes[targetRole === UserRole.SUPERUSER ? "SUPERUSER" : "ASSISTANT_SUPERUSER"] = {};
+  elections.isFinal = true;
+  elections.enabled = false;
   saveElections(elections);
 
   logAudit(
@@ -1852,7 +1938,7 @@ router.post("/elections/resolve", authMiddleware, (req: AuthenticatedRequest, re
     `Democratically resolved election: Promoted ${winner.nickname} to ${targetRole}`
   );
 
-  res.json({ success: true, message: `Successfully promoted ${winner.nickname} to ${targetRole}!` });
+  res.json({ success: true, elections, message: `Successfully promoted ${winner.nickname} to ${targetRole}!` });
 });
 
 // ---------------------------------------------------------

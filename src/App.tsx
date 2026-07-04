@@ -925,6 +925,11 @@ export default function App() {
   const [electionStartDate, setElectionStartDate] = useState("");
   const [electionEndDate, setElectionEndDate] = useState("");
   const [electionCandidates, setElectionCandidates] = useState<string[]>([]);
+  const [electionTopic, setElectionTopic] = useState("Superuser selection");
+  const [electionSubject, setElectionSubject] = useState("options");
+  const [electionVoteType, setElectionVoteType] = useState<"superuser" | "custom">("superuser");
+  const [electionOptions, setElectionOptions] = useState<string[]>([]);
+  const [electionCustomOptionsText, setElectionCustomOptionsText] = useState("");
 
   useEffect(() => {
     if (elections) {
@@ -932,6 +937,11 @@ export default function App() {
       setElectionStartDate(elections.startDate || "");
       setElectionEndDate(elections.endDate || "");
       setElectionCandidates(elections.candidates || []);
+      setElectionTopic((elections as any).topic || "Superuser selection");
+      setElectionSubject((elections as any).subject || "options");
+      setElectionVoteType((elections as any).voteType || "superuser");
+      setElectionOptions((elections as any).options || []);
+      setElectionCustomOptionsText(((elections as any).options || []).join(", "));
     }
   }, [elections]);
 
@@ -2790,7 +2800,7 @@ export default function App() {
                 )}
 
                 {/* Visual UI Customizer */}
-                {[UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER].includes(currentUser.role) && (
+                {currentUser.role === UserRole.ADMIN && (
                   <div className={`p-5 rounded-2xl border lg:col-span-2 ${
                     isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
                   }`}>
