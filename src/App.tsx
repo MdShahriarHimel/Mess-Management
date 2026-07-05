@@ -49,9 +49,31 @@ export function ColorPalettePicker({
 }) {
   const activeHex = value ? (value.startsWith("#") ? value.slice(0, 7).toLowerCase() : "#ffffff") : "#ffffff";
 
+  // Helper to parse hex to r, g, b
+  const hexToRgb = (hex: string) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : { r: 255, g: 255, b: 255 };
+  };
+
+  const rgbToHex = (r: number, g: number, b: number) => {
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  };
+
+  const rgb = hexToRgb(activeHex);
+
+  const handleRgbChange = (channel: 'r' | 'g' | 'b', val: number) => {
+    const updated = { ...rgb, [channel]: Math.max(0, Math.min(255, val)) };
+    onChange(rgbToHex(updated.r, updated.g, updated.b));
+  };
+
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-950/60 rounded-lg border border-slate-800/80">
+    <div className="space-y-2 p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/80">
+      {/* Predefined Quick Palettes */}
+      <div className="flex flex-wrap gap-1.5 justify-start">
         {COLOR_PALETTES.map((color) => {
           const isSelected = activeHex === color.hex.toLowerCase();
           return (
@@ -60,17 +82,85 @@ export function ColorPalettePicker({
               type="button"
               onClick={() => onChange(color.hex)}
               title={color.name}
-              className={`w-5 h-5 rounded-full border cursor-pointer transition-all hover:scale-110 active:scale-95 ${
-                isSelected ? "border-white ring-2 ring-cyan-500/50 scale-105" : "border-transparent"
+              className={`w-4 h-4 rounded-full border cursor-pointer transition-all hover:scale-110 active:scale-95 ${
+                isSelected ? "border-white ring-2 ring-cyan-500/50 scale-110" : "border-slate-800/60"
               }`}
               style={{ backgroundColor: color.hex }}
             />
           );
         })}
       </div>
-      <span className="text-[9px] text-slate-500 font-medium block italic">
-        Selected: {COLOR_PALETTES.find(c => c.hex.toLowerCase() === activeHex)?.name || "Custom Palette"} ({activeHex})
-      </span>
+
+      {/* RGB Slider controls & native picker */}
+      <div className="pt-2 border-t border-slate-900 flex items-center gap-3">
+        {/* Color Preview Block and Native Color Input */}
+        <div className="relative group flex-shrink-0">
+          <div 
+            className="w-8 h-8 rounded border border-slate-700/80 cursor-pointer shadow-lg relative overflow-hidden"
+            style={{ backgroundColor: activeHex }}
+            title="Click to open color spectrum picker"
+          >
+            <input 
+              type="color" 
+              value={activeHex}
+              onChange={(e) => onChange(e.target.value)}
+              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+            />
+            {/* Tiny icon/overlay indicating you can pick */}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <span className="text-[9px] text-white font-bold">RGB</span>
+            </div>
+          </div>
+        </div>
+
+        {/* RGB Sliders */}
+        <div className="flex-grow space-y-1">
+          {/* Red Slider */}
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono font-bold text-rose-500 w-3">R</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="255" 
+              value={rgb.r}
+              onChange={(e) => handleRgbChange('r', parseInt(e.target.value))}
+              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-rose-500"
+            />
+            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.r}</span>
+          </div>
+          {/* Green Slider */}
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono font-bold text-emerald-500 w-3">G</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="255" 
+              value={rgb.g}
+              onChange={(e) => handleRgbChange('g', parseInt(e.target.value))}
+              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
+            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.g}</span>
+          </div>
+          {/* Blue Slider */}
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono font-bold text-cyan-400 w-3">B</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="255" 
+              value={rgb.b}
+              onChange={(e) => handleRgbChange('b', parseInt(e.target.value))}
+              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+            />
+            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.b}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center text-[9px] text-slate-500 font-mono">
+        <span>RGB({rgb.r}, {rgb.g}, {rgb.b})</span>
+        <span>HEX {activeHex.toUpperCase()}</span>
+      </div>
     </div>
   );
 }

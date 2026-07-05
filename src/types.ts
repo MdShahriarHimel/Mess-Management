@@ -49,6 +49,7 @@ export interface Member {
   memberGlow?: boolean;
   memberGlowStyle?: string;
   memberAnimation?: string;
+  gifEnabledByAdmin?: boolean;
 }
 
 export interface MessMonth {

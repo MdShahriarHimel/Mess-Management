@@ -21,6 +21,14 @@ export const members = pgTable("members", {
   notes: text("notes").notNull(),
   photo: text("photo"),
   assignedTask: text("assigned_task"),
+  glow: boolean("glow").default(false),
+  glowStyle: text("glow_style"),
+  animation: text("animation"),
+  splitProfile: boolean("split_profile").default(false),
+  memberGlow: boolean("member_glow").default(false),
+  memberGlowStyle: text("member_glow_style"),
+  memberAnimation: text("member_animation"),
+  gifEnabledByAdmin: boolean("gif_enabled_by_admin").default(true),
 });
 
 export const months = pgTable("months", {

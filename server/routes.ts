@@ -637,15 +637,21 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     }
   }
 
-  // Only Admin can customize individual glowing effects/animations
+  // Only Admin can customize individual glowing effects/animations (except if GIF background feature is enabled by admin)
   if (req.user!.role !== UserRole.ADMIN) {
+    delete updates.gifEnabledByAdmin;
     delete updates.glow;
     delete updates.glowStyle;
-    delete updates.animation;
     delete updates.splitProfile;
     delete updates.memberGlow;
     delete updates.memberGlowStyle;
-    delete updates.memberAnimation;
+    
+    // Non-admin can only update animation/memberAnimation if the feature is enabled by admin for them
+    const isGifAllowed = original.gifEnabledByAdmin !== false;
+    if (!isGifAllowed) {
+      delete updates.animation;
+      delete updates.memberAnimation;
+    }
   }
 
   // Standard member cannot modify roles, status, permissions, joining/leaving dates

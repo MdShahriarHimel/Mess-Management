@@ -234,6 +234,14 @@ async function doActualSync(cache: DatabaseSchema) {
           notes: item.notes,
           photo: item.photo,
           assignedTask: item.assignedTask,
+          glow: item.glow || false,
+          glowStyle: item.glowStyle || null,
+          animation: item.animation || null,
+          splitProfile: item.splitProfile || false,
+          memberGlow: item.memberGlow || false,
+          memberGlowStyle: item.memberGlowStyle || null,
+          memberAnimation: item.memberAnimation || null,
+          gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
         }).onConflictDoUpdate({
           target: membersTable.id,
           set: {
@@ -251,6 +259,14 @@ async function doActualSync(cache: DatabaseSchema) {
             notes: item.notes,
             photo: item.photo,
             assignedTask: item.assignedTask,
+            glow: item.glow || false,
+            glowStyle: item.glowStyle || null,
+            animation: item.animation || null,
+            splitProfile: item.splitProfile || false,
+            memberGlow: item.memberGlow || false,
+            memberGlowStyle: item.memberGlowStyle || null,
+            memberAnimation: item.memberAnimation || null,
+            gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
           }
         });
       }
