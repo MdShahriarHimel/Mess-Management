@@ -99,6 +99,26 @@ function MicroAnimationOverlay({ animationType }: { animationType?: string }) {
     );
   }
 
+  const isUrl = animationType.startsWith("http://") || 
+                animationType.startsWith("https://") || 
+                animationType.startsWith("data:") ||
+                animationType.includes("/") || 
+                animationType.includes(".");
+
+  if (isUrl) {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 rounded-2xl">
+        <div className="absolute inset-0 bg-slate-950/15 z-10 pointer-events-none" />
+        <img 
+          src={animationType} 
+          alt="" 
+          className="w-full h-full object-cover select-none pointer-events-none opacity-30 transition-opacity duration-300" 
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -1347,8 +1367,19 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <div>
                             <label className="text-xs text-slate-200 font-semibold block mb-1">Profile Animation Overlay</label>
                             <select
-                              value={editingMember.animation || "none"}
-                              onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
+                              value={
+                                !editingMember.animation || ["none", "sparkles", "confetti", "bubbles", "pulse"].includes(editingMember.animation)
+                                  ? (editingMember.animation || "none")
+                                  : "custom"
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom") {
+                                  setEditingMember({ ...editingMember, animation: "https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2Zmxtb3ZqZHVpdjYwNzZpZGF5NDgxdHlyOTVqdDN5M2U5bmsxOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/9DGF96g8Q09g97D1px/giphy.gif" });
+                                } else {
+                                  setEditingMember({ ...editingMember, animation: val });
+                                }
+                              }}
                               className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
                             >
                               <option value="none">No Animation</option>
@@ -1356,8 +1387,25 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                               <option value="confetti">Confetti 🎊</option>
                               <option value="bubbles">Floating Bubbles 🫧</option>
                               <option value="pulse">Aura Pulse 📳</option>
+                              <option value="custom">Custom Image / GIF URL 🖼️</option>
                             </select>
                           </div>
+
+                          {!["none", "sparkles", "confetti", "bubbles", "pulse"].includes(editingMember.animation || "none") && (
+                            <div className="mt-2 space-y-1 animate-fade-in">
+                              <label className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Custom Image or GIF URL</label>
+                              <input
+                                type="text"
+                                placeholder="https://example.com/animation.gif"
+                                value={editingMember.animation || ""}
+                                onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
+                                className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500/50"
+                              />
+                              <span className="text-[9px] text-slate-500 block">
+                                Enter any live web link to a static image, animated GIF, or web asset to style your profile card background.
+                              </span>
+                            </div>
+                          )}
 
                           {editingMember.role === UserRole.ADMIN && (
                             <div className="space-y-3 pt-2 border-t border-slate-800/60 mt-2">
@@ -1442,8 +1490,19 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                                   <div>
                                     <label className="text-[9px] text-slate-400 font-bold block mb-1 uppercase tracking-wider">Hidden Member Animation</label>
                                     <select
-                                      value={editingMember.memberAnimation || "none"}
-                                      onChange={(e) => setEditingMember({ ...editingMember, memberAnimation: e.target.value })}
+                                      value={
+                                        !editingMember.memberAnimation || ["none", "sparkles", "confetti", "bubbles", "pulse"].includes(editingMember.memberAnimation)
+                                          ? (editingMember.memberAnimation || "none")
+                                          : "custom"
+                                      }
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val === "custom") {
+                                          setEditingMember({ ...editingMember, memberAnimation: "https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2Zmxtb3ZqZHVpdjYwNzZpZGF5NDgxdHlyOTVqdDN5M2U5bmsxOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/9DGF96g8Q09g97D1px/giphy.gif" });
+                                        } else {
+                                          setEditingMember({ ...editingMember, memberAnimation: val });
+                                        }
+                                      }}
                                       className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-[11px] text-white focus:outline-none"
                                     >
                                       <option value="none">No Animation</option>
@@ -1451,8 +1510,22 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                                       <option value="confetti">Confetti 🎊</option>
                                       <option value="bubbles">Floating Bubbles 🫧</option>
                                       <option value="pulse">Aura Pulse 📳</option>
+                                      <option value="custom">Custom Image / GIF URL 🖼️</option>
                                     </select>
                                   </div>
+
+                                  {!["none", "sparkles", "confetti", "bubbles", "pulse"].includes(editingMember.memberAnimation || "none") && (
+                                    <div className="mt-1 space-y-1 animate-fade-in">
+                                      <label className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider">Custom Member GIF URL</label>
+                                      <input
+                                        type="text"
+                                        placeholder="https://example.com/animation.gif"
+                                        value={editingMember.memberAnimation || ""}
+                                        onChange={(e) => setEditingMember({ ...editingMember, memberAnimation: e.target.value })}
+                                        className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-[11px] text-white focus:outline-none focus:border-cyan-500/50"
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

@@ -1905,8 +1905,8 @@ export default function App() {
       {/* ---------------------------------------------------------
           HEADER FOR MOBILE / VIEW CONTROL
           --------------------------------------------------------- */}
-      <header className={`md:hidden flex items-center justify-between px-4 py-3.5 border-b z-20 ${
-        isDarkMode ? "bg-slate-900/90 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+      <header className={`md:hidden sticky top-0 flex items-center justify-between px-4 py-3.5 border-b z-40 backdrop-blur-md ${
+        isDarkMode ? "bg-slate-950/80 border-slate-900" : "bg-white/80 border-slate-200 shadow-sm"
       }`}>
         <div className="flex items-center gap-2">
           {activeTab !== "dashboard" && (
@@ -1944,7 +1944,7 @@ export default function App() {
 
       {/* MOBILE DRAWER SIDEBAR */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}>
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 md:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div 
             className={`w-64 h-full p-5 flex flex-col justify-between ${isDarkMode ? "bg-slate-900 border-r border-slate-800" : "bg-white text-slate-800 border-r"}`}
             onClick={(e) => e.stopPropagation()}
