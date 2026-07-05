@@ -1708,19 +1708,19 @@ export default function App() {
 
     if (theme === "cosmic-void") {
       return {
-        background: "radial-gradient(circle at 50% 50%, #1e1b4b 0%, #090514 70%, #020005 100%)",
+        backgroundImage: "radial-gradient(circle at 50% 50%, #1e1b4b 0%, #090514 70%, #020005 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "midnight-nebula") {
       return {
-        background: "linear-gradient(135deg, #020617 0%, #1e1b4b 30%, #581c87 60%, #4a044e 85%, #020617 100%)",
+        backgroundImage: "linear-gradient(135deg, #020617 0%, #1e1b4b 30%, #581c87 60%, #4a044e 85%, #020617 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "cyberpunk-grid") {
       return {
-        background: "#030008",
+        backgroundColor: "#030008",
         backgroundImage: `
           linear-gradient(rgba(139, 92, 246, 0.05) 1px, transparent 1px),
           linear-gradient(90deg, rgba(139, 92, 246, 0.05) 1px, transparent 1px),
@@ -1732,61 +1732,61 @@ export default function App() {
     }
     if (theme === "sunset-glow") {
       return {
-        background: "linear-gradient(135deg, #180020 0%, #3b0764 40%, #701a75 70%, #9a3412 100%)",
+        backgroundImage: "linear-gradient(135deg, #180020 0%, #3b0764 40%, #701a75 70%, #9a3412 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "ocean-depth") {
       return {
-        background: "linear-gradient(180deg, #022c22 0%, #042f2e 30%, #115e59 70%, #064e3b 100%)",
+        backgroundImage: "linear-gradient(180deg, #022c22 0%, #042f2e 30%, #115e59 70%, #064e3b 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "forest-whisper") {
       return {
-        background: "linear-gradient(135deg, #022c22 0%, #064e3b 40%, #14532d 80%, #052e16 100%)",
+        backgroundImage: "linear-gradient(135deg, #022c22 0%, #064e3b 40%, #14532d 80%, #052e16 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "aurora-borealis") {
       return {
-        background: "linear-gradient(135deg, #020617 0%, #043530 30%, #0f172a 60%, #1e1b4b 80%, #020617 100%)",
+        backgroundImage: "linear-gradient(135deg, #020617 0%, #043530 30%, #0f172a 60%, #1e1b4b 80%, #020617 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "neon-shallows") {
       return {
-        background: "linear-gradient(135deg, #020617 0%, #064e3b 25%, #4c0519 75%, #020617 100%)",
+        backgroundImage: "linear-gradient(135deg, #020617 0%, #064e3b 25%, #4c0519 75%, #020617 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "sahara-sand") {
       return {
-        background: "linear-gradient(135deg, #0f0502 0%, #2a0800 35%, #451a03 70%, #170500 100%)",
+        backgroundImage: "linear-gradient(135deg, #0f0502 0%, #2a0800 35%, #451a03 70%, #170500 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "deep-space") {
       return {
-        background: "radial-gradient(circle at 30% 20%, #030712 0%, #09090b 60%, #020202 100%)",
+        backgroundImage: "radial-gradient(circle at 30% 20%, #030712 0%, #09090b 60%, #020202 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "electric-indigo") {
       return {
-        background: "linear-gradient(180deg, #03000a 0%, #050014 40%, #1e1b4b 80%, #03000a 100%)",
+        backgroundImage: "linear-gradient(180deg, #03000a 0%, #050014 40%, #1e1b4b 80%, #03000a 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "magma-flow") {
       return {
-        background: "linear-gradient(135deg, #000000 0%, #1c0202 40%, #450a0a 75%, #020000 100%)",
+        backgroundImage: "linear-gradient(135deg, #000000 0%, #1c0202 40%, #450a0a 75%, #020000 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "cyber-emerald") {
       return {
-        background: "#010502",
+        backgroundColor: "#010502",
         backgroundImage: `
           linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
           linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px),
@@ -1798,19 +1798,19 @@ export default function App() {
     }
     if (theme === "sakura-blossom") {
       return {
-        background: "linear-gradient(135deg, #0a0104 0%, #20010c 35%, #4c051e 70%, #0a0104 100%)",
+        backgroundImage: "linear-gradient(135deg, #0a0104 0%, #20010c 35%, #4c051e 70%, #0a0104 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "ice-glacier") {
       return {
-        background: "linear-gradient(135deg, #010a14 0%, #021a30 40%, #083344 80%, #010a14 100%)",
+        backgroundImage: "linear-gradient(135deg, #010a14 0%, #021a30 40%, #083344 80%, #010a14 100%)",
         backgroundAttachment: "fixed"
       };
     }
     if (theme === "bento-grid-dark") {
       return {
-        background: "#09090b",
+        backgroundColor: "#09090b",
         backgroundImage: `
           linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
           linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
@@ -1821,7 +1821,7 @@ export default function App() {
     }
     if (theme === "solar-storm") {
       return {
-        background: "linear-gradient(135deg, #080200 0%, #240a00 35%, #431407 75%, #080200 100%)",
+        backgroundImage: "linear-gradient(135deg, #080200 0%, #240a00 35%, #431407 75%, #080200 100%)",
         backgroundAttachment: "fixed"
       };
     }
