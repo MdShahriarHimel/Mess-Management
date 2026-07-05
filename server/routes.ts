@@ -314,10 +314,15 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
   if (smtpUser && smtpPass) {
     try {
       const transporter = nodemailer.createTransport({
-        service: "gmail",
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass
+        },
+        tls: {
+          rejectUnauthorized: false
         }
       });
 
@@ -347,16 +352,22 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
       return;
     } catch (error: any) {
       console.error("Nodemailer SMTP Error:", error);
+      const devMessage = process.env.NODE_ENV !== "production" 
+        ? ` (Dev Preview Fallback OTP: ${otp})` 
+        : "";
       res.json({ 
         success: true, 
-        message: `OTP generated. (SMTP Error occurred, but the OTP has been printed to the server terminal log for safety/preview).` 
+        message: `OTP generated, but an SMTP error occurred while sending email: "${error.message || error}". Please verify your Gmail app password.${devMessage}` 
       });
       return;
     }
   } else {
+    const devMessage = process.env.NODE_ENV !== "production" 
+      ? ` (Dev Preview Fallback OTP: ${otp})` 
+      : "";
     res.json({ 
       success: true, 
-      message: `Forgot password process initiated. An OTP code has been logged to the server terminal console since SMTP credentials are not configured.` 
+      message: `Forgot password process initiated. An OTP code has been logged to the server terminal console since SMTP credentials are not configured.${devMessage}` 
     });
     return;
   }
