@@ -2025,6 +2025,18 @@ export default function App() {
           --------------------------------------------------------- */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full space-y-6">
         
+        {currentUser.status === "ARCHIVED" && (
+          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-xs text-rose-400">
+            <span className="text-base">⚠️</span>
+            <div>
+              <p className="font-bold">ARCHIVED PROFILE (READ-ONLY ACCESS)</p>
+              <p className="text-[11px] opacity-80 mt-0.5">
+                You have left this mess. You have read-only access to view your past logs, history, and records. You cannot make any edits or save new updates.
+              </p>
+            </div>
+          </div>
+        )}
+        
         {/* TOP STATUS SUBBAR */}
         <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center ${
           isDarkMode ? "bg-slate-900/30 border-cyan-500/15" : "bg-white border-slate-200 shadow-sm"

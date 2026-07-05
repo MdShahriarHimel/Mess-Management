@@ -133,8 +133,10 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   }
 
   if (member.status === MemberStatus.ARCHIVED) {
-    res.status(403).json({ error: "Account archived" });
-    return;
+    if (req.method !== "GET") {
+      res.status(403).json({ error: "Account archived: Read-only access to past logs. Modifications are forbidden." });
+      return;
+    }
   }
 
   req.user = member;
@@ -406,6 +408,18 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
 
   const original = db.members[index];
 
+  // Admin cannot demote themselves or leave/suspend themselves
+  if (original.role === UserRole.ADMIN) {
+    if (updates.role && updates.role !== UserRole.ADMIN) {
+      res.status(403).json({ error: "Admin cannot demote themselves from the Admin Role" });
+      return;
+    }
+    if (updates.status && updates.status !== original.status) {
+      res.status(403).json({ error: "Admin cannot change their own status or leave the mess" });
+      return;
+    }
+  }
+
   // Permissions validation
   const isSelf = req.user!.id === id;
   const isManager = req.user!.role === UserRole.MANAGER;
@@ -475,6 +489,12 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     email: original.email, // Cannot change email
   };
 
+  if (updatedMember.status === MemberStatus.ARCHIVED && original.status !== MemberStatus.ARCHIVED) {
+    updatedMember.leavingDate = new Date().toISOString().split("T")[0];
+  } else if (updatedMember.status !== MemberStatus.ARCHIVED && original.status === MemberStatus.ARCHIVED) {
+    updatedMember.leavingDate = null;
+  }
+
   db.members[index] = updatedMember;
   saveDB();
 
@@ -508,6 +528,7 @@ router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSE
   }
 
   original.status = MemberStatus.ARCHIVED;
+  original.leavingDate = new Date().toISOString().split("T")[0];
   db.members[index] = original;
   saveDB();
 
@@ -528,6 +549,7 @@ router.post("/members/:id/restore", authMiddleware, checkRole([UserRole.SUPERUSE
 
   const original = db.members[index];
   original.status = MemberStatus.ACTIVE;
+  original.leavingDate = null;
   db.members[index] = original;
   saveDB();
 

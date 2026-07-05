@@ -347,6 +347,18 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     return true;
   });
 
+  const activeMembers = visibleMembers.filter(m => 
+    m.status !== MemberStatus.SUSPENDED && 
+    m.status !== MemberStatus.LEFT && 
+    m.status !== MemberStatus.ARCHIVED
+  );
+
+  const inactiveMembers = visibleMembers.filter(m => 
+    m.status === MemberStatus.SUSPENDED || 
+    m.status === MemberStatus.LEFT || 
+    m.status === MemberStatus.ARCHIVED
+  );
+
   return (
     <div className="space-y-6" id="members-wrapper">
       
@@ -391,11 +403,9 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
       {/* Members Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="members-grid">
-        {visibleMembers.map((member) => {
-          // Admin, Superuser, Assistant Superuser see full details. Others see minimalistic details.
-          const showFullDetails = member.role === UserRole.ADMIN || 
-                                  member.role === UserRole.SUPERUSER || 
-                                  member.role === UserRole.ASSISTANT_SUPERUSER;
+        {activeMembers.map((member) => {
+          // Everyone can see contact info on cards (except masked admin info)
+          const showFullDetails = true;
 
           const isTargetAdmin = member.role === UserRole.ADMIN;
           const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
@@ -566,6 +576,149 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
           );
         })}
       </div>
+
+      {/* Archived, Suspended & Departed Inactive Bucket */}
+      {inactiveMembers.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-slate-900/60" id="inactive-bucket-wrapper">
+          <div className="mb-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2 font-display">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+              Inactive Bucket (Suspended & Departed Profiles)
+            </h3>
+            <p className="text-[10px] text-slate-400 mt-1">
+              These accounts are suspended or have left the mess. They are kept separated and have restricted access.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="inactive-bucket-grid">
+            {inactiveMembers.map((member) => {
+              const isTargetAdmin = member.role === UserRole.ADMIN;
+              const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
+
+              const showAdminRoleBadge = !maskAdmin || !!adminVisibility?.showAdminRole;
+              const showAdminEmailText = !maskAdmin || !!adminVisibility?.showAdminEmail;
+              const showAdminPhoneText = !maskAdmin || !!adminVisibility?.showAdminPhone;
+
+              const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+              const displayEmail = showAdminEmailText ? member.email : "••••••••••••";
+              const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
+
+              const displayLeavingDate = member.leavingDate || "Unknown date";
+
+              return (
+                <div 
+                  key={member.id} 
+                  onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
+                  className={`p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.99] opacity-75 grayscale-[20%] hover:grayscale-0 hover:opacity-100 ${
+                    isDarkMode 
+                      ? "bg-slate-950/40 border-rose-500/10 text-slate-300 hover:border-rose-500/30" 
+                      : "bg-slate-100/50 border-slate-200 shadow-sm text-slate-600 hover:border-rose-300"
+                  }`}
+                >
+                  <div className="flex gap-4 items-start">
+                    {/* Profile Photo */}
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                      {member.photo ? (
+                        <img 
+                          src={member.photo} 
+                          alt={member.nickname} 
+                          className="w-16 h-16 rounded-xl object-cover border border-rose-500/20"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-slate-850 border border-slate-800 flex items-center justify-center text-slate-400 font-bold text-lg font-display uppercase">
+                          {member.nickname.slice(0, 2)}
+                        </div>
+                      )}
+                      
+                      {/* Status Indicator bubble */}
+                      <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
+                        member.status === MemberStatus.SUSPENDED ? "bg-rose-500/15 text-rose-400 border-rose-500/25 animate-pulse" :
+                        "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                      }`}>
+                        {member.status}
+                      </span>
+                    </div>
+
+                    {/* Core Text details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-1">
+                        <div>
+                          <h3 className="font-extrabold text-sm truncate text-slate-400 line-through decoration-slate-600">{member.name}</h3>
+                          <p className="text-xs text-slate-500 font-semibold">@{member.nickname}</p>
+                        </div>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-slate-900 text-slate-500">
+                          {displayRole.replace("_", " ")}
+                        </span>
+                      </div>
+
+                      <div className="mt-3.5 space-y-1.5 text-xs text-slate-500 font-mono">
+                        <p className="flex items-center gap-1.5 truncate">
+                          <Mail size={12} className="text-slate-600" />
+                          {displayEmail}
+                        </p>
+                        <p className="flex items-center gap-1.5 truncate">
+                          <Phone size={12} className="text-slate-600" />
+                          {displayPhone}
+                        </p>
+                        <p className="flex items-center gap-1.5 text-[11px] text-rose-400/80 font-semibold font-sans mt-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                          Departed Mess: {displayLeavingDate}
+                        </p>
+                      </div>
+                    </div>
+
+                    {isAuthorizedToEdit && (
+                      <div className="flex gap-1.5">
+                        {/* Super Users cannot modify Admins */}
+                        {!(member.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) && (
+                          <>
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setEditingMember(member); 
+                                setOriginalRole(member.role);
+                                setShiftReason("");
+                              }}
+                              className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
+                                isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                              }`}
+                              title="Edit profile"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
+                              className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
+                                isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                              }`}
+                              title="Restore member to active status"
+                            >
+                              <RotateCcw size={13} />
+                            </button>
+
+                            {currentUser.role === UserRole.ADMIN && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
+                                className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                                title="Permanently Delete member"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* INVITE MEMBER MODAL */}
       {showInviteModal && (
@@ -846,8 +999,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Role Level</label>
                       <select
                         value={editingMember.role}
+                        disabled={originalRole === UserRole.ADMIN}
                         onChange={(e) => setEditingMember({ ...editingMember, role: e.target.value as UserRole })}
                         className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                          originalRole === UserRole.ADMIN ? "opacity-60 cursor-not-allowed" : ""
+                        } ${
                           isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                         }`}
                       >
@@ -864,14 +1020,20 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <option value={UserRole.ADMIN}>ADMIN</option>
                         )}
                       </select>
+                      {originalRole === UserRole.ADMIN && (
+                        <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot demote themselves.</p>
+                      )}
                     </div>
                     {([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(currentUser.role)) ? (
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Status Code</label>
                         <select
                           value={editingMember.status}
+                          disabled={originalRole === UserRole.ADMIN}
                           onChange={(e) => setEditingMember({ ...editingMember, status: e.target.value as MemberStatus })}
                           className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                            originalRole === UserRole.ADMIN ? "opacity-60 cursor-not-allowed" : ""
+                          } ${
                             isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                           }`}
                         >
@@ -881,6 +1043,9 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>
                         </select>
+                        {originalRole === UserRole.ADMIN && (
+                          <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot leave the mess.</p>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-1.5">
