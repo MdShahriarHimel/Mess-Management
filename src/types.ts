@@ -45,6 +45,10 @@ export interface Member {
   glow?: boolean;
   glowStyle?: string;
   animation?: string;
+  splitProfile?: boolean;
+  memberGlow?: boolean;
+  memberGlowStyle?: string;
+  memberAnimation?: string;
 }
 
 export interface MessMonth {

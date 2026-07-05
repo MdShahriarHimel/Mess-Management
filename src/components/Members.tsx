@@ -511,8 +511,20 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
           const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
 
           const config = roleAnimations?.[displayRole];
-          const hasGlow = member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none");
-          const glowStyle = member.glowStyle || config?.glowStyle || "";
+          const isRoleHidden = member.role === UserRole.ADMIN && displayRole === UserRole.MEMBER;
+          const useMemberSettings = isRoleHidden && member.splitProfile;
+
+          const hasGlow = useMemberSettings 
+            ? member.memberGlow 
+            : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none"));
+
+          const glowStyle = useMemberSettings
+            ? (member.memberGlowStyle || "")
+            : (member.glowStyle || config?.glowStyle || "");
+
+          const finalAnimation = useMemberSettings
+            ? (member.memberAnimation || "none")
+            : (member.animation || "none");
 
           let cardGlowStyle: React.CSSProperties = {};
           let cardGlowClass = "";
@@ -538,7 +550,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
               }`}
               style={cardGlowStyle}
             >
-              <MicroAnimationOverlay animationType={member.animation} />
+              <MicroAnimationOverlay animationType={finalAnimation} />
               <div className="flex gap-4 items-start">
                 {/* Profile Photo */}
                 <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -713,8 +725,20 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
               const displayLeavingDate = member.leavingDate || "Unknown date";
 
               const config = roleAnimations?.[displayRole];
-              const hasGlow = member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none");
-              const glowStyle = member.glowStyle || config?.glowStyle || "";
+              const isRoleHidden = member.role === UserRole.ADMIN && displayRole === UserRole.MEMBER;
+              const useMemberSettings = isRoleHidden && member.splitProfile;
+
+              const hasGlow = useMemberSettings 
+                ? member.memberGlow 
+                : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none"));
+
+              const glowStyle = useMemberSettings
+                ? (member.memberGlowStyle || "")
+                : (member.glowStyle || config?.glowStyle || "");
+
+              const finalAnimation = useMemberSettings
+                ? (member.memberAnimation || "none")
+                : (member.animation || "none");
 
               let cardGlowStyle: React.CSSProperties = {};
               let cardGlowClass = "";
@@ -743,7 +767,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   }`}
                   style={cardGlowStyle}
                 >
-                  <MicroAnimationOverlay animationType={member.animation} />
+                  <MicroAnimationOverlay animationType={finalAnimation} />
                   <div className="flex gap-4 items-start">
                     {/* Profile Photo */}
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -1249,43 +1273,231 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     As Admin, you can grant premium glowing cards and animation overlays for individual profiles.
                   </p>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={!!editingMember.glow}
-                          onChange={(e) => setEditingMember({ ...editingMember, glow: e.target.checked })}
-                          className="accent-cyan-500 cursor-pointer"
-                        />
-                        <span className="text-xs text-slate-200 font-semibold">Enable Custom Glow</span>
-                      </label>
-                      {editingMember.glow && (
-                        <div className="pt-2">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Glow Color Palette</label>
-                          <ColorPalettePicker
-                            value={editingMember.glowStyle || "#22d3ee"}
-                            onChange={(color) => setEditingMember({ ...editingMember, glowStyle: color })}
-                          />
-                        </div>
-                      )}
-                    </div>
+                  {/* Real-time calculated glow mode */}
+                  {(() => {
+                    const glowMode = !editingMember.glow ? "none" : (editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? "custom-color" : "preset");
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800">
+                          <label className="text-xs text-slate-200 font-semibold block mb-1">Glow Effect Mode</label>
+                          <select
+                            value={glowMode}
+                            onChange={(e) => {
+                              const mode = e.target.value;
+                              if (mode === "none") {
+                                setEditingMember({ ...editingMember, glow: false, glowStyle: "" });
+                              } else if (mode === "custom-color") {
+                                setEditingMember({ ...editingMember, glow: true, glowStyle: "#22d3ee" });
+                              } else {
+                                setEditingMember({ ...editingMember, glow: true, glowStyle: "nitro-classic" });
+                              }
+                            }}
+                            className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                          >
+                            <option value="none">No Glowing Effect</option>
+                            <option value="custom-color">Custom Solid Color Palette</option>
+                            <option value="preset">Discord Premium Animated Presets (20+)</option>
+                          </select>
 
-                    <div className="space-y-1.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800">
-                      <label className="text-xs text-slate-200 font-semibold block mb-1">Profile Animation Overlay</label>
-                      <select
-                        value={editingMember.animation || "none"}
-                        onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
-                        className={`w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none`}
-                      >
-                        <option value="none">No Animation</option>
-                        <option value="sparkles">Sparkles ✨</option>
-                        <option value="confetti">Confetti 🎊</option>
-                        <option value="bubbles">Floating Bubbles 🫧</option>
-                        <option value="pulse">Aura Pulse 📳</option>
-                      </select>
-                    </div>
-                  </div>
+                          {glowMode === "custom-color" && (
+                            <div className="pt-2 animate-fade-in">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Choose Color Palette</label>
+                              <ColorPalettePicker
+                                value={editingMember.glowStyle || "#22d3ee"}
+                                onChange={(color) => setEditingMember({ ...editingMember, glowStyle: color })}
+                              />
+                            </div>
+                          )}
+
+                          {glowMode === "preset" && (
+                            <div className="pt-2 animate-fade-in">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Choose Animated Preset</label>
+                              <select
+                                value={editingMember.glowStyle || "nitro-classic"}
+                                onChange={(e) => setEditingMember({ ...editingMember, glowStyle: e.target.value })}
+                                className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                              >
+                                <option value="nitro-classic">Discord Nitro Classic 💗💙</option>
+                                <option value="nitro-boost">Nitro Boost Crystal 🔮💖</option>
+                                <option value="cyber-laser">Cyberpunk Laser Scanner 🟥🟦</option>
+                                <option value="rainbow-shimmer">Prismatic Rainbow Shimmer 🌈</option>
+                                <option value="frozen-frost">Frozen Ice Frostbite ❄️🧊</option>
+                                <option value="royal-majesty">Royal Crown Gold Majesty 👑👑</option>
+                                <option value="sakura-blossom">Sakura Blossom Wave 🌸🌸</option>
+                                <option value="dark-matter">Cosmic Dark Matter 🌌🟣</option>
+                                <option value="supernova">Supernova Flame Blast 💥💥</option>
+                                <option value="matrix-rain">Emerald Matrix Code Rain 🟢🟢</option>
+                                <option value="electric-storm">Indigo Electric Storm ⚡⚡</option>
+                                <option value="retro-horizon">Retro Sunset Horizon 🌅🌅</option>
+                                <option value="golden-aura">Classic Golden Aura ✨</option>
+                                <option value="volcanic-flame">Classic Volcanic Flame 🔥</option>
+                                <option value="cyberpunk-neon">Classic Cyberpunk Neon ⚡</option>
+                                <option value="emerald-ripple">Classic Emerald Ripple 🟢</option>
+                                <option value="cosmic-nebula">Classic Cosmic Nebula 🌌</option>
+                                <option value="deep-ocean">Classic Deep Ocean 🌊</option>
+                                <option value="ruby-laser">Classic Ruby Laser 🔴</option>
+                                <option value="velvet-pulse">Classic Velvet Pulse 🟣</option>
+                                <option value="amethyst-shimmer">Classic Amethyst Shimmer 🔮</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+                          <div>
+                            <label className="text-xs text-slate-200 font-semibold block mb-1">Profile Animation Overlay</label>
+                            <select
+                              value={editingMember.animation || "none"}
+                              onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
+                              className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            >
+                              <option value="none">No Animation</option>
+                              <option value="sparkles">Sparkles ✨</option>
+                              <option value="confetti">Confetti 🎊</option>
+                              <option value="bubbles">Floating Bubbles 🫧</option>
+                              <option value="pulse">Aura Pulse 📳</option>
+                            </select>
+                          </div>
+
+                          {editingMember.role === UserRole.ADMIN && (
+                            <div className="space-y-3 pt-2 border-t border-slate-800/60 mt-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-slate-300">Dual-Profile Customization</span>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={!!editingMember.splitProfile} 
+                                    onChange={(e) => setEditingMember({ ...editingMember, splitProfile: e.target.checked })}
+                                    className="sr-only peer cursor-pointer"
+                                  />
+                                  <div className="w-8 h-4 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
+                                </label>
+                              </div>
+
+                              {editingMember.splitProfile && (
+                                <div className="space-y-2 pt-1 animate-fade-in">
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 font-bold block mb-1 uppercase tracking-wider">Hidden Member Glow</label>
+                                    <select
+                                      value={!editingMember.memberGlow ? "none" : (editingMember.memberGlowStyle?.startsWith("#") ? "color" : "preset")}
+                                      onChange={(e) => {
+                                        const mode = e.target.value;
+                                        if (mode === "none") {
+                                          setEditingMember({ ...editingMember, memberGlow: false });
+                                        } else if (mode === "color") {
+                                          setEditingMember({ ...editingMember, memberGlow: true, memberGlowStyle: "#e11d48" });
+                                        } else {
+                                          setEditingMember({ ...editingMember, memberGlow: true, memberGlowStyle: "nitro-classic" });
+                                        }
+                                      }}
+                                      className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-[11px] text-white focus:outline-none"
+                                    >
+                                      <option value="none">No Glowing Card</option>
+                                      <option value="color">Custom Solid Color Palette</option>
+                                      <option value="preset">Discord Premium Animated Presets</option>
+                                    </select>
+                                  </div>
+
+                                  {editingMember.memberGlow && editingMember.memberGlowStyle?.startsWith("#") && (
+                                    <div className="pt-1">
+                                      <ColorPalettePicker
+                                        value={editingMember.memberGlowStyle}
+                                        onChange={(color) => setEditingMember({ ...editingMember, memberGlowStyle: color })}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {editingMember.memberGlow && !editingMember.memberGlowStyle?.startsWith("#") && (
+                                    <div className="pt-1">
+                                      <select
+                                        value={editingMember.memberGlowStyle || "nitro-classic"}
+                                        onChange={(e) => setEditingMember({ ...editingMember, memberGlowStyle: e.target.value })}
+                                        className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-[11px] text-white focus:outline-none"
+                                      >
+                                        <option value="nitro-classic">Discord Nitro Classic 💗💙</option>
+                                        <option value="nitro-boost">Nitro Boost Crystal 🔮💖</option>
+                                        <option value="cyber-laser">Cyberpunk Laser Scanner 🟥🟦</option>
+                                        <option value="rainbow-shimmer">Prismatic Rainbow Shimmer 🌈</option>
+                                        <option value="frozen-frost">Frozen Ice Frostbite ❄️🧊</option>
+                                        <option value="royal-majesty">Royal Crown Gold Majesty 👑👑</option>
+                                        <option value="sakura-blossom">Sakura Blossom Wave 🌸🌸</option>
+                                        <option value="dark-matter">Cosmic Dark Matter 🌌🟣</option>
+                                        <option value="supernova">Supernova Flame Blast 💥💥</option>
+                                        <option value="matrix-rain">Emerald Matrix Code Rain 🟢🟢</option>
+                                        <option value="electric-storm">Indigo Electric Storm ⚡⚡</option>
+                                        <option value="retro-horizon">Retro Sunset Horizon 🌅🌅</option>
+                                        <option value="golden-aura">Classic Golden Aura ✨</option>
+                                        <option value="volcanic-flame">Classic Volcanic Flame 🔥</option>
+                                        <option value="cyberpunk-neon">Classic Cyberpunk Neon ⚡</option>
+                                        <option value="emerald-ripple">Classic Emerald Ripple 🟢</option>
+                                        <option value="cosmic-nebula">Classic Cosmic Nebula 🌌</option>
+                                        <option value="deep-ocean">Classic Deep Ocean 🌊</option>
+                                        <option value="ruby-laser">Classic Ruby Laser 🔴</option>
+                                        <option value="velvet-pulse">Classic Velvet Pulse 🟣</option>
+                                        <option value="amethyst-shimmer">Classic Amethyst Shimmer 🔮</option>
+                                      </select>
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 font-bold block mb-1 uppercase tracking-wider">Hidden Member Animation</label>
+                                    <select
+                                      value={editingMember.memberAnimation || "none"}
+                                      onChange={(e) => setEditingMember({ ...editingMember, memberAnimation: e.target.value })}
+                                      className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-[11px] text-white focus:outline-none"
+                                    >
+                                      <option value="none">No Animation</option>
+                                      <option value="sparkles">Sparkles ✨</option>
+                                      <option value="confetti">Confetti 🎊</option>
+                                      <option value="bubbles">Floating Bubbles 🫧</option>
+                                      <option value="pulse">Aura Pulse 📳</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="pt-3 border-t border-slate-850 mt-2">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const response = await fetch(`/api/members/${editingMember.id}`, {
+                                    method: "PUT",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      "Authorization": `Bearer ${currentUser.id}`
+                                    },
+                                    body: JSON.stringify({
+                                      glow: editingMember.glow,
+                                      glowStyle: editingMember.glowStyle,
+                                      animation: editingMember.animation,
+                                      splitProfile: editingMember.splitProfile,
+                                      memberGlow: editingMember.memberGlow,
+                                      memberGlowStyle: editingMember.memberGlowStyle,
+                                      memberAnimation: editingMember.memberAnimation
+                                    })
+                                  });
+                                  if (!response.ok) {
+                                    const d = await response.json();
+                                    throw new Error(d.error || "Failed to update glow");
+                                  }
+                                  alert("Glow customizations applied successfully!");
+                                  onRefresh();
+                                } catch (err: any) {
+                                  alert("Error applying glow changes: " + err.message);
+                                }
+                              }}
+                              className="w-full py-1.5 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                            >
+                              Apply Glow Changes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Real-Time Miniaturized Layout Preview */}
                   <div className="bg-slate-950/80 p-4 rounded-xl border border-cyan-500/10 mt-3">

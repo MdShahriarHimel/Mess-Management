@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound } from "lucide-react";
+import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy } from "lucide-react";
 import { Member } from "../types.js";
 
 interface LoginProps {
@@ -20,6 +20,8 @@ interface LoginProps {
     textColor?: string;
     accentColor?: string;
     animationType?: string;
+    logoType?: string;
+    customLogoUrl?: string;
   };
 }
 
@@ -219,7 +221,23 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               style={{ borderColor: `${accentColor}40`, color: accentColor }}
               className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 border mb-4 ${animationClass}`}
             >
-              <KeyRound size={32} />
+              {customization?.logoType === "shield" ? (
+                <Shield size={32} />
+              ) : customization?.logoType === "sparkles" ? (
+                <Sparkles size={32} />
+              ) : customization?.logoType === "coffee" ? (
+                <Coffee size={32} />
+              ) : customization?.logoType === "users" ? (
+                <Users size={32} />
+              ) : customization?.logoType === "trophy" ? (
+                <Trophy size={32} />
+              ) : customization?.logoType === "lock" ? (
+                <Lock size={32} />
+              ) : customization?.logoType === "image" && customization?.customLogoUrl ? (
+                <img src={customization.customLogoUrl} alt="Logo" className="w-12 h-12 object-contain rounded-lg" referrerPolicy="no-referrer" />
+              ) : (
+                <KeyRound size={32} />
+              )}
             </div>
           )}
           <h1 

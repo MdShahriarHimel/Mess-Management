@@ -410,7 +410,7 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
 
 // Reset password (by Admin or Self)
 router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
-  const { memberId, newPassword } = req.body;
+  const { memberId, newPassword, approvedBySuperUser, approvedByManager } = req.body;
   if (!memberId || !newPassword) {
     res.status(400).json({ error: "Member ID and new password are required" });
     return;
@@ -426,7 +426,9 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
 
   // Check permission: Self can reset self password. Admin/Superuser can reset others.
   const isSelf = req.user!.id === memberId;
-  const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER;
+  const isAdmin = req.user!.role === UserRole.ADMIN;
+  const isSuperUser = req.user!.role === UserRole.SUPERUSER;
+  const isAdminOrSuper = isAdmin || isSuperUser;
 
   if (!isSelf && !isAdminOrSuper) {
     res.status(403).json({ error: "Permission denied" });
@@ -439,9 +441,39 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     return;
   }
 
+  // Admin resetting someone else requires Super User and Manager permission
+  if (isAdmin && !isSelf) {
+    if (!approvedBySuperUser || !approvedByManager) {
+      res.status(400).json({ 
+        error: "Supervisor Authorization Required: Admin must select both a Super User and a Manager who permitted this action." 
+      });
+      return;
+    }
+
+    const superUser = db.members.find(m => m.id === approvedBySuperUser || m.nickname === approvedBySuperUser);
+    const managerUser = db.members.find(m => m.id === approvedByManager || m.nickname === approvedByManager);
+
+    if (!superUser || ![UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(superUser.role)) {
+      res.status(400).json({ error: "Selected Super User does not have valid Super User or Assistant Super User permissions." });
+      return;
+    }
+
+    if (!managerUser || ![UserRole.MANAGER, UserRole.PARTIAL_MANAGER].includes(managerUser.role)) {
+      res.status(400).json({ error: "Selected Manager does not have valid Manager or Assistant Manager permissions." });
+      return;
+    }
+  }
+
   const creds = loadCredentials();
   creds[memberId] = newPassword;
   saveCredentials();
+
+  let auditMsg = `Reset password for user: ${targetMember.nickname}`;
+  if (isAdmin && !isSelf) {
+    const superUser = db.members.find(m => m.id === approvedBySuperUser || m.nickname === approvedBySuperUser);
+    const managerUser = db.members.find(m => m.id === approvedByManager || m.nickname === approvedByManager);
+    auditMsg += ` (Approved with permission of SuperUser: @${superUser?.nickname} and Manager: @${managerUser?.nickname})`;
+  }
 
   logAudit(
     req.user!.id, 
@@ -449,7 +481,7 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     "PASSWORD_RESET", 
     "Hidden", 
     "Hidden", 
-    `Reset password for user: ${targetMember.nickname}`
+    auditMsg
   );
 
   res.json({ success: true });
@@ -599,6 +631,10 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     delete updates.glow;
     delete updates.glowStyle;
     delete updates.animation;
+    delete updates.splitProfile;
+    delete updates.memberGlow;
+    delete updates.memberGlowStyle;
+    delete updates.memberAnimation;
   }
 
   // Standard member cannot modify roles, status, permissions, joining/leaving dates

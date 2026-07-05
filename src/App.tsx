@@ -3121,7 +3121,18 @@ export default function App() {
 
                       {/* RGB Custom Colors Customizer */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Granular Color Customization Palettes</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Granular Color Customization Palettes</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ customColors });
+                              alert("Granular color customization applied successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Color Changes
+                          </button>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Cash Deposit Section Bg</label>
@@ -3215,7 +3226,18 @@ export default function App() {
 
                       {/* Dashboard Visibility Rules config */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Dashboard Tab Visibility Rules (Per-Branch)</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Dashboard Tab Visibility Rules (Per-Branch)</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ dashboardVisibility });
+                              alert("Tab visibility rules saved successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Visibility Rules
+                          </button>
+                        </div>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                           Define which tabs or sections are allowed to be seen in this specific mess branch. 
                           For example, you can hide the cash deposit section for Mess B, or hide the audit log logs for Mess A.
@@ -3285,7 +3307,18 @@ export default function App() {
 
                       {/* Mess Animations/Effects config */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Interactive Mess Themes & Animation Effects</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Interactive Mess Themes & Animation Effects</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ messAnimations });
+                              alert("Interactive themes and animation effects updated successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Themes & Effects
+                          </button>
+                        </div>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                           Admins can activate custom ambient animation overlays and immersive background styles on active branches (e.g. Dhaka or Chittagong) 
                           to personalize the branch's aesthetic experience.
@@ -3424,7 +3457,18 @@ export default function App() {
 
                       {/* Calendar & Date Access Rules config */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Calendar Date & Input Permission Rules</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Calendar Date & Input Permission Rules</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ dateRestrictions });
+                              alert("Calendar input permission rules updated successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Permission Rules
+                          </button>
+                        </div>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                           Control how calendar dates behave. Specify which sections allow inputs on future or past dates. This restricts normal user actions while preserving admin flexibility where necessary.
                         </p>
@@ -3535,7 +3579,18 @@ export default function App() {
 
                       {/* Login Page Customizer */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-4">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Login Page Customizer</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Login Page Customizer</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ loginCustomization });
+                              alert("Login Page Customizer settings saved successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Login Customizations
+                          </button>
+                        </div>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                           Customize every single layout parameter of the Login Screen. Set custom fonts, background themes, custom brand text, animations, and toggle interactive elements.
                         </p>
@@ -3674,6 +3729,37 @@ export default function App() {
                             </select>
                           </div>
 
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Login Logo Type</label>
+                            <select
+                              value={loginCustomization?.logoType || "key"}
+                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, logoType: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            >
+                              <option value="key">Key Icon (Default)</option>
+                              <option value="shield">Shield Icon</option>
+                              <option value="sparkles">Sparkles Icon</option>
+                              <option value="coffee">Coffee Icon</option>
+                              <option value="users">Users Icon</option>
+                              <option value="trophy">Trophy Icon</option>
+                              <option value="lock">Lock Icon</option>
+                              <option value="image">Custom Image URL</option>
+                            </select>
+                          </div>
+
+                          {loginCustomization?.logoType === "image" && (
+                            <div className="space-y-1.5 animate-fade-in">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Custom Logo Image URL</label>
+                              <input
+                                type="text"
+                                value={loginCustomization?.customLogoUrl || ""}
+                                onChange={(e) => setLoginCustomization(prev => ({ ...prev, customLogoUrl: e.target.value }))}
+                                placeholder="https://example.com/logo.png"
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                              />
+                            </div>
+                          )}
+
                           <div className="flex items-center gap-2 pt-5">
                             <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2 rounded border border-slate-900 w-full">
                               <input
@@ -3702,7 +3788,18 @@ export default function App() {
 
                       {/* Home Page / Welcome Banner Customizer */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-4">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Home/Dashboard Screen Customizer</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Home/Dashboard Screen Customizer</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ homeCustomization });
+                              alert("Home dashboard customizations applied successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Home Customizations
+                          </button>
+                        </div>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                           Modify the primary greeting card, typography, and card-level branding styles for the Home dashboard. Use <code className="text-cyan-400 font-mono font-bold text-[10px] bg-slate-950 px-1 py-0.5 rounded">{"{nickname}"}</code> in title to dynamically reference the user.
                         </p>
@@ -3792,7 +3889,23 @@ export default function App() {
 
                       {/* Premium Glowing Effects & Performance Controls */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-4">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Premium Glowing Effects & Performance Controls</h4>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Premium Glowing Effects & Performance Controls</h4>
+                          <button
+                            onClick={async () => {
+                              await handleUpdateSettings({ 
+                                enableManagerRating, 
+                                balanceSheetGlow, 
+                                roleAnimations, 
+                                adminVisibility 
+                              });
+                              alert("Premium glowing styles and visibility rules applied successfully.");
+                            }}
+                            className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                          >
+                            Apply Glowing Controls
+                          </button>
+                        </div>
                         <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                           Control premium, customizable animated glowing background and transition effects for active components and mess role profiles. This creates distinctive visual branding across the app.
                         </p>

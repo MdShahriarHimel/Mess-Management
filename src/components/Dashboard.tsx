@@ -7,9 +7,10 @@ import { useState, useEffect } from "react";
 import { 
   Bell, Calendar, Coffee, ShieldAlert, Star, Users, DollarSign,
   ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
-  Vote, Award, Percent
+  Vote, Award, Percent, Settings2, Sparkles
 } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
+import { ColorPalettePicker } from "../App.js";
 
 interface DashboardProps {
   currentUser: Member;
@@ -60,6 +61,64 @@ export default function Dashboard({
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [ratingSuccess, setRatingSuccess] = useState<string | null>(null);
   const [ratingsList, setRatingsList] = useState<any[]>([]);
+
+  // Profile Customizer State
+  const [showProfileCustomizer, setShowProfileCustomizer] = useState(false);
+  const [profileGlow, setProfileGlow] = useState(!!currentUser.glow);
+  const [profileGlowStyle, setProfileGlowStyle] = useState(currentUser.glowStyle || "#22d3ee");
+  const [profileAnimation, setProfileAnimation] = useState(currentUser.animation || "none");
+  const [splitProfile, setSplitProfile] = useState(!!currentUser.splitProfile);
+  const [memberGlow, setMemberGlow] = useState(!!currentUser.memberGlow);
+  const [memberGlowStyle, setMemberGlowStyle] = useState(currentUser.memberGlowStyle || "#e11d48");
+  const [memberAnimation, setMemberAnimation] = useState(currentUser.memberAnimation || "none");
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setProfileGlow(!!currentUser.glow);
+      setProfileGlowStyle(currentUser.glowStyle || "#22d3ee");
+      setProfileAnimation(currentUser.animation || "none");
+      setSplitProfile(!!currentUser.splitProfile);
+      setMemberGlow(!!currentUser.memberGlow);
+      setMemberGlowStyle(currentUser.memberGlowStyle || "#e11d48");
+      setMemberAnimation(currentUser.memberAnimation || "none");
+    }
+  }, [currentUser]);
+
+  const handleSaveProfileCustomization = async (target: "admin" | "member" | "split") => {
+    setIsUpdatingProfile(true);
+    try {
+      const response = await fetch(`/api/members/${currentUser.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({
+          ...currentUser,
+          splitProfile,
+          glow: profileGlow,
+          glowStyle: profileGlowStyle,
+          animation: profileAnimation,
+          memberGlow,
+          memberGlowStyle,
+          memberAnimation
+        })
+      });
+
+      if (!response.ok) {
+        const d = await response.json();
+        throw new Error(d.error || "Failed to save profile customization");
+      }
+
+      alert("Profile customizations updated successfully!");
+      triggerRefresh();
+    } catch (err: any) {
+      alert("Error saving profile: " + err.message);
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
 
   // Individual meals summary state for current user
   const [myMeals, setMyMeals] = useState<{ lunch: number; dinner: number; total: number }>({ lunch: 0, dinner: 0, total: 0 });
@@ -312,7 +371,16 @@ export default function Dashboard({
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {currentUser.role === UserRole.ADMIN && (
+                <button
+                  onClick={() => setShowProfileCustomizer(!showProfileCustomizer)}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white text-xs font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1.5 shrink-0"
+                >
+                  <Settings2 size={14} />
+                  My Dual Profile
+                </button>
+              )}
               <span className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 ${
                 isDarkMode ? "bg-slate-900/80 border-cyan-500/20 text-cyan-300" : "bg-cyan-50 border-cyan-200 text-cyan-700"
               }`}
@@ -322,6 +390,415 @@ export default function Dashboard({
                 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {currentUser.role === UserRole.ADMIN && showProfileCustomizer && (
+        <div className={`p-6 rounded-2xl border animate-fade-in ${
+          isDarkMode ? "bg-slate-900/40 border-cyan-500/20 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+        }`} id="dashboard-dual-profile-customizer">
+          <div className="flex justify-between items-start border-b border-cyan-500/15 pb-3 mb-4">
+            <div>
+              <h3 className="text-sm font-bold font-display uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                👤 My Dual-Profile Customization (Admin Mode)
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed font-sans">
+                Configure custom visual looks. If <strong>Dual-Profile Customization</strong> is enabled, you will use separate glowing cards and effects depending on whether your admin role is shown or hidden in the mess directory.
+              </p>
+            </div>
+            <button 
+              onClick={() => setShowProfileCustomizer(false)} 
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer transition-all"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Column 1: Config and Controls */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-900 space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-xs font-bold text-slate-200">Dual-Profile Customization Feature</p>
+                    <p className="text-[10px] text-slate-500">Enable separate styles for Admin and Hidden Member views.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={splitProfile} 
+                        onChange={(e) => {
+                          setSplitProfile(e.target.checked);
+                        }}
+                        className="sr-only peer cursor-pointer"
+                      />
+                      <div className="w-9 h-5 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+                    </label>
+                    <button
+                      onClick={() => handleSaveProfileCustomization("split")}
+                      disabled={isUpdatingProfile}
+                      className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded text-[9px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Admin Role Style Box */}
+                <div className="p-4 rounded-xl bg-slate-950/30 border border-slate-900/80 space-y-3">
+                  <div className="flex justify-between items-center border-b border-slate-900 pb-2 mb-2">
+                    <p className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+                      👑 Admin Role Style
+                    </p>
+                    <button
+                      onClick={() => handleSaveProfileCustomization("admin")}
+                      disabled={isUpdatingProfile}
+                      className="px-2 py-0.5 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/20 text-cyan-400 hover:text-white rounded text-[8px] font-bold uppercase tracking-widest cursor-pointer transition-all shrink-0"
+                    >
+                      Apply Changes
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Glow Style</label>
+                    <select
+                      value={!profileGlow ? "none" : (profileGlowStyle.startsWith("#") ? "color" : "preset")}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "none") {
+                          setProfileGlow(false);
+                        } else if (val === "color") {
+                          setProfileGlow(true);
+                          setProfileGlowStyle("#22d3ee");
+                        } else {
+                          setProfileGlow(true);
+                          setProfileGlowStyle("nitro-classic");
+                        }
+                      }}
+                      className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none"
+                    >
+                      <option value="none">No Glowing Card</option>
+                      <option value="color">Custom Solid Color Palette</option>
+                      <option value="preset">Discord Premium Animated Presets</option>
+                    </select>
+
+                    {profileGlow && profileGlowStyle.startsWith("#") && (
+                      <div className="pt-1">
+                        <ColorPalettePicker
+                          value={profileGlowStyle}
+                          onChange={(color) => setProfileGlowStyle(color)}
+                        />
+                      </div>
+                    )}
+
+                    {profileGlow && !profileGlowStyle.startsWith("#") && (
+                      <div className="pt-1">
+                        <select
+                          value={profileGlowStyle}
+                          onChange={(e) => setProfileGlowStyle(e.target.value)}
+                          className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none"
+                        >
+                          <option value="nitro-classic">Discord Nitro Classic 💗💙</option>
+                          <option value="nitro-boost">Nitro Boost Crystal 🔮💖</option>
+                          <option value="cyber-laser">Cyberpunk Laser Scanner 🟥🟦</option>
+                          <option value="rainbow-shimmer">Prismatic Rainbow Shimmer 🌈</option>
+                          <option value="frozen-frost">Frozen Ice Frostbite ❄️🧊</option>
+                          <option value="royal-majesty">Royal Crown Gold Majesty 👑👑</option>
+                          <option value="sakura-blossom">Sakura Blossom Wave 🌸🌸</option>
+                          <option value="dark-matter">Cosmic Dark Matter 🌌🟣</option>
+                          <option value="supernova">Supernova Flame Blast 💥💥</option>
+                          <option value="matrix-rain">Emerald Matrix Code Rain 🟢🟢</option>
+                          <option value="electric-storm">Indigo Electric Storm ⚡⚡</option>
+                          <option value="retro-horizon">Retro Sunset Horizon 🌅🌅</option>
+                          <option value="golden-aura">Classic Golden Aura ✨</option>
+                          <option value="volcanic-flame">Classic Volcanic Flame 🔥</option>
+                          <option value="cyberpunk-neon">Classic Cyberpunk Neon ⚡</option>
+                          <option value="emerald-ripple">Classic Emerald Ripple 🟢</option>
+                          <option value="cosmic-nebula">Classic Cosmic Nebula 🌌</option>
+                          <option value="deep-ocean">Classic Deep Ocean 🌊</option>
+                          <option value="ruby-laser">Classic Ruby Laser 🔴</option>
+                          <option value="velvet-pulse">Classic Velvet Pulse 🟣</option>
+                          <option value="amethyst-shimmer">Classic Amethyst Shimmer 🔮</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Animation Overlay</label>
+                    <select
+                      value={profileAnimation}
+                      onChange={(e) => setProfileAnimation(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none"
+                    >
+                      <option value="none">No Animation</option>
+                      <option value="sparkles">Sparkles ✨</option>
+                      <option value="confetti">Confetti 🎊</option>
+                      <option value="bubbles">Floating Bubbles 🫧</option>
+                      <option value="pulse">Aura Pulse 📳</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Hidden Member Role Style Box */}
+                <div className="p-4 rounded-xl bg-slate-950/30 border border-slate-900/80 space-y-3">
+                  <div className="flex justify-between items-center border-b border-slate-900 pb-2 mb-2">
+                    <p className="text-xs font-bold text-rose-400 flex items-center gap-1">
+                      👥 Hidden Member Style
+                    </p>
+                    <button
+                      onClick={() => handleSaveProfileCustomization("member")}
+                      disabled={isUpdatingProfile || !splitProfile}
+                      className={`px-2 py-0.5 border text-rose-400 rounded text-[8px] font-bold uppercase tracking-widest cursor-pointer transition-all shrink-0 ${
+                        splitProfile 
+                          ? "bg-rose-900/20 hover:bg-rose-900 border-rose-500/20 hover:text-white" 
+                          : "bg-slate-950 border-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                      }`}
+                    >
+                      Apply Changes
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Glow Style</label>
+                    <select
+                      value={!memberGlow ? "none" : (memberGlowStyle.startsWith("#") ? "color" : "preset")}
+                      disabled={!splitProfile}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "none") {
+                          setMemberGlow(false);
+                        } else if (val === "color") {
+                          setMemberGlow(true);
+                          setMemberGlowStyle("#e11d48");
+                        } else {
+                          setMemberGlow(true);
+                          setMemberGlowStyle("nitro-classic");
+                        }
+                      }}
+                      className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none disabled:opacity-40"
+                    >
+                      <option value="none">No Glowing Card</option>
+                      <option value="color">Custom Solid Color Palette</option>
+                      <option value="preset">Discord Premium Animated Presets</option>
+                    </select>
+
+                    {memberGlow && memberGlowStyle.startsWith("#") && (
+                      <div className="pt-1">
+                        <ColorPalettePicker
+                          value={memberGlowStyle}
+                          onChange={(color) => setMemberGlowStyle(color)}
+                        />
+                      </div>
+                    )}
+
+                    {memberGlow && !memberGlowStyle.startsWith("#") && (
+                      <div className="pt-1">
+                        <select
+                          value={memberGlowStyle}
+                          onChange={(e) => setMemberGlowStyle(e.target.value)}
+                          disabled={!splitProfile}
+                          className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none disabled:opacity-40"
+                        >
+                          <option value="nitro-classic">Discord Nitro Classic 💗💙</option>
+                          <option value="nitro-boost">Nitro Boost Crystal 🔮💖</option>
+                          <option value="cyber-laser">Cyberpunk Laser Scanner 🟥🟦</option>
+                          <option value="rainbow-shimmer">Prismatic Rainbow Shimmer 🌈</option>
+                          <option value="frozen-frost">Frozen Ice Frostbite ❄️🧊</option>
+                          <option value="royal-majesty">Royal Crown Gold Majesty 👑👑</option>
+                          <option value="sakura-blossom">Sakura Blossom Wave 🌸🌸</option>
+                          <option value="dark-matter">Cosmic Dark Matter 🌌🟣</option>
+                          <option value="supernova">Supernova Flame Blast 💥💥</option>
+                          <option value="matrix-rain">Emerald Matrix Code Rain 🟢🟢</option>
+                          <option value="electric-storm">Indigo Electric Storm ⚡⚡</option>
+                          <option value="retro-horizon">Retro Sunset Horizon 🌅🌅</option>
+                          <option value="golden-aura">Classic Golden Aura ✨</option>
+                          <option value="volcanic-flame">Classic Volcanic Flame 🔥</option>
+                          <option value="cyberpunk-neon">Classic Cyberpunk Neon ⚡</option>
+                          <option value="emerald-ripple">Classic Emerald Ripple 🟢</option>
+                          <option value="cosmic-nebula">Classic Cosmic Nebula 🌌</option>
+                          <option value="deep-ocean">Classic Deep Ocean 🌊</option>
+                          <option value="ruby-laser">Classic Ruby Laser 🔴</option>
+                          <option value="velvet-pulse">Classic Velvet Pulse 🟣</option>
+                          <option value="amethyst-shimmer">Classic Amethyst Shimmer 🔮</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Animation Overlay</label>
+                    <select
+                      value={memberAnimation}
+                      disabled={!splitProfile}
+                      onChange={(e) => setMemberAnimation(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none disabled:opacity-40"
+                    >
+                      <option value="none">No Animation</option>
+                      <option value="sparkles">Sparkles ✨</option>
+                      <option value="confetti">Confetti 🎊</option>
+                      <option value="bubbles">Floating Bubbles 🫧</option>
+                      <option value="pulse">Aura Pulse 📳</option>
+                    </select>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Column 2: Real-time Layout Previews */}
+            <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-900 flex flex-col items-center justify-center space-y-4">
+              <h4 className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest text-center">
+                Real-Time Miniaturized Layout Preview
+              </h4>
+              
+              {/* Tabs to toggle preview role representation */}
+              {splitProfile ? (
+                <div className="w-full space-y-3">
+                  {(() => {
+                    const [localPrevTab, setLocalPrevTab] = useState<"admin" | "member">("admin");
+                    const previewGlow = localPrevTab === "admin" ? profileGlow : memberGlow;
+                    const previewGlowStyle = localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle;
+                    const previewAnimation = localPrevTab === "admin" ? profileAnimation : memberAnimation;
+                    
+                    return (
+                      <div className="w-full space-y-3">
+                        <div className="flex gap-1 p-1 bg-slate-950 rounded-lg border border-slate-900 w-full max-w-xs mx-auto">
+                          <button
+                            type="button"
+                            onClick={() => setLocalPrevTab("admin")}
+                            className={`flex-1 py-1 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                              localPrevTab === "admin" ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"
+                            }`}
+                          >
+                            Admin Mode
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLocalPrevTab("member")}
+                            className={`flex-1 py-1 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                              localPrevTab === "member" ? "bg-rose-600 text-white" : "text-slate-400 hover:text-white"
+                            }`}
+                          >
+                            Member Mode
+                          </button>
+                        </div>
+                        
+                        <div className="flex justify-center py-2">
+                          <div 
+                            className={`relative overflow-hidden w-60 p-3 rounded-xl border bg-slate-900 text-white ${
+                              previewGlow && !previewGlowStyle.startsWith("#") ? `glow-${previewGlowStyle}` : ""
+                            }`}
+                            style={{
+                              boxShadow: previewGlow && previewGlowStyle.startsWith("#") ? `0 0 12px ${previewGlowStyle}30` : undefined,
+                              borderColor: previewGlow && previewGlowStyle.startsWith("#") ? `${previewGlowStyle}60` : undefined
+                            }}
+                          >
+                            {previewAnimation !== "none" && (
+                              <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+                                {previewAnimation === "sparkles" && (
+                                  <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-yellow-500/10 to-amber-500/10 opacity-70">
+                                    <span className="absolute top-1 left-2 text-[8px] animate-bounce">✨</span>
+                                    <span className="absolute bottom-2 right-3 text-[10px] animate-pulse">✨</span>
+                                  </div>
+                                )}
+                                {previewAnimation === "confetti" && (
+                                  <div className="absolute inset-0 opacity-80">
+                                    <span className="absolute top-1 right-2 text-[8px] animate-bounce">🎊</span>
+                                    <span className="absolute bottom-1 left-4 text-[8px] animate-bounce">🎉</span>
+                                  </div>
+                                )}
+                                {previewAnimation === "bubbles" && (
+                                  <div className="absolute inset-0 opacity-60">
+                                    <span className="absolute bottom-1 right-1 text-[8px] animate-ping">🫧</span>
+                                    <span className="absolute top-3 left-4 text-[9px] animate-pulse">🫧</span>
+                                  </div>
+                                )}
+                                {previewAnimation === "pulse" && (
+                                  <div className="absolute inset-0 border border-cyan-500/20 animate-pulse rounded-xl"></div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex gap-2.5 items-center relative z-20">
+                              <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0">
+                                {currentUser.nickname?.[0]?.toUpperCase() || "A"}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-extrabold text-[11px] truncate">{currentUser.name}</h4>
+                                <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
+                                <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
+                                  {localPrevTab === "admin" ? "ADMIN" : "MEMBER"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="w-full space-y-3 flex flex-col items-center">
+                  <div 
+                    className={`relative overflow-hidden w-60 p-3 rounded-xl border bg-slate-900 text-white ${
+                      profileGlow && !profileGlowStyle.startsWith("#") ? `glow-${profileGlowStyle}` : ""
+                    }`}
+                    style={{
+                      boxShadow: profileGlow && profileGlowStyle.startsWith("#") ? `0 0 12px ${profileGlowStyle}30` : undefined,
+                      borderColor: profileGlow && profileGlowStyle.startsWith("#") ? `${profileGlowStyle}60` : undefined
+                    }}
+                  >
+                    {profileAnimation !== "none" && (
+                      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+                        {profileAnimation === "sparkles" && (
+                          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-yellow-500/10 to-amber-500/10 opacity-70">
+                            <span className="absolute top-1 left-2 text-[8px] animate-bounce">✨</span>
+                            <span className="absolute bottom-2 right-3 text-[10px] animate-pulse">✨</span>
+                          </div>
+                        )}
+                        {profileAnimation === "confetti" && (
+                          <div className="absolute inset-0 opacity-80">
+                            <span className="absolute top-1 right-2 text-[8px] animate-bounce">🎊</span>
+                            <span className="absolute bottom-1 left-4 text-[8px] animate-bounce">🎉</span>
+                          </div>
+                        )}
+                        {profileAnimation === "bubbles" && (
+                          <div className="absolute inset-0 opacity-60">
+                            <span className="absolute bottom-1 right-1 text-[8px] animate-ping">🫧</span>
+                            <span className="absolute top-3 left-4 text-[9px] animate-pulse">🫧</span>
+                          </div>
+                        )}
+                        {profileAnimation === "pulse" && (
+                          <div className="absolute inset-0 border border-cyan-500/20 animate-pulse rounded-xl"></div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2.5 items-center relative z-20">
+                      <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0">
+                        {currentUser.nickname?.[0]?.toUpperCase() || "A"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-extrabold text-[11px] truncate">{currentUser.name}</h4>
+                        <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
+                        <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
+                          ADMIN
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+            </div>
+
           </div>
         </div>
       )}
