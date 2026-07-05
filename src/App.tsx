@@ -828,6 +828,24 @@ export default function App() {
     backgroundOpacity: 20
   });
 
+  const [enableManagerRating, setEnableManagerRating] = useState(true);
+  const [balanceSheetGlow, setBalanceSheetGlow] = useState("none");
+  const [roleAnimations, setRoleAnimations] = useState({
+    ADMIN: { animation: "pulse", color: "text-red-500", glow: true, glowStyle: "golden-aura" },
+    SUPERUSER: { animation: "pulse", color: "text-orange-500", glow: true, glowStyle: "cosmic-nebula" },
+    ASSISTANT_SUPERUSER: { animation: "none", color: "text-cyan-400", glow: true, glowStyle: "deep-ocean" },
+    MANAGER: { animation: "bounce", color: "text-yellow-400", glow: true, glowStyle: "emerald-ripple" },
+    PARTIAL_MANAGER: { animation: "none", color: "text-emerald-400", glow: false, glowStyle: "none" },
+    MEMBER: { animation: "none", color: "text-slate-400", glow: false, glowStyle: "none" }
+  });
+
+  const [adminVisibility, setAdminVisibility] = useState({
+    showAdminCard: false,
+    showAdminPhone: false,
+    showAdminEmail: false,
+    showAdminRole: false
+  });
+
   // Dashboard Visibility rules
   const [dashboardVisibility, setDashboardVisibility] = useState({
     showAuditLogs: true,
@@ -1010,6 +1028,10 @@ export default function App() {
         if (data.dateRestrictions) setDateRestrictions(prev => ({ ...prev, ...data.dateRestrictions }));
         if (data.loginCustomization) setLoginCustomization(prev => ({ ...prev, ...data.loginCustomization }));
         if (data.homeCustomization) setHomeCustomization(prev => ({ ...prev, ...data.homeCustomization }));
+        if (data.enableManagerRating !== undefined) setEnableManagerRating(data.enableManagerRating);
+        if (data.balanceSheetGlow !== undefined) setBalanceSheetGlow(data.balanceSheetGlow);
+        if (data.roleAnimations !== undefined) setRoleAnimations(data.roleAnimations);
+        if (data.adminVisibility !== undefined) setAdminVisibility(data.adminVisibility);
       }
     } catch (e) {
       console.error("Failed to fetch settings:", e);
@@ -1047,6 +1069,10 @@ export default function App() {
           if (s.dateRestrictions) setDateRestrictions(s.dateRestrictions);
           if (s.loginCustomization) setLoginCustomization(s.loginCustomization);
           if (s.homeCustomization) setHomeCustomization(s.homeCustomization);
+          if (s.enableManagerRating !== undefined) setEnableManagerRating(s.enableManagerRating);
+          if (s.balanceSheetGlow !== undefined) setBalanceSheetGlow(s.balanceSheetGlow);
+          if (s.roleAnimations !== undefined) setRoleAnimations(s.roleAnimations);
+          if (s.adminVisibility !== undefined) setAdminVisibility(s.adminVisibility);
         }
         return true;
       } else {
@@ -1492,9 +1518,16 @@ export default function App() {
 
   const fontSizeMap: Record<string, string> = {
     small: "font-size: 13px !important;",
+    "13.5": "font-size: 13.5px !important;",
     normal: "font-size: 14px !important;",
+    "14.5": "font-size: 14.5px !important;",
     large: "font-size: 15px !important;",
+    "15.5": "font-size: 15.5px !important;",
+    "16": "font-size: 16px !important;",
     xlarge: "font-size: 16.5px !important;",
+    "17": "font-size: 17px !important;",
+    "17.5": "font-size: 17.5px !important;",
+    "18": "font-size: 18px !important;",
   };
 
   const hexToRgb = (hex: string): string => {
@@ -1753,9 +1786,9 @@ export default function App() {
         isDarkMode && (!messAnimations?.backgroundTheme || messAnimations?.backgroundTheme === "default") 
           ? "bg-slate-950 text-white font-sans" 
           : !isDarkMode && (!messAnimations?.backgroundTheme || messAnimations?.backgroundTheme === "default")
-            ? "bg-slate-50 text-slate-800 font-sans"
+            ? "bg-slate-50 text-slate-800 font-sans light-mode-root"
             : "text-white font-sans" // Force elegant high-contrast dark style text if immersive themes are active
-      }`}
+      } ${!isDarkMode ? "light-mode-root" : ""}`}
     >
       <style>{`
         :root {
@@ -2003,7 +2036,7 @@ export default function App() {
             <div>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Active Monthly Cycle</p>
               <span className="text-xs font-extrabold text-cyan-400 font-display">
-                {selectedMonth?.name || "July 2026"} 
+                {new Date().toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} • {selectedMonth?.name || "July 2026"} 
                 {selectedMonth?.isLocked ? " (Locked)" : " (Active)"}
               </span>
             </div>
@@ -2070,6 +2103,7 @@ export default function App() {
               elections={elections}
               membersListProp={membersList}
               showResultsInDashboard={showResultsInDashboard}
+              enableManagerRating={enableManagerRating}
             />
           )}
 
@@ -2139,6 +2173,7 @@ export default function App() {
               months={months}
               currencySymbol={currencySymbol}
               customColors={customColors}
+              balanceSheetGlow={balanceSheetGlow}
             />
           )}
 
@@ -3009,9 +3044,16 @@ export default function App() {
                           className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
                         >
                           <option value="small">Compact (13px)</option>
+                          <option value="13.5">13.5px</option>
                           <option value="normal">Normal (14px)</option>
+                          <option value="14.5">14.5px</option>
                           <option value="large">Spacious (15px)</option>
+                          <option value="15.5">15.5px</option>
+                          <option value="16">16px</option>
                           <option value="xlarge">Readable (16.5px)</option>
+                          <option value="17">17px</option>
+                          <option value="17.5">17.5px</option>
+                          <option value="18">18px</option>
                         </select>
                       </div>
 
@@ -3812,6 +3854,204 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Premium Glowing Effects & Performance Controls */}
+                      <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-4">
+                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Premium Glowing Effects & Performance Controls</h4>
+                        <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                          Control premium, customizable animated glowing background and transition effects for active components and mess role profiles. This creates distinctive visual branding across the app.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Left column: Manager performance and Balance sheet glow */}
+                          <div className="space-y-4">
+                            <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-3">
+                              <p className="text-xs font-bold text-slate-200">Manager Performance Rating</p>
+                              <div className="flex items-center gap-2">
+                                <label className="flex items-center gap-2 cursor-pointer bg-slate-950/60 p-2 rounded border border-slate-900 w-full">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!enableManagerRating}
+                                    onChange={(e) => setEnableManagerRating(e.target.checked)}
+                                    className="accent-cyan-500 cursor-pointer"
+                                  />
+                                  <span className="text-[11px] text-slate-300 font-medium">Enable Manager Performance Rating Card</span>
+                                </label>
+                              </div>
+                              <p className="text-[10px] text-slate-500">
+                                When enabled, users can submit and view ratings starting from the 7th of the month.
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-3">
+                              <label className="text-xs font-bold text-slate-200 block">Balance Sheet Glowing Style</label>
+                              <select
+                                value={balanceSheetGlow || "none"}
+                                onChange={(e) => setBalanceSheetGlow(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                              >
+                                <option value="none">None (Standard Border)</option>
+                                <option value="golden-aura">Golden Aura</option>
+                                <option value="volcanic-flame">Volcanic Flame</option>
+                                <option value="deep-ocean">Deep Ocean Ripple</option>
+                                <option value="cosmic-nebula">Cosmic Nebula</option>
+                                <option value="emerald-ripple">Emerald Ripple</option>
+                                <option value="cyberpunk-neon">Cyberpunk Neon</option>
+                                <option value="ghostly-violet">Ghostly Violet</option>
+                                <option value="electric-discharge">Electric Discharge</option>
+                                <option value="crimson-tide">Crimson Tide</option>
+                                <option value="solar-eclipse">Solar Eclipse</option>
+                              </select>
+                              <p className="text-[10px] text-slate-500">
+                                Customize the animated box-shadow and gradient glow applied to the "Individual Month Balance Sheet" container.
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-3">
+                              <p className="text-xs font-bold text-slate-200">Admin Privacy & Security Settings</p>
+                              <p className="text-[10px] text-slate-400">
+                                Control which Admin credentials are shown to normal members. When turned off, info is masked or hidden.
+                              </p>
+                              
+                              <div className="space-y-2 pt-1">
+                                <label className="flex items-center gap-2.5 cursor-pointer bg-slate-950/60 p-2 rounded border border-slate-900 text-[11px] text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!adminVisibility?.showAdminCard}
+                                    onChange={(e) => setAdminVisibility((prev: any) => ({ ...prev, showAdminCard: e.target.checked }))}
+                                    className="accent-cyan-500"
+                                  />
+                                  <span>Show Admin Card in Members List</span>
+                                </label>
+
+                                <label className="flex items-center gap-2.5 cursor-pointer bg-slate-950/60 p-2 rounded border border-slate-900 text-[11px] text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!adminVisibility?.showAdminPhone}
+                                    onChange={(e) => setAdminVisibility((prev: any) => ({ ...prev, showAdminPhone: e.target.checked }))}
+                                    className="accent-cyan-500"
+                                  />
+                                  <span>Show Admin Phone Number & WhatsApp Link</span>
+                                </label>
+
+                                <label className="flex items-center gap-2.5 cursor-pointer bg-slate-950/60 p-2 rounded border border-slate-900 text-[11px] text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!adminVisibility?.showAdminEmail}
+                                    onChange={(e) => setAdminVisibility((prev: any) => ({ ...prev, showAdminEmail: e.target.checked }))}
+                                    className="accent-cyan-500"
+                                  />
+                                  <span>Show Admin Email Address</span>
+                                </label>
+
+                                <label className="flex items-center gap-2.5 cursor-pointer bg-slate-950/60 p-2 rounded border border-slate-900 text-[11px] text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!adminVisibility?.showAdminRole}
+                                    onChange={(e) => setAdminVisibility((prev: any) => ({ ...prev, showAdminRole: e.target.checked }))}
+                                    className="accent-cyan-500"
+                                  />
+                                  <span>Show Admin Authority Role Badge (else shows "Member")</span>
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right column: Role profile customizer */}
+                          <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-4">
+                            <p className="text-xs font-bold text-slate-200">Authority Profile Customizer</p>
+                            <p className="text-[10px] text-slate-400">
+                              Define custom, colorful glowing borders and micro-animations for different authority member cards in the Mess Member tab.
+                            </p>
+
+                            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                              {(["ADMIN", "SUPERUSER", "ASSISTANT_SUPERUSER", "MANAGER"] as const).map(roleKey => {
+                                const roleAnim = roleAnimations?.[roleKey] || { glow: false, glowStyle: "none", animation: "none", color: "" };
+                                return (
+                                  <div key={roleKey} className="p-2.5 rounded bg-slate-950/60 border border-slate-900/50 space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-[10px] font-black uppercase text-cyan-400 tracking-wider">
+                                        {roleKey.replace("_", " ")}
+                                      </span>
+                                      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-300">
+                                        <input
+                                          type="checkbox"
+                                          checked={!!roleAnim.glow}
+                                          onChange={(e) => {
+                                            setRoleAnimations(prev => ({
+                                              ...prev,
+                                              [roleKey]: {
+                                                ...prev[roleKey],
+                                                glow: e.target.checked
+                                              }
+                                            }));
+                                          }}
+                                          className="accent-cyan-500"
+                                        />
+                                        Glow Profile
+                                      </label>
+                                    </div>
+
+                                    {roleAnim.glow && (
+                                      <div className="grid grid-cols-2 gap-2 pt-1">
+                                        <div>
+                                          <label className="text-[8px] font-bold text-slate-500 uppercase block mb-1">Glow Theme</label>
+                                          <select
+                                            value={roleAnim.glowStyle || "none"}
+                                            onChange={(e) => {
+                                              setRoleAnimations(prev => ({
+                                                ...prev,
+                                                [roleKey]: {
+                                                  ...prev[roleKey],
+                                                  glowStyle: e.target.value
+                                                }
+                                              }));
+                                            }}
+                                            className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[10px] text-white focus:outline-none"
+                                          >
+                                            <option value="none">None</option>
+                                            <option value="golden-aura">Golden Aura</option>
+                                            <option value="volcanic-flame">Volcanic Flame</option>
+                                            <option value="deep-ocean">Deep Ocean Ripple</option>
+                                            <option value="cosmic-nebula">Cosmic Nebula</option>
+                                            <option value="emerald-ripple">Emerald Ripple</option>
+                                            <option value="cyberpunk-neon">Cyberpunk Neon</option>
+                                            <option value="ghostly-violet">Ghostly Violet</option>
+                                            <option value="electric-discharge">Electric Discharge</option>
+                                            <option value="crimson-tide">Crimson Tide</option>
+                                            <option value="solar-eclipse">Solar Eclipse</option>
+                                          </select>
+                                        </div>
+
+                                        <div>
+                                          <label className="text-[8px] font-bold text-slate-500 uppercase block mb-1">Animation</label>
+                                          <select
+                                            value={roleAnim.animation || "none"}
+                                            onChange={(e) => {
+                                              setRoleAnimations(prev => ({
+                                                ...prev,
+                                                [roleKey]: {
+                                                  ...prev[roleKey],
+                                                  animation: e.target.value
+                                                }
+                                              }));
+                                            }}
+                                            className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[10px] text-white focus:outline-none"
+                                          >
+                                            <option value="none">Static (None)</option>
+                                            <option value="pulse">Pulse (Breathe)</option>
+                                            <option value="bounce">Bounce (Playful)</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Real-time Layout Preview Panel */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-6 mt-6">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
@@ -4020,7 +4260,11 @@ export default function App() {
                             messAnimations,
                             dateRestrictions,
                             loginCustomization,
-                            homeCustomization
+                            homeCustomization,
+                            enableManagerRating,
+                            balanceSheetGlow,
+                            roleAnimations,
+                            adminVisibility
                           });
                           alert("UI Customisations, Login layout, Home dashboard settings, and animation templates saved & applied successfully.");
                         }}

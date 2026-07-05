@@ -1479,6 +1479,8 @@ function loadSettings() {
     superUserCanArchiveMembers: true,
     superUserCanEditMeals: true,
     currencySymbol: "৳",
+    enableManagerRating: true,
+    balanceSheetGlow: "none",
     customColors: {
       cashDepositBg: "#f973161a", // Orange (10% opacity)
       cashDepositBorder: "#f97316",
@@ -1504,12 +1506,12 @@ function loadSettings() {
       showAnalytics: true
     },
     roleAnimations: {
-      ADMIN: { animation: "pulse", color: "text-red-500", glow: true },
-      SUPERUSER: { animation: "pulse", color: "text-orange-500", glow: true },
-      ASSISTANT_SUPERUSER: { animation: "none", color: "text-cyan-400", glow: true },
-      MANAGER: { animation: "bounce", color: "text-yellow-400", glow: true },
-      PARTIAL_MANAGER: { animation: "none", color: "text-emerald-400", glow: false },
-      MEMBER: { animation: "none", color: "text-slate-400", glow: false }
+      ADMIN: { animation: "pulse", color: "text-red-500", glow: true, glowStyle: "golden-aura" },
+      SUPERUSER: { animation: "pulse", color: "text-orange-500", glow: true, glowStyle: "cosmic-nebula" },
+      ASSISTANT_SUPERUSER: { animation: "none", color: "text-cyan-400", glow: true, glowStyle: "deep-ocean" },
+      MANAGER: { animation: "bounce", color: "text-yellow-400", glow: true, glowStyle: "emerald-ripple" },
+      PARTIAL_MANAGER: { animation: "none", color: "text-emerald-400", glow: false, glowStyle: "none" },
+      MEMBER: { animation: "none", color: "text-slate-400", glow: false, glowStyle: "none" }
     },
     dateRestrictions: {
       allowFutureMeals: false,
@@ -1549,6 +1551,12 @@ function loadSettings() {
       accentColor: "#22d3ee",
       showQuickActions: true,
       showBanner: true
+    },
+    adminVisibility: {
+      showAdminCard: false,
+      showAdminPhone: false,
+      showAdminEmail: false,
+      showAdminRole: false
     }
   };
   try {
@@ -1562,7 +1570,8 @@ function loadSettings() {
         messAnimations: { ...defaultSettings.messAnimations, ...(parsed.messAnimations || {}) },
         dashboardVisibility: { ...defaultSettings.dashboardVisibility, ...(parsed.dashboardVisibility || {}) },
         loginCustomization: { ...defaultSettings.loginCustomization, ...(parsed.loginCustomization || {}) },
-        homeCustomization: { ...defaultSettings.homeCustomization, ...(parsed.homeCustomization || {}) }
+        homeCustomization: { ...defaultSettings.homeCustomization, ...(parsed.homeCustomization || {}) },
+        adminVisibility: { ...defaultSettings.adminVisibility, ...(parsed.adminVisibility || {}) }
       };
     }
   } catch (e) {
@@ -1624,7 +1633,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   const adminOnlyFields = [
     'siteColor', 'fontSize', 'fontStyle', 'logoText',
     'customColors', 'messAnimations', 'dashboardVisibility',
-    'dateRestrictions', 'loginCustomization', 'homeCustomization'
+    'dateRestrictions', 'loginCustomization', 'homeCustomization',
+    'balanceSheetGlow', 'roleAnimations', 'adminVisibility'
   ];
   const hasAdminOnlyField = adminOnlyFields.some(field => req.body[field] !== undefined);
   if (hasAdminOnlyField && role !== UserRole.ADMIN) {
@@ -1652,7 +1662,10 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     dashboardVisibility,
     dateRestrictions,
     loginCustomization,
-    homeCustomization
+    homeCustomization,
+    enableManagerRating,
+    balanceSheetGlow,
+    adminVisibility
   } = req.body;
 
   if (siteColor !== undefined) currentSettings.siteColor = siteColor;
@@ -1672,6 +1685,9 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (dateRestrictions !== undefined) currentSettings.dateRestrictions = { ...currentSettings.dateRestrictions, ...dateRestrictions };
   if (loginCustomization !== undefined) currentSettings.loginCustomization = { ...currentSettings.loginCustomization, ...loginCustomization };
   if (homeCustomization !== undefined) currentSettings.homeCustomization = { ...currentSettings.homeCustomization, ...homeCustomization };
+  if (enableManagerRating !== undefined) currentSettings.enableManagerRating = enableManagerRating;
+  if (balanceSheetGlow !== undefined) currentSettings.balanceSheetGlow = balanceSheetGlow;
+  if (adminVisibility !== undefined) currentSettings.adminVisibility = { ...currentSettings.adminVisibility, ...adminVisibility };
 
   if (messName !== undefined) {
     if (role !== UserRole.ADMIN) {

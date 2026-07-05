@@ -60,3 +60,266 @@
   background: radial-gradient(circle at center, rgba(6, 182, 212, 0.15) 0%, transparent 70%);
 }
 
+/* ==========================================
+   10 CUSTOM GLOWING EFFECTS KEYFRAMES & CLASSES
+   ========================================== */
+
+/* 1. Golden Aura */
+@keyframes goldenAuraPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.35), inset 0 0 6px rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(251, 191, 36, 0.85), inset 0 0 14px rgba(251, 191, 36, 0.35);
+    border-color: rgba(251, 191, 36, 0.95);
+  }
+}
+.glow-golden-aura {
+  animation: goldenAuraPulse 3s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 2. Volcanic Flame */
+@keyframes volcanicFlameShift {
+  0%, 100% {
+    box-shadow: 0 -4px 14px rgba(239, 68, 68, 0.55), 0 4px 14px rgba(249, 115, 22, 0.35);
+    border-color: #ef4444;
+  }
+  50% {
+    box-shadow: 0 -10px 28px rgba(239, 68, 68, 0.85), 0 8px 24px rgba(249, 115, 22, 0.65);
+    border-color: #f97316;
+  }
+}
+.glow-volcanic-flame {
+  animation: volcanicFlameShift 2s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 3. Cyberpunk Neon */
+@keyframes cyberpunkNeonPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px #06b6d4, 0 0 18px #ec4899;
+    border-color: #06b6d4;
+  }
+  50% {
+    box-shadow: 0 0 24px #ec4899, 0 0 34px #06b6d4;
+    border-color: #ec4899;
+  }
+}
+.glow-cyberpunk-neon {
+  animation: cyberpunkNeonPulse 2.5s infinite alternate ease-in-out;
+  border-width: 2px !important;
+}
+
+/* 4. Emerald Ripple */
+@keyframes emeraldRipplePulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.25), 0 0 0 0px rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.65), 0 0 0 10px rgba(16, 185, 129, 0);
+    border-color: rgba(16, 185, 129, 0.95);
+  }
+}
+.glow-emerald-ripple {
+  animation: emeraldRipplePulse 3s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 5. Solar Flare */
+@keyframes solarFlarePulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+    border-color: #f59e0b;
+    filter: brightness(0.95);
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(245, 158, 11, 0.9);
+    border-color: #fbbf24;
+    filter: brightness(1.1);
+  }
+}
+.glow-solar-flare {
+  animation: solarFlarePulse 1.8s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 6. Cosmic Nebula */
+@keyframes cosmicNebulaShift {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(139, 92, 246, 0.45), 0 0 6px rgba(59, 130, 246, 0.35);
+    border-color: #8b5cf6;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(88, 28, 135, 0.2) 100%);
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(236, 72, 153, 0.55), 0 0 18px rgba(59, 130, 246, 0.55);
+    border-color: #ec4899;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 58, 138, 0.3) 100%);
+  }
+}
+.glow-cosmic-nebula {
+  animation: cosmicNebulaShift 4s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 7. Deep Ocean Glow */
+@keyframes deepOceanPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(29, 78, 216, 0.35), 0 0 6px rgba(6, 182, 212, 0.25);
+    border-color: #1d4ed8;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(29, 78, 216, 0.75), 0 0 18px rgba(6, 182, 212, 0.65);
+    border-color: #06b6d4;
+  }
+}
+.glow-deep-ocean {
+  animation: deepOceanPulse 3.5s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 8. Ruby Laser */
+@keyframes rubyLaserPulse {
+  0%, 100% {
+    box-shadow: 0 0 6px #be123c, 0 0 12px #e11d48;
+    border-color: #be123c;
+  }
+  50% {
+    box-shadow: 0 0 20px #f43f5e, 0 0 28px #e11d48;
+    border-color: #f43f5e;
+  }
+}
+.glow-ruby-laser {
+  animation: rubyLaserPulse 1.2s infinite ease-in-out;
+  border-width: 2px !important;
+}
+
+/* 9. Velvet Pulse */
+@keyframes velvetPulseShift {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(109, 40, 217, 0.35), inset 0 0 6px rgba(109, 40, 217, 0.15);
+    border-color: #6d28d9;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(109, 40, 217, 0.8), inset 0 0 14px rgba(109, 40, 217, 0.45);
+    border-color: #a78bfa;
+  }
+}
+.glow-velvet-pulse {
+  animation: velvetPulseShift 2.8s infinite ease-in-out;
+  border-width: 1.5px !important;
+}
+
+/* 10. Amethyst Shimmer */
+@keyframes amethystShimmerShift {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(167, 139, 250, 0.35);
+    border-color: #a78bfa;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(192, 132, 252, 0.85);
+    border-color: #c084fc;
+  }
+}
+.glow-amethyst-shimmer {
+  animation: amethystShimmerShift 3s infinite ease-in-out;
+  background-image: linear-gradient(45deg, rgba(167, 139, 250, 0.05), rgba(192, 132, 252, 0.15)) !important;
+  border-width: 1.5px !important;
+}
+
+
+/* ==========================================
+   LIGHT MODE ACCESSIBILITY ENHANCEMENTS
+   ========================================== */
+.light-mode-root {
+  color: #0f172a !important; /* Extremely high contrast near-black text */
+}
+
+/* Make headers very clear and punchy in Light Mode */
+.light-mode-root h1, 
+.light-mode-root h2, 
+.light-mode-root h3, 
+.light-mode-root h4, 
+.light-mode-root h5, 
+.light-mode-root h6 {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+/* Boost small text readability & thickness */
+.light-mode-root .text-[10px],
+.light-mode-root .text-[11px],
+.light-mode-root .text-xs,
+.light-mode-root .text-sm {
+  color: #1e293b !important;
+  font-weight: 500 !important;
+}
+
+/* Adjust secondary/gray text to have high-contrast Slate-600/700 colors instead of light gray */
+.light-mode-root .text-slate-400,
+.light-mode-root .text-slate-500,
+.light-mode-root .text-gray-400,
+.light-mode-root .text-gray-500,
+.light-mode-root .text-slate-300 {
+  color: #334155 !important; /* Force highly readable Slate 600 */
+  font-weight: 600 !important; /* Give it enough weight to read easily */
+}
+
+/* Keep form input labels highly readable */
+.light-mode-root label {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+/* Ensure background of containers is solid white with clear gray borders */
+.light-mode-root .bg-slate-900\/40,
+.light-mode-root .bg-slate-900\/30,
+.light-mode-root .bg-slate-900\/20,
+.light-mode-root .bg-slate-900,
+.light-mode-root .bg-slate-950\/40,
+.light-mode-root .bg-slate-950 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Enhancing input fields in light mode */
+.light-mode-root input,
+.light-mode-root select,
+.light-mode-root textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  font-weight: 500 !important;
+}
+
+/* Enhancing tables */
+.light-mode-root table th {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+  background-color: #f1f5f9 !important;
+}
+
+.light-mode-root table td {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+/* Active links / tabs */
+.light-mode-root .text-cyan-400,
+.light-mode-root .text-cyan-300 {
+  color: #0284c7 !important; /* Swap bright cyan with sky-700 in light mode */
+}
+.light-mode-root .border-cyan-500\/10,
+.light-mode-root .border-cyan-500\/15 {
+  border-color: #cbd5e1 !important;
+}
+.light-mode-root .bg-cyan-500\/10 {
+  background-color: #f0f9ff !important;
+  color: #0369a1 !important;
+}
+
+

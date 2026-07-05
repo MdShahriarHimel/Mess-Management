@@ -37,6 +37,7 @@ interface DashboardProps {
   elections?: any;
   membersListProp?: Member[];
   showResultsInDashboard?: boolean;
+  enableManagerRating?: boolean;
 }
 
 export default function Dashboard({ 
@@ -51,7 +52,8 @@ export default function Dashboard({
   homeCustomization,
   elections,
   membersListProp = [],
-  showResultsInDashboard = false
+  showResultsInDashboard = false,
+  enableManagerRating = true
 }: DashboardProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -172,7 +174,7 @@ export default function Dashboard({
     ? (ratingsList.reduce((sum, r) => sum + r.rating, 0) / ratingsList.length).toFixed(1)
     : null;
 
-  const isRatingPeriodOpen = new Date().getDate() >= 7;
+  const isRatingPeriodOpen = enableManagerRating && new Date().getDate() >= 7;
 
   return (
     <div className="space-y-6" id="dashboard-wrapper">
@@ -812,9 +814,13 @@ export default function Dashboard({
             ) : (
               <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-center">
                 <ShieldAlert size={20} className="mx-auto text-orange-400 mb-1.5" />
-                <p className="text-xs font-bold text-orange-400">Rating period is locked</p>
+                <p className="text-xs font-bold text-orange-400">
+                  {!enableManagerRating ? "Rating Period Disabled" : "Rating period is locked"}
+                </p>
                 <p className={`text-[11px] mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
-                  Manager ratings open starting from the <span className="font-semibold text-orange-500">7th day of the month</span> and run until the month cycle closes.
+                  {!enableManagerRating 
+                    ? "Manager performance rating has been turned off by the Admin/Super User." 
+                    : "Manager ratings open starting from the 7th day of the month and run until the month cycle closes."}
                 </p>
               </div>
             )}

@@ -26,6 +26,12 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   const [originalRole, setOriginalRole] = useState<UserRole | null>(null);
   const [shiftReason, setShiftReason] = useState("");
   const [roleAnimations, setRoleAnimations] = useState<any>(null);
+  const [adminVisibility, setAdminVisibility] = useState<any>({
+    showAdminCard: false,
+    showAdminPhone: false,
+    showAdminEmail: false,
+    showAdminRole: false
+  });
 
   React.useEffect(() => {
     fetch("/api/settings", {
@@ -33,8 +39,9 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     })
       .then(res => res.json())
       .then(data => {
-        if (data && data.roleAnimations) {
-          setRoleAnimations(data.roleAnimations);
+        if (data) {
+          if (data.roleAnimations) setRoleAnimations(data.roleAnimations);
+          if (data.adminVisibility) setAdminVisibility(data.adminVisibility);
         }
       })
       .catch(e => console.error("Error fetching settings in Members:", e));
@@ -332,6 +339,14 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     m.phone.includes(searchTerm)
   );
 
+  const visibleMembers = filteredMembers.filter(m => {
+    if (m.role === UserRole.ADMIN) {
+      if (currentUser.role === UserRole.ADMIN) return true;
+      return !!adminVisibility?.showAdminCard;
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-6" id="members-wrapper">
       
@@ -342,7 +357,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
             <Users className="text-cyan-400" />
             Hostel Profiles & Members
           </h2>
-          <p className="text-xs text-slate-400">Total registered and invited members count: {members.length}</p>
+          <p className="text-xs text-slate-400">Total registered and invited members count: {visibleMembers.length}</p>
         </div>
 
         {isAuthorizedToEdit && (
@@ -376,17 +391,32 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
       {/* Members Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="members-grid">
-        {filteredMembers.map((member) => {
+        {visibleMembers.map((member) => {
           // Admin, Superuser, Assistant Superuser see full details. Others see minimalistic details.
           const showFullDetails = member.role === UserRole.ADMIN || 
                                   member.role === UserRole.SUPERUSER || 
                                   member.role === UserRole.ASSISTANT_SUPERUSER;
 
+          const isTargetAdmin = member.role === UserRole.ADMIN;
+          const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
+
+          const showAdminRoleBadge = !maskAdmin || !!adminVisibility?.showAdminRole;
+          const showAdminEmailText = !maskAdmin || !!adminVisibility?.showAdminEmail;
+          const showAdminPhoneText = !maskAdmin || !!adminVisibility?.showAdminPhone;
+
+          const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+          const displayEmail = showAdminEmailText ? member.email : "••••••••••••";
+          const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
+
+          const config = roleAnimations?.[displayRole];
+          const hasGlow = config?.glow && config?.glowStyle && config?.glowStyle !== "none";
+          const cardGlowClass = hasGlow ? `glow-${config.glowStyle}` : "";
+
           return (
             <div 
               key={member.id} 
               onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
-              className={`p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${
+              className={`p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${cardGlowClass} ${
                 isDarkMode 
                   ? "bg-slate-900/40 border-cyan-500/10 text-white" 
                   : "bg-white border-slate-200 shadow-sm text-slate-800"
@@ -425,8 +455,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       <h3 className="font-extrabold text-sm truncate">{member.name}</h3>
                       <p className="text-xs text-cyan-400 font-semibold">@{member.nickname}</p>
                     </div>
-                    <span className={getRoleStyle(member.role)}>
-                      {member.role.replace("_", " ")}
+                    <span className={getRoleStyle(displayRole)}>
+                      {displayRole.replace("_", " ")}
                     </span>
                   </div>
 
@@ -434,11 +464,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     <div className="mt-3.5 space-y-1.5 text-xs text-slate-400 font-mono">
                       <p className="flex items-center gap-1.5 truncate">
                         <Mail size={12} className="text-cyan-500/60" />
-                        {member.email}
+                        {displayEmail}
                       </p>
                       <p className="flex items-center gap-1.5 truncate">
                         <Phone size={12} className="text-cyan-500/60" />
-                        {member.phone || "No phone logged"}
+                        {displayPhone}
                       </p>
                       <p className="flex items-center gap-1.5 text-[11px]">
                         <Briefcase size={12} className="text-cyan-500/60" />
@@ -987,9 +1017,17 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       <p className="text-xs text-cyan-400 font-bold">@{selectedMemberForMeals.nickname}</p>
                     </div>
                     <div className="flex justify-center gap-1.5">
-                      <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
-                        {selectedMemberForMeals.role}
-                      </span>
+                      {(() => {
+                        const isSelAdmin = selectedMemberForMeals.role === UserRole.ADMIN;
+                        const maskSelAdmin = isSelAdmin && currentUser.role !== UserRole.ADMIN;
+                        const showSelAdminRole = !maskSelAdmin || !!adminVisibility?.showAdminRole;
+                        const displaySelRole = showSelAdminRole ? selectedMemberForMeals.role : UserRole.MEMBER;
+                        return (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                            {displaySelRole.replace("_", " ")}
+                          </span>
+                        );
+                      })()}
                       <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-300">
                         {selectedMemberForMeals.status}
                       </span>
@@ -1002,13 +1040,13 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     <div className="space-y-2 font-mono text-slate-300">
                       <div className="flex items-center gap-2 truncate">
                         <Mail size={13} className="text-cyan-400 shrink-0" />
-                        <span className="truncate" title={selectedMemberForMeals.email}>{selectedMemberForMeals.email}</span>
+                        <span className="truncate" title={selectedMemberForMeals.email}>{selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminEmail ? "••••••••••••" : selectedMemberForMeals.email}</span>
                       </div>
                       <div className="flex items-center gap-2 truncate">
                         <Phone size={13} className="text-cyan-400 shrink-0" />
-                        <span>{selectedMemberForMeals.phone || "No phone number"}</span>
+                        <span>{selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminPhone ? "••••••••••••" : (selectedMemberForMeals.phone || "No phone number")}</span>
                       </div>
-                      {selectedMemberForMeals.whatsapp && (
+                      {selectedMemberForMeals.whatsapp && (!(selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminPhone)) && (
                         <div className="flex items-center gap-2 truncate text-emerald-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                           <span className="font-sans">WhatsApp:</span>

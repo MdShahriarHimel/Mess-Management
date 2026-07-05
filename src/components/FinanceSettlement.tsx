@@ -29,6 +29,7 @@ interface FinanceSettlementProps {
     cardBg: string;
     accentColor: string;
   };
+  balanceSheetGlow?: string;
 }
 
 export default function FinanceSettlement({ 
@@ -40,7 +41,8 @@ export default function FinanceSettlement({
   onRefresh,
   months = [],
   currencySymbol = "৳",
-  customColors
+  customColors,
+  balanceSheetGlow = "none"
 }: FinanceSettlementProps) {
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
@@ -978,6 +980,8 @@ export default function FinanceSettlement({
           borderColor: customColors?.settlementBorder || undefined
         }}
         className={`p-5 rounded-2xl border ${
+          balanceSheetGlow && balanceSheetGlow !== "none" ? `glow-${balanceSheetGlow}` : ""
+        } ${
           customColors?.settlementBg ? "" : (isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm")
         } ${isDarkMode ? "text-white" : "text-slate-800"}`}
         id="members-balance-sheet"
