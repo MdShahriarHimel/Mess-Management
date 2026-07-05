@@ -25,6 +25,56 @@ import Democracy from "./components/Democracy.tsx";
 // Types
 import { Member, MessMonth, UserRole } from "./types.js";
 
+const COLOR_PALETTES = [
+  { name: "Sunset Orange", hex: "#ea580c" },
+  { name: "Emerald Green", hex: "#16a34a" },
+  { name: "Teal Glow", hex: "#0d9488" },
+  { name: "Cyber Cyan", hex: "#22d3ee" },
+  { name: "Vivid Violet", hex: "#8b5cf6" },
+  { name: "Electric Indigo", hex: "#6366f1" },
+  { name: "Ruby Rose", hex: "#e11d48" },
+  { name: "Amber Gold", hex: "#d97706" },
+  { name: "Slate Grey", hex: "#475569" },
+  { name: "Deep Navy", hex: "#0f172a" },
+  { name: "Ice Blue", hex: "#38bdf8" },
+  { name: "Pure White", hex: "#ffffff" }
+];
+
+export function ColorPalettePicker({ 
+  value, 
+  onChange 
+}: { 
+  value: string; 
+  onChange: (color: string) => void; 
+}) {
+  const activeHex = value ? (value.startsWith("#") ? value.slice(0, 7).toLowerCase() : "#ffffff") : "#ffffff";
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-950/60 rounded-lg border border-slate-800/80">
+        {COLOR_PALETTES.map((color) => {
+          const isSelected = activeHex === color.hex.toLowerCase();
+          return (
+            <button
+              key={color.hex}
+              type="button"
+              onClick={() => onChange(color.hex)}
+              title={color.name}
+              className={`w-5 h-5 rounded-full border cursor-pointer transition-all hover:scale-110 active:scale-95 ${
+                isSelected ? "border-white ring-2 ring-cyan-500/50 scale-105" : "border-transparent"
+              }`}
+              style={{ backgroundColor: color.hex }}
+            />
+          );
+        })}
+      </div>
+      <span className="text-[9px] text-slate-500 font-medium block italic">
+        Selected: {COLOR_PALETTES.find(c => c.hex.toLowerCase() === activeHex)?.name || "Custom Palette"} ({activeHex})
+      </span>
+    </div>
+  );
+}
+
 const AmbientAnimationOverlay = ({ 
   animations 
 }: { 
@@ -3071,204 +3121,94 @@ export default function App() {
 
                       {/* RGB Custom Colors Customizer */}
                       <div className="col-span-1 md:col-span-2 border-t border-slate-800/60 pt-4 mt-2">
-                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Granular RGB Color Palettes</h4>
+                        <h4 className="text-xs font-bold font-display text-cyan-300 mb-3 uppercase tracking-wide">Granular Color Customization Palettes</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Cash Deposit Section Bg</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.cashDepositBg ? (customColors.cashDepositBg.startsWith("#") ? customColors.cashDepositBg.slice(0, 7) : "#ea580c") : "#ea580c"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, cashDepositBg: e.target.value + "1a" }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.cashDepositBg || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, cashDepositBg: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.cashDepositBg || "#ea580c"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, cashDepositBg: color + "1a" }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Cash Deposit Border</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.cashDepositBorder ? (customColors.cashDepositBorder.startsWith("#") ? customColors.cashDepositBorder.slice(0, 7) : "#ea580c") : "#ea580c"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, cashDepositBorder: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.cashDepositBorder || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, cashDepositBorder: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.cashDepositBorder || "#ea580c"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, cashDepositBorder: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Settlement Sheet Bg</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.settlementBg ? (customColors.settlementBg.startsWith("#") ? customColors.settlementBg.slice(0, 7) : "#16a34a") : "#16a34a"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, settlementBg: e.target.value + "1a" }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.settlementBg || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, settlementBg: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.settlementBg || "#16a34a"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, settlementBg: color + "1a" }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Settlement Sheet Border</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.settlementBorder ? (customColors.settlementBorder.startsWith("#") ? customColors.settlementBorder.slice(0, 7) : "#16a34a") : "#16a34a"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, settlementBorder: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.settlementBorder || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, settlementBorder: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.settlementBorder || "#16a34a"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, settlementBorder: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Sidebar Background</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.sidebarBg ? (customColors.sidebarBg.startsWith("#") ? customColors.sidebarBg.slice(0, 7) : "#0f172a") : "#0f172a"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, sidebarBg: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.sidebarBg || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, sidebarBg: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.sidebarBg || "#0f172a"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, sidebarBg: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Header Background</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.headerBg ? (customColors.headerBg.startsWith("#") ? customColors.headerBg.slice(0, 7) : "#0f172a") : "#0f172a"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, headerBg: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.headerBg || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, headerBg: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.headerBg || "#0f172a"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, headerBg: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Card Background</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.cardBg ? (customColors.cardBg.startsWith("#") ? customColors.cardBg.slice(0, 7) : "#1e293b") : "#1e293b"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, cardBg: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.cardBg || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, cardBg: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.cardBg || "#1e293b"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, cardBg: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Accent Glow Color</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.accentColor ? (customColors.accentColor.startsWith("#") ? customColors.accentColor.slice(0, 7) : "#22d3ee") : "#22d3ee"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, accentColor: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.accentColor || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, accentColor: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.accentColor || "#22d3ee"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, accentColor: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Site Accent Color Palette</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.siteAccentColorRgb ? (customColors.siteAccentColorRgb.startsWith("#") ? customColors.siteAccentColorRgb.slice(0, 7) : "#22d3ee") : "#22d3ee"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.siteAccentColorRgb || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.siteAccentColorRgb || "#22d3ee"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Typography Highlight Palette</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.typographyHighlightRgb ? (customColors.typographyHighlightRgb.startsWith("#") ? customColors.typographyHighlightRgb.slice(0, 7) : "#67e8f9") : "#67e8f9"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.typographyHighlightRgb || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.typographyHighlightRgb || "#67e8f9"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: color }))}
+                            />
                           </div>
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Layout Scale Color Palette</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="color"
-                                value={customColors?.layoutScaleColorRgb ? (customColors.layoutScaleColorRgb.startsWith("#") ? customColors.layoutScaleColorRgb.slice(0, 7) : "#a78bfa") : "#a78bfa"}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: e.target.value }))}
-                                className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={customColors?.layoutScaleColorRgb || ""}
-                                onChange={(e) => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: e.target.value }))}
-                                className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                              />
-                            </div>
+                            <ColorPalettePicker
+                              value={customColors?.layoutScaleColorRgb || "#a78bfa"}
+                              onChange={(color) => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: color }))}
+                            />
                           </div>
                         </div>
                       </div>
@@ -3672,21 +3612,11 @@ export default function App() {
 
                           {loginCustomization?.backgroundType === "color" && (
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Background Color (Hex)</label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="color"
-                                  value={loginCustomization?.backgroundColor || "#020617"}
-                                  onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundColor: e.target.value }))}
-                                  className="w-8 h-8 rounded border border-slate-800 bg-transparent cursor-pointer shrink-0"
-                                />
-                                <input
-                                  type="text"
-                                  value={loginCustomization?.backgroundColor || ""}
-                                  onChange={(e) => setLoginCustomization(prev => ({ ...prev, backgroundColor: e.target.value }))}
-                                  className="flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                                />
-                              </div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Background Color</label>
+                              <ColorPalettePicker
+                                value={loginCustomization?.backgroundColor || "#020617"}
+                                onChange={(color) => setLoginCustomization(prev => ({ ...prev, backgroundColor: color }))}
+                              />
                             </div>
                           )}
 
@@ -3716,23 +3646,17 @@ export default function App() {
 
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Primary Text Color</label>
-                            <input
-                              type="text"
-                              value={loginCustomization?.textColor || ""}
-                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, textColor: e.target.value }))}
-                              placeholder="#ffffff"
-                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            <ColorPalettePicker
+                              value={loginCustomization?.textColor || "#ffffff"}
+                              onChange={(color) => setLoginCustomization(prev => ({ ...prev, textColor: color }))}
                             />
                           </div>
 
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accent Glow Color</label>
-                            <input
-                              type="text"
-                              value={loginCustomization?.accentColor || ""}
-                              onChange={(e) => setLoginCustomization(prev => ({ ...prev, accentColor: e.target.value }))}
-                              placeholder="#22d3ee"
-                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                            <ColorPalettePicker
+                              value={loginCustomization?.accentColor || "#22d3ee"}
+                              onChange={(color) => setLoginCustomization(prev => ({ ...prev, accentColor: color }))}
                             />
                           </div>
 
@@ -3874,7 +3798,7 @@ export default function App() {
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* Left column: Manager performance and Balance sheet glow */}
+                          {/* Column 1: Manager performance and Balance sheet glow */}
                           <div className="space-y-4">
                             <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-3">
                               <p className="text-xs font-bold text-slate-200">Manager Performance Rating</p>
@@ -3917,8 +3841,11 @@ export default function App() {
                                 Customize the animated box-shadow and gradient glow applied to the "Individual Month Balance Sheet" container.
                               </p>
                             </div>
+                          </div>
 
-                            <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-3">
+                          {/* Column 2: Admin Privacy & Security Settings */}
+                          <div className="space-y-4">
+                            <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-3 h-full">
                               <p className="text-xs font-bold text-slate-200">Admin Privacy & Security Settings</p>
                               <p className="text-[10px] text-slate-400">
                                 Control which Admin credentials are shown to normal members. When turned off, info is masked or hidden.
@@ -3965,100 +3892,6 @@ export default function App() {
                                   <span>Show Admin Authority Role Badge (else shows "Member")</span>
                                 </label>
                               </div>
-                            </div>
-                          </div>
-
-                          {/* Right column: Role profile customizer */}
-                          <div className="p-3.5 rounded-lg bg-slate-950/40 border border-slate-900/80 space-y-4">
-                            <p className="text-xs font-bold text-slate-200">Authority Profile Customizer</p>
-                            <p className="text-[10px] text-slate-400">
-                              Define custom, colorful glowing borders and micro-animations for different authority member cards in the Mess Member tab.
-                            </p>
-
-                            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-                              {(["ADMIN", "SUPERUSER", "ASSISTANT_SUPERUSER", "MANAGER"] as const).map(roleKey => {
-                                const roleAnim = roleAnimations?.[roleKey] || { glow: false, glowStyle: "none", animation: "none", color: "" };
-                                return (
-                                  <div key={roleKey} className="p-2.5 rounded bg-slate-950/60 border border-slate-900/50 space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-[10px] font-black uppercase text-cyan-400 tracking-wider">
-                                        {roleKey.replace("_", " ")}
-                                      </span>
-                                      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-300">
-                                        <input
-                                          type="checkbox"
-                                          checked={!!roleAnim.glow}
-                                          onChange={(e) => {
-                                            setRoleAnimations(prev => ({
-                                              ...prev,
-                                              [roleKey]: {
-                                                ...prev[roleKey],
-                                                glow: e.target.checked
-                                              }
-                                            }));
-                                          }}
-                                          className="accent-cyan-500"
-                                        />
-                                        Glow Profile
-                                      </label>
-                                    </div>
-
-                                    {roleAnim.glow && (
-                                      <div className="grid grid-cols-2 gap-2 pt-1">
-                                        <div>
-                                          <label className="text-[8px] font-bold text-slate-500 uppercase block mb-1">Glow Theme</label>
-                                          <select
-                                            value={roleAnim.glowStyle || "none"}
-                                            onChange={(e) => {
-                                              setRoleAnimations(prev => ({
-                                                ...prev,
-                                                [roleKey]: {
-                                                  ...prev[roleKey],
-                                                  glowStyle: e.target.value
-                                                }
-                                              }));
-                                            }}
-                                            className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[10px] text-white focus:outline-none"
-                                          >
-                                            <option value="none">None</option>
-                                            <option value="golden-aura">Golden Aura</option>
-                                            <option value="volcanic-flame">Volcanic Flame</option>
-                                            <option value="deep-ocean">Deep Ocean Ripple</option>
-                                            <option value="cosmic-nebula">Cosmic Nebula</option>
-                                            <option value="emerald-ripple">Emerald Ripple</option>
-                                            <option value="cyberpunk-neon">Cyberpunk Neon</option>
-                                            <option value="ghostly-violet">Ghostly Violet</option>
-                                            <option value="electric-discharge">Electric Discharge</option>
-                                            <option value="crimson-tide">Crimson Tide</option>
-                                            <option value="solar-eclipse">Solar Eclipse</option>
-                                          </select>
-                                        </div>
-
-                                        <div>
-                                          <label className="text-[8px] font-bold text-slate-500 uppercase block mb-1">Animation</label>
-                                          <select
-                                            value={roleAnim.animation || "none"}
-                                            onChange={(e) => {
-                                              setRoleAnimations(prev => ({
-                                                ...prev,
-                                                [roleKey]: {
-                                                  ...prev[roleKey],
-                                                  animation: e.target.value
-                                                }
-                                              }));
-                                            }}
-                                            className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[10px] text-white focus:outline-none"
-                                          >
-                                            <option value="none">Static (None)</option>
-                                            <option value="pulse">Pulse (Breathe)</option>
-                                            <option value="bounce">Bounce (Playful)</option>
-                                          </select>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
                             </div>
                           </div>
                         </div>

@@ -24,13 +24,19 @@ interface LoginProps {
 }
 
 export default function Login({ onLoginSuccess, isDarkMode, customization }: LoginProps) {
-  const [activeTab, setActiveTab] = useState<"login" | "activate">("login");
+  const [activeTab, setActiveTab] = useState<"login" | "activate" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Forgot password flow states
+  const [forgotStep, setForgotStep] = useState<"send" | "verify">("send");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   const [liveCustomization, setLiveCustomization] = useState<any>(customization || null);
 
@@ -77,6 +83,61 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     setError(null);
     setSuccess(null);
     setLoading(true);
+
+    if (activeTab === "forgot") {
+      if (forgotStep === "send") {
+        try {
+          const response = await fetch("/api/auth/forgot-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || "Failed to process request");
+          }
+          setSuccess(data.message);
+          setForgotStep("verify");
+        } catch (err: any) {
+          setError(err.message || "Something went wrong.");
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        if (newPassword !== confirmNewPassword) {
+          setError("Passwords do not match");
+          setLoading(false);
+          return;
+        }
+        if (newPassword.length < 6) {
+          setError("Password must be at least 6 characters long");
+          setLoading(false);
+          return;
+        }
+        try {
+          const response = await fetch("/api/auth/verify-forgot-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, otp, newPassword })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || "Incorrect OTP code");
+          }
+          setSuccess(data.message);
+          setActiveTab("login");
+          setPassword("");
+          setNewPassword("");
+          setConfirmNewPassword("");
+          setOtp("");
+        } catch (err: any) {
+          setError(err.message || "Failed to reset password.");
+        } finally {
+          setLoading(false);
+        }
+      }
+      return;
+    }
 
     const url = activeTab === "login" ? "/api/auth/login" : "/api/auth/register";
 
@@ -176,38 +237,53 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-cyan-500/10 mb-6" id="login-tabs">
-          <button
-            id="tab-login-btn"
-            onClick={() => { setActiveTab("login"); setError(null); }}
-            className={`flex-1 pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all text-center ${
-              activeTab === "login"
-                ? "border-cyan-400 text-cyan-400 font-bold"
-                : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
-            }`}
-            style={{
-              borderColor: activeTab === "login" ? accentColor : undefined,
-              color: activeTab === "login" ? accentColor : undefined,
-            }}
-          >
-            SIGN IN
-          </button>
-          <button
-            id="tab-activate-btn"
-            onClick={() => { setActiveTab("activate"); setError(null); }}
-            className={`flex-1 pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all text-center ${
-              activeTab === "activate"
-                ? "border-cyan-400 text-cyan-400 font-bold"
-                : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
-            }`}
-            style={{
-              borderColor: activeTab === "activate" ? accentColor : undefined,
-              color: activeTab === "activate" ? accentColor : undefined,
-            }}
-          >
-            ACTIVATE ACCOUNT
-          </button>
-        </div>
+        {activeTab !== "forgot" ? (
+          <div className="flex border-b border-cyan-500/10 mb-6" id="login-tabs">
+            <button
+              id="tab-login-btn"
+              onClick={() => { setActiveTab("login"); setError(null); setSuccess(null); }}
+              className={`flex-1 pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all text-center ${
+                activeTab === "login"
+                  ? "border-cyan-400 text-cyan-400 font-bold"
+                  : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
+              }`}
+              style={{
+                borderColor: activeTab === "login" ? accentColor : undefined,
+                color: activeTab === "login" ? accentColor : undefined,
+              }}
+            >
+              SIGN IN
+            </button>
+            <button
+              id="tab-activate-btn"
+              onClick={() => { setActiveTab("activate"); setError(null); setSuccess(null); }}
+              className={`flex-1 pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all text-center ${
+                activeTab === "activate"
+                  ? "border-cyan-400 text-cyan-400 font-bold"
+                  : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
+              }`}
+              style={{
+                borderColor: activeTab === "activate" ? accentColor : undefined,
+                color: activeTab === "activate" ? accentColor : undefined,
+              }}
+            >
+              ACTIVATE ACCOUNT
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between border-b border-cyan-500/10 pb-3 mb-6" id="forgot-header-tab">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-cyan-400 font-display" style={{ color: accentColor }}>
+              RESET PASSWORD
+            </h2>
+            <button
+              type="button"
+              onClick={() => { setActiveTab("login"); setError(null); setSuccess(null); }}
+              className={`text-xs hover:underline cursor-pointer ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              Back to Login
+            </button>
+          </div>
+        )}
 
         {/* Feedback alerts */}
         {error && (
@@ -221,100 +297,274 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5" id="auth-form">
-          {/* Email input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
-              <input
-                id="auth-email-input"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="member@mess.erp"
-                className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                  isDarkMode 
-                    ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                    : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
-                }`}
-              />
-            </div>
-          </div>
-
-          {/* Password input */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
-                {activeTab === "login" ? "Password" : "Create Password"}
-              </label>
-              {activeTab === "login" && (
+        {activeTab === "forgot" ? (
+          <form onSubmit={handleSubmit} className="space-y-5" id="forgot-auth-form">
+            {forgotStep === "send" ? (
+              <>
+                <p className={`text-xs leading-relaxed ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                  Enter your registered email address below. We will generate and send a 6-digit secure Verification OTP to your email inbox (or printed in the server logs if SMTP is not configured) to verify your account and allow you to set a new password.
+                </p>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+                    <input
+                      id="forgot-email-input"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="member@mess.erp"
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode 
+                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                      }`}
+                    />
+                  </div>
+                </div>
                 <button
-                  type="button"
-                  onClick={() => alert("Please contact your Mess Admin to change or reset your password.")}
-                  className="text-[10px] text-cyan-500 hover:underline cursor-pointer"
+                  id="forgot-send-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 rounded-xl text-white font-bold tracking-wide text-sm shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  style={{
+                    background: `linear-gradient(to right, ${accentColor}, ${accentColor}dd)`
+                  }}
                 >
-                  Forgot?
+                  {loading ? (
+                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  ) : (
+                    <>
+                      SEND VERIFICATION OTP
+                      <ChevronRight size={16} />
+                    </>
+                  )}
                 </button>
-              )}
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
-              <input
-                id="auth-password-input"
-                type={showPassword ? "text" : "password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={activeTab === "login" ? "••••••••" : "Minimum 6 characters"}
-                className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                  isDarkMode 
-                    ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                    : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
-                }`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-400 cursor-pointer"
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-
-          {/* Guidelines info for activate tab */}
-          {activeTab === "activate" && (
-            <p className={`text-[11px] leading-relaxed italic ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
-              * Activation requires that your email has already been invited by the Administrator. If not invited, activation will fail.
-            </p>
-          )}
-
-          {/* Submit button */}
-          <button
-            id="auth-submit-btn"
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded-xl text-white font-bold tracking-wide text-sm shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
-            style={{
-              background: `linear-gradient(to right, ${accentColor}, ${accentColor}dd)`
-            }}
-          >
-            {loading ? (
-              <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              </>
             ) : (
               <>
-                {activeTab === "login" ? "ACCESS ENTERPRISE" : "ACTIVATE HOSTEL ACCESS"}
-                <ChevronRight size={16} />
+                <p className={`text-xs leading-relaxed p-2.5 rounded-lg border bg-cyan-500/5 border-cyan-500/10 ${isDarkMode ? "text-cyan-300" : "text-cyan-800"}`}>
+                  We have generated a Verification OTP code. Please check your email inbox and enter it below along with your new password.
+                </p>
+                
+                {/* OTP input */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                    6-Digit OTP Code
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+                    <input
+                      id="forgot-otp-input"
+                      type="text"
+                      maxLength={6}
+                      required
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                      placeholder="Enter 6-digit OTP"
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all text-center tracking-[0.25em] font-bold focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode 
+                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* New Password input */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+                    <input
+                      id="forgot-new-password-input"
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode 
+                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-400 cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password input */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+                    <input
+                      id="forgot-confirm-password-input"
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                      className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode 
+                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <button
+                    type="button"
+                    onClick={() => { setForgotStep("send"); setError(null); setSuccess(null); }}
+                    className="text-cyan-500 hover:underline cursor-pointer"
+                  >
+                    Resend Code (OTP)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("login"); setError(null); setSuccess(null); }}
+                    className={`hover:underline cursor-pointer ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <button
+                  id="forgot-submit-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 rounded-xl text-white font-bold tracking-wide text-sm shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  style={{
+                    background: `linear-gradient(to right, ${accentColor}, ${accentColor}dd)`
+                  }}
+                >
+                  {loading ? (
+                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  ) : (
+                    <>
+                      RESET PASSWORD
+                      <ChevronRight size={16} />
+                    </>
+                  )}
+                </button>
               </>
             )}
-          </button>
-        </form>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-5" id="auth-form">
+            {/* Email input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+                <input
+                  id="auth-email-input"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="member@mess.erp"
+                  className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                    isDarkMode 
+                      ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                      : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Password input */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 text-orange-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                  {activeTab === "login" ? "Password" : "Create Password"}
+                </label>
+                {activeTab === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("forgot"); setForgotStep("send"); setError(null); setSuccess(null); }}
+                    className="text-[10px] text-cyan-500 hover:underline cursor-pointer font-bold"
+                  >
+                    Forgot?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+                <input
+                  id="auth-password-input"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={activeTab === "login" ? "••••••••" : "Minimum 6 characters"}
+                  className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                    isDarkMode 
+                      ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                      : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-400 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Guidelines info for activate tab */}
+            {activeTab === "activate" && (
+              <p className={`text-[11px] leading-relaxed italic ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                * Activation requires that your email has already been invited by the Administrator. If not invited, activation will fail.
+              </p>
+            )}
+
+            {/* Submit button */}
+            <button
+              id="auth-submit-btn"
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-xl text-white font-bold tracking-wide text-sm shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+              style={{
+                background: `linear-gradient(to right, ${accentColor}, ${accentColor}dd)`
+              }}
+            >
+              {loading ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              ) : (
+                <>
+                  {activeTab === "login" ? "ACCESS ENTERPRISE" : "ACTIVATE HOSTEL ACCESS"}
+                  <ChevronRight size={16} />
+                </>
+              )}
+            </button>
+          </form>
+        )}
 
         {/* Google Sign-In button for login tab */}
         {activeTab === "login" && showGoogleLogin && (

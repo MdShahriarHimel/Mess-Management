@@ -17,6 +17,7 @@ import {
   setActiveMessId
 } from "./db.js";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
+import nodemailer from "nodemailer";
 import { 
   UserRole, 
   MemberStatus, 
@@ -132,9 +133,9 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     return;
   }
 
-  if (member.status === MemberStatus.ARCHIVED) {
+  if (member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.LEFT) {
     if (req.method !== "GET") {
-      res.status(403).json({ error: "Account archived: Read-only access to past logs. Modifications are forbidden." });
+      res.status(403).json({ error: "Account archived or inactive: Read-only access to past logs is granted. Modifications are forbidden." });
       return;
     }
   }
@@ -273,6 +274,138 @@ router.post("/auth/register", (req: Request, res: Response): void => {
 
   logAudit(member.id, member.nickname, "ACTIVATE_ACCOUNT", "PENDING", "ACTIVE", "User completed account activation.");
   res.json({ success: true, token: member.id, user: member });
+});
+
+// In-memory store for password reset OTPs
+const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+
+// Forgot Password (generate OTP and send email)
+router.post("/auth/forgot-password", async (req: Request, res: Response): Promise<void> => {
+  const { email } = req.body;
+  if (!email) {
+    res.status(400).json({ error: "Email address is required" });
+    return;
+  }
+
+  const db = loadDB();
+  const member = db.members.find(m => m.email.toLowerCase() === email.toLowerCase());
+
+  if (!member) {
+    res.status(404).json({ error: "No registered member found with this email address" });
+    return;
+  }
+
+  // Generate a 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+
+  otpStore.set(email.toLowerCase(), { otp, expiresAt });
+
+  // Print OTP to server console for testing/development fallback
+  console.log(`\n======================================================`);
+  console.log(`🔑 PASSWORD RESET OTP FOR ${email.toUpperCase()}:`);
+  console.log(`👉 CODE: ${otp} (Expires in 10 minutes) 👈`);
+  console.log(`======================================================\n`);
+
+  // Attempt to send actual email via Google SMTP if credentials are set
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
+
+      const mailOptions = {
+        from: `"Mess ERP Security" <${smtpUser}>`,
+        to: email.toLowerCase(),
+        subject: `[Mess ERP] Password Reset Verification Code: ${otp}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+            <h2 style="color: #0ea5e9; text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">Mess ERP Password Reset</h2>
+            <p>Hello <strong>${member.name}</strong>,</p>
+            <p>We received a request to reset your password for your Mess ERP account (<strong>@${member.nickname}</strong>).</p>
+            <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 15px; text-align: center; margin: 20px 0; border-radius: 8px;">
+              <p style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin: 0 0 5px 0;">Your Reset OTP Code</p>
+              <h1 style="font-size: 32px; font-weight: bold; color: #0f172a; margin: 0; letter-spacing: 0.2em;">${otp}</h1>
+            </div>
+            <p style="font-size: 13px; color: #64748b;">This OTP code is valid for <strong>10 minutes</strong>. If you did not make this request, please change your password or contact your Mess Administrator immediately.</p>
+            <footer style="margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center;">
+              This is an automated security message from Mess ERP. Please do not reply directly to this email.
+            </footer>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      res.json({ success: true, message: `A 6-digit verification OTP code has been successfully sent to your email (${email}). Please check your inbox or spam folder.` });
+      return;
+    } catch (error: any) {
+      console.error("Nodemailer SMTP Error:", error);
+      res.json({ 
+        success: true, 
+        message: `OTP generated. (SMTP Error occurred, but the OTP has been printed to the server terminal log for safety/preview).` 
+      });
+      return;
+    }
+  } else {
+    res.json({ 
+      success: true, 
+      message: `Forgot password process initiated. An OTP code has been logged to the server terminal console since SMTP credentials are not configured.` 
+    });
+    return;
+  }
+});
+
+// Verify OTP and reset password (Unauthenticated)
+router.post("/auth/verify-forgot-password", (req: Request, res: Response): void => {
+  const { email, otp, newPassword } = req.body;
+  if (!email || !otp || !newPassword) {
+    res.status(400).json({ error: "Email, OTP, and new password are required" });
+    return;
+  }
+
+  const storedData = otpStore.get(email.toLowerCase());
+  if (!storedData) {
+    res.status(400).json({ error: "No OTP request found for this email" });
+    return;
+  }
+
+  if (Date.now() > storedData.expiresAt) {
+    otpStore.delete(email.toLowerCase());
+    res.status(400).json({ error: "The OTP code has expired. Please request a new one." });
+    return;
+  }
+
+  if (storedData.otp !== otp) {
+    res.status(400).json({ error: "Incorrect verification code (OTP). Please try again." });
+    return;
+  }
+
+  const db = loadDB();
+  const member = db.members.find(m => m.email.toLowerCase() === email.toLowerCase());
+
+  if (!member) {
+    res.status(404).json({ error: "User profile not found" });
+    return;
+  }
+
+  // Update password in credentials
+  const creds = loadCredentials();
+  creds[member.id] = newPassword;
+  saveCredentials();
+
+  // Clear OTP from store
+  otpStore.delete(email.toLowerCase());
+
+  logAudit(member.id, member.nickname, "FORGOT_PASSWORD_RESET_SUCCESS", "None", "None", "Password reset successfully using email OTP.");
+
+  res.json({ success: true, message: "Your password has been successfully reset! You can now log in." });
 });
 
 // Reset password (by Admin or Self)
@@ -461,6 +594,13 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     }
   }
 
+  // Only Admin can customize individual glowing effects/animations
+  if (req.user!.role !== UserRole.ADMIN) {
+    delete updates.glow;
+    delete updates.glowStyle;
+    delete updates.animation;
+  }
+
   // Standard member cannot modify roles, status, permissions, joining/leaving dates
   // Managers are only allowed to update the keys verified above
   if (!isAdminOrSuperOrAsst) {
@@ -489,10 +629,13 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     email: original.email, // Cannot change email
   };
 
-  if (updatedMember.status === MemberStatus.ARCHIVED && original.status !== MemberStatus.ARCHIVED) {
+  const isInactiveNow = [MemberStatus.ARCHIVED, MemberStatus.LEFT, MemberStatus.SUSPENDED].includes(updatedMember.status);
+  const wasInactiveBefore = [MemberStatus.ARCHIVED, MemberStatus.LEFT, MemberStatus.SUSPENDED].includes(original.status);
+
+  if (isInactiveNow && !wasInactiveBefore) {
     updatedMember.leavingDate = new Date().toISOString().split("T")[0];
-  } else if (updatedMember.status !== MemberStatus.ARCHIVED && original.status === MemberStatus.ARCHIVED) {
-    updatedMember.leavingDate = null;
+  } else if (!isInactiveNow && wasInactiveBefore) {
+    updatedMember.leavingDate = undefined;
   }
 
   db.members[index] = updatedMember;

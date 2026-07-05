@@ -42,6 +42,9 @@ export interface Member {
   photo: string | null; // Base64 or URL
   assignedTask?: string; // e.g. "বুয়া বিল ,কারেন্ট + পানি , মেস ভারা ,WiFi ,etc ."
   permissions?: string[]; // Custom permission overrides for Super Users
+  glow?: boolean;
+  glowStyle?: string;
+  animation?: string;
 }
 
 export interface MessMonth {

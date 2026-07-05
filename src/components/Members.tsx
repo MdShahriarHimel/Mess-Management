@@ -10,6 +10,98 @@ import {
 } from "lucide-react";
 import { Member, UserRole, MemberStatus } from "../types.js";
 
+const COLOR_PALETTES = [
+  { name: "Sunset Orange", hex: "#ea580c" },
+  { name: "Emerald Green", hex: "#16a34a" },
+  { name: "Teal Glow", hex: "#0d9488" },
+  { name: "Cyber Cyan", hex: "#22d3ee" },
+  { name: "Vivid Violet", hex: "#8b5cf6" },
+  { name: "Electric Indigo", hex: "#6366f1" },
+  { name: "Ruby Rose", hex: "#e11d48" },
+  { name: "Amber Gold", hex: "#d97706" },
+  { name: "Slate Grey", hex: "#475569" },
+  { name: "Deep Navy", hex: "#0f172a" },
+  { name: "Ice Blue", hex: "#38bdf8" },
+  { name: "Pure White", hex: "#ffffff" }
+];
+
+function ColorPalettePicker({ 
+  value, 
+  onChange 
+}: { 
+  value: string; 
+  onChange: (color: string) => void; 
+}) {
+  const activeHex = value ? (value.startsWith("#") ? value.slice(0, 7).toLowerCase() : "#ffffff") : "#ffffff";
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-950/60 rounded-lg border border-slate-800/80">
+        {COLOR_PALETTES.map((color) => {
+          const isSelected = activeHex === color.hex.toLowerCase();
+          return (
+            <button
+              key={color.hex}
+              type="button"
+              onClick={() => onChange(color.hex)}
+              title={color.name}
+              className={`w-5 h-5 rounded-full border cursor-pointer transition-all hover:scale-110 active:scale-95 ${
+                isSelected ? "border-white ring-2 ring-cyan-500/50 scale-105" : "border-transparent"
+              }`}
+              style={{ backgroundColor: color.hex }}
+            />
+          );
+        })}
+      </div>
+      <span className="text-[9px] text-slate-500 font-medium block italic">
+        Selected: {COLOR_PALETTES.find(c => c.hex.toLowerCase() === activeHex)?.name || "Custom Palette"} ({activeHex})
+      </span>
+    </div>
+  );
+}
+
+function MicroAnimationOverlay({ animationType }: { animationType?: string }) {
+  if (!animationType || animationType === "none") return null;
+
+  if (animationType === "sparkles") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+        <div className="absolute top-2 left-4 w-1.5 h-1.5 bg-yellow-300 rounded-full animate-ping opacity-60" style={{ animationDuration: '2.5s' }} />
+        <div className="absolute bottom-4 right-6 w-2 h-2 bg-yellow-400 rounded-full animate-ping opacity-50" style={{ animationDuration: '1.8s' }} />
+        <div className="absolute top-8 right-12 w-1 h-1 bg-white rounded-full animate-ping opacity-75" style={{ animationDuration: '3s' }} />
+      </div>
+    );
+  }
+
+  if (animationType === "confetti") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+        <div className="absolute top-1 left-1/4 w-1 h-2 bg-pink-500 rotate-12 animate-bounce opacity-40" />
+        <div className="absolute top-3 right-1/4 w-1.5 h-1.5 bg-cyan-400 -rotate-45 animate-bounce opacity-50" />
+        <div className="absolute bottom-2 left-1/3 w-2 h-1 bg-yellow-400 rotate-45 animate-bounce opacity-45" />
+      </div>
+    );
+  }
+
+  if (animationType === "bubbles") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+        <div className="absolute bottom-1 left-5 w-2 h-2 rounded-full border border-cyan-400/30 animate-pulse" style={{ animationDuration: '2s' }} />
+        <div className="absolute bottom-5 right-8 w-3 h-3 rounded-full border border-teal-400/20 animate-pulse" style={{ animationDuration: '1.4s' }} />
+        <div className="absolute bottom-10 left-1/2 w-1.5 h-1.5 rounded-full border border-sky-400/40 animate-pulse" style={{ animationDuration: '3s' }} />
+      </div>
+    );
+  }
+
+  if (animationType === "pulse") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden ring-1 ring-cyan-500/20 animate-pulse z-10" />
+    );
+  }
+
+  return null;
+}
+
 interface MembersProps {
   currentUser: Member;
   members: Member[];
@@ -419,19 +511,34 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
           const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
 
           const config = roleAnimations?.[displayRole];
-          const hasGlow = config?.glow && config?.glowStyle && config?.glowStyle !== "none";
-          const cardGlowClass = hasGlow ? `glow-${config.glowStyle}` : "";
+          const hasGlow = member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none");
+          const glowStyle = member.glowStyle || config?.glowStyle || "";
+
+          let cardGlowStyle: React.CSSProperties = {};
+          let cardGlowClass = "";
+          if (hasGlow && glowStyle) {
+            if (glowStyle.startsWith("#")) {
+              cardGlowStyle = {
+                boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
+                borderColor: `${glowStyle}60`
+              };
+            } else {
+              cardGlowClass = `glow-${glowStyle}`;
+            }
+          }
 
           return (
             <div 
               key={member.id} 
               onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
-              className={`p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${cardGlowClass} ${
+              className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${cardGlowClass} ${
                 isDarkMode 
                   ? "bg-slate-900/40 border-cyan-500/10 text-white" 
                   : "bg-white border-slate-200 shadow-sm text-slate-800"
               }`}
+              style={cardGlowStyle}
             >
+              <MicroAnimationOverlay animationType={member.animation} />
               <div className="flex gap-4 items-start">
                 {/* Profile Photo */}
                 <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -605,16 +712,38 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
               const displayLeavingDate = member.leavingDate || "Unknown date";
 
+              const config = roleAnimations?.[displayRole];
+              const hasGlow = member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none");
+              const glowStyle = member.glowStyle || config?.glowStyle || "";
+
+              let cardGlowStyle: React.CSSProperties = {};
+              let cardGlowClass = "";
+              if (hasGlow && glowStyle) {
+                if (glowStyle.startsWith("#")) {
+                  cardGlowStyle = {
+                    boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
+                    borderColor: `${glowStyle}60`
+                  };
+                } else {
+                  cardGlowClass = `glow-${glowStyle}`;
+                }
+              }
+
+              const isSuspended = member.status === MemberStatus.SUSPENDED;
+              const dateLabel = isSuspended ? "Suspended Date" : "Departed Mess";
+
               return (
                 <div 
                   key={member.id} 
                   onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
-                  className={`p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.99] opacity-75 grayscale-[20%] hover:grayscale-0 hover:opacity-100 ${
+                  className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.99] opacity-75 grayscale-[20%] hover:grayscale-0 hover:opacity-100 ${cardGlowClass} ${
                     isDarkMode 
                       ? "bg-slate-950/40 border-rose-500/10 text-slate-300 hover:border-rose-500/30" 
                       : "bg-slate-100/50 border-slate-200 shadow-sm text-slate-600 hover:border-rose-300"
                   }`}
+                  style={cardGlowStyle}
                 >
+                  <MicroAnimationOverlay animationType={member.animation} />
                   <div className="flex gap-4 items-start">
                     {/* Profile Photo */}
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -663,7 +792,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                         </p>
                         <p className="flex items-center gap-1.5 text-[11px] text-rose-400/80 font-semibold font-sans mt-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                          Departed Mess: {displayLeavingDate}
+                          {dateLabel}: {displayLeavingDate}
                         </p>
                       </div>
                     </div>
@@ -1110,6 +1239,97 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   }`}
                 />
               </div>
+
+              {currentUser.role === UserRole.ADMIN && (
+                <div className="space-y-4 border-t border-slate-800/60 pt-4 mt-2">
+                  <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">
+                    👑 Authority Profile Customizer (Admin Only)
+                  </h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    As Admin, you can grant premium glowing cards and animation overlays for individual profiles.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!editingMember.glow}
+                          onChange={(e) => setEditingMember({ ...editingMember, glow: e.target.checked })}
+                          className="accent-cyan-500 cursor-pointer"
+                        />
+                        <span className="text-xs text-slate-200 font-semibold">Enable Custom Glow</span>
+                      </label>
+                      {editingMember.glow && (
+                        <div className="pt-2">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Glow Color Palette</label>
+                          <ColorPalettePicker
+                            value={editingMember.glowStyle || "#22d3ee"}
+                            onChange={(color) => setEditingMember({ ...editingMember, glowStyle: color })}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800">
+                      <label className="text-xs text-slate-200 font-semibold block mb-1">Profile Animation Overlay</label>
+                      <select
+                        value={editingMember.animation || "none"}
+                        onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
+                        className={`w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none`}
+                      >
+                        <option value="none">No Animation</option>
+                        <option value="sparkles">Sparkles ✨</option>
+                        <option value="confetti">Confetti 🎊</option>
+                        <option value="bubbles">Floating Bubbles 🫧</option>
+                        <option value="pulse">Aura Pulse 📳</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Real-Time Miniaturized Layout Preview */}
+                  <div className="bg-slate-950/80 p-4 rounded-xl border border-cyan-500/10 mt-3">
+                    <h5 className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider mb-2">
+                      Real-Time Miniaturized Layout Preview
+                    </h5>
+                    <div className="flex justify-center">
+                      {/* Mini Card */}
+                      <div 
+                        className={`relative overflow-hidden w-64 p-3 rounded-xl border bg-slate-900/90 text-white ${
+                          editingMember.glow && (!editingMember.glowStyle || !editingMember.glowStyle.startsWith("#")) ? `glow-${editingMember.glowStyle}` : ""
+                        }`}
+                        style={{
+                          boxShadow: editingMember.glow && editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? `0 0 12px ${editingMember.glowStyle}30` : undefined,
+                          borderColor: editingMember.glow && editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? `${editingMember.glowStyle}60` : undefined
+                        }}
+                      >
+                        <MicroAnimationOverlay animationType={editingMember.animation} />
+                        <div className="flex gap-3 items-center relative z-20">
+                          {editingMember.photo ? (
+                            <img 
+                              src={editingMember.photo} 
+                              alt="Preview" 
+                              className="w-10 h-10 rounded-lg object-cover border border-cyan-500/25"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-xs uppercase">
+                              {(editingMember.nickname || "ME").slice(0, 2)}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-extrabold text-xs truncate">{editingMember.name || "Full Name"}</h4>
+                            <p className="text-[10px] text-cyan-400 font-semibold">@{editingMember.nickname || "nickname"}</p>
+                            <span className="inline-block text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border mt-1 border-slate-700 bg-slate-800/40 text-slate-300">
+                              {editingMember.role || "MEMBER"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-3 border-t border-cyan-500/10">
                 <button
