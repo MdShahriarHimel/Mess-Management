@@ -6,7 +6,8 @@
 import { useState, useEffect } from "react";
 import { 
   Bell, Calendar, Coffee, ShieldAlert, Star, Users, DollarSign,
-  ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck
+  ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
+  Vote, Award, Percent
 } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
 
@@ -33,6 +34,9 @@ interface DashboardProps {
     showQuickActions?: boolean;
     showBanner?: boolean;
   };
+  elections?: any;
+  membersListProp?: Member[];
+  showResultsInDashboard?: boolean;
 }
 
 export default function Dashboard({ 
@@ -44,7 +48,10 @@ export default function Dashboard({
   triggerRefresh,
   months = [],
   onChangeMonth,
-  homeCustomization
+  homeCustomization,
+  elections,
+  membersListProp = [],
+  showResultsInDashboard = false
 }: DashboardProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -313,6 +320,228 @@ export default function Dashboard({
                 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Democracy Election / Poll Results Widget */}
+      {showResultsInDashboard && elections && (
+        <div 
+          className={`p-6 rounded-2xl border transition-all relative overflow-hidden ${
+            isDarkMode 
+              ? "bg-gradient-to-br from-slate-950 to-slate-900 border-cyan-500/20 text-white animate-fade-in" 
+              : "bg-cyan-50 border-cyan-200 shadow-md text-slate-800 animate-fade-in"
+          }`}
+          id="dashboard-democracy-results"
+        >
+          {/* Subtle background glow */}
+          <div className="absolute left-0 top-0 w-48 h-48 bg-cyan-500/5 rounded-full filter blur-2xl pointer-events-none"></div>
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/60 pb-4 mb-5 relative z-10">
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-2 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Ballot Active / Completed
+              </span>
+              <h3 className="text-lg font-black tracking-tight flex items-center gap-2">
+                <Vote className="w-5 h-5 text-cyan-400 shrink-0" />
+                {elections.topic || "Democracy Ballot"} Results
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
+                Topic: {elections.topic || "Democracy Election"} • Subject: {elections.subject || "options"}
+              </p>
+            </div>
+            
+            <div className="text-left sm:text-right">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block">VOTES COUNTED</span>
+              <span className="text-xl font-extrabold text-cyan-400">
+                {elections.voteType === "custom" 
+                  ? Object.keys(elections.votes?.CUSTOM || {}).length 
+                  : Object.keys(elections.votes?.SUPERUSER || {}).length}
+              </span>
+              <span className="text-xs text-slate-500 font-bold"> ballots</span>
+            </div>
+          </div>
+
+          <div className="relative z-10">
+            {elections.voteType === "custom" ? (
+              // Custom Vote Type Results
+              (() => {
+                const customVotes = elections.votes?.CUSTOM || {};
+                const totalVotes = Object.keys(customVotes).length;
+                const opts = elections.options || [];
+                
+                // Count votes for each option
+                const counts: Record<string, number> = {};
+                opts.forEach((o: string) => { counts[o] = 0; });
+                Object.values(customVotes).forEach((v: any) => {
+                  if (counts[v] !== undefined) counts[v]++;
+                });
+
+                // Find max votes to declare winner
+                let max = -1;
+                let winner: string[] = [];
+                Object.entries(counts).forEach(([o, c]) => {
+                  if (c > max) {
+                    max = c;
+                    winner = [o];
+                  } else if (c === max) {
+                    winner.push(o);
+                  }
+                });
+
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {opts.map((option: string) => {
+                        const count = counts[option] || 0;
+                        const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+                        const isWinner = max > 0 && winner.includes(option);
+                        
+                        return (
+                          <div 
+                            key={option} 
+                            className={`p-4 rounded-xl border transition-all ${
+                              isWinner 
+                                ? "bg-cyan-950/20 border-cyan-500/30 text-white shadow-inner" 
+                                : "bg-slate-950/30 border-slate-900 text-slate-300"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-1.5">
+                                {isWinner && <Award className="w-4 h-4 text-yellow-400 shrink-0" />}
+                                <span className={`text-xs font-bold ${isWinner ? "text-cyan-300 font-extrabold" : "text-slate-200"}`}>{option}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-xs font-black text-cyan-400">{count}</span>
+                                <span className="text-[10px] text-slate-500"> ({pct}%)</span>
+                              </div>
+                            </div>
+
+                            {/* Custom progress bar */}
+                            <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-800/40">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${isWinner ? "bg-gradient-to-r from-cyan-400 to-emerald-400" : "bg-slate-600"}`}
+                                style={{ width: `${pct}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {max > 0 && (
+                      <div className="mt-4 p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/20 flex items-center gap-2.5">
+                        <Award className="w-5 h-5 text-yellow-400 shrink-0 animate-bounce" />
+                        <div className="text-xs">
+                          <span className="text-slate-400">Winning choice: </span>
+                          <span className="font-extrabold text-emerald-400">{winner.join(" & ")}</span>
+                          <span className="text-slate-400"> with </span>
+                          <span className="font-bold text-white">{max} votes</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              // Superuser Vote Type Results
+              (() => {
+                const getWinners = (role: "SUPERUSER" | "ASSISTANT_SUPERUSER") => {
+                  const roleVotes = elections.votes?.[role] || {};
+                  const totalRVotes = Object.keys(roleVotes).length;
+                  const candList = elections.candidates?.length > 0 
+                    ? elections.candidates 
+                    : membersListProp.map(m => m.id);
+                  
+                  const counts: Record<string, number> = {};
+                  candList.forEach((cid: string) => { counts[cid] = 0; });
+                  Object.values(roleVotes).forEach((cid: any) => {
+                    if (counts[cid] !== undefined) counts[cid]++;
+                  });
+
+                  let max = -1;
+                  let winnerIds: string[] = [];
+                  Object.entries(counts).forEach(([cid, c]) => {
+                    if (c > max) {
+                      max = c;
+                      winnerIds = [cid];
+                    } else if (c === max) {
+                      winnerIds.push(cid);
+                    }
+                  });
+
+                  return { winnerIds, max, totalRVotes, counts };
+                };
+
+                const suResult = getWinners("SUPERUSER");
+                const asuResult = getWinners("ASSISTANT_SUPERUSER");
+
+                const renderRoleResults = (title: string, result: ReturnType<typeof getWinners>) => {
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center border-b border-slate-800/60 pb-1.5">
+                        <h4 className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+                          <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
+                          {title}
+                        </h4>
+                        <span className="text-[10px] font-mono text-slate-500">{result.totalRVotes} total votes</span>
+                      </div>
+
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {elections.candidates?.length > 0 ? (
+                          elections.candidates.map((cid: string) => {
+                            const count = result.counts[cid] || 0;
+                            const pct = result.totalRVotes > 0 ? Math.round((count / result.totalRVotes) * 100) : 0;
+                            const isWinner = result.max > 0 && result.winnerIds.includes(cid);
+                            const nick = membersListProp.find(m => m.id === cid)?.nickname || "Unknown";
+
+                            return (
+                              <div 
+                                key={cid} 
+                                className={`flex justify-between items-center p-2 rounded text-xs transition-all ${
+                                  isWinner ? "bg-cyan-950/15 border border-cyan-500/20 text-white" : "bg-slate-950/20 border border-transparent text-slate-400"
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  {isWinner && <Award className="w-3.5 h-3.5 text-yellow-400 shrink-0" />}
+                                  <span className={`font-bold ${isWinner ? "text-cyan-300 font-extrabold" : "text-slate-300"}`}>{nick}</span>
+                                </div>
+                                <div className="font-mono text-xs">
+                                  <span className="font-bold text-cyan-400">{count}</span>
+                                  <span className="text-[10px] text-slate-500 font-sans"> ({pct}%)</span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="text-[10px] text-slate-500 italic">No custom candidates, all members eligible.</p>
+                        )}
+                      </div>
+
+                      {result.max > 0 && (
+                        <div className="p-2.5 rounded bg-emerald-950/20 border border-emerald-500/20 text-[11px] flex items-center gap-1.5">
+                          <Award className="w-4 h-4 text-yellow-400 shrink-0 animate-bounce" />
+                          <div>
+                            <span className="text-slate-400">Elected: </span>
+                            <span className="font-extrabold text-emerald-400">
+                              {result.winnerIds.map(id => membersListProp.find(m => m.id === id)?.nickname || "Unknown").join(" & ")}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {renderRoleResults("Super User (SU)", suResult)}
+                    {renderRoleResults("Assistant Super User (ASU)", asuResult)}
+                  </div>
+                );
+              })()
+            )}
           </div>
         </div>
       )}

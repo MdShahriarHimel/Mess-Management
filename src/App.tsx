@@ -897,19 +897,31 @@ export default function App() {
   // Elections/Ballot voting states
   const [elections, setElections] = useState<{
     enabled: boolean;
+    topic?: string;
+    subject?: string;
+    voteType?: "superuser" | "custom";
+    options?: string[];
+    isFinal?: boolean;
     candidates: string[];
     votes: {
       SUPERUSER: Record<string, string>;
       ASSISTANT_SUPERUSER: Record<string, string>;
+      CUSTOM?: Record<string, string>;
     };
     startDate?: string;
     endDate?: string;
   }>({
     enabled: false,
+    topic: "Superuser selection",
+    subject: "options",
+    voteType: "superuser",
+    options: [],
+    isFinal: false,
     candidates: [],
     votes: {
       SUPERUSER: {},
-      ASSISTANT_SUPERUSER: {}
+      ASSISTANT_SUPERUSER: {},
+      CUSTOM: {}
     },
     startDate: "",
     endDate: ""
@@ -1060,7 +1072,18 @@ export default function App() {
     alert("Mess name successfully updated to: " + newMessName);
   };
 
-  const handleConfigureElection = async (params: { enabled: boolean; candidates: string[]; startDate?: string; endDate?: string }) => {
+  const handleConfigureElection = async (params: { 
+    enabled: boolean; 
+    candidates: string[]; 
+    startDate?: string; 
+    endDate?: string;
+    topic?: string;
+    subject?: string;
+    voteType?: "superuser" | "custom";
+    options?: string[];
+    isFinal?: boolean;
+    resetVotes?: boolean;
+  }) => {
     try {
       const response = await fetch("/api/elections/configure", {
         method: "POST",
@@ -1555,7 +1578,28 @@ export default function App() {
     { id: "settings", label: t("ERP Control Panel"), icon: <Settings size={16} /> }
   ];
 
+  const activeMembers = membersList.filter(m => m.status === "ACTIVE");
+  
+  const checkAllVoted = () => {
+    if (!elections || !elections.enabled) return false;
+    if (activeMembers.length === 0) return false;
+    
+    const voteType = (elections as any).voteType || "superuser";
+    if (voteType === "custom") {
+      const customVotes = (elections as any).votes?.CUSTOM || {};
+      return activeMembers.every(m => customVotes[m.id] !== undefined);
+    } else {
+      const suVotes = elections.votes?.SUPERUSER || {};
+      const asuVotes = elections.votes?.ASSISTANT_SUPERUSER || {};
+      return activeMembers.every(m => suVotes[m.id] !== undefined || asuVotes[m.id] !== undefined);
+    }
+  };
+
+  const allVoted = checkAllVoted();
+  const showResultsInDashboard = !!(elections?.isFinal || allVoted);
+
   const visibleNavItems = navItems.filter(item => {
+    if (item.id === "democracy" && showResultsInDashboard) return false;
     if (item.id === "audit" && dashboardVisibility && !dashboardVisibility.showAuditLogs) return false;
     if (item.id === "deposits" && dashboardVisibility && !dashboardVisibility.showCashDeposit) return false;
     if (item.id === "meals" && dashboardVisibility && !dashboardVisibility.showMealTracker) return false;
@@ -2023,6 +2067,9 @@ export default function App() {
               months={months}
               onChangeMonth={setCurrentMonthId}
               homeCustomization={homeCustomization}
+              elections={elections}
+              membersListProp={membersList}
+              showResultsInDashboard={showResultsInDashboard}
             />
           )}
 
@@ -2693,102 +2740,195 @@ export default function App() {
                 )}
 
                 {/* Democracy & Superuser Voting System Configuration */}
-                {currentUser.role === UserRole.ADMIN && (
+                {([UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER].includes(currentUser.role)) && (
                   <div className={`p-5 rounded-2xl border lg:col-span-2 ${
                     isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
                   }`}>
                     <h3 className="text-sm font-bold font-display text-cyan-300 mb-1 uppercase tracking-wider flex items-center gap-1.5">
                       <Vote className="w-4 h-4 text-cyan-400" />
-                      Democracy & Superuser Voting System
+                      Democracy Ballot & Voting Configuration
                     </h3>
                     <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                      Configure parameters for democratic Superuser/Assistant Superuser election ballots. Define the voting dates, turn the ballot on/off, and select candidates from active members.
+                      Configure parameters for democratic ballots or polls. Define custom topics, subjects, options, and voting dates. This is open to Admins, Managers, and Super Users.
                     </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Left: General Settings */}
                       <div className="space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Ballot Status</label>
-                          <select
-                            value={electionEnabled ? "enabled" : "disabled"}
-                            onChange={(e) => setElectionEnabled(e.target.value === "enabled")}
-                            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                          >
-                            <option value="disabled">Disabled (Ballot Closed)</option>
-                            <option value="enabled">Enabled (Ballot Open/Active)</option>
-                          </select>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Ballot Status</label>
+                            <select
+                              value={electionEnabled ? "enabled" : "disabled"}
+                              onChange={(e) => setElectionEnabled(e.target.value === "enabled")}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            >
+                              <option value="disabled">Disabled (Ballot Closed)</option>
+                              <option value="enabled">Enabled (Ballot Open/Active)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Vote Type</label>
+                            <select
+                              value={electionVoteType}
+                              onChange={(e) => setElectionVoteType(e.target.value as any)}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            >
+                              <option value="superuser">Super User (SU / ASU) Selection</option>
+                              <option value="custom">Custom Ballot/Poll (e.g. Tour, Event)</option>
+                            </select>
+                          </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Voting Start Date & Time</label>
-                          <input
-                            type="datetime-local"
-                            value={electionStartDate}
-                            onChange={(e) => setElectionStartDate(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                          />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Ballot Topic</label>
+                            <input
+                              type="text"
+                              value={electionTopic}
+                              onChange={(e) => setElectionTopic(e.target.value)}
+                              placeholder="e.g. Tour or Superuser selection"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Ballot Subject</label>
+                            <input
+                              type="text"
+                              value={electionSubject}
+                              onChange={(e) => setElectionSubject(e.target.value)}
+                              placeholder="e.g. options or candidates"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            />
+                          </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Voting End Date & Time</label>
-                          <input
-                            type="datetime-local"
-                            value={electionEndDate}
-                            onChange={(e) => setElectionEndDate(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                          />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">Start Date & Time</label>
+                            <input
+                              type="datetime-local"
+                              value={electionStartDate}
+                              onChange={(e) => setElectionStartDate(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-display">End Date & Time</label>
+                            <input
+                              type="datetime-local"
+                              value={electionEndDate}
+                              onChange={(e) => setElectionEndDate(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Right: Candidates Checklist */}
+                      {/* Right: Candidates Checklist or Custom Options */}
                       <div className="space-y-2 border border-slate-800/80 rounded-xl p-3 bg-slate-950/40">
-                        <label className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block font-display">Eligible Candidates Checklist</label>
-                        <p className="text-[10px] text-slate-500 leading-snug">
-                          Check all members who are allowed to run for the Superuser / Assistant Superuser position. If none are checked, all members are eligible.
-                        </p>
-                        
-                        <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 mt-2">
-                          {membersList.length === 0 ? (
-                            <p className="text-[10px] text-slate-500 font-mono italic">No members found in this mess branch.</p>
-                          ) : (
-                            membersList.map((m) => {
-                              const isChecked = electionCandidates.includes(m.id);
-                              return (
-                                <label key={m.id} className="flex items-center gap-2 p-1.5 rounded bg-slate-950 hover:bg-slate-900 border border-slate-900/60 cursor-pointer transition-all">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setElectionCandidates(prev => [...prev, m.id]);
-                                      } else {
-                                        setElectionCandidates(prev => prev.filter(id => id !== m.id));
-                                      }
-                                    }}
-                                    className="accent-cyan-500 cursor-pointer"
-                                  />
-                                  <div className="flex-1 flex justify-between items-center text-[11px]">
-                                    <span className="font-bold text-slate-200">{m.nickname}</span>
-                                    <span className="text-[9px] font-mono text-slate-500 uppercase">{m.role}</span>
-                                  </div>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
+                        {electionVoteType === "superuser" ? (
+                          <>
+                            <label className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block font-display">Eligible Candidates Checklist</label>
+                            <p className="text-[10px] text-slate-500 leading-snug">
+                              Check all members who are allowed to run for the Superuser / Assistant Superuser position. If none are checked, all members are eligible.
+                            </p>
+                            
+                            <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 mt-2">
+                              {membersList.length === 0 ? (
+                                <p className="text-[10px] text-slate-500 font-mono italic">No members found in this mess branch.</p>
+                              ) : (
+                                membersList.map((m) => {
+                                  const isChecked = electionCandidates.includes(m.id);
+                                  return (
+                                    <label key={m.id} className="flex items-center gap-2 p-1.5 rounded bg-slate-950 hover:bg-slate-900 border border-slate-900/60 cursor-pointer transition-all">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setElectionCandidates(prev => [...prev, m.id]);
+                                          } else {
+                                            setElectionCandidates(prev => prev.filter(id => id !== m.id));
+                                          }
+                                        }}
+                                        className="accent-cyan-500 cursor-pointer"
+                                      />
+                                      <div className="flex-1 flex justify-between items-center text-[11px]">
+                                        <span className="font-bold text-slate-200">{m.nickname}</span>
+                                        <span className="text-[9px] font-mono text-slate-500 uppercase">{m.role}</span>
+                                      </div>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <label className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block font-display">Custom Voting Options</label>
+                            <p className="text-[10px] text-slate-500 leading-snug mb-2">
+                              Enter the distinct voting choices/options separated by commas.
+                            </p>
+                            <textarea
+                              rows={4}
+                              value={electionCustomOptionsText}
+                              onChange={(e) => setElectionCustomOptionsText(e.target.value)}
+                              placeholder="e.g. Option A - Srimangal, Option B - Ratargul, Option C - Sajek"
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400 font-sans"
+                            />
+                            <p className="text-[9px] text-slate-400 italic mt-1 leading-snug">
+                              Note: Changing the Vote Type, Topic, or options will reset currently casted ballots for this election to keep the poll fair.
+                            </p>
+                          </>
+                        )}
                       </div>
                     </div>
 
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex justify-between items-center gap-2">
                       <button
                         type="button"
                         onClick={async () => {
+                          if (confirm("Are you sure you want to completely reset all cast votes for this election/poll?")) {
+                            await handleConfigureElection({
+                              enabled: electionEnabled,
+                              startDate: electionStartDate,
+                              endDate: electionEndDate,
+                              candidates: electionCandidates,
+                              topic: electionTopic,
+                              subject: electionSubject,
+                              voteType: electionVoteType,
+                              options: electionVoteType === "custom" 
+                                ? electionCustomOptionsText.split(",").map(s => s.trim()).filter(Boolean)
+                                : [],
+                              resetVotes: true
+                            });
+                          }
+                        }}
+                        className="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/30 font-bold text-[10px] text-rose-300 rounded-xl cursor-pointer transition-all uppercase tracking-wider"
+                      >
+                        Reset Current Votes
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const customOpts = electionVoteType === "custom"
+                            ? electionCustomOptionsText.split(",").map(s => s.trim()).filter(Boolean)
+                            : [];
                           await handleConfigureElection({
                             enabled: electionEnabled,
                             startDate: electionStartDate,
                             endDate: electionEndDate,
-                            candidates: electionCandidates
+                            candidates: electionCandidates,
+                            topic: electionTopic,
+                            subject: electionSubject,
+                            voteType: electionVoteType,
+                            options: customOpts,
+                            isFinal: false
                           });
                         }}
                         className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 font-bold text-xs text-white rounded-xl cursor-pointer transition-all uppercase tracking-wider"
