@@ -153,9 +153,8 @@ export async function initializeDbCache() {
 
       const newAdmin = dbCache.members.find(m => m.email.toLowerCase() === "mdshahriarhimel@gmail.com");
       if (newAdmin) {
-        if (newAdmin.role !== UserRole.ADMIN || newAdmin.status !== MemberStatus.ACTIVE) {
+        if (newAdmin.role !== UserRole.ADMIN) {
           newAdmin.role = UserRole.ADMIN;
-          newAdmin.status = MemberStatus.ACTIVE;
           needsSync = true;
         }
         const creds = loadCredentials();

@@ -448,6 +448,13 @@ export default function Dashboard({
                 </div>
               </div>
 
+              {currentUser.glowEnabledByAdmin === false && (
+                <div className="p-3 mb-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>Your profile glowing card option has been disabled by the Mess Administrator. You cannot activate or change your glowing card effect at this moment.</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 
                 {/* Admin Role Style Box */}
@@ -458,8 +465,8 @@ export default function Dashboard({
                     </p>
                     <button
                       onClick={() => handleSaveProfileCustomization("admin")}
-                      disabled={isUpdatingProfile}
-                      className="px-2 py-0.5 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/20 text-cyan-400 hover:text-white rounded text-[8px] font-bold uppercase tracking-widest cursor-pointer transition-all shrink-0"
+                      disabled={isUpdatingProfile || currentUser.glowEnabledByAdmin === false}
+                      className="px-2 py-0.5 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/20 text-cyan-400 hover:text-white rounded text-[8px] font-bold uppercase tracking-widest cursor-pointer transition-all shrink-0 disabled:opacity-40"
                     >
                       Apply Changes
                     </button>
@@ -469,6 +476,7 @@ export default function Dashboard({
                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Glow Style</label>
                     <select
                       value={!profileGlow ? "none" : (profileGlowStyle.startsWith("#") ? "color" : "preset")}
+                      disabled={currentUser.glowEnabledByAdmin === false}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val === "none") {
@@ -481,7 +489,7 @@ export default function Dashboard({
                           setProfileGlowStyle("nitro-classic");
                         }
                       }}
-                      className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none"
+                      className="w-full px-2 py-1 bg-slate-950 border border-slate-800 text-[11px] text-white rounded focus:outline-none disabled:opacity-40"
                     >
                       <option value="none">No Glowing Card</option>
                       <option value="color">Custom Solid Color Palette</option>
@@ -569,7 +577,7 @@ export default function Dashboard({
                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Glow Style</label>
                     <select
                       value={!memberGlow ? "none" : (memberGlowStyle.startsWith("#") ? "color" : "preset")}
-                      disabled={!splitProfile}
+                      disabled={!splitProfile || currentUser.glowEnabledByAdmin === false}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val === "none") {
@@ -1153,7 +1161,7 @@ export default function Dashboard({
               Current duties assigned by the superuser, authorities, or manager:
             </p>
 
-            {members.filter(m => m.assignedTask && m.assignedTask.trim() !== "").length === 0 ? (
+            {members.filter(m => m.status === "ACTIVE" && m.assignedTask && m.assignedTask.trim() !== "").length === 0 ? (
               <div className={`text-center py-6 border border-dashed rounded-xl text-xs text-slate-500 ${
                 isDarkMode ? "border-slate-800 bg-slate-950/20" : "border-slate-200 bg-slate-50"
               }`}>
@@ -1162,7 +1170,7 @@ export default function Dashboard({
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {members
-                  .filter(m => m.assignedTask && m.assignedTask.trim() !== "")
+                  .filter(m => m.status === "ACTIVE" && m.assignedTask && m.assignedTask.trim() !== "")
                   .map((m) => (
                     <div 
                       key={m.id}

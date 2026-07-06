@@ -50,6 +50,9 @@ export interface Member {
   memberGlowStyle?: string;
   memberAnimation?: string;
   gifEnabledByAdmin?: boolean;
+  hideContactInfoByAdmin?: boolean;
+  hideCardFromDirectoryByAdmin?: boolean;
+  glowEnabledByAdmin?: boolean;
 }
 
 export interface MessMonth {

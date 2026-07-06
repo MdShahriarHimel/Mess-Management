@@ -584,11 +584,21 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
 
   const original = db.members[index];
 
-  // Admin cannot demote themselves from the Admin Role
+  // Ultimate admin can demote other admins. Other admins cannot demote themselves or other admins.
+  // The ultimate admin cannot demote themselves from the Admin Role.
   if (original.role === UserRole.ADMIN) {
     if (updates.role && updates.role !== UserRole.ADMIN) {
-      res.status(403).json({ error: "Admin cannot demote themselves from the Admin Role" });
-      return;
+      const isUltimateAdminActor = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+      const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+      
+      if (isTargetUltimateAdmin) {
+        res.status(403).json({ error: "The ultimate Admin's role is Eternal and cannot be demoted." });
+        return;
+      }
+      if (!isUltimateAdminActor) {
+        res.status(403).json({ error: "Only the ultimate Admin can demote other Admins." });
+        return;
+      }
     }
   }
 
@@ -604,10 +614,22 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     return;
   }
 
-  // Superuser / Assistant Superuser / Manager cannot modify Admin accounts
-  if (original.role === UserRole.ADMIN && req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can modify Admin accounts" });
+  // Standard Admin or anyone else cannot modify the ultimate Admin account, except the ultimate Admin themselves
+  const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isActorUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+
+  if (isTargetUltimateAdmin && !isActorUltimateAdmin) {
+    res.status(403).json({ error: "Only the ultimate Admin can modify their own account." });
     return;
+  }
+
+  // Superuser / Assistant Superuser / Manager cannot modify Admin accounts
+  if (original.role === UserRole.ADMIN && !isActorUltimateAdmin) {
+    // Standard admins can edit themselves, but not other Admins
+    if (!isSelf) {
+      res.status(403).json({ error: "Only the ultimate Admin can modify other Admin accounts" });
+      return;
+    }
   }
 
   // If the updater is a MANAGER, they can only edit standard MEMBERs (or other MANAGERs) and can only change their role, notes, or assignedTask.
@@ -631,6 +653,13 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
       res.status(403).json({ error: "Managers cannot grant administrative roles" });
       return;
     }
+  }
+
+  // Only the ultimate Admin can customize these admin-override settings
+  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+    delete updates.hideContactInfoByAdmin;
+    delete updates.hideCardFromDirectoryByAdmin;
+    delete updates.glowEnabledByAdmin;
   }
 
   // Only Admin can customize individual glowing effects/animations (except if GIF background feature is enabled by admin)
@@ -1585,7 +1614,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   const db = loadDB();
 
   // Filter lists
-  const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE || m.status === MemberStatus.LEFT);
+  const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE);
   const monthDeposits = db.deposits.filter(d => d.monthId === monthId);
   const monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
   const monthMeals = db.meals.filter(m => m.monthId === monthId);

@@ -542,6 +542,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   );
 
   const visibleMembers = filteredMembers.filter(m => {
+    // If hidden from directory by admin, only Admins can see them
+    if (m.hideCardFromDirectoryByAdmin && currentUser.role !== UserRole.ADMIN) {
+      return false;
+    }
     if (m.role === UserRole.ADMIN) {
       if (currentUser.role === UserRole.ADMIN) return true;
       return !!adminVisibility?.showAdminCard;
@@ -550,9 +554,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   });
 
   const activeMembers = visibleMembers.filter(m => 
-    m.status !== MemberStatus.SUSPENDED && 
-    m.status !== MemberStatus.LEFT && 
-    m.status !== MemberStatus.ARCHIVED
+    m.status === MemberStatus.ACTIVE
+  );
+
+  const pendingMembers = visibleMembers.filter(m => 
+    m.status === MemberStatus.PENDING
   );
 
   const inactiveMembers = visibleMembers.filter(m => 
@@ -560,6 +566,208 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     m.status === MemberStatus.LEFT || 
     m.status === MemberStatus.ARCHIVED
   );
+
+  const renderMemberCard = (member: Member) => {
+    // Everyone can see contact info on cards (except masked admin info or admin override)
+    const showFullDetails = true;
+
+    const isTargetAdmin = member.role === UserRole.ADMIN;
+    const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
+    const shouldMaskByAdminOverride = !!member.hideContactInfoByAdmin && currentUser.role !== UserRole.ADMIN;
+
+    const showAdminRoleBadge = !maskAdmin || !!adminVisibility?.showAdminRole;
+    const showAdminEmailText = !maskAdmin && !shouldMaskByAdminOverride || !!adminVisibility?.showAdminEmail;
+    const showAdminPhoneText = !maskAdmin && !shouldMaskByAdminOverride || !!adminVisibility?.showAdminPhone;
+
+    const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+    const displayEmail = (!shouldMaskByAdminOverride && showAdminEmailText) ? member.email : "••••••••••••";
+    const displayPhone = (!shouldMaskByAdminOverride && showAdminPhoneText) ? (member.phone || "No phone logged") : "••••••••••••";
+
+    const config = roleAnimations?.[displayRole];
+    const isRoleHidden = member.role === UserRole.ADMIN && displayRole === UserRole.MEMBER;
+    const useMemberSettings = isRoleHidden && member.splitProfile;
+
+    // Admin can disable glowing on other profiles
+    const hasGlow = (member.glowEnabledByAdmin !== false) && (useMemberSettings 
+      ? member.memberGlow 
+      : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none")));
+
+    const glowStyle = useMemberSettings
+      ? (member.memberGlowStyle || "")
+      : (member.glowStyle || config?.glowStyle || "");
+
+    const finalAnimation = useMemberSettings
+      ? (member.memberAnimation || "none")
+      : (member.animation || "none");
+
+    let cardGlowStyle: React.CSSProperties = {};
+    let cardGlowClass = "";
+    if (hasGlow && glowStyle) {
+      if (glowStyle.startsWith("#")) {
+        cardGlowStyle = {
+          boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
+          borderColor: `${glowStyle}60`
+        };
+      } else {
+        cardGlowClass = `glow-${glowStyle}`;
+      }
+    }
+
+    return (
+      <div 
+        key={member.id} 
+        onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
+        className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${cardGlowClass} ${
+          isDarkMode 
+            ? "bg-slate-900/40 border-cyan-500/10 text-white" 
+            : "bg-white border-slate-200 shadow-sm text-slate-800"
+        }`}
+        style={cardGlowStyle}
+      >
+        <MicroAnimationOverlay animationType={finalAnimation} />
+        <div className="flex gap-4 items-start">
+          {/* Profile Photo */}
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            {member.photo ? (
+              <img 
+                src={member.photo} 
+                alt={member.nickname} 
+                className="w-16 h-16 rounded-xl object-cover border border-cyan-500/25"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-lg font-display uppercase">
+                {member.nickname.slice(0, 2)}
+              </div>
+            )}
+            
+            {/* Status Indicator bubble */}
+            <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
+              member.status === MemberStatus.ACTIVE ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+              member.status === MemberStatus.PENDING ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse" :
+              "bg-slate-500/10 text-slate-400 border-slate-500/20"
+            }`}>
+              {member.status}
+            </span>
+          </div>
+
+          {/* Core Text details */}
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between items-start gap-1">
+              <div>
+                <h3 className="font-extrabold text-sm truncate">{member.name}</h3>
+                <p className="text-xs text-cyan-400 font-semibold">@{member.nickname}</p>
+              </div>
+              <span className={getRoleStyle(displayRole)}>
+                {displayRole.replace("_", " ")}
+              </span>
+            </div>
+
+            {showFullDetails ? (
+              <div className="mt-3.5 space-y-1.5 text-xs text-slate-400 font-mono">
+                <p className="flex items-center gap-1.5 truncate">
+                  <Mail size={12} className="text-cyan-500/60" />
+                  {displayEmail}
+                </p>
+                <p className="flex items-center gap-1.5 truncate">
+                  <Phone size={12} className="text-cyan-500/60" />
+                  {displayPhone}
+                </p>
+                <p className="flex items-center gap-1.5 text-[11px]">
+                  <Briefcase size={12} className="text-cyan-500/60" />
+                  {member.occupation || "Independent"}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 p-2 bg-cyan-500/5 rounded border border-cyan-500/10 text-center">
+                <p className="text-[9px] font-bold text-cyan-400 tracking-wider uppercase animate-pulse">Click Profile to View Meals</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Notes Section */}
+        {showFullDetails && member.notes && (
+          <p className={`mt-4 p-2.5 rounded-lg text-[11px] leading-relaxed italic ${
+            isDarkMode ? "bg-slate-950/40 text-slate-400" : "bg-slate-50 text-slate-600"
+          }`}>
+            &ldquo;{member.notes}&rdquo;
+          </p>
+        )}
+
+        {/* Action buttons footer */}
+        <div className="flex items-center gap-1.5 mt-5 pt-4 border-t border-cyan-500/10 justify-between animate-fade-in">
+          
+          <div className="flex gap-2">
+            {showFullDetails && (
+              <span className="inline-flex items-center gap-1 text-[10px] bg-cyan-500/5 px-2 py-0.5 rounded border border-cyan-500/15 font-mono text-cyan-300">
+                <Heart size={10} className="text-orange-500 fill-orange-500" />
+                {member.bloodGroup}
+              </span>
+            )}
+            <span className="text-[10px] text-slate-500 font-mono">Join: {member.joiningDate}</span>
+          </div>
+
+          {(isAuthorizedToEdit || currentUser.id === member.id) && (
+            <div className="flex gap-1.5">
+              {/* Super Users cannot modify Admins */}
+              {!(member.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) && (
+                <>
+                  <button
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      setEditingMember(member); 
+                      setOriginalRole(member.role);
+                      setShiftReason("");
+                    }}
+                    className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
+                      isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                    }`}
+                    title="Edit profile"
+                  >
+                    <Edit2 size={13} />
+                  </button>
+
+                  {member.status !== MemberStatus.ARCHIVED ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleArchive(member.id); }}
+                      className={`p-1.5 rounded-lg border cursor-pointer hover:border-orange-500 hover:text-orange-500 transition-all ${
+                        isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                      }`}
+                      title="Archive member"
+                    >
+                      <Archive size={13} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
+                      className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
+                        isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                      }`}
+                      title="Restore member"
+                    >
+                      <RotateCcw size={13} />
+                    </button>
+                  )}
+
+                  {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
+                      className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                      title="Permanently Delete member"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6" id="members-wrapper">
@@ -603,208 +811,40 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
         />
       </div>
 
-      {/* Members Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="members-grid">
-        {activeMembers.map((member) => {
-          // Everyone can see contact info on cards (except masked admin info)
-          const showFullDetails = true;
-
-          const isTargetAdmin = member.role === UserRole.ADMIN;
-          const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
-
-          const showAdminRoleBadge = !maskAdmin || !!adminVisibility?.showAdminRole;
-          const showAdminEmailText = !maskAdmin || !!adminVisibility?.showAdminEmail;
-          const showAdminPhoneText = !maskAdmin || !!adminVisibility?.showAdminPhone;
-
-          const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
-          const displayEmail = showAdminEmailText ? member.email : "••••••••••••";
-          const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
-
-          const config = roleAnimations?.[displayRole];
-          const isRoleHidden = member.role === UserRole.ADMIN && displayRole === UserRole.MEMBER;
-          const useMemberSettings = isRoleHidden && member.splitProfile;
-
-          const hasGlow = useMemberSettings 
-            ? member.memberGlow 
-            : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none"));
-
-          const glowStyle = useMemberSettings
-            ? (member.memberGlowStyle || "")
-            : (member.glowStyle || config?.glowStyle || "");
-
-          const finalAnimation = useMemberSettings
-            ? (member.memberAnimation || "none")
-            : (member.animation || "none");
-
-          let cardGlowStyle: React.CSSProperties = {};
-          let cardGlowClass = "";
-          if (hasGlow && glowStyle) {
-            if (glowStyle.startsWith("#")) {
-              cardGlowStyle = {
-                boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
-                borderColor: `${glowStyle}60`
-              };
-            } else {
-              cardGlowClass = `glow-${glowStyle}`;
-            }
-          }
-
-          return (
-            <div 
-              key={member.id} 
-              onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
-              className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${cardGlowClass} ${
-                isDarkMode 
-                  ? "bg-slate-900/40 border-cyan-500/10 text-white" 
-                  : "bg-white border-slate-200 shadow-sm text-slate-800"
-              }`}
-              style={cardGlowStyle}
-            >
-              <MicroAnimationOverlay animationType={finalAnimation} />
-              <div className="flex gap-4 items-start">
-                {/* Profile Photo */}
-                <div className="relative" onClick={(e) => e.stopPropagation()}>
-                  {member.photo ? (
-                    <img 
-                      src={member.photo} 
-                      alt={member.nickname} 
-                      className="w-16 h-16 rounded-xl object-cover border border-cyan-500/25"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-lg font-display uppercase">
-                      {member.nickname.slice(0, 2)}
-                    </div>
-                  )}
-                  
-                  {/* Status Indicator bubble */}
-                  <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
-                    member.status === MemberStatus.ACTIVE ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                    member.status === MemberStatus.PENDING ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse" :
-                    "bg-slate-500/10 text-slate-400 border-slate-500/20"
-                  }`}>
-                    {member.status}
-                  </span>
-                </div>
-
-                {/* Core Text details */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start gap-1">
-                    <div>
-                      <h3 className="font-extrabold text-sm truncate">{member.name}</h3>
-                      <p className="text-xs text-cyan-400 font-semibold">@{member.nickname}</p>
-                    </div>
-                    <span className={getRoleStyle(displayRole)}>
-                      {displayRole.replace("_", " ")}
-                    </span>
-                  </div>
-
-                  {showFullDetails ? (
-                    <div className="mt-3.5 space-y-1.5 text-xs text-slate-400 font-mono">
-                      <p className="flex items-center gap-1.5 truncate">
-                        <Mail size={12} className="text-cyan-500/60" />
-                        {displayEmail}
-                      </p>
-                      <p className="flex items-center gap-1.5 truncate">
-                        <Phone size={12} className="text-cyan-500/60" />
-                        {displayPhone}
-                      </p>
-                      <p className="flex items-center gap-1.5 text-[11px]">
-                        <Briefcase size={12} className="text-cyan-500/60" />
-                        {member.occupation || "Independent"}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="mt-4 p-2 bg-cyan-500/5 rounded border border-cyan-500/10 text-center">
-                      <p className="text-[9px] font-bold text-cyan-400 tracking-wider uppercase animate-pulse">Click Profile to View Meals</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Notes Section */}
-              {showFullDetails && member.notes && (
-                <p className={`mt-4 p-2.5 rounded-lg text-[11px] leading-relaxed italic ${
-                  isDarkMode ? "bg-slate-950/40 text-slate-400" : "bg-slate-50 text-slate-600"
-                }`}>
-                  &ldquo;{member.notes}&rdquo;
-                </p>
-              )}
-
-              {/* Action buttons footer */}
-              <div className="flex items-center gap-1.5 mt-5 pt-4 border-t border-cyan-500/10 justify-between animate-fade-in">
-                
-                <div className="flex gap-2">
-                  {showFullDetails && (
-                    <span className="inline-flex items-center gap-1 text-[10px] bg-cyan-500/5 px-2 py-0.5 rounded border border-cyan-500/15 font-mono text-cyan-300">
-                      <Heart size={10} className="text-orange-500 fill-orange-500" />
-                      {member.bloodGroup}
-                    </span>
-                  )}
-                  <span className="text-[10px] text-slate-500 font-mono">Join: {member.joiningDate}</span>
-                </div>
-
-                {(isAuthorizedToEdit || currentUser.id === member.id) && (
-                  <div className="flex gap-1.5">
-                    {/* Super Users cannot modify Admins */}
-                    {!(member.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) && (
-                      <>
-                        <button
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            setEditingMember(member); 
-                            setOriginalRole(member.role);
-                            setShiftReason("");
-                          }}
-                          className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
-                            isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                          }`}
-                          title="Edit profile"
-                        >
-                          <Edit2 size={13} />
-                        </button>
-
-                        {member.status !== MemberStatus.ARCHIVED ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleArchive(member.id); }}
-                            className={`p-1.5 rounded-lg border cursor-pointer hover:border-orange-500 hover:text-orange-500 transition-all ${
-                              isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                            }`}
-                            title="Archive member"
-                          >
-                            <Archive size={13} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
-                            className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
-                              isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                            }`}
-                            title="Restore member"
-                          >
-                            <RotateCcw size={13} />
-                          </button>
-                        )}
-
-                        {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
-                            className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
-                            title="Permanently Delete member"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-              </div>
-            </div>
-          );
-        })}
+      {/* Active Members Grid */}
+      <div className="space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2 font-display">
+          <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+          Active Members ({activeMembers.length})
+        </h3>
+        
+        {activeMembers.length === 0 ? (
+          <div className={`p-8 rounded-2xl border text-center ${isDarkMode ? 'bg-slate-900/20 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
+            <p className="text-xs font-semibold">No active members found matching your search query.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="members-grid">
+            {activeMembers.map((member) => renderMemberCard(member))}
+          </div>
+        )}
       </div>
+
+      {/* Pending Members Grid (Invited & Activating) */}
+      {pendingMembers.length > 0 && (
+        <div className="space-y-4 pt-4 border-t border-slate-900/30">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-2 font-display">
+            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+            Pending Accounts & Pending Verification ({pendingMembers.length})
+          </h3>
+          <p className="text-[10px] text-slate-400">
+            These accounts have been added by email but are awaiting activation by logging in and setting their credentials.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="pending-members-grid">
+            {pendingMembers.map((member) => renderMemberCard(member))}
+          </div>
+        </div>
+      )}
 
       {/* Archived, Suspended & Departed Inactive Bucket (Admin Only) */}
       {currentUser.role === UserRole.ADMIN && inactiveMembers.length > 0 && (
@@ -1559,6 +1599,57 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
                     />
                   </div>
+
+                  {/* Ultimate Admin (mdshahriarhimel@gmail.com) exclusive overrides */}
+                  {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                    <div className="space-y-3 bg-cyan-950/20 p-3 rounded-xl border border-cyan-500/20">
+                      <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1">
+                        🌟 Ultimate Admin Overrides
+                      </p>
+                      
+                      {/* Hide Contact Info Toggle */}
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                        <div className="space-y-0.5">
+                          <label className="text-xs font-bold text-slate-200 block">Hide Contact Info</label>
+                          <span className="text-[9px] text-slate-400 block">Mask email, phone, and WhatsApp from standard members.</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={!!editingMember.hideContactInfoByAdmin}
+                          onChange={(e) => setEditingMember({ ...editingMember, hideContactInfoByAdmin: e.target.checked })}
+                          className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Hide Card From Directory Toggle */}
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                        <div className="space-y-0.5">
+                          <label className="text-xs font-bold text-slate-200 block">Hide Profile Card from Directory</label>
+                          <span className="text-[9px] text-slate-400 block">Completely hide card from members list for standard members.</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={!!editingMember.hideCardFromDirectoryByAdmin}
+                          onChange={(e) => setEditingMember({ ...editingMember, hideCardFromDirectoryByAdmin: e.target.checked })}
+                          className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Enable/Disable Glowing Effect Toggle */}
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                        <div className="space-y-0.5">
+                          <label className="text-xs font-bold text-slate-200 block">Enable Profile Glowing</label>
+                          <span className="text-[9px] text-slate-400 block">Allow/Disallow this profile to show glowing styles. Default is enabled.</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={editingMember.glowEnabledByAdmin !== false}
+                          onChange={(e) => setEditingMember({ ...editingMember, glowEnabledByAdmin: e.target.checked })}
+                          className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Real-time calculated glow mode */}
                   {(() => {
@@ -1977,13 +2068,25 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     <div className="space-y-2 font-mono text-slate-300">
                       <div className="flex items-center gap-2 truncate">
                         <Mail size={13} className="text-cyan-400 shrink-0" />
-                        <span className="truncate" title={selectedMemberForMeals.email}>{selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminEmail ? "••••••••••••" : selectedMemberForMeals.email}</span>
+                        <span className="truncate" title={selectedMemberForMeals.email}>
+                          {selectedMemberForMeals.hideContactInfoByAdmin && currentUser.role !== UserRole.ADMIN 
+                            ? "••••••••••••" 
+                            : (selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminEmail 
+                              ? "••••••••••••" 
+                              : selectedMemberForMeals.email)}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 truncate">
                         <Phone size={13} className="text-cyan-400 shrink-0" />
-                        <span>{selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminPhone ? "••••••••••••" : (selectedMemberForMeals.phone || "No phone number")}</span>
+                        <span>
+                          {selectedMemberForMeals.hideContactInfoByAdmin && currentUser.role !== UserRole.ADMIN 
+                            ? "••••••••••••" 
+                            : (selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminPhone 
+                              ? "••••••••••••" 
+                              : (selectedMemberForMeals.phone || "No phone number"))}
+                        </span>
                       </div>
-                      {selectedMemberForMeals.whatsapp && (!(selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminPhone)) && (
+                      {selectedMemberForMeals.whatsapp && (!(selectedMemberForMeals.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && !adminVisibility?.showAdminPhone)) && (!(selectedMemberForMeals.hideContactInfoByAdmin && currentUser.role !== UserRole.ADMIN)) && (
                         <div className="flex items-center gap-2 truncate text-emerald-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                           <span className="font-sans">WhatsApp:</span>
