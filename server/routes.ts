@@ -670,11 +670,27 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     }
   }
 
-  // Only the ultimate Admin can customize these admin-override settings
+  // Admin cannot set their own status to SUSPENDED or PENDING
+  if (original.role === UserRole.ADMIN && isSelf && updates.status && [MemberStatus.SUSPENDED, MemberStatus.PENDING].includes(updates.status as any)) {
+    res.status(403).json({ error: "Admins cannot select 'suspend' or 'pending' for their own ID and profile." });
+    return;
+  }
+
+  // Check if they are trying to suspend, left, or archive, and require canSuspendMembers permission
+  const isSuspendedOrLeftOrArchived = updates.status && [MemberStatus.SUSPENDED, MemberStatus.ARCHIVED, MemberStatus.LEFT].includes(updates.status as any);
+  if (isSuspendedOrLeftOrArchived && !checkAdminPermission(req, "canSuspendMembers")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to suspend or archive members." });
+    return;
+  }
+
+  // Only the ultimate Admin can customize these admin-override settings (except standard Admin/Superuser can hide themselves)
   if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
     delete updates.hideContactInfoByAdmin;
-    delete updates.hideCardFromDirectoryByAdmin;
     delete updates.glowEnabledByAdmin;
+    // Allow self-hide (hide himself)
+    if (!isSelf || (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER)) {
+      delete updates.hideCardFromDirectoryByAdmin;
+    }
   }
 
   // Only Admin can customize individual glowing effects/animations (except if GIF background feature is enabled by admin)
@@ -759,6 +775,10 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
 
 // Archive member / Soft Delete (Admin & Super User only)
 router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canSuspendMembers")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to suspend or archive members." });
+    return;
+  }
   const { id } = req.params;
   const db = loadDB();
   const index = db.members.findIndex(m => m.id === id);
@@ -941,6 +961,10 @@ router.get("/meals/:monthId", authMiddleware, (req: AuthenticatedRequest, res: R
 
 // Bulk Enter/Edit meals for a month (Manager, Admin, Super User, Assistant Super User)
 router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canManageMeals")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to manage meals." });
+    return;
+  }
   const { monthId, meals } = req.body; // meals: Array of meals to save/upsert
   if (!monthId || !Array.isArray(meals)) {
     res.status(400).json({ error: "Month ID and meals array are required" });
@@ -1174,7 +1198,11 @@ router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res:
 });
 
 router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
-  const { id, monthId, memberId, date, amount, receiptUrl, description, isExtra } = req.body;
+  if (!checkAdminPermission(req, "canAddMarkets")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to manage market logs." });
+    return;
+  }
+  const { id, monthId, memberId, date, amount, receiptUrl, description, isExtra, quantity } = req.body;
   if (!monthId || !memberId || !date || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, Date, and Amount are required" });
     return;
@@ -1211,7 +1239,8 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
     amount: Number(amount),
     receiptUrl: receiptUrl || null,
     description: description || "",
-    isExtra: !!isExtra
+    isExtra: !!isExtra,
+    quantity: quantity || ""
   };
 
   const existingIndex = db.marketEntries.findIndex(e => e.id === newEntry.id);
@@ -1236,6 +1265,10 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
 
 // Delete Market Entry
 router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canAddMarkets")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to manage market logs." });
+    return;
+  }
   const { id } = req.params;
   const db = loadDB();
   const index = db.marketEntries.findIndex(e => e.id === id);
@@ -1323,6 +1356,10 @@ router.get("/bills/:monthId", authMiddleware, (req: AuthenticatedRequest, res: R
 });
 
 router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditBills")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
+    return;
+  }
   const { monthId, name, amount, collectorId, status } = req.body;
   if (!monthId || !name || amount === undefined || !collectorId) {
     res.status(400).json({ error: "Month ID, Name, Amount, and Collector ID are required" });
@@ -1354,6 +1391,10 @@ router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MA
 
 // Update Bill status (Collector, Manager, Admin, Super User)
 router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditBills")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
+    return;
+  }
   const { id } = req.params;
   const { status, amount, collectorId } = req.body;
   const db = loadDB();
@@ -1399,6 +1440,10 @@ router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
 
 // Delete Bill
 router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditBills")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
+    return;
+  }
   const { id } = req.params;
   const db = loadDB();
   const index = db.bills.findIndex(b => b.id === id);
@@ -1519,10 +1564,16 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
   res.json({ notices: sortedNotices });
 });
 
-router.post("/notices", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
-  const { title, content, pinned } = req.body;
+router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const { title, content, pinned, isDirectToManager } = req.body;
   if (!title || !content) {
     res.status(400).json({ error: "Title and content are required" });
+    return;
+  }
+
+  const isManagerOrSuper = req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.MANAGER;
+  if (!isManagerOrSuper && !isDirectToManager) {
+    res.status(403).json({ error: "Forbidden: Only Managers or Super Users can post general notices." });
     return;
   }
 
@@ -1531,21 +1582,22 @@ router.post("/notices", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
     id: generateUUID(),
     title,
     content,
-    pinned: !!pinned,
+    pinned: isManagerOrSuper ? !!pinned : false,
     archived: false,
     authorId: req.user!.id,
     authorName: req.user!.nickname,
-    date: new Date().toISOString().split("T")[0]
+    date: new Date().toISOString().split("T")[0],
+    isDirectToManager: !!isDirectToManager
   };
 
   db.notices.push(newNotice);
   saveDB();
 
-  logAudit(req.user!.id, req.user!.nickname, "CREATE_NOTICE", "None", title, `Published notice: ${title}`);
+  logAudit(req.user!.id, req.user!.nickname, "CREATE_NOTICE", "None", title, `Published notice: ${title} (Direct to Manager: ${!!isDirectToManager})`);
   res.json({ success: true, notice: newNotice });
 });
 
-router.put("/notices/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const updates: Partial<Notice> = req.body;
   const db = loadDB();
@@ -1557,6 +1609,14 @@ router.put("/notices/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRo
   }
 
   const original = db.notices[index];
+  const isManagerOrSuper = req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
+  const isAuthor = original.authorId === req.user!.id;
+
+  if (!isManagerOrSuper && !isAuthor) {
+    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or the author can update this notice." });
+    return;
+  }
+
   const updatedNotice = {
     ...original,
     ...updates,
@@ -1570,13 +1630,22 @@ router.put("/notices/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRo
   res.json({ success: true, notice: updatedNotice });
 });
 
-router.delete("/notices/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();
   const index = db.notices.findIndex(n => n.id === id);
 
   if (index === -1) {
     res.status(404).json({ error: "Notice not found" });
+    return;
+  }
+
+  const notice = db.notices[index];
+  const isManagerOrSuper = req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
+  const isAuthor = notice.authorId === req.user!.id;
+
+  if (!isManagerOrSuper && !isAuthor) {
+    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or the author can delete this notice." });
     return;
   }
 
@@ -2308,6 +2377,87 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
 });
 
 // ---------------------------------------------------------
+// ADMIN PERMISSION CONTROLS (ULTIMATE ADMIN OVERRIDES)
+// ---------------------------------------------------------
+const ADMIN_CONTROLS_FILE = path.join(process.cwd(), "data", "admin_controls.json");
+
+function loadAdminControls() {
+  const defaultControls = { controls: {} };
+  try {
+    if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
+      const data = fs.readFileSync(ADMIN_CONTROLS_FILE, "utf-8");
+      return { ...defaultControls, ...JSON.parse(data) };
+    }
+  } catch (e) {
+    console.error("Error loading admin controls:", e);
+  }
+  return defaultControls;
+}
+
+function saveAdminControls(data: any) {
+  try {
+    const dir = path.dirname(ADMIN_CONTROLS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(ADMIN_CONTROLS_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving admin controls:", e);
+  }
+}
+
+function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boolean {
+  if (!req.user) return false;
+  if (req.user.email.toLowerCase() === "mdshahriarhimel@gmail.com") return true; // ultimate admin has full control
+  if (req.user.role !== UserRole.ADMIN) return true; // other roles don't use these admin permission restrictions
+
+  const controls = loadAdminControls().controls;
+  const userControls = controls[req.user.id];
+  if (!userControls) return true; // if no explicit overrides, default to true
+
+  if (actionKey === "canEditBills" && userControls.canEditBills === false) return false;
+  if (actionKey === "canManageMeals" && userControls.canManageMeals === false) return false;
+  if (actionKey === "canAddMarkets" && userControls.canAddMarkets === false) return false;
+  if (actionKey === "canSuspendMembers" && userControls.canSuspendMembers === false) return false;
+
+  return true;
+}
+
+router.get("/api/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+    res.status(403).json({ error: "Only the ultimate Admin can access admin controlling panel." });
+    return;
+  }
+  res.json(loadAdminControls());
+});
+
+router.post("/api/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+    res.status(403).json({ error: "Only the ultimate Admin can modify admin controlling panel." });
+    return;
+  }
+  
+  const { userId, allowedMesses, canEditBills, canManageMeals, canAddMarkets, canSuspendMembers } = req.body;
+  if (!userId) {
+    res.status(400).json({ error: "User ID is required." });
+    return;
+  }
+
+  const data = loadAdminControls();
+  data.controls[userId] = {
+    allowedMesses: allowedMesses || [],
+    canEditBills: canEditBills !== false,
+    canManageMeals: canManageMeals !== false,
+    canAddMarkets: canAddMarkets !== false,
+    canSuspendMembers: canSuspendMembers !== false
+  };
+  saveAdminControls(data);
+
+  logAudit(req.user!.id, req.user!.nickname, "CONFIGURE_ADMIN_PERMISSIONS", userId, "None", `Ultimate admin updated permissions for admin member ID: ${userId}`);
+  res.json({ success: true, controls: data.controls });
+});
+
+// ---------------------------------------------------------
 // MULTI-MESS MANAGEMENT ENDPOINTS (ADMIN ONLY)
 // ---------------------------------------------------------
 const MESSES_FILE = path.join(process.cwd(), "data", "messes.json");
@@ -2345,8 +2495,19 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
     res.status(403).json({ error: "Only the main Admin can list multiple messes." });
     return;
   }
+  
+  let messes = loadMesses().messes;
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  if (!isUltimateAdmin) {
+    const adminControls = loadAdminControls().controls;
+    const userControls = adminControls[req.user!.id];
+    if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
+      messes = messes.filter((m: any) => userControls.allowedMesses.includes(m.id));
+    }
+  }
+
   res.json({
-    messes: loadMesses().messes,
+    messes,
     activeMessId: getActiveMessId()
   });
 });
@@ -2379,6 +2540,20 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   const { messId } = req.body;
+  
+  // Verify access for limited standard admins
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  if (!isUltimateAdmin) {
+    const adminControls = loadAdminControls().controls;
+    const userControls = adminControls[req.user!.id];
+    if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
+      if (!userControls.allowedMesses.includes(messId)) {
+        res.status(403).json({ error: "Access denied. You do not have permission to control this mess." });
+        return;
+      }
+    }
+  }
+
   const messes = loadMesses().messes;
   const found = messes.find(m => m.id === messId);
 

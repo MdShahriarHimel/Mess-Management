@@ -68,6 +68,7 @@ export const marketEntries = pgTable("market_entries", {
   receiptUrl: text("receipt_url"),
   description: text("description").notNull(),
   isExtra: boolean("is_extra").notNull().default(false),
+  quantity: text("quantity"),
 });
 
 export const deposits = pgTable("deposits", {

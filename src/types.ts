@@ -93,6 +93,7 @@ export interface MarketEntry {
   receiptUrl: string | null;
   description: string;
   isExtra: boolean;
+  quantity?: string;
 }
 
 export interface Deposit {
@@ -145,6 +146,7 @@ export interface Notice {
   authorId: string;
   authorName: string;
   date: string;
+  isDirectToManager?: boolean;
 }
 
 export interface AuditLog {

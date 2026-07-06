@@ -18,6 +18,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [pinned, setPinned] = useState(false);
+  const [isDirectToManager, setIsDirectToManager] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const fetchNotices = async () => {
@@ -50,7 +51,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${currentUser.id}`
         },
-        body: JSON.stringify({ title, content, pinned })
+        body: JSON.stringify({ title, content, pinned, isDirectToManager })
       });
 
       if (response.ok) {
@@ -120,6 +121,13 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
 
   const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
 
+  const filteredNotices = notices.filter(n => {
+    if (n.isDirectToManager) {
+      return isManagerOrAdmin || n.authorId === currentUser.id;
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-6" id="notices-mgmt-wrapper">
       
@@ -135,20 +143,21 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
           </p>
         </div>
 
-        {isManagerOrAdmin && (
-          <button
-            onClick={() => { setShowAddModal(true); }}
-            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-          >
-            <Plus size={15} />
-            CREATE BULLETIN
-          </button>
-        )}
+        <button
+          onClick={() => { 
+            setIsDirectToManager(currentUser.role === UserRole.MEMBER);
+            setShowAddModal(true); 
+          }}
+          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+        >
+          <Plus size={15} />
+          {currentUser.role === UserRole.MEMBER ? "SEND NOTICE TO MANAGER" : "CREATE BULLETIN"}
+        </button>
       </div>
 
       {/* Bulletins lists */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {notices.map((notice) => (
+        {filteredNotices.map((notice) => (
           <div 
             key={notice.id} 
             className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
@@ -159,8 +168,10 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
           >
             <div>
               <div className="flex justify-between items-start">
-                <span className={`text-[9px] font-bold tracking-widest uppercase ${notice.pinned ? "text-orange-500" : "text-slate-500"}`}>
-                  {notice.pinned ? "PINNED BULLETIN" : "GENERAL BULLETIN"}
+                <span className={`text-[9px] font-bold tracking-widest uppercase ${
+                  notice.isDirectToManager ? "text-rose-400" : notice.pinned ? "text-orange-500" : "text-slate-500"
+                }`}>
+                  {notice.isDirectToManager ? "DIRECT NOTICE TO MANAGER ✉" : notice.pinned ? "PINNED BULLETIN" : "GENERAL BULLETIN"}
                 </span>
                 {notice.archived && (
                   <span className="text-[9px] font-bold tracking-widest text-slate-500 uppercase bg-slate-800 px-1.5 py-0.5 rounded">
@@ -181,23 +192,27 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
                 <span>{notice.date}</span>
               </div>
 
-              {isManagerOrAdmin && (
+              {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
                 <div className="flex gap-1.5">
-                  <button
-                    onClick={() => handleTogglePin(notice.id, notice.pinned)}
-                    className="p-1 rounded hover:bg-cyan-500/10 text-cyan-400 cursor-pointer"
-                    title={notice.pinned ? "Unpin notice" : "Pin notice"}
-                  >
-                    <Pin size={12} className={notice.pinned ? "fill-cyan-400" : ""} />
-                  </button>
+                  {isManagerOrAdmin && (
+                    <>
+                      <button
+                        onClick={() => handleTogglePin(notice.id, notice.pinned)}
+                        className="p-1 rounded hover:bg-cyan-500/10 text-cyan-400 cursor-pointer"
+                        title={notice.pinned ? "Unpin notice" : "Pin notice"}
+                      >
+                        <Pin size={12} className={notice.pinned ? "fill-cyan-400" : ""} />
+                      </button>
 
-                  <button
-                    onClick={() => handleToggleArchive(notice.id, notice.archived)}
-                    className="p-1 rounded hover:bg-orange-500/10 text-orange-400 cursor-pointer"
-                    title={notice.archived ? "Restore notice" : "Archive notice"}
-                  >
-                    <Archive size={12} />
-                  </button>
+                      <button
+                        onClick={() => handleToggleArchive(notice.id, notice.archived)}
+                        className="p-1 rounded hover:bg-orange-500/10 text-orange-400 cursor-pointer"
+                        title={notice.archived ? "Restore notice" : "Archive notice"}
+                      >
+                        <Archive size={12} />
+                      </button>
+                    </>
+                  )}
 
                   <button
                     onClick={() => handleDelete(notice.id)}
@@ -220,7 +235,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
             <div className="flex justify-between items-center mb-5 border-b border-slate-850 pb-3">
               <h3 className="text-base font-bold font-display flex items-center gap-1.5">
                 <Bell size={18} className="text-cyan-400 animate-pulse" />
-                Publish Bulletin
+                {isDirectToManager ? "Send Notice to Manager" : "Publish Bulletin"}
               </h3>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X size={18} />
@@ -230,41 +245,62 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
             <form onSubmit={handleCreate} className="space-y-4">
               
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Bulletin Title</label>
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">
+                  {isDirectToManager ? "Subject" : "Bulletin Title"}
+                </label>
                 <input
                   type="text"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Grocery rates update..."
+                  placeholder={isDirectToManager ? "e.g., Need Oil for night" : "Grocery rates update..."}
                   className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Content Message</label>
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">
+                  {isDirectToManager ? "Request Details" : "Content Message"}
+                </label>
                 <textarea
                   required
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder="Starting from tomorrow, we will have fish..."
+                  placeholder={isDirectToManager ? "Say what you need..." : "Starting from tomorrow, we will have fish..."}
                   rows={4}
                   className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
                 />
               </div>
 
-              <div className="flex items-center gap-2 py-1">
-                <input
-                  type="checkbox"
-                  id="pinCheck"
-                  checked={pinned}
-                  onChange={(e) => setPinned(e.target.checked)}
-                  className="rounded border-slate-850 bg-slate-950 text-cyan-500 focus:ring-0"
-                />
-                <label htmlFor="pinCheck" className="text-xs font-semibold text-slate-300 cursor-pointer">
-                  Pin this bulletin to the dashboard.
-                </label>
-              </div>
+              {isManagerOrAdmin && (
+                <div className="flex items-center gap-4 py-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="pinCheck"
+                      checked={pinned}
+                      onChange={(e) => setPinned(e.target.checked)}
+                      className="rounded border-slate-850 bg-slate-950 text-cyan-500 focus:ring-0"
+                    />
+                    <label htmlFor="pinCheck" className="text-xs font-semibold text-slate-300 cursor-pointer">
+                      Pin bulletin.
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="directCheck"
+                      checked={isDirectToManager}
+                      onChange={(e) => setIsDirectToManager(e.target.checked)}
+                      className="rounded border-slate-850 bg-slate-950 text-cyan-500 focus:ring-0"
+                    />
+                    <label htmlFor="directCheck" className="text-xs font-semibold text-slate-300 cursor-pointer">
+                      Direct Notice to Manager.
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-3 border-t border-slate-850">
                 <button

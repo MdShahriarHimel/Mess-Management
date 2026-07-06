@@ -45,6 +45,7 @@ export default function MarketLogs({
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [quantity, setQuantity] = useState("");
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [isExtra, setIsExtra] = useState(false);
 
@@ -152,6 +153,7 @@ export default function MarketLogs({
     setDate(new Date().toISOString().split("T")[0]);
     setAmount("");
     setDescription("");
+    setQuantity("");
     setReceiptUrl(null);
     setIsExtra(false);
     setLunchVegetable("");
@@ -240,7 +242,8 @@ export default function MarketLogs({
           amount: Number(amount),
           receiptUrl,
           description,
-          isExtra
+          isExtra,
+          quantity
         })
       });
 
@@ -504,7 +507,12 @@ export default function MarketLogs({
                         </td>
                         <td className="py-3.5 px-4 font-mono">{m.date}</td>
                         <td className="py-3.5 px-4 truncate max-w-[150px]" title={m.description}>
-                          {m.description || "Daily mess grocery"}
+                          <div className="font-semibold">{m.description || "Daily mess grocery"}</div>
+                          {m.quantity && (
+                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/10">
+                              Qty: {m.quantity}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-right font-bold font-mono">
                           ৳ {m.amount}
@@ -617,18 +625,33 @@ export default function MarketLogs({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Amount Spent (৳ Taka)</label>
-                <input
-                  type="number"
-                  required
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="2500"
-                  className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                    isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
-                  }`}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Amount Spent (৳ Taka)</label>
+                  <input
+                    type="number"
+                    required
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="2500"
+                    className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                      isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
+                    }`}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Total Quantity (Optional)</label>
+                  <input
+                    type="text"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="e.g. 25 kg, 2 litres"
+                    className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                      isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
+                    }`}
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">

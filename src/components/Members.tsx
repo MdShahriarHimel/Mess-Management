@@ -428,6 +428,12 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     setError(null);
     setLoading(true);
 
+    if (editingMember.role === UserRole.ADMIN && (editingMember.status === MemberStatus.SUSPENDED || editingMember.status === MemberStatus.PENDING)) {
+      setError("Admin accounts cannot select 'suspend' or 'pending' for their ID and profile.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const roleChangedToManager = (editingMember.role === UserRole.MANAGER || editingMember.role === UserRole.PARTIAL_MANAGER) && editingMember.role !== originalRole;
       
@@ -1340,15 +1346,20 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                             isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                           }`}
                         >
-                          {editingMember.status === MemberStatus.PENDING && (
+                          {editingMember.status === MemberStatus.PENDING && editingMember.role !== UserRole.ADMIN && (
                             <option value={MemberStatus.PENDING}>PENDING</option>
                           )}
                           <option value={MemberStatus.ACTIVE}>ACTIVE</option>
                           <option value={MemberStatus.AWAY}>AWAY</option>
-                          <option value={MemberStatus.SUSPENDED}>SUSPENDED</option>
+                          {editingMember.role !== UserRole.ADMIN && (
+                            <option value={MemberStatus.SUSPENDED}>SUSPENDED</option>
+                          )}
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>
                         </select>
+                        {originalRole === UserRole.ADMIN && (
+                          <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot select 'suspend' or 'pending' for their ID/profile.</p>
+                        )}
                         {originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && (
                           <p className="text-[9px] text-rose-500 font-bold mt-1">Admin status cannot be changed by others.</p>
                         )}
@@ -1603,26 +1614,29 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     />
                   </div>
 
-                  {/* Ultimate Admin (mdshahriarhimel@gmail.com) exclusive overrides */}
-                  {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                  {/* Ultimate Admin (mdshahriarhimel@gmail.com) exclusive overrides or self ADMIN/SUPERUSER hide himself */}
+                  {(currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" || 
+                    (editingMember.id === currentUser.id && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER))) && (
                     <div className="space-y-3 bg-cyan-950/20 p-3 rounded-xl border border-cyan-500/20">
                       <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1">
-                        🌟 Ultimate Admin Overrides
+                        🌟 {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" ? "Ultimate Admin Overrides" : "Profile Visibility (Self-Hide)"}
                       </p>
                       
                       {/* Hide Contact Info Toggle */}
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
-                        <div className="space-y-0.5">
-                          <label className="text-xs font-bold text-slate-200 block">Hide Contact Info</label>
-                          <span className="text-[9px] text-slate-400 block">Mask email, phone, and WhatsApp from standard members.</span>
+                      {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                          <div className="space-y-0.5">
+                            <label className="text-xs font-bold text-slate-200 block">Hide Contact Info</label>
+                            <span className="text-[9px] text-slate-400 block">Mask email, phone, and WhatsApp from standard members.</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={!!editingMember.hideContactInfoByAdmin}
+                            onChange={(e) => setEditingMember({ ...editingMember, hideContactInfoByAdmin: e.target.checked })}
+                            className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={!!editingMember.hideContactInfoByAdmin}
-                          onChange={(e) => setEditingMember({ ...editingMember, hideContactInfoByAdmin: e.target.checked })}
-                          className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
-                        />
-                      </div>
+                      )}
 
                       {/* Hide Card From Directory Toggle */}
                       <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
@@ -1639,18 +1653,20 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       </div>
 
                       {/* Enable/Disable Glowing Effect Toggle */}
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
-                        <div className="space-y-0.5">
-                          <label className="text-xs font-bold text-slate-200 block">Enable Profile Glowing</label>
-                          <span className="text-[9px] text-slate-400 block">Allow/Disallow this profile to show glowing styles. Default is enabled.</span>
+                      {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                          <div className="space-y-0.5">
+                            <label className="text-xs font-bold text-slate-200 block">Enable Profile Glowing</label>
+                            <span className="text-[9px] text-slate-400 block">Allow/Disallow this profile to show glowing styles. Default is enabled.</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={editingMember.glowEnabledByAdmin !== false}
+                            onChange={(e) => setEditingMember({ ...editingMember, glowEnabledByAdmin: e.target.checked })}
+                            className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={editingMember.glowEnabledByAdmin !== false}
-                          onChange={(e) => setEditingMember({ ...editingMember, glowEnabledByAdmin: e.target.checked })}
-                          className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
-                        />
-                      </div>
+                      )}
                     </div>
                   )}
                   

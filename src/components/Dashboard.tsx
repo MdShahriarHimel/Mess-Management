@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { 
   Bell, Calendar, Coffee, ShieldAlert, Star, Users, DollarSign,
   ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
-  Vote, Award, Percent, Settings2, Sparkles
+  Vote, Award, Percent, Settings2, Sparkles, Trash2
 } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
 import { ColorPalettePicker } from "../App.js";
@@ -139,6 +139,21 @@ export default function Dashboard({
     }
   };
 
+  const handleDeleteNotice = async (id: string) => {
+    if (!confirm("Permanently delete this notice?")) return;
+    try {
+      const response = await fetch(`/api/notices/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (response.ok) {
+        fetchNotices();
+      }
+    } catch (e) {
+      console.error("Error deleting notice:", e);
+    }
+  };
+
   // Fetch members for Duty Roster
   const fetchMembers = async () => {
     try {
@@ -224,9 +239,17 @@ export default function Dashboard({
     }
   };
 
-  const activeNotices = notices.filter(n => !n.archived);
-  const pinnedNotices = activeNotices.filter(n => n.pinned);
-  const generalNotices = activeNotices.filter(n => !n.pinned);
+  const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER;
+  const activeNotices = notices.filter(n => {
+    if (n.archived) return false;
+    if (n.isDirectToManager) {
+      return isManagerOrAdmin || n.authorId === currentUser.id;
+    }
+    return true;
+  });
+  const pinnedNotices = activeNotices.filter(n => n.pinned && !n.isDirectToManager);
+  const generalNotices = activeNotices.filter(n => !n.pinned && !n.isDirectToManager);
+  const directToManagerNotices = activeNotices.filter(n => n.isDirectToManager);
 
   // Calculate average rating
   const avgRating = ratingsList.length > 0
@@ -237,37 +260,86 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6" id="dashboard-wrapper">
+
+      {/* Direct Notices/Requests to Manager Panel */}
+      {directToManagerNotices.length > 0 && (
+        <div className={`p-5 rounded-2xl border animate-fade-in ${
+          isDarkMode 
+            ? "bg-slate-900/60 border-rose-500/20 text-white" 
+            : "bg-rose-50/40 border-rose-200 text-slate-800 shadow-sm"
+        }`}>
+          <div className="flex justify-between items-center mb-3 border-b border-rose-500/10 pb-2">
+            <h3 className="text-xs font-bold font-display uppercase tracking-wider text-rose-400 flex items-center gap-1.5 animate-pulse">
+              <span className="text-sm">✉️</span>
+              {isManagerOrAdmin ? "Direct Member Requests & Notices" : "My Active Requests to Manager"}
+            </h3>
+            <span className="text-[10px] bg-rose-500/10 text-rose-400 px-2.5 py-0.5 rounded-full font-bold">
+              {directToManagerNotices.length} {directToManagerNotices.length === 1 ? "Request" : "Requests"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {directToManagerNotices.map((notice) => (
+              <div 
+                key={notice.id}
+                className={`p-4 rounded-xl border relative transition-all ${
+                  isDarkMode 
+                    ? "bg-slate-950/60 border-slate-850 hover:border-rose-500/20 text-white" 
+                    : "bg-white border-slate-100 hover:border-rose-200 text-slate-800 shadow-sm"
+                }`}
+              >
+                <div className="absolute right-3 top-3">
+                  <button 
+                    onClick={() => handleDeleteNotice(notice.id)}
+                    className="text-slate-400 hover:text-rose-400 p-1 cursor-pointer rounded transition-all hover:bg-rose-500/10"
+                    title={isManagerOrAdmin ? "Acknowledge and Delete" : "Cancel request"}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                <div className="pr-6">
+                  <h4 className="font-bold text-xs text-rose-400 flex items-center gap-1.5">
+                    {notice.title}
+                  </h4>
+                  <p className={`text-xs mt-1.5 leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                    {notice.content}
+                  </p>
+                  <div className="flex items-center gap-2 mt-3 text-[9px] text-slate-500 font-mono">
+                    <span className="font-semibold text-slate-400">By {notice.authorName}</span>
+                    <span>•</span>
+                    <span>{notice.date}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Top Section: Hostel Notice Board */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in" id="dashboard-top-section">
-        
-        {/* Notice Board at top (full width of the grid row) */}
-        <div className={`md:col-span-3 p-5 rounded-2xl border flex flex-col justify-between ${
-          isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 text-slate-800 shadow-sm"
-        }`}>
-          <div>
-            <div className="flex justify-between items-center mb-3 border-b border-cyan-500/5 pb-2">
-              <h3 className="text-xs font-bold font-display uppercase tracking-wider text-orange-500 flex items-center gap-1.5">
-                <Bell size={14} className="text-cyan-400 animate-bounce" />
-                Hostel Notice Board
-              </h3>
-              {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER || currentUser.role === UserRole.MANAGER) && (
+      {activeNotices.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in" id="dashboard-top-section">
+          
+          {/* Notice Board at top (full width of the grid row) */}
+          <div className={`md:col-span-3 p-5 rounded-2xl border flex flex-col justify-between ${
+            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 text-slate-800 shadow-sm"
+          }`}>
+            <div>
+              <div className="flex justify-between items-center mb-3 border-b border-cyan-500/5 pb-2">
+                <h3 className="text-xs font-bold font-display uppercase tracking-wider text-orange-500 flex items-center gap-1.5">
+                  <Bell size={14} className="text-cyan-400 animate-bounce" />
+                  Hostel Notice Board
+                </h3>
                 <button 
                   onClick={() => onNavigateToTab("notices")}
                   className="text-[10px] text-cyan-400 hover:underline flex items-center gap-0.5 cursor-pointer"
                 >
-                  Edit <ArrowRight size={10} />
+                  Edit / Create <ArrowRight size={10} />
                 </button>
-              )}
-            </div>
-
-            {activeNotices.length === 0 ? (
-              <div className="text-center py-6 border border-dashed border-cyan-500/10 rounded-xl">
-                <Pin className="mx-auto text-slate-500 mb-1 animate-pulse" size={18} />
-                <p className="text-xs text-slate-400 font-semibold">No active notices pinned</p>
               </div>
-            ) : (
-              <div className="space-y-2.5 max-h-[140px] overflow-y-auto pr-1">
+
+              <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
                 {/* Pinned notices first */}
                 {pinnedNotices.map((notice) => (
                   <div 
@@ -278,8 +350,17 @@ export default function Dashboard({
                         : "bg-cyan-50/70 border-cyan-200 text-slate-800"
                     }`}
                   >
-                    <div className="absolute right-2 top-2 text-cyan-400">
+                    <div className="absolute right-2 top-2 flex items-center gap-1.5 text-cyan-400">
                       <Pin size={12} className="rotate-45" />
+                      {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
+                        <button 
+                          onClick={() => handleDeleteNotice(notice.id)}
+                          className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded animate-fade-in"
+                          title="Delete notice"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
                     </div>
                     <span className="text-[8px] font-mono font-bold text-orange-500 uppercase">PINNED</span>
                     <h4 className="font-bold text-cyan-300">{notice.title}</h4>
@@ -298,10 +379,26 @@ export default function Dashboard({
                 {generalNotices.map((notice) => (
                   <div 
                     key={notice.id} 
-                    className={`p-3 rounded-xl border transition-all text-xs ${
+                    className={`p-3 rounded-xl border relative transition-all text-xs ${
                       isDarkMode ? "bg-slate-950/40 border-slate-800 text-white" : "bg-white border-slate-100 text-slate-800"
                     }`}
                   >
+                    <div className="absolute right-2 top-2 flex items-center gap-1 text-slate-500">
+                      {notice.isDirectToManager && (
+                        <span className="text-[8px] font-bold text-rose-400 bg-rose-950/30 px-1.5 py-0.5 rounded mr-1">
+                          DIRECT TO MANAGER✉
+                        </span>
+                      )}
+                      {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
+                        <button 
+                          onClick={() => handleDeleteNotice(notice.id)}
+                          className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded animate-fade-in"
+                          title="Delete notice"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
                     <h4 className="font-bold text-slate-200">{notice.title}</h4>
                     <p className={`text-[11px] mt-1 leading-relaxed ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                       {notice.content}
@@ -314,11 +411,11 @@ export default function Dashboard({
                   </div>
                 ))}
               </div>
-            )}
+            </div>
           </div>
-        </div>
 
-      </div>
+        </div>
+      )}
       
       {/* Welcome Banner */}
       {homeCustomization?.showBanner !== false && (
@@ -1311,50 +1408,53 @@ export default function Dashboard({
             )}
           </div>
 
-          {/* MANAGER HOLDING STATUS */}
-          <div className={`p-6 rounded-2xl border ${
-            isDarkMode ? "bg-slate-900/30 border-cyan-500/15 text-white" : "bg-white border-slate-200 text-slate-800"
-          }`}>
-            <h3 className="text-base font-bold font-display mb-4 flex items-center gap-1.5 text-cyan-400">
-              <Users size={18} />
-              Manager Holdings Advance
-            </h3>
-            
-            {reportSummary?.memberSettlements ? (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Shows members who paid their initial manager advance holding to authorize shopping starts:
-                </p>
-                
-                <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
-                  {reportSummary.memberSettlements.map((m: any) => (
-                    <div 
-                      key={m.memberId} 
-                      className="flex justify-between items-center text-xs p-2.5 rounded-lg bg-slate-950/20 border border-slate-850"
-                    >
-                      <div>
-                        <p className="font-bold">{m.nickname}</p>
-                        <p className="text-[10px] text-slate-500">{m.email}</p>
-                      </div>
-                      <div className="text-right">
-                        {m.holdingPaid > 0 ? (
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold font-mono">
-                            ৳ {m.holdingPaid}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold font-mono">
-                            UNPAID
-                          </span>
-                        )}
-                      </div>
+          {/* REMAINING HOLDINGS STATUS */}
+          {(() => {
+            const totalH = reportSummary?.totalHolding || 0;
+            const totalM = reportSummary?.totalMarkets || 0;
+            const remaining = totalH - totalM;
+            const isNegative = remaining < 0;
+
+            return (
+              <div className={`p-6 rounded-2xl border ${
+                isDarkMode ? "bg-slate-900/30 border-cyan-500/15 text-white" : "bg-white border-slate-200 text-slate-800"
+              }`}>
+                <h3 className="text-base font-bold font-display mb-4 flex items-center gap-1.5 text-cyan-400">
+                  <DollarSign size={18} />
+                  Remaining Holdings
+                </h3>
+
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Tracks the continuous balance between the initial pool collected from members and the manager's active market shopping:
+                  </p>
+
+                  <div className={`p-4 rounded-xl border text-center ${
+                    isNegative 
+                      ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
+                      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                  }`}>
+                    <span className="text-[10px] font-bold uppercase tracking-wider block mb-1">Current Continuous Balance</span>
+                    <span className="text-2xl font-black font-mono">৳ {remaining.toFixed(2)}</span>
+                    <span className="text-[10px] block mt-1 opacity-80">
+                      {isNegative ? "⚠️ Holding pool depleted (Over-spending)" : "✅ Holding pool has positive balance"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="p-3 bg-slate-950/20 border border-slate-850/55 rounded-xl text-center">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Total Holdings Pool</span>
+                      <span className="text-sm font-extrabold font-mono text-cyan-400 block mt-1">৳ {totalH}</span>
                     </div>
-                  ))}
+                    <div className="p-3 bg-slate-950/20 border border-slate-850/55 rounded-xl text-center">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Manager Spent</span>
+                      <span className="text-sm font-extrabold font-mono text-orange-400 block mt-1">৳ {totalM}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-slate-500">No members loaded yet.</p>
-            )}
-          </div>
+            );
+          })()}
 
         </div>
 

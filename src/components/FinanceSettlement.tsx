@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer
+  DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart
 } from "lucide-react";
 import { Member, Bill, BillStatus, UserRole, MessMonth } from "../types.js";
 import * as XLSX from "xlsx";
@@ -122,7 +122,7 @@ export default function FinanceSettlement({
       "Market Spends (৳)",
       "Meals Count (Qty)",
       "Calculated Meal Cost (৳)",
-      "Management Holding Paid (৳)",
+      "Manager Holdings (৳)",
       "Final Current Balance (৳)",
       "Refund / Return Status"
     ];
@@ -293,7 +293,7 @@ export default function FinanceSettlement({
               <th>Total Deposits</th>
               <th>Raw Market Credits</th>
               <th>Calculated Cost Share</th>
-              <th>Management Holding Pool</th>
+              <th>Manager Holdings</th>
               <th>Net Balance</th>
               <th>Refund Status</th>
             </tr>
@@ -574,8 +574,24 @@ export default function FinanceSettlement({
     }
   };
 
+  const fetchAllMarkets = async () => {
+    if (!currentMonthId) return;
+    try {
+      const response = await fetch(`/api/markets/${currentMonthId}`, {
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAllMarkets(data.markets || []);
+      }
+    } catch (e) {
+      console.error("Error fetching all markets:", e);
+    }
+  };
+
   useEffect(() => {
     fetchMeals();
+    fetchAllMarkets();
   }, [currentMonthId]);
 
   const handleCellChange = (memberId: string, dateStr: string, rawVal: string) => {
@@ -654,6 +670,7 @@ export default function FinanceSettlement({
   const [loading, setLoading] = useState(false);
 
   // Individual Accountings Details State
+  const [allMarkets, setAllMarkets] = useState<any[]>([]);
   const [selectedMemberForAccountings, setSelectedMemberForAccountings] = useState<any | null>(null);
   const [memberDeposits, setMemberDeposits] = useState<any[]>([]);
   const [memberMarkets, setMemberMarkets] = useState<any[]>([]);
@@ -811,6 +828,7 @@ export default function FinanceSettlement({
         setNewMarAmount("");
         setNewMarDesc("");
         fetchMemberAccountings(selectedMemberForAccountings.memberId);
+        fetchAllMarkets();
         onRefresh();
       } else {
         const err = await response.json();
@@ -853,6 +871,7 @@ export default function FinanceSettlement({
       });
       if (response.ok) {
         fetchMemberAccountings(selectedMemberForAccountings.memberId);
+        fetchAllMarkets();
         onRefresh();
       } else {
         const err = await response.json();
@@ -1004,7 +1023,7 @@ export default function FinanceSettlement({
                 <th className="py-3 px-4 text-right">Market ({currencySymbol})</th>
                 <th className="py-3 px-4 text-center">Meals Count</th>
                 <th className="py-3 px-4 text-right">Meal Cost ({currencySymbol})</th>
-                <th className="py-3 px-4 text-right">Management ({currencySymbol})</th>
+                <th className="py-3 px-4 text-right">Manager Holdings ({currencySymbol})</th>
                 <th className="py-3 px-4 text-right">Current Balance ({currencySymbol})</th>
                 <th className="py-3 px-4 text-right">Return / Refund Status</th>
               </tr>
@@ -1217,7 +1236,7 @@ export default function FinanceSettlement({
       </div>
 
       {/* 2. UTILITY BILLS & UTILITY PAYMENTS STATUS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="finance-bills-holdings">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in" id="finance-bills-holdings">
         
         {/* UTILITY BILLS CONTROL */}
         <div className={`lg:col-span-2 p-5 rounded-2xl border ${
@@ -1285,18 +1304,86 @@ export default function FinanceSettlement({
         }`} id="finance-holding-overview">
           <h3 className="text-sm font-bold font-display text-cyan-300 mb-3 flex items-center gap-1.5">
             <Coins className="text-cyan-400 animate-bounce" size={16} />
-            Management Holdings
+            Manager Holdings
           </h3>
           <p className="text-xs text-slate-400 leading-relaxed mb-4">
-            Advance cash holding acts as a capital pool handed over to the manager for starting daily raw market shopping.
+            Continuous balance shows initial pool collected vs manager shopping spend.
           </p>
 
-          <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-850 text-center">
-            <span className="text-[10px] text-slate-500 font-extrabold uppercase block tracking-wider mb-0.5">Total Advance Held</span>
-            <span className="text-xl font-black font-mono text-cyan-400">৳ {reportSummary?.totalHolding || 0}</span>
+          <div className="space-y-3">
+            <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
+              <span className="text-slate-400 font-medium">Total Holdings Pool</span>
+              <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalHolding || 0}</span>
+            </div>
+            <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
+              <span className="text-slate-400 font-medium">Manager Market Spent</span>
+              <span className="font-extrabold font-mono text-orange-400">৳ {reportSummary?.totalMarkets || 0}</span>
+            </div>
+
+            {(() => {
+              const totalH = reportSummary?.totalHolding || 0;
+              const totalM = reportSummary?.totalMarkets || 0;
+              const remaining = totalH - totalM;
+              const isNegative = remaining < 0;
+
+              return (
+                <div className={`p-3 rounded-xl border text-center ${
+                  isNegative 
+                    ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                }`}>
+                  <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Remaining Holdings</span>
+                  <span className="text-lg font-black font-mono">৳ {remaining}</span>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
+      </div>
+
+      {/* MANAGER'S MONTHLY MARKET LOG (Entire Month) */}
+      <div className={`p-5 rounded-2xl border ${
+        isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+      }`} id="finance-manager-monthly-market-log">
+        <div className="flex justify-between items-center mb-4 border-b border-cyan-500/5 pb-2">
+          <h3 className="text-sm font-bold font-display text-orange-500 flex items-center gap-1.5">
+            <ShoppingCart className="text-cyan-400 animate-bounce" size={16} />
+            Manager's Monthly Market Log (Entire Month)
+          </h3>
+          <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/20 px-2.5 py-1 rounded">
+            Total Expense: ৳ {allMarkets.reduce((sum, m) => sum + m.amount, 0)}
+          </span>
+        </div>
+        
+        {allMarkets.length === 0 ? (
+          <p className="text-xs text-slate-500 py-6 text-center italic border border-dashed border-cyan-500/10 rounded-xl">
+            No shopping entries logged for this month.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-[300px] overflow-y-auto pr-1">
+            {allMarkets.map((mar) => {
+              const memberObj = members.find(u => u.id === mar.memberId);
+              return (
+                <div key={mar.id} className="p-3.5 rounded-xl border border-slate-850 bg-slate-950/20 flex flex-col justify-between text-xs space-y-2">
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-mono font-bold text-slate-500">{mar.date}</span>
+                      <span className="text-xs font-black font-mono text-cyan-400">৳ {mar.amount}</span>
+                    </div>
+                    <p className="font-semibold text-slate-200 mt-1 leading-relaxed">
+                      {mar.description}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-t border-slate-850/30 pt-2 text-[10px] text-slate-400">
+                    {memberObj && renderMemberPhotoBeforeName(memberObj.id, memberObj.name)}
+                    <span>Bought by {memberObj?.nickname || "Manager"}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ADD UTILITY BILL MODAL */}
@@ -1416,10 +1503,10 @@ export default function FinanceSettlement({
                       </span>
                     </div>
 
-                    {/* Direct Manager Holdings Advance display */}
+                    {/* Direct Manager Holdings display */}
                     <div className="p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-500/10 flex justify-between items-center text-xs">
                       <div>
-                        <span className="font-bold text-cyan-400 block">Manager Holdings Advance:</span>
+                        <span className="font-bold text-cyan-400 block">Manager Holdings:</span>
                         <p className="text-[10px] text-slate-400">Deposited pool holding for start of raw shopping</p>
                       </div>
                       <span className="font-extrabold font-mono text-cyan-300 text-sm">৳ {selectedMemberForAccountings?.holdingPaid || 0}</span>
@@ -1476,7 +1563,7 @@ export default function FinanceSettlement({
                               onChange={() => setDepositType("holding")}
                               className="accent-cyan-500"
                             />
-                            Manager Holdings Advance
+                            Manager Holdings
                           </label>
                         </div>
 

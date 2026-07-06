@@ -348,6 +348,7 @@ async function doActualSync(cache: DatabaseSchema) {
         receiptUrl: item.receiptUrl,
         description: item.description,
         isExtra: item.isExtra,
+        quantity: item.quantity || ""
       })));
     }
 
@@ -459,25 +460,63 @@ export function setActiveMessId(messId: string) {
 
 // Load database from file/memory
 export function loadDB(): DatabaseSchema {
-  if (dbCache) return dbCache;
-  
-  ensureDBDir();
-  const messId = getActiveMessId();
-  const BACKUP_FILE = messId === "default"
-    ? path.join(DB_DIR, "database_backup.json")
-    : path.join(DB_DIR, `database_backup_${messId}.json`);
+  if (!dbCache) {
+    ensureDBDir();
+    const messId = getActiveMessId();
+    const BACKUP_FILE = messId === "default"
+      ? path.join(DB_DIR, "database_backup.json")
+      : path.join(DB_DIR, `database_backup_${messId}.json`);
+      
+    if (fs.existsSync(BACKUP_FILE)) {
+      try {
+        const data = fs.readFileSync(BACKUP_FILE, "utf-8");
+        dbCache = JSON.parse(data);
+      } catch (e) {
+        console.error("Error reading dynamic BACKUP_FILE", e);
+      }
+    }
     
-  if (fs.existsSync(BACKUP_FILE)) {
-    try {
-      const data = fs.readFileSync(BACKUP_FILE, "utf-8");
-      dbCache = JSON.parse(data);
-      return dbCache!;
-    } catch (e) {
-      console.error("Error reading dynamic BACKUP_FILE", e);
+    if (!dbCache) {
+      dbCache = getInitialSeedData();
     }
   }
-  
-  dbCache = getInitialSeedData();
+
+  // Auto-delete market logs with vouchers older than 15 days
+  if (dbCache && dbCache.marketEntries && dbCache.marketEntries.length > 0) {
+    const today = new Date();
+    const fifteenDaysAgo = new Date(today.getTime() - 15 * 24 * 60 * 60 * 1000);
+    fifteenDaysAgo.setHours(0, 0, 0, 0);
+
+    let wasModified = false;
+    const initialCount = dbCache.marketEntries.length;
+
+    dbCache.marketEntries = dbCache.marketEntries.filter(entry => {
+      if (entry.receiptUrl && entry.receiptUrl.trim() !== "") {
+        const entryDate = new Date(entry.date);
+        if (!isNaN(entryDate.getTime()) && entryDate < fifteenDaysAgo) {
+          wasModified = true;
+          return false; // auto-delete
+        }
+      }
+      return true;
+    });
+
+    if (wasModified) {
+      console.log(`[Auto-Cleanup] Deleted ${initialCount - dbCache.marketEntries.length} market entries with vouchers older than 15 days.`);
+      try {
+        ensureDBDir();
+        const messId = getActiveMessId();
+        const BACKUP_FILE = messId === "default"
+          ? path.join(DB_DIR, "database_backup.json")
+          : path.join(DB_DIR, `database_backup_${messId}.json`);
+        fs.writeFileSync(BACKUP_FILE, JSON.stringify(dbCache, null, 2), "utf-8");
+        syncCacheToPostgresDirectly(dbCache);
+      } catch (err) {
+        console.error("Error committing auto-deleted market entries:", err);
+      }
+    }
+  }
+
   return dbCache;
 }
 

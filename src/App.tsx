@@ -21,6 +21,7 @@ import FinanceSettlement from "./components/FinanceSettlement.tsx";
 import AuditLogs from "./components/AuditLogs.tsx";
 import Notices from "./components/Notices.tsx";
 import Democracy from "./components/Democracy.tsx";
+import { AdminControlsPanel } from "./components/AdminControlsPanel.tsx";
 
 // Types
 import { Member, MessMonth, UserRole } from "./types.js";
@@ -4545,6 +4546,14 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                )}
+
+                {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                  <AdminControlsPanel
+                    messes={messes}
+                    sessionToken={sessionToken || ""}
+                    isDarkMode={isDarkMode}
+                  />
                 )}
 
               </div>
