@@ -413,9 +413,23 @@ export default function MarketLogs({
                     key={duty.id} 
                     className="flex justify-between items-center text-xs p-3 rounded-lg bg-slate-950/20 border border-slate-900"
                   >
-                    <div>
-                      <p className="font-extrabold text-cyan-400">{assignedMember?.nickname || "Unknown"}</p>
-                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">{duty.name.split(": ")[1] || duty.name}</p>
+                    <div className="flex items-center gap-2">
+                      {assignedMember?.photo ? (
+                        <img 
+                          src={assignedMember.photo} 
+                          alt={assignedMember.nickname} 
+                          className="w-8 h-8 rounded-full object-cover border border-cyan-500/20 shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-xs uppercase shrink-0 font-display">
+                          {(assignedMember?.nickname || "??").slice(0, 2)}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-extrabold text-cyan-400">{assignedMember?.nickname || "Unknown"}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">{duty.name.split(": ")[1] || duty.name}</p>
+                      </div>
                     </div>
                     {isManagerOrAdmin && (
                       <button
@@ -465,12 +479,28 @@ export default function MarketLogs({
                     return (
                       <tr key={m.id} className="hover:bg-cyan-500/5">
                         <td className="py-3.5 px-4 font-bold text-cyan-400">
-                          {buyer?.nickname || "Unknown"}
-                          {m.isExtra && (
-                            <span className="block text-[8px] uppercase tracking-wider font-extrabold text-orange-500 mt-0.5">
-                              EXTRA SHOP
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {buyer?.photo ? (
+                              <img 
+                                src={buyer.photo} 
+                                alt={buyer.nickname} 
+                                className="w-7 h-7 rounded-full object-cover border border-cyan-500/20 shrink-0"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-[10px] uppercase shrink-0 font-display">
+                                {(buyer?.nickname || "??").slice(0, 2)}
+                              </div>
+                            )}
+                            <div>
+                              <span>{buyer?.nickname || "Unknown"}</span>
+                              {m.isExtra && (
+                                <span className="block text-[8px] uppercase tracking-wider font-extrabold text-orange-500 mt-0.5">
+                                  EXTRA SHOP
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3.5 px-4 font-mono">{m.date}</td>
                         <td className="py-3.5 px-4 truncate max-w-[150px]" title={m.description}>
@@ -568,7 +598,7 @@ export default function MarketLogs({
                     }`}
                   >
                     {activeMembers.map(m => (
-                      <option key={m.id} value={m.id}>{m.nickname}</option>
+                      <option key={m.id} value={m.id}>{m.nickname} ({m.name} - {m.email})</option>
                     ))}
                   </select>
                 </div>
@@ -762,7 +792,7 @@ export default function MarketLogs({
                 >
                   <option value="">-- Choose Member --</option>
                   {activeMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                    <option key={m.id} value={m.id}>{m.nickname} ({m.name} - {m.email})</option>
                   ))}
                 </select>
               </div>

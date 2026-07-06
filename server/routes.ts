@@ -128,13 +128,19 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     return;
   }
 
+  const isSelfUpdateOrRestore = 
+    (req.method === "PUT" && req.path === `/members/${member.id}`) ||
+    (req.method === "POST" && req.path === `/members/${member.id}/restore`);
+
   if (member.status === MemberStatus.SUSPENDED) {
-    res.status(403).json({ error: "Account suspended: Contact Admin" });
-    return;
+    if (!isSelfUpdateOrRestore) {
+      res.status(403).json({ error: "Account suspended: Contact Admin" });
+      return;
+    }
   }
 
   if (member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.LEFT) {
-    if (req.method !== "GET") {
+    if (!isSelfUpdateOrRestore && req.method !== "GET") {
       res.status(403).json({ error: "Account archived or inactive: Read-only access to past logs is granted. Modifications are forbidden." });
       return;
     }
@@ -602,6 +608,15 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     }
   }
 
+  // Only the ultimate Admin can promote standard members to the Admin role.
+  if (updates.role === UserRole.ADMIN && original.role !== UserRole.ADMIN) {
+    const isUltimateAdminActor = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+    if (!isUltimateAdminActor) {
+      res.status(403).json({ error: "Only the ultimate Admin can promote members to the Admin role." });
+      return;
+    }
+  }
+
   // Permissions validation
   const isSelf = req.user!.id === id;
   const isManager = req.user!.role === UserRole.MANAGER;
@@ -678,19 +693,35 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   // Managers are only allowed to update the keys verified above
   if (!isAdminOrSuperOrAsst) {
     if (!isManager) {
-      delete updates.role;
-      delete updates.status;
-      delete updates.joiningDate;
-      delete updates.leavingDate;
-      delete updates.permissions;
-    } else {
-      // If manager is self-updating, they also lose role/status editing rights
-      if (isSelf) {
+      const isStatusRestore = isSelf && (updates.status === MemberStatus.ACTIVE || updates.status === MemberStatus.PENDING);
+      if (!isStatusRestore) {
         delete updates.role;
         delete updates.status;
         delete updates.joiningDate;
         delete updates.leavingDate;
         delete updates.permissions;
+      } else {
+        delete updates.role;
+        delete updates.joiningDate;
+        delete updates.leavingDate;
+        delete updates.permissions;
+      }
+    } else {
+      // If manager is self-updating, they also lose role/status editing rights
+      if (isSelf) {
+        const isStatusRestore = updates.status === MemberStatus.ACTIVE || updates.status === MemberStatus.PENDING;
+        if (!isStatusRestore) {
+          delete updates.role;
+          delete updates.status;
+          delete updates.joiningDate;
+          delete updates.leavingDate;
+          delete updates.permissions;
+        } else {
+          delete updates.role;
+          delete updates.joiningDate;
+          delete updates.leavingDate;
+          delete updates.permissions;
+        }
       }
     }
   }
@@ -753,8 +784,16 @@ router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSE
 });
 
 // Restore from Archive
-router.post("/members/:id/restore", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/members/:id/restore", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
+  const isSelf = req.user!.id === id;
+  const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER;
+
+  if (!isSelf && !isAdminOrSuper) {
+    res.status(403).json({ error: "Forbidden: Only Admin, Super User, or the member themselves can restore profiles." });
+    return;
+  }
+
   const db = loadDB();
   const index = db.members.findIndex(m => m.id === id);
 

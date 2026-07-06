@@ -846,16 +846,16 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
         </div>
       )}
 
-      {/* Archived, Suspended & Departed Inactive Bucket (Admin Only) */}
-      {currentUser.role === UserRole.ADMIN && inactiveMembers.length > 0 && (
+      {/* Archive Box (Suspended & Departed Inactive Bucket visible to everyone) */}
+      {inactiveMembers.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-900/60" id="inactive-bucket-wrapper">
           <div className="mb-4">
             <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2 font-display">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-              Inactive Bucket (Suspended & Departed Profiles)
+              Archive Box (Suspended & Departed Profiles)
             </h3>
             <p className="text-[10px] text-slate-400 mt-1">
-              These accounts are suspended or have left the mess. They are kept separated and have restricted access.
+              These accounts are suspended or have left the mess. They are kept in the archive for history.
             </p>
           </div>
 
@@ -1340,8 +1340,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                             isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                           }`}
                         >
+                          {editingMember.status === MemberStatus.PENDING && (
+                            <option value={MemberStatus.PENDING}>PENDING</option>
+                          )}
                           <option value={MemberStatus.ACTIVE}>ACTIVE</option>
-                          <option value={MemberStatus.PENDING}>PENDING</option>
+                          <option value={MemberStatus.AWAY}>AWAY</option>
                           <option value={MemberStatus.SUSPENDED}>SUSPENDED</option>
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>

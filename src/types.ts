@@ -17,7 +17,8 @@ export enum MemberStatus {
   PENDING = "PENDING",
   SUSPENDED = "SUSPENDED",
   LEFT = "LEFT",
-  ARCHIVED = "ARCHIVED"
+  ARCHIVED = "ARCHIVED",
+  AWAY = "AWAY"
 }
 
 export enum BillStatus {
