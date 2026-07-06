@@ -584,14 +584,10 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
 
   const original = db.members[index];
 
-  // Admin cannot demote themselves or leave/suspend themselves
+  // Admin cannot demote themselves from the Admin Role
   if (original.role === UserRole.ADMIN) {
     if (updates.role && updates.role !== UserRole.ADMIN) {
       res.status(403).json({ error: "Admin cannot demote themselves from the Admin Role" });
-      return;
-    }
-    if (updates.status && updates.status !== original.status) {
-      res.status(403).json({ error: "Admin cannot change their own status or leave the mess" });
       return;
     }
   }
@@ -645,13 +641,8 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     delete updates.splitProfile;
     delete updates.memberGlow;
     delete updates.memberGlowStyle;
-    
-    // Non-admin can only update animation/memberAnimation if the feature is enabled by admin for them
-    const isGifAllowed = original.gifEnabledByAdmin !== false;
-    if (!isGifAllowed) {
-      delete updates.animation;
-      delete updates.memberAnimation;
-    }
+    delete updates.animation;
+    delete updates.memberAnimation;
   }
 
   // Standard member cannot modify roles, status, permissions, joining/leaving dates
@@ -765,8 +756,8 @@ router.delete("/members/:id", authMiddleware, checkRole([]), (req: Authenticated
   }
 
   const original = db.members[index];
-  if (original.role === UserRole.ADMIN) {
-    res.status(403).json({ error: "Cannot delete Admin account" });
+  if (original.role === UserRole.ADMIN || id === req.user!.id) {
+    res.status(403).json({ error: "Cannot delete Admin or your own account" });
     return;
   }
 

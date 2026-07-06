@@ -42,7 +42,7 @@ export default function MealsTracker({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "LEFT");
+  const activeMembers = members.filter(m => m.status === "ACTIVE");
 
   // Fetch meals for the current month
   const fetchMealsForDate = async () => {

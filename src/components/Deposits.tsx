@@ -53,7 +53,7 @@ export default function Deposits({
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "LEFT");
+  const activeMembers = members.filter(m => m.status === "ACTIVE");
 
   const fetchDeposits = async () => {
     if (!currentMonthId) return;

@@ -786,7 +786,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           </button>
                         )}
 
-                        {currentUser.role === UserRole.ADMIN && (
+                        {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
                             className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
@@ -806,8 +806,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
         })}
       </div>
 
-      {/* Archived, Suspended & Departed Inactive Bucket */}
-      {inactiveMembers.length > 0 && (
+      {/* Archived, Suspended & Departed Inactive Bucket (Admin Only) */}
+      {currentUser.role === UserRole.ADMIN && inactiveMembers.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-900/60" id="inactive-bucket-wrapper">
           <div className="mb-4">
             <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2 font-display">
@@ -961,7 +961,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                               <RotateCcw size={13} />
                             </button>
 
-                            {currentUser.role === UserRole.ADMIN && (
+                            {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
                                 className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
@@ -1292,10 +1292,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                         <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Status Code</label>
                         <select
                           value={editingMember.status}
-                          disabled={originalRole === UserRole.ADMIN}
+                          disabled={originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN}
                           onChange={(e) => setEditingMember({ ...editingMember, status: e.target.value as MemberStatus })}
                           className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                            originalRole === UserRole.ADMIN ? "opacity-60 cursor-not-allowed" : ""
+                            (originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) ? "opacity-60 cursor-not-allowed" : ""
                           } ${
                             isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                           }`}
@@ -1306,8 +1306,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>
                         </select>
-                        {originalRole === UserRole.ADMIN && (
-                          <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot leave the mess.</p>
+                        {originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && (
+                          <p className="text-[9px] text-rose-500 font-bold mt-1">Admin status cannot be changed by others.</p>
                         )}
                       </div>
                     ) : (
@@ -1374,110 +1374,87 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                 />
               </div>
 
-              {/* Profile Background GIF Customizer */}
-              <div className="space-y-2 border-t border-slate-800/40 pt-4 mt-2">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-xs font-bold font-display text-cyan-400 uppercase tracking-wide flex items-center gap-1">
-                    ✨ Profile Background GIF
-                  </h4>
-                  {editingMember.gifEnabledByAdmin === false && (
-                    <span className="text-[9px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                      Disabled by Admin
-                    </span>
-                  )}
-                </div>
+              {/* Profile Background GIF Customizer (Admin Only) */}
+              {currentUser.role === UserRole.ADMIN && (
+                <div className="space-y-2 border-t border-slate-800/40 pt-4 mt-2">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-bold font-display text-cyan-400 uppercase tracking-wide flex items-center gap-1">
+                      ✨ Profile Background GIF
+                    </h4>
+                    {editingMember.gifEnabledByAdmin === false && (
+                      <span className="text-[9px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                        Disabled by Admin
+                      </span>
+                    )}
+                  </div>
 
-                {editingMember.gifEnabledByAdmin !== false ? (
-                  <div className="p-3 rounded-xl bg-slate-900/30 border border-slate-800 space-y-3">
-                    <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Personalize your profile card background with an animated GIF. You can either paste a GIF link or upload an offline GIF file directly from your device.
-                    </p>
+                  {editingMember.gifEnabledByAdmin !== false ? (
+                    <div className="p-3 rounded-xl bg-slate-900/30 border border-slate-800 space-y-3">
+                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                        Personalize your profile card background with an animated GIF. You can either paste a GIF link or upload an offline GIF file directly from your device.
+                      </p>
 
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!editingMember.animation?.startsWith("data:")) {
-                            if (!editingMember.animation) {
-                              setEditingMember({ ...editingMember, animation: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2Zmxtb3ZqZHVpdjYwNzZpZGF5NDgxdHlyOTVqdDN5M2U5bmsxOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/9DGF96g8Q09g97D1px/giphy.gif" });
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!editingMember.animation?.startsWith("data:")) {
+                              if (!editingMember.animation) {
+                                setEditingMember({ ...editingMember, animation: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Y2Zmxtb3ZqZHVpdjYwNzZpZGF5NDgxdHlyOTVqdDN5M2U5bmsxOSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/9DGF96g8Q09g97D1px/giphy.gif" });
+                              }
                             }
-                          }
-                        }}
-                        className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
-                          !editingMember.animation?.startsWith("data:") 
-                            ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" 
-                            : "bg-slate-950 text-slate-400 border border-slate-800"
-                        }`}
-                      >
-                        Web Link (URL)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          document.getElementById("gif-file-upload")?.click();
-                        }}
-                        className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
-                          editingMember.animation?.startsWith("data:") 
-                            ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" 
-                            : "bg-slate-950 text-slate-400 border border-slate-800"
-                        }`}
-                      >
-                        Upload Local GIF 📁
-                      </button>
-                    </div>
-
-                    {/* Hidden file input for easy trigger */}
-                    <input
-                      id="gif-file-upload"
-                      type="file"
-                      accept="image/gif"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (!file.type.startsWith("image/gif") && !file.name.toLowerCase().endsWith(".gif")) {
-                          alert("Please select a valid .gif image file.");
-                          return;
-                        }
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          const base64 = event.target?.result as string;
-                          setEditingMember({ ...editingMember, animation: base64 });
-                        };
-                        reader.readAsDataURL(file);
-                      }}
-                    />
-
-                    {editingMember.animation?.startsWith("data:") ? (
-                      <div className="space-y-1.5 animate-fade-in">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                            Offline Uploaded GIF
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setEditingMember({ ...editingMember, animation: "" })}
-                            className="text-[9px] font-bold text-rose-400 hover:text-rose-300"
-                          >
-                            Remove GIF
-                          </button>
-                        </div>
-                        <div className="p-3 border border-dashed border-slate-800 rounded-lg bg-slate-950 flex flex-col items-center justify-center gap-2">
-                          <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                            ● GIF Stored Offline in Account
-                          </span>
-                          <span className="text-[9px] text-slate-500 text-center">
-                            Size: {Math.round(editingMember.animation.length * 0.75 / 1024)} KB. Saved securely inside database.
-                          </span>
-                        </div>
+                          }}
+                          className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
+                            !editingMember.animation?.startsWith("data:") 
+                              ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" 
+                              : "bg-slate-950 text-slate-400 border border-slate-800"
+                          }`}
+                        >
+                          Web Link (URL)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            document.getElementById("gif-file-upload")?.click();
+                          }}
+                          className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
+                            editingMember.animation?.startsWith("data:") 
+                              ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" 
+                              : "bg-slate-950 text-slate-400 border border-slate-800"
+                          }`}
+                        >
+                          Upload Local GIF 📁
+                        </button>
                       </div>
-                    ) : (
-                      <div className="space-y-1.5 animate-fade-in">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                            GIF Link URL
-                          </label>
-                          {editingMember.animation && (
+
+                      {/* Hidden file input for easy trigger */}
+                      <input
+                        id="gif-file-upload"
+                        type="file"
+                        accept="image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (!file.type.startsWith("image/gif") && !file.name.toLowerCase().endsWith(".gif")) {
+                            alert("Please select a valid .gif image file.");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            const base64 = event.target?.result as string;
+                            setEditingMember({ ...editingMember, animation: base64 });
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+
+                      {editingMember.animation?.startsWith("data:") ? (
+                        <div className="space-y-1.5 animate-fade-in">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                              Offline Uploaded GIF
+                            </label>
                             <button
                               type="button"
                               onClick={() => setEditingMember({ ...editingMember, animation: "" })}
@@ -1485,55 +1462,80 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                             >
                               Remove GIF
                             </button>
-                          )}
+                          </div>
+                          <div className="p-3 border border-dashed border-slate-800 rounded-lg bg-slate-950 flex flex-col items-center justify-center gap-2">
+                            <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                              ● GIF Stored Offline in Account
+                            </span>
+                            <span className="text-[9px] text-slate-500 text-center">
+                              Size: {Math.round(editingMember.animation.length * 0.75 / 1024)} KB. Saved securely inside database.
+                            </span>
+                          </div>
                         </div>
-                        <input
-                          type="text"
-                          placeholder="https://example.com/background.gif"
-                          value={editingMember.animation || ""}
-                          onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
-                          className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500/50"
-                        />
-                        
-                        {/* Drag and drop offline target */}
-                        <div 
-                          className="mt-2 p-4 border border-dashed border-slate-800 rounded-lg bg-slate-950/40 flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-900/30 transition-colors"
-                          onClick={() => document.getElementById("gif-file-upload")?.click()}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const file = e.dataTransfer.files?.[0];
-                            if (file) {
-                              if (!file.type.startsWith("image/gif") && !file.name.toLowerCase().endsWith(".gif")) {
-                                alert("Please drop a valid .gif image file.");
-                                return;
+                      ) : (
+                        <div className="space-y-1.5 animate-fade-in">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                              GIF Link URL
+                            </label>
+                            {editingMember.animation && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingMember({ ...editingMember, animation: "" })}
+                                className="text-[9px] font-bold text-rose-400 hover:text-rose-300"
+                              >
+                                Remove GIF
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="https://example.com/background.gif"
+                            value={editingMember.animation || ""}
+                            onChange={(e) => setEditingMember({ ...editingMember, animation: e.target.value })}
+                            className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500/50"
+                          />
+                          
+                          {/* Drag and drop offline target */}
+                          <div 
+                            className="mt-2 p-4 border border-dashed border-slate-800 rounded-lg bg-slate-950/40 flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-900/30 transition-colors"
+                            onClick={() => document.getElementById("gif-file-upload")?.click()}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const file = e.dataTransfer.files?.[0];
+                              if (file) {
+                                if (!file.type.startsWith("image/gif") && !file.name.toLowerCase().endsWith(".gif")) {
+                                  alert("Please drop a valid .gif image file.");
+                                  return;
+                                };
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                  const base64 = event.target?.result as string;
+                                  setEditingMember({ ...editingMember, animation: base64 });
+                                };
+                                reader.readAsDataURL(file);
                               }
-                              const reader = new FileReader();
-                              reader.onload = (event) => {
-                                const base64 = event.target?.result as string;
-                                setEditingMember({ ...editingMember, animation: base64 });
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        >
-                          <span className="text-xs text-cyan-400 font-medium">Or Drag & Drop your GIF file here</span>
-                          <span className="text-[9px] text-slate-500">Supports offline storing in your account</span>
+                            }}
+                          >
+                            <span className="text-xs text-cyan-400 font-medium">Or Drag & Drop your GIF file here</span>
+                            <span className="text-[9px] text-slate-500">Supports offline storing in your account</span>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-3.5 rounded-xl bg-rose-950/10 border border-rose-500/10 text-center">
-                    <span className="text-xs text-rose-400 font-semibold block">
-                      ⚠️ Custom GIF feature disabled
-                    </span>
-                    <span className="text-[10px] text-slate-500 block mt-1 leading-normal">
-                      The admin has toggled off this premium GIF background capability for your profile. Please contact system admin.
-                    </span>
-                  </div>
-                )}
-              </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-rose-950/10 border border-rose-500/10 text-center">
+                      <span className="text-xs text-rose-400 font-semibold block">
+                        ⚠️ Custom GIF feature disabled
+                      </span>
+                      <span className="text-[10px] text-slate-500 block mt-1 leading-normal">
+                        The admin has toggled off this premium GIF background capability for your profile. Please contact system admin.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {currentUser.role === UserRole.ADMIN && (
                 <div className="space-y-4 border-t border-slate-800/60 pt-4 mt-2">

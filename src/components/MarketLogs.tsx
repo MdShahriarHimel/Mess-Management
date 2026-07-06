@@ -64,7 +64,7 @@ export default function MarketLogs({
   const [success, setSuccess] = useState<string | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<string | null>(null);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "LEFT");
+  const activeMembers = members.filter(m => m.status === "ACTIVE");
 
   // Fetch market entries
   const fetchMarketsAndSchedules = async () => {
