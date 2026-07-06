@@ -6,7 +6,8 @@
 import React, { useState } from "react";
 import { 
   Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, 
-  RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail
+  RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
+  ChevronDown, ChevronUp
 } from "lucide-react";
 import { Member, UserRole, MemberStatus } from "../types.js";
 
@@ -224,6 +225,7 @@ interface MembersProps {
 export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [] }: MembersProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showArchives, setShowArchives] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [originalRole, setOriginalRole] = useState<UserRole | null>(null);
   const [shiftReason, setShiftReason] = useState("");
@@ -566,7 +568,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   });
 
   const activeMembers = visibleMembers.filter(m => 
-    m.status === MemberStatus.ACTIVE
+    m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY
   );
 
   const pendingMembers = visibleMembers.filter(m => 
@@ -656,6 +658,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
             {/* Status Indicator bubble */}
             <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
               member.status === MemberStatus.ACTIVE ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+              member.status === MemberStatus.AWAY ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
               member.status === MemberStatus.PENDING ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse" :
               "bg-slate-500/10 text-slate-400 border-slate-500/20"
             }`}>
@@ -860,178 +863,208 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
       {/* Archive Box (Suspended & Departed Inactive Bucket visible to everyone) */}
       {inactiveMembers.length > 0 && (
-        <div className="mt-8 pt-6 border-t border-slate-900/60" id="inactive-bucket-wrapper">
-          <div className="mb-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2 font-display">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-              Archive Box (Suspended & Departed Profiles)
-            </h3>
-            <p className="text-[10px] text-slate-400 mt-1">
-              These accounts are suspended or have left the mess. They are kept in the archive for history.
-            </p>
+        <div className="mt-8 pt-6 border-t border-slate-900/40" id="inactive-bucket-wrapper">
+          <div 
+            onClick={() => setShowArchives(!showArchives)}
+            className={`p-5 rounded-2xl border cursor-pointer transition-all duration-300 flex items-center justify-between shadow-sm select-none ${
+              isDarkMode 
+                ? "bg-slate-900/20 border-slate-800 text-slate-200 hover:bg-slate-900/40 hover:border-slate-700" 
+                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300"
+            }`}
+            id="archives-toggle-box"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400">
+                <Archive size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold uppercase tracking-wider font-display flex items-center gap-2">
+                  Archives
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                    isDarkMode ? "bg-rose-500/10 text-rose-400" : "bg-rose-100 text-rose-600"
+                  }`}>
+                    {inactiveMembers.length} Accounts
+                  </span>
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Click to view archived, left, or suspended resident profiles
+                </p>
+              </div>
+            </div>
+            <div className="text-slate-400">
+              {showArchives ? <ChevronUp size={20} className="animate-pulse" /> : <ChevronDown size={20} />}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="inactive-bucket-grid">
-            {inactiveMembers.map((member) => {
-              const isTargetAdmin = member.role === UserRole.ADMIN;
-              const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
+          {showArchives && (
+            <div className="mt-5 space-y-4 animate-fade-in">
+              <p className="text-[10px] text-slate-400 italic">
+                These accounts are suspended, have left the mess, or are archived. They are kept in the archive for historical reference.
+              </p>
 
-              const showAdminRoleBadge = !maskAdmin || !!adminVisibility?.showAdminRole;
-              const showAdminEmailText = !maskAdmin || !!adminVisibility?.showAdminEmail;
-              const showAdminPhoneText = !maskAdmin || !!adminVisibility?.showAdminPhone;
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="inactive-bucket-grid">
+                {inactiveMembers.map((member) => {
+                  const isTargetAdmin = member.role === UserRole.ADMIN;
+                  const maskAdmin = isTargetAdmin && currentUser.role !== UserRole.ADMIN;
 
-              const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
-              const displayEmail = showAdminEmailText ? member.email : "••••••••••••";
-              const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
+                  const showAdminRoleBadge = !maskAdmin || !!adminVisibility?.showAdminRole;
+                  const showAdminEmailText = !maskAdmin || !!adminVisibility?.showAdminEmail;
+                  const showAdminPhoneText = !maskAdmin || !!adminVisibility?.showAdminPhone;
 
-              const displayLeavingDate = member.leavingDate || "Unknown date";
+                  const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+                  const displayEmail = showAdminEmailText ? member.email : "••••••••••••";
+                  const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
 
-              const config = roleAnimations?.[displayRole];
-              const isRoleHidden = member.role === UserRole.ADMIN && displayRole === UserRole.MEMBER;
-              const useMemberSettings = isRoleHidden && member.splitProfile;
+                  const displayLeavingDate = member.leavingDate || "Unknown date";
 
-              const hasGlow = useMemberSettings 
-                ? member.memberGlow 
-                : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none"));
+                  const config = roleAnimations?.[displayRole];
+                  const isRoleHidden = member.role === UserRole.ADMIN && displayRole === UserRole.MEMBER;
+                  const useMemberSettings = isRoleHidden && member.splitProfile;
 
-              const glowStyle = useMemberSettings
-                ? (member.memberGlowStyle || "")
-                : (member.glowStyle || config?.glowStyle || "");
+                  const hasGlow = useMemberSettings 
+                    ? member.memberGlow 
+                    : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none"));
 
-              const finalAnimation = useMemberSettings
-                ? (member.memberAnimation || "none")
-                : (member.animation || "none");
+                  const glowStyle = useMemberSettings
+                    ? (member.memberGlowStyle || "")
+                    : (member.glowStyle || config?.glowStyle || "");
 
-              let cardGlowStyle: React.CSSProperties = {};
-              let cardGlowClass = "";
-              if (hasGlow && glowStyle) {
-                if (glowStyle.startsWith("#")) {
-                  cardGlowStyle = {
-                    boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
-                    borderColor: `${glowStyle}60`
-                  };
-                } else {
-                  cardGlowClass = `glow-${glowStyle}`;
-                }
-              }
+                  const finalAnimation = useMemberSettings
+                    ? (member.memberAnimation || "none")
+                    : (member.animation || "none");
 
-              const isSuspended = member.status === MemberStatus.SUSPENDED;
-              const dateLabel = isSuspended ? "Suspended Date" : "Departed Mess";
+                  let cardGlowStyle: React.CSSProperties = {};
+                  let cardGlowClass = "";
+                  if (hasGlow && glowStyle) {
+                    if (glowStyle.startsWith("#")) {
+                      cardGlowStyle = {
+                        boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
+                        borderColor: `${glowStyle}60`
+                      };
+                    } else {
+                      cardGlowClass = `glow-${glowStyle}`;
+                    }
+                  }
 
-              return (
-                <div 
-                  key={member.id} 
-                  onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
-                  className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.99] opacity-75 grayscale-[20%] hover:grayscale-0 hover:opacity-100 ${cardGlowClass} ${
-                    isDarkMode 
-                      ? "bg-slate-950/40 border-rose-500/10 text-slate-300 hover:border-rose-500/30" 
-                      : "bg-slate-100/50 border-slate-200 shadow-sm text-slate-600 hover:border-rose-300"
-                  }`}
-                  style={cardGlowStyle}
-                >
-                  <MicroAnimationOverlay animationType={finalAnimation} />
-                  <div className="flex gap-4 items-start">
-                    {/* Profile Photo */}
-                    <div className="relative" onClick={(e) => e.stopPropagation()}>
-                      {member.photo ? (
-                        <img 
-                          src={member.photo} 
-                          alt={member.nickname} 
-                          className="w-16 h-16 rounded-xl object-cover border border-rose-500/20"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl bg-slate-850 border border-slate-800 flex items-center justify-center text-slate-400 font-bold text-lg font-display uppercase">
-                          {member.nickname.slice(0, 2)}
+                  const isSuspended = member.status === MemberStatus.SUSPENDED;
+                  const dateLabel = isSuspended ? "Suspended Date" : "Departed Mess";
+
+                  return (
+                    <div 
+                      key={member.id} 
+                      onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
+                      className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg active:scale-[0.99] opacity-75 grayscale-[20%] hover:grayscale-0 hover:opacity-100 ${cardGlowClass} ${
+                        isDarkMode 
+                          ? "bg-slate-950/40 border-rose-500/10 text-slate-300 hover:border-rose-500/30" 
+                          : "bg-slate-100/50 border-slate-200 shadow-sm text-slate-600 hover:border-rose-300"
+                      }`}
+                      style={cardGlowStyle}
+                    >
+                      <MicroAnimationOverlay animationType={finalAnimation} />
+                      <div className="flex gap-4 items-start">
+                        {/* Profile Photo */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          {member.photo ? (
+                            <img 
+                              src={member.photo} 
+                              alt={member.nickname} 
+                              className="w-16 h-16 rounded-xl object-cover border border-rose-500/20"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-xl bg-slate-850 border border-slate-800 flex items-center justify-center text-slate-400 font-bold text-lg font-display uppercase">
+                              {member.nickname.slice(0, 2)}
+                            </div>
+                          )}
+                          
+                          {/* Status Indicator bubble */}
+                          <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
+                            member.status === MemberStatus.SUSPENDED ? "bg-rose-500/15 text-rose-400 border-rose-500/25 animate-pulse" :
+                            "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                          }`}>
+                            {member.status}
+                          </span>
                         </div>
-                      )}
-                      
-                      {/* Status Indicator bubble */}
-                      <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
-                        member.status === MemberStatus.SUSPENDED ? "bg-rose-500/15 text-rose-400 border-rose-500/25 animate-pulse" :
-                        "bg-amber-500/15 text-amber-400 border-amber-500/25"
-                      }`}>
-                        {member.status}
-                      </span>
-                    </div>
 
-                    {/* Core Text details */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-start gap-1">
-                        <div>
-                          <h3 className="font-extrabold text-sm truncate text-slate-400 line-through decoration-slate-600">{member.name}</h3>
-                          <p className="text-xs text-slate-500 font-semibold">@{member.nickname}</p>
+                        {/* Core Text details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start gap-1">
+                            <div>
+                              <h3 className="font-extrabold text-sm truncate text-slate-400 line-through decoration-slate-600">{member.name}</h3>
+                              <p className="text-xs text-slate-500 font-semibold">@{member.nickname}</p>
+                            </div>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-slate-900 text-slate-500">
+                              {displayRole.replace("_", " ")}
+                            </span>
+                          </div>
+
+                          <div className="mt-3.5 space-y-1.5 text-xs text-slate-500 font-mono">
+                            <p className="flex items-center gap-1.5 truncate">
+                              <Mail size={12} className="text-slate-600" />
+                              {displayEmail}
+                            </p>
+                            <p className="flex items-center gap-1.5 truncate">
+                              <Phone size={12} className="text-slate-600" />
+                              {displayPhone}
+                            </p>
+                            <p className="flex items-center gap-1.5 text-[11px] text-rose-400/80 font-semibold font-sans mt-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              {dateLabel}: {displayLeavingDate}
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-slate-900 text-slate-500">
-                          {displayRole.replace("_", " ")}
-                        </span>
-                      </div>
 
-                      <div className="mt-3.5 space-y-1.5 text-xs text-slate-500 font-mono">
-                        <p className="flex items-center gap-1.5 truncate">
-                          <Mail size={12} className="text-slate-600" />
-                          {displayEmail}
-                        </p>
-                        <p className="flex items-center gap-1.5 truncate">
-                          <Phone size={12} className="text-slate-600" />
-                          {displayPhone}
-                        </p>
-                        <p className="flex items-center gap-1.5 text-[11px] text-rose-400/80 font-semibold font-sans mt-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                          {dateLabel}: {displayLeavingDate}
-                        </p>
-                      </div>
-                    </div>
+                        {(isAuthorizedToEdit || currentUser.id === member.id) && (
+                          <div className="flex gap-1.5">
+                            {/* Super Users cannot modify Admins */}
+                            {!(member.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) && (
+                              <>
+                                <button
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    setEditingMember(member); 
+                                    setOriginalRole(member.role);
+                                    setShiftReason("");
+                                  }}
+                                  className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
+                                    isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                                  }`}
+                                  title="Edit profile"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
 
-                    {(isAuthorizedToEdit || currentUser.id === member.id) && (
-                      <div className="flex gap-1.5">
-                        {/* Super Users cannot modify Admins */}
-                        {!(member.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) && (
-                          <>
-                            <button
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setEditingMember(member); 
-                                setOriginalRole(member.role);
-                                setShiftReason("");
-                              }}
-                              className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
-                                isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                              }`}
-                              title="Edit profile"
-                            >
-                              <Edit2 size={13} />
-                            </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
+                                  className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
+                                    isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                                  }`}
+                                  title="Restore member to active status"
+                                >
+                                  <RotateCcw size={13} />
+                                </button>
 
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
-                              className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
-                                isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                              }`}
-                              title="Restore member to active status"
-                            >
-                              <RotateCcw size={13} />
-                            </button>
-
-                            {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
-                                className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
-                                title="Permanently Delete member"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                                {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
+                                    className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                                    title="Permanently Delete member"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </>
                             )}
-                          </>
+                          </div>
                         )}
-                      </div>
-                    )}
 
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
