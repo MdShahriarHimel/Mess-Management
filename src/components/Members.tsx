@@ -235,6 +235,12 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     showAdminRole: false
   });
 
+  const isEditingSelf = editingMember?.id === currentUser.id;
+  const isUltimateAdminActor = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isTargetUltimateAdmin = editingMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const disableRoleSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
+  const disableStatusSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
+
   React.useEffect(() => {
     fetch("/api/settings", {
       headers: { "Authorization": `Bearer ${currentUser.id}` }
@@ -1308,10 +1314,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Role Level</label>
                       <select
                         value={editingMember.role}
-                        disabled={originalRole === UserRole.ADMIN}
+                        disabled={disableRoleSelect}
                         onChange={(e) => setEditingMember({ ...editingMember, role: e.target.value as UserRole })}
                         className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                          originalRole === UserRole.ADMIN ? "opacity-60 cursor-not-allowed" : ""
+                          disableRoleSelect ? "opacity-60 cursor-not-allowed" : ""
                         } ${
                           isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                         }`}
@@ -1329,8 +1335,14 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <option value={UserRole.ADMIN}>ADMIN</option>
                         )}
                       </select>
-                      {originalRole === UserRole.ADMIN && (
+                      {originalRole === UserRole.ADMIN && isEditingSelf && (
                         <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot demote themselves.</p>
+                      )}
+                      {originalRole === UserRole.ADMIN && !isEditingSelf && isTargetUltimateAdmin && (
+                        <p className="text-[9px] text-rose-500 font-bold mt-1">The ultimate Admin cannot be demoted.</p>
+                      )}
+                      {originalRole === UserRole.ADMIN && !isEditingSelf && !isTargetUltimateAdmin && !isUltimateAdminActor && (
+                        <p className="text-[9px] text-rose-500 font-bold mt-1">Only the ultimate Admin can demote other Admins.</p>
                       )}
                     </div>
                     {([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(currentUser.role)) ? (
@@ -1338,10 +1350,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                         <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Status Code</label>
                         <select
                           value={editingMember.status}
-                          disabled={originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN}
+                          disabled={disableStatusSelect}
                           onChange={(e) => setEditingMember({ ...editingMember, status: e.target.value as MemberStatus })}
                           className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                            (originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) ? "opacity-60 cursor-not-allowed" : ""
+                            disableStatusSelect ? "opacity-60 cursor-not-allowed" : ""
                           } ${
                             isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                           }`}
@@ -1357,10 +1369,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>
                         </select>
-                        {originalRole === UserRole.ADMIN && (
+                        {originalRole === UserRole.ADMIN && isEditingSelf && (
                           <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot select 'suspend' or 'pending' for their ID/profile.</p>
                         )}
-                        {originalRole === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN && (
+                        {originalRole === UserRole.ADMIN && !isEditingSelf && !isUltimateAdminActor && (
                           <p className="text-[9px] text-rose-500 font-bold mt-1">Admin status cannot be changed by others.</p>
                         )}
                       </div>

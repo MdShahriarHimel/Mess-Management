@@ -1009,6 +1009,11 @@ export default function App() {
     allowPreviousMealPlanner: true
   });
 
+  // Market Date Forced Flow & Duties states
+  const [dutiesList, setDutiesList] = useState<any[]>([]);
+  const [marketForcedFlowStep, setMarketForcedFlowStep] = useState<string | null>(null);
+  const [forcedMarketDate, setForcedMarketDate] = useState<string>("");
+
   const [messes, setMesses] = useState<{ id: string, name: string }[]>([]);
   const [activeMessId, setActiveMessId] = useState("default");
 
@@ -1347,6 +1352,21 @@ export default function App() {
     }
   };
 
+  const fetchDuties = async () => {
+    if (!sessionToken || !currentMonthId) return;
+    try {
+      const response = await fetch(`/api/duties/${currentMonthId}`, {
+        headers: { "Authorization": `Bearer ${sessionToken}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDutiesList(data.duties || []);
+      }
+    } catch (e) {
+      console.error("Error fetching duties in App:", e);
+    }
+  };
+
   useEffect(() => {
     if (sessionToken) {
       validateSession(sessionToken);
@@ -1360,6 +1380,7 @@ export default function App() {
   useEffect(() => {
     if (sessionToken && currentMonthId) {
       fetchReportSummary();
+      fetchDuties();
     }
   }, [currentMonthId, sessionToken]);
 
@@ -1402,6 +1423,7 @@ export default function App() {
     if (sessionToken) {
       fetchMonthsAndMembers(sessionToken);
       fetchReportSummary();
+      fetchDuties();
     }
   };
 
@@ -2257,6 +2279,11 @@ export default function App() {
               membersListProp={membersList}
               showResultsInDashboard={showResultsInDashboard}
               enableManagerRating={enableManagerRating}
+              duties={dutiesList}
+              marketForcedFlowStep={marketForcedFlowStep}
+              onSetMarketForcedFlowStep={setMarketForcedFlowStep}
+              forcedMarketDate={forcedMarketDate}
+              onSetForcedMarketDate={setForcedMarketDate}
             />
           )}
 
@@ -2288,6 +2315,10 @@ export default function App() {
               currentMonthId={currentMonthId}
               isDarkMode={isDarkMode}
               dateRestrictions={dateRestrictions}
+              marketForcedFlowStep={marketForcedFlowStep}
+              onSetMarketForcedFlowStep={setMarketForcedFlowStep}
+              forcedMarketDate={forcedMarketDate}
+              onNavigateToTab={(tab) => { setActiveTab(tab); }}
             />
           )}
 

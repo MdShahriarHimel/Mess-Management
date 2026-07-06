@@ -39,6 +39,11 @@ interface DashboardProps {
   membersListProp?: Member[];
   showResultsInDashboard?: boolean;
   enableManagerRating?: boolean;
+  duties?: any[];
+  marketForcedFlowStep?: string | null;
+  onSetMarketForcedFlowStep?: (step: string | null) => void;
+  forcedMarketDate?: string;
+  onSetForcedMarketDate?: (date: string) => void;
 }
 
 export default function Dashboard({ 
@@ -54,7 +59,12 @@ export default function Dashboard({
   elections,
   membersListProp = [],
   showResultsInDashboard = false,
-  enableManagerRating = true
+  enableManagerRating = true,
+  duties = [],
+  marketForcedFlowStep,
+  onSetMarketForcedFlowStep,
+  forcedMarketDate,
+  onSetForcedMarketDate
 }: DashboardProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -258,8 +268,65 @@ export default function Dashboard({
 
   const isRatingPeriodOpen = enableManagerRating && new Date().getDate() >= 7;
 
+  // Check if today is the user's market duty date
+  const todayStr = new Date().toISOString().split("T")[0];
+  const hasMarketDutyToday = (duties || []).some(d => {
+    const isUser = d.memberId === currentUser.id;
+    const nameLower = d.name.toLowerCase();
+    const isMarket = nameLower.includes("market") || nameLower.includes("bazar");
+    const isToday = d.name.includes(todayStr);
+    return isUser && isMarket && isToday;
+  });
+
   return (
     <div className="space-y-6" id="dashboard-wrapper">
+
+      {/* Today's Market Duty Warning Banner */}
+      {hasMarketDutyToday && (
+        <div className={`p-6 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in relative overflow-hidden ${
+          isDarkMode 
+            ? "bg-amber-500/10 border-amber-500/30 text-white" 
+            : "bg-amber-50 border-amber-200 text-slate-800 shadow-md"
+        }`} id="dashboard-market-duty-alert">
+          {/* Animated background glow */}
+          <div className="absolute -right-12 -top-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl animate-pulse"></div>
+          
+          <div className="flex items-start gap-3.5 relative z-10">
+            <div className="p-3 rounded-xl bg-amber-500/20 text-amber-500 shrink-0 animate-bounce">
+              <ShieldAlert size={22} />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
+                Action Required
+              </span>
+              <h3 className="text-sm font-extrabold font-display uppercase tracking-wide text-amber-500 mt-1">
+                ⚠️ "Do Market" Duty Warning notice
+              </h3>
+              <p className={`text-xs mt-1 max-w-xl leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                Today is your scheduled Market Date! Please arrange the bazar shopping list, buy fresh ingredients, and complete meal arrangements.
+              </p>
+            </div>
+          </div>
+
+          <div className="relative z-10 shrink-0 w-full md:w-auto">
+            <button
+              onClick={() => {
+                if (onSetMarketForcedFlowStep) {
+                  onSetMarketForcedFlowStep("meal_planner");
+                }
+                if (onSetForcedMarketDate) {
+                  onSetForcedMarketDate(todayStr);
+                }
+                onNavigateToTab("menu");
+              }}
+              className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-extrabold text-xs rounded-xl cursor-pointer shadow-md hover:shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+            >
+              Select Market Done & Plan Meals
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Direct Notices/Requests to Manager Panel */}
       {directToManagerNotices.length > 0 && (

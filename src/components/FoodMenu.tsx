@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  FileText, Calendar, Edit, Check, AlertCircle, Sparkles, PieChart, Info
+  FileText, Calendar, Edit, Check, AlertCircle, Sparkles, PieChart, Info, ArrowRight
 } from "lucide-react";
 import { Member, FoodMenu as MenuType, UserRole } from "../types.js";
 
@@ -23,9 +23,22 @@ interface FoodMenuProps {
     allowFutureMealPlanner?: boolean;
     allowPreviousMealPlanner?: boolean;
   };
+  marketForcedFlowStep?: string | null;
+  onSetMarketForcedFlowStep?: (step: string | null) => void;
+  forcedMarketDate?: string;
+  onNavigateToTab?: (tabId: string) => void;
 }
 
-export default function FoodMenu({ currentUser, currentMonthId, isDarkMode, dateRestrictions }: FoodMenuProps) {
+export default function FoodMenu({ 
+  currentUser, 
+  currentMonthId, 
+  isDarkMode, 
+  dateRestrictions,
+  marketForcedFlowStep,
+  onSetMarketForcedFlowStep,
+  forcedMarketDate,
+  onNavigateToTab
+}: FoodMenuProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [lunchVegetable, setLunchVegetable] = useState("");
   const [lunchMain, setLunchMain] = useState("");
@@ -91,6 +104,13 @@ export default function FoodMenu({ currentUser, currentMonthId, isDarkMode, date
     fetchStats();
   }, [currentMonthId, selectedDate]);
 
+  useEffect(() => {
+    if (marketForcedFlowStep === "meal_planner" && forcedMarketDate) {
+      setSelectedDate(forcedMarketDate);
+      setEditMode(true);
+    }
+  }, [marketForcedFlowStep, forcedMarketDate]);
+
   // Handle Save
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,6 +162,11 @@ export default function FoodMenu({ currentUser, currentMonthId, isDarkMode, date
       setEditMode(false);
       fetchMenuData();
       fetchStats();
+      if (marketForcedFlowStep === "meal_planner") {
+        if (onSetMarketForcedFlowStep) {
+          onSetMarketForcedFlowStep("advise_finance");
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Failed to update food menu");
     } finally {
@@ -172,6 +197,76 @@ export default function FoodMenu({ currentUser, currentMonthId, isDarkMode, date
 
   return (
     <div className="space-y-6" id="food-menu-wrapper">
+      
+      {/* Forced Flow Banners & Modal Overlay */}
+      {marketForcedFlowStep === "meal_planner" && (
+        <div className="p-4 rounded-xl border bg-orange-500/10 border-orange-500/30 text-orange-400 text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 animate-pulse shadow-lg">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="shrink-0 animate-bounce" size={16} />
+            <div>
+              <p className="font-extrabold uppercase tracking-wide text-[11px]">Forced Meal Arrangement Mode Active</p>
+              <p className="text-slate-300 font-medium">Please enter the Lunch and Dinner arrangements (vegetable + main course) for your Market Date ({selectedDate}) below and click "SAVE ARRANGEMENT"!</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {marketForcedFlowStep === "advise_finance" && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-emerald-500/30 text-white shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Check className="animate-scale" size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold font-display uppercase text-emerald-400 font-sans tracking-wide">Arrangements Complete!</h3>
+                <p className="text-[10px] text-slate-400 font-mono">Bazaar Meal Arrangements Saved Successfully</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs leading-relaxed">
+              <p className="font-bold text-slate-200">
+                Excellent! Today's meal planner is updated. Now you are requested to fill in your bazaar expenditure values in the ledger.
+              </p>
+              <p className="text-slate-400">
+                Please follow this specific order to log your market values so the mess ledger balances correctly:
+              </p>
+              
+              <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-2 text-[11px] text-slate-300 font-mono">
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[9px] font-bold text-cyan-400 shrink-0">1</span>
+                  <span>Go to <strong className="text-cyan-400">Settlement Sheet</strong></span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[9px] font-bold text-cyan-400 shrink-0">2</span>
+                  <span>Inspect the <strong className="text-cyan-400">Financial Statement</strong> / manager's accounts</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[9px] font-bold text-cyan-400 shrink-0">3</span>
+                  <span>Navigate to the <strong className="text-orange-400 font-bold">Individual Month Balance Sheet</strong> table column, click your row, and log your bazaar/market spending value!</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => {
+                  if (onSetMarketForcedFlowStep) {
+                    onSetMarketForcedFlowStep(null);
+                  }
+                  if (onNavigateToTab) {
+                    onNavigateToTab("finance");
+                  }
+                }}
+                className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl cursor-pointer shadow-md flex items-center justify-center gap-1.5 transition-all transform hover:scale-[1.02] active:scale-95"
+              >
+                Proceed to Settlement & Balance Sheet
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Title */}
       <div>
