@@ -36,25 +36,19 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
   const [canAddMarkets, setCanAddMarkets] = useState(true);
   const [canSuspendMembers, setCanSuspendMembers] = useState(true);
 
-  // Fetch all members to find other admins
+  // Fetch all members to find other admins across all messes
   const fetchData = async () => {
     setLoading(true);
     try {
-      const membersResp = await fetch("/api/members", {
-        headers: { "Authorization": `Bearer ${sessionToken}` }
-      });
       const controlsResp = await fetch("/api/admin/controls", {
         headers: { "Authorization": `Bearer ${sessionToken}` }
       });
 
-      if (membersResp.ok && controlsResp.ok) {
-        const membersData = await membersResp.json();
+      if (controlsResp.ok) {
         const controlsData = await controlsResp.json();
-
-        // Filter for other admin accounts (excluding the ultimate admin)
-        const adminUsers = (membersData.members || []).filter(
-          (m: Member) => m.role === UserRole.ADMIN && m.email.toLowerCase() !== "mdshahriarhimel@gmail.com"
-        );
+        
+        // Use the multi-mess scan list from the endpoint or fallback
+        const adminUsers = controlsData.admins || [];
 
         setAdmins(adminUsers);
         setControls(controlsData.controls || {});
@@ -62,7 +56,7 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
         if (adminUsers.length > 0) {
           const firstAdmin = adminUsers[0];
           setSelectedAdminId(firstAdmin.id);
-          loadAdminConfig(firstAdmin.id, controlsData.controls || {});
+          loadAdminConfig(firstAdmin.id, firstAdmin.email, controlsData.controls || {});
         }
       }
     } catch (e) {
@@ -79,8 +73,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
     }
   }, [sessionToken]);
 
-  const loadAdminConfig = (adminId: string, allControls: Record<string, AdminControlConfig>) => {
-    const config = allControls[adminId] || {
+  const loadAdminConfig = (adminId: string, email: string, allControls: Record<string, AdminControlConfig>) => {
+    const config = (email && allControls[email.toLowerCase()]) || allControls[adminId] || {
       allowedMesses: [],
       canEditBills: true,
       canManageMeals: true,
@@ -98,7 +92,10 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
   const handleAdminChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     setSelectedAdminId(id);
-    loadAdminConfig(id, controls);
+    const selectedAdmin = admins.find(a => a.id === id);
+    if (selectedAdmin) {
+      loadAdminConfig(id, selectedAdmin.email, controls);
+    }
     setMessage(null);
   };
 
@@ -112,7 +109,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedAdminId) return;
+    const selectedAdmin = admins.find(a => a.id === selectedAdminId);
+    if (!selectedAdmin) return;
 
     setSaving(true);
     setMessage(null);
@@ -125,7 +123,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
           "Authorization": `Bearer ${sessionToken}`
         },
         body: JSON.stringify({
-          userId: selectedAdminId,
+          userId: selectedAdmin.id,
+          email: selectedAdmin.email,
           allowedMesses,
           canEditBills,
           canManageMeals,

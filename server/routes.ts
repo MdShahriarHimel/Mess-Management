@@ -2412,7 +2412,8 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
   if (req.user.role !== UserRole.ADMIN) return true; // other roles don't use these admin permission restrictions
 
   const controls = loadAdminControls().controls;
-  const userControls = controls[req.user.id];
+  const emailKey = req.user.email ? req.user.email.toLowerCase() : "";
+  const userControls = (emailKey && controls[emailKey]) || controls[req.user.id];
   if (!userControls) return true; // if no explicit overrides, default to true
 
   if (actionKey === "canEditBills" && userControls.canEditBills === false) return false;
@@ -2423,12 +2424,63 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
   return true;
 }
 
+function getAllAdminsAcrossAllMesses(): Member[] {
+  const adminsMap = new Map<string, Member>();
+  try {
+    const DB_DIR = path.join(process.cwd(), "data");
+    if (fs.existsSync(DB_DIR)) {
+      const files = fs.readdirSync(DB_DIR);
+      for (const file of files) {
+        if (file === "database_backup.json" || (file.startsWith("database_backup_") && file.endsWith(".json"))) {
+          try {
+            const dataStr = fs.readFileSync(path.join(DB_DIR, file), "utf-8");
+            const parsed = JSON.parse(dataStr);
+            if (parsed && Array.isArray(parsed.members)) {
+              for (const member of parsed.members) {
+                if (member.role === UserRole.ADMIN && member.email && member.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+                  const emailKey = member.email.toLowerCase();
+                  adminsMap.set(emailKey, member);
+                }
+              }
+            }
+          } catch (err) {
+            // ignore malformed files
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error scanning backup files for admins:", e);
+  }
+
+  // Also read from current memory cache if not saved yet
+  try {
+    const currentDB = loadDB();
+    if (currentDB && Array.isArray(currentDB.members)) {
+      for (const member of currentDB.members) {
+        if (member.role === UserRole.ADMIN && member.email && member.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+          const emailKey = member.email.toLowerCase();
+          adminsMap.set(emailKey, member);
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return Array.from(adminsMap.values());
+}
+
 router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
     res.status(403).json({ error: "Only the ultimate Admin can access admin controlling panel." });
     return;
   }
-  res.json(loadAdminControls());
+  const admins = getAllAdminsAcrossAllMesses();
+  res.json({
+    ...loadAdminControls(),
+    admins
+  });
 });
 
 router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
@@ -2437,23 +2489,31 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
     return;
   }
   
-  const { userId, allowedMesses, canEditBills, canManageMeals, canAddMarkets, canSuspendMembers } = req.body;
-  if (!userId) {
-    res.status(400).json({ error: "User ID is required." });
+  const { userId, email, allowedMesses, canEditBills, canManageMeals, canAddMarkets, canSuspendMembers } = req.body;
+  if (!userId && !email) {
+    res.status(400).json({ error: "User ID or Email is required." });
     return;
   }
 
   const data = loadAdminControls();
-  data.controls[userId] = {
+  const config = {
     allowedMesses: allowedMesses || [],
     canEditBills: canEditBills !== false,
     canManageMeals: canManageMeals !== false,
     canAddMarkets: canAddMarkets !== false,
     canSuspendMembers: canSuspendMembers !== false
   };
+
+  if (userId) {
+    data.controls[userId] = config;
+  }
+  if (email) {
+    data.controls[email.toLowerCase()] = config;
+  }
+  
   saveAdminControls(data);
 
-  logAudit(req.user!.id, req.user!.nickname, "CONFIGURE_ADMIN_PERMISSIONS", userId, "None", `Ultimate admin updated permissions for admin member ID: ${userId}`);
+  logAudit(req.user!.id, req.user!.nickname, "CONFIGURE_ADMIN_PERMISSIONS", userId || email, "None", `Ultimate admin updated permissions for admin: ${email || userId}`);
   res.json({ success: true, controls: data.controls });
 });
 
@@ -2500,7 +2560,8 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
   const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
-    const userControls = adminControls[req.user!.id];
+    const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+    const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
     if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
       messes = messes.filter((m: any) => userControls.allowedMesses.includes(m.id));
     }
@@ -2545,7 +2606,8 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
-    const userControls = adminControls[req.user!.id];
+    const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+    const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
     if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
       if (!userControls.allowedMesses.includes(messId)) {
         res.status(403).json({ error: "Access denied. You do not have permission to control this mess." });
