@@ -1572,7 +1572,7 @@ export default function App() {
 
   const handleDownloadBackup = async () => {
     try {
-      const response = await fetch("/admin/backup/export", {
+      const response = await fetch("/api/admin/backup/export", {
         headers: { "Authorization": `Bearer ${sessionToken}` }
       });
       if (!response.ok) {
@@ -1602,7 +1602,7 @@ export default function App() {
           const content = event.target?.result as string;
           const parsed = JSON.parse(content);
           
-          const response = await fetch("/admin/backup/import", {
+          const response = await fetch("/api/admin/backup/import", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -2563,7 +2563,7 @@ export default function App() {
                     Audit and back up reports instantly. Use the file selection area to restore an existing JSON backup file directly back into the ERP workspace.
                   </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <div className={`grid grid-cols-1 ${currentUser.role === UserRole.ADMIN ? "sm:grid-cols-3" : "sm:grid-cols-2"} gap-4 mb-6`}>
                     <button
                       onClick={handleExportCSV}
                       className="p-4 rounded-xl border border-cyan-500/10 hover:border-cyan-400 bg-slate-950/20 text-center cursor-pointer transition-all hover:scale-105"
@@ -2582,14 +2582,16 @@ export default function App() {
                       <p className="text-[10px] text-slate-500 mt-1">Generates clean printable summaries of this month.</p>
                     </button>
 
-                    <button
-                      onClick={handleDownloadBackup}
-                      className="p-4 rounded-xl border border-cyan-500/10 hover:border-cyan-400 bg-slate-950/20 text-center cursor-pointer transition-all hover:scale-105"
-                    >
-                      <Download className="mx-auto text-cyan-400 mb-2" size={24} />
-                      <p className="text-xs font-bold text-slate-200">Download JSON Backup</p>
-                      <p className="text-[10px] text-slate-500 mt-1">Saves raw databases, multi-mess snapshots, and custom styles.</p>
-                    </button>
+                    {currentUser.role === UserRole.ADMIN && (
+                      <button
+                        onClick={handleDownloadBackup}
+                        className="p-4 rounded-xl border border-cyan-500/10 hover:border-cyan-400 bg-slate-950/20 text-center cursor-pointer transition-all hover:scale-105"
+                      >
+                        <Download className="mx-auto text-cyan-400 mb-2" size={24} />
+                        <p className="text-xs font-bold text-slate-200">Download JSON Backup</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Saves raw databases, multi-mess snapshots, and custom styles.</p>
+                      </button>
+                    )}
                   </div>
 
                   {currentUser.role === UserRole.ADMIN && (

@@ -2423,7 +2423,7 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
   return true;
 }
 
-router.get("/api/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
     res.status(403).json({ error: "Only the ultimate Admin can access admin controlling panel." });
     return;
@@ -2431,7 +2431,7 @@ router.get("/api/admin/controls", authMiddleware, (req: AuthenticatedRequest, re
   res.json(loadAdminControls());
 });
 
-router.post("/api/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
     res.status(403).json({ error: "Only the ultimate Admin can modify admin controlling panel." });
     return;
