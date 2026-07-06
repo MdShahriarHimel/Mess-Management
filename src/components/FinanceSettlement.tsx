@@ -509,7 +509,7 @@ export default function FinanceSettlement({
     UserRole.MANAGER
   ].includes(currentUser.role);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE");
+  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 
   const getDatesList = () => {
     if (!selectedMonth) {

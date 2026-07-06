@@ -687,6 +687,7 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
     delete updates.hideContactInfoByAdmin;
     delete updates.glowEnabledByAdmin;
+    delete updates.hideAdminRole;
     // Allow self-hide (hide himself)
     if (!isSelf || (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER)) {
       delete updates.hideCardFromDirectoryByAdmin;
@@ -1722,7 +1723,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   const db = loadDB();
 
   // Filter lists
-  const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE);
+  const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY);
   const monthDeposits = db.deposits.filter(d => d.monthId === monthId);
   const monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
   const monthMeals = db.meals.filter(m => m.monthId === monthId);

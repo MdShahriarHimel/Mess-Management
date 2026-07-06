@@ -241,7 +241,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   const isUltimateAdminActor = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isTargetUltimateAdmin = editingMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const disableRoleSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
-  const disableStatusSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
+  const disableStatusSelect = originalRole === UserRole.ADMIN && !isEditingSelf && !isUltimateAdminActor;
 
   React.useEffect(() => {
     fetch("/api/settings", {
@@ -568,7 +568,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   });
 
   const activeMembers = visibleMembers.filter(m => 
-    m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY
+    m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY || m.status === MemberStatus.NOT_MEMBER
   );
 
   const pendingMembers = visibleMembers.filter(m => 
@@ -593,7 +593,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     const showAdminEmailText = !maskAdmin && !shouldMaskByAdminOverride || !!adminVisibility?.showAdminEmail;
     const showAdminPhoneText = !maskAdmin && !shouldMaskByAdminOverride || !!adminVisibility?.showAdminPhone;
 
-    const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+    let displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+    if (member.hideAdminRole) {
+      displayRole = UserRole.MEMBER;
+    }
     const displayEmail = (!shouldMaskByAdminOverride && showAdminEmailText) ? member.email : "••••••••••••";
     const displayPhone = (!shouldMaskByAdminOverride && showAdminPhoneText) ? (member.phone || "No phone logged") : "••••••••••••";
 
@@ -659,10 +662,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
             <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
               member.status === MemberStatus.ACTIVE ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
               member.status === MemberStatus.AWAY ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+              member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
               member.status === MemberStatus.PENDING ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse" :
               "bg-slate-500/10 text-slate-400 border-slate-500/20"
             }`}>
-              {member.status}
+              {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status}
             </span>
           </div>
 
@@ -911,7 +915,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   const showAdminEmailText = !maskAdmin || !!adminVisibility?.showAdminEmail;
                   const showAdminPhoneText = !maskAdmin || !!adminVisibility?.showAdminPhone;
 
-                  const displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+                  let displayRole = showAdminRoleBadge ? member.role : UserRole.MEMBER;
+                  if (member.hideAdminRole) {
+                    displayRole = UserRole.MEMBER;
+                  }
                   const displayEmail = showAdminEmailText ? member.email : "••••••••••••";
                   const displayPhone = showAdminPhoneText ? (member.phone || "No phone logged") : "••••••••••••";
 
@@ -1396,6 +1403,9 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           )}
                           <option value={MemberStatus.ACTIVE}>ACTIVE</option>
                           <option value={MemberStatus.AWAY}>AWAY</option>
+                          {editingMember.role === UserRole.ADMIN && (
+                            <option value={MemberStatus.NOT_MEMBER}>Not member (only for Admin)</option>
+                          )}
                           {editingMember.role !== UserRole.ADMIN && (
                             <option value={MemberStatus.SUSPENDED}>SUSPENDED</option>
                           )}
@@ -1708,6 +1718,22 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                             type="checkbox"
                             checked={editingMember.glowEnabledByAdmin !== false}
                             onChange={(e) => setEditingMember({ ...editingMember, glowEnabledByAdmin: e.target.checked })}
+                            className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
+                          />
+                        </div>
+                      )}
+
+                      {/* Hide Admin Role Toggle for Ultimate Admin */}
+                      {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                          <div className="space-y-0.5">
+                            <label className="text-xs font-bold text-slate-200 block">Show Self as Member (Hide Admin Role)</label>
+                            <span className="text-[9px] text-slate-400 block">Individually turn off showing your Admin role and display as MEMBER instead.</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={!!editingMember.hideAdminRole}
+                            onChange={(e) => setEditingMember({ ...editingMember, hideAdminRole: e.target.checked })}
                             className="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-850 rounded focus:ring-cyan-500 cursor-pointer"
                           />
                         </div>

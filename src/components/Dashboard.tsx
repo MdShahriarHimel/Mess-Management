@@ -1325,7 +1325,7 @@ export default function Dashboard({
               Current duties assigned by the superuser, authorities, or manager:
             </p>
 
-            {members.filter(m => m.status === "ACTIVE" && m.assignedTask && m.assignedTask.trim() !== "").length === 0 ? (
+            {members.filter(m => (m.status === "ACTIVE" || m.status === "AWAY") && m.assignedTask && m.assignedTask.trim() !== "").length === 0 ? (
               <div className={`text-center py-6 border border-dashed rounded-xl text-xs text-slate-500 ${
                 isDarkMode ? "border-slate-800 bg-slate-950/20" : "border-slate-200 bg-slate-50"
               }`}>
@@ -1334,7 +1334,7 @@ export default function Dashboard({
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {members
-                  .filter(m => m.status === "ACTIVE" && m.assignedTask && m.assignedTask.trim() !== "")
+                  .filter(m => (m.status === "ACTIVE" || m.status === "AWAY") && m.assignedTask && m.assignedTask.trim() !== "")
                   .map((m) => (
                     <div 
                       key={m.id}

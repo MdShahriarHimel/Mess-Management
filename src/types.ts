@@ -18,7 +18,8 @@ export enum MemberStatus {
   SUSPENDED = "SUSPENDED",
   LEFT = "LEFT",
   ARCHIVED = "ARCHIVED",
-  AWAY = "AWAY"
+  AWAY = "AWAY",
+  NOT_MEMBER = "NOT_MEMBER"
 }
 
 export enum BillStatus {
@@ -54,6 +55,7 @@ export interface Member {
   hideContactInfoByAdmin?: boolean;
   hideCardFromDirectoryByAdmin?: boolean;
   glowEnabledByAdmin?: boolean;
+  hideAdminRole?: boolean;
 }
 
 export interface MessMonth {
