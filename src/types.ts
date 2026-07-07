@@ -129,6 +129,7 @@ export interface ManagerHolding {
   monthId: string;
   memberId: string;
   amount: number; // Advance paid to manager
+  marketSpent?: number; // Manager's monthly market spent
 }
 
 export interface ManagerRating {

@@ -1397,7 +1397,7 @@ router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
     return;
   }
   const { id } = req.params;
-  const { status, amount, collectorId } = req.body;
+  const { status, amount, collectorId, name } = req.body;
   const db = loadDB();
   const index = db.bills.findIndex(b => b.id === id);
 
@@ -1417,11 +1417,12 @@ router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
   }
 
   const originalStatus = original.status;
-  original.status = status || original.status;
+  original.status = status !== undefined ? status : original.status;
   
   if (isManagerOrAdmin) {
     if (amount !== undefined) original.amount = Number(amount);
     if (collectorId !== undefined) original.collectorId = collectorId;
+    if (name !== undefined) original.name = name;
   }
 
   db.bills[index] = original;
@@ -1523,20 +1524,32 @@ router.get("/holdings/:monthId", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ holdings });
 });
 
-router.post("/holdings", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
-  const { monthId, memberId, amount } = req.body;
-  if (!monthId || !memberId || amount === undefined) {
-    res.status(400).json({ error: "Month ID, Member ID, and Amount are required" });
+router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.ADMIN].includes(req.user!.role);
+  if (!isUltimateAdmin && !isManagerOrAdmin) {
+    res.status(403).json({ error: "Access denied. Only managers and the ultimate Admin can edit holdings." });
+    return;
+  }
+
+  const { monthId, memberId, amount, marketSpent } = req.body;
+  if (!monthId || !memberId) {
+    res.status(400).json({ error: "Month ID and Member ID are required" });
     return;
   }
 
   const db = loadDB();
   const existingIndex = db.managerHoldings.findIndex(h => h.monthId === monthId && h.memberId === memberId);
+  
+  const currentAmount = amount !== undefined ? Number(amount) : (existingIndex !== -1 ? db.managerHoldings[existingIndex].amount : 0);
+  const currentMarketSpent = marketSpent !== undefined ? Number(marketSpent) : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].marketSpent || 0) : 0);
+
   const newHolding: ManagerHolding = {
     id: existingIndex !== -1 ? db.managerHoldings[existingIndex].id : generateUUID(),
     monthId,
     memberId,
-    amount: Number(amount)
+    amount: currentAmount,
+    marketSpent: currentMarketSpent
   };
 
   if (existingIndex !== -1) {
@@ -1546,7 +1559,7 @@ router.post("/holdings", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
   }
 
   saveDB();
-  logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING", "None", JSON.stringify(newHolding), `Recorded manager holding advance of Taka ${amount}`);
+  logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING", "None", JSON.stringify(newHolding), `Recorded manager holding/market spent of Taka ${currentAmount} / ${currentMarketSpent}`);
   res.json({ success: true, holding: newHolding });
 });
 
@@ -1739,6 +1752,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   
   // Total holding advance
   const totalHolding = monthHoldings.reduce((sum, h) => sum + h.amount, 0);
+  const managerMarketSpent = monthHoldings.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
   
   // Effective Cost = Total Cost - Manager Holding (according to spec)
   // Fix: If no raw market has been done, the actual raw food expense is 0, so the Effective Cost should be 0.
@@ -1798,6 +1812,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
     totalMarkets,
     totalCost,
     totalHolding,
+    managerMarketSpent,
     effectiveCost,
     totalMeals,
     mealRate: Math.round(mealRate * 1000) / 1000,

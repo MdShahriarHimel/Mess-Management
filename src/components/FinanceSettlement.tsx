@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart
+  DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2
 } from "lucide-react";
 import { Member, Bill, BillStatus, UserRole, MessMonth } from "../types.js";
 import * as XLSX from "xlsx";
@@ -670,6 +670,116 @@ export default function FinanceSettlement({
 
   const [loading, setLoading] = useState(false);
 
+  // Edit Bill states
+  const [showEditBillModal, setShowEditBillModal] = useState(false);
+  const [editingBill, setEditingBill] = useState<any | null>(null);
+  const [editBillName, setEditBillName] = useState("");
+  const [editBillAmount, setEditBillAmount] = useState("");
+  const [editBillCollectorId, setEditBillCollectorId] = useState("");
+
+  // Edit Manager Holdings states
+  const [isEditingManagerHoldings, setIsEditingManagerHoldings] = useState(false);
+  const [editTotalHoldings, setEditTotalHoldings] = useState("");
+  const [editManagerMarketSpent, setEditManagerMarketSpent] = useState("");
+
+  // Submit updated bill
+  const handleEditBillSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBill || !editBillName || !editBillAmount || !editBillCollectorId) {
+      alert("Please enter all fields");
+      return;
+    }
+    setLoading(true);
+
+    try {
+      const response = await fetch(`/api/bills/${editingBill.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({
+          name: editBillName,
+          amount: Number(editBillAmount),
+          collectorId: editBillCollectorId,
+          status: editingBill.status
+        })
+      });
+
+      if (response.ok) {
+        setShowEditBillModal(false);
+        setEditingBill(null);
+        onRefresh();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to update bill");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete bill
+  const handleDeleteBill = async (billId: string) => {
+    if (!window.confirm("Are you sure you want to delete this bill?")) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/bills/${billId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${currentUser.id}`
+        }
+      });
+
+      if (response.ok) {
+        onRefresh();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to delete bill");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Submit manager holdings & market spent
+  const handleSaveManagerHoldings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const response = await fetch("/api/holdings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({
+          monthId: currentMonthId,
+          memberId: currentUser.id, // current manager / admin
+          amount: Number(editTotalHoldings),
+          marketSpent: Number(editManagerMarketSpent)
+        })
+      });
+
+      if (response.ok) {
+        setIsEditingManagerHoldings(false);
+        onRefresh();
+      } else {
+        const err = await response.json();
+        alert(err.error || "Failed to save manager holdings");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred while saving holdings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Individual Accountings Details State
   const [allMarkets, setAllMarkets] = useState<any[]>([]);
   const [selectedMemberForAccountings, setSelectedMemberForAccountings] = useState<any | null>(null);
@@ -1232,12 +1342,13 @@ export default function FinanceSettlement({
                   <th className="py-2 px-3">Assigned Collector</th>
                   <th className="py-2 px-3 text-right">Cost Amount (৳)</th>
                   <th className="py-2 px-3 text-center">Payment Status</th>
+                  {isManagerOrAdmin && <th className="py-2 px-3 text-center">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-cyan-500/5">
                 {!reportSummary?.bills || reportSummary.bills.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-slate-500">No active bill items generated.</td>
+                    <td colSpan={isManagerOrAdmin ? 5 : 4} className="py-4 text-center text-slate-500">No active bill items generated.</td>
                   </tr>
                 ) : (
                   reportSummary.bills.map((b: Bill) => {
@@ -1247,7 +1358,7 @@ export default function FinanceSettlement({
 
                     return (
                       <tr key={b.id} className="hover:bg-cyan-500/5">
-                        <td className="py-3 px-3 font-bold text-slate-200">{b.name}</td>
+                        <td className="py-3 px-3 font-bold text-slate-250">{b.name}</td>
                         <td className="py-3 px-3 text-cyan-400 font-semibold flex items-center gap-1.5">
                           {collector && renderMemberPhotoBeforeName(collector.id, collector.name)}
                           {collector?.nickname || "Admin"}
@@ -1266,6 +1377,32 @@ export default function FinanceSettlement({
                             {isPaid ? "PAID" : "UNPAID"}
                           </button>
                         </td>
+                        {isManagerOrAdmin && (
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex justify-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingBill(b);
+                                  setEditBillName(b.name);
+                                  setEditBillAmount(String(b.amount));
+                                  setEditBillCollectorId(b.collectorId);
+                                  setShowEditBillModal(true);
+                                }}
+                                className="p-1 rounded bg-slate-850 hover:bg-slate-800 text-cyan-400 hover:text-cyan-350 transition-all cursor-pointer"
+                                title="Edit Bill Info"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBill(b.id)}
+                                className="p-1 rounded bg-slate-850 hover:bg-rose-950/30 text-rose-400 hover:text-rose-350 transition-all cursor-pointer"
+                                title="Delete Bill"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })
@@ -1290,16 +1427,16 @@ export default function FinanceSettlement({
           <div className="space-y-3">
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
               <span className="text-slate-400 font-medium">Total Holdings Pool</span>
-              <span className="font-extrabold font-mono text-cyan-400">৳ {(reportSummary?.totalHolding || 0) + (reportSummary?.totalDeposits || 0)}</span>
+              <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalHolding || 0}</span>
             </div>
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
-              <span className="text-slate-400 font-medium">Manager Market Spent</span>
-              <span className="font-extrabold font-mono text-orange-400">৳ {reportSummary?.totalMarkets || 0}</span>
+              <span className="text-slate-400 font-medium">Manager Monthly Market</span>
+              <span className="font-extrabold font-mono text-orange-400">৳ {reportSummary?.managerMarketSpent || 0}</span>
             </div>
 
             {(() => {
-              const totalH = (reportSummary?.totalHolding || 0) + (reportSummary?.totalDeposits || 0);
-              const totalM = reportSummary?.totalMarkets || 0;
+              const totalH = reportSummary?.totalHolding || 0;
+              const totalM = reportSummary?.managerMarketSpent || 0;
               const remaining = totalH - totalM;
               const isNegative = remaining < 0;
 
@@ -1309,11 +1446,72 @@ export default function FinanceSettlement({
                     ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
                     : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                 }`}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Remaining Holdings</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Remaining Deposits</span>
                   <span className="text-lg font-black font-mono">৳ {remaining}</span>
                 </div>
               );
             })()}
+
+            {/* Manager Special Edit Section */}
+            {(currentUser?.role === UserRole.MANAGER || currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
+              <div className="mt-4 pt-4 border-t border-cyan-500/10 space-y-3">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 block">Manager Special Panel</span>
+                {isEditingManagerHoldings ? (
+                  <form onSubmit={handleSaveManagerHoldings} className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-medium text-slate-400 block">Total Holdings Pool (৳)</label>
+                      <input
+                        type="number"
+                        required
+                        value={editTotalHoldings}
+                        onChange={(e) => setEditTotalHoldings(e.target.value)}
+                        placeholder="e.g. 5000"
+                        className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-medium text-slate-400 block">Manager Monthly Market (৳)</label>
+                      <input
+                        type="number"
+                        required
+                        value={editManagerMarketSpent}
+                        onChange={(e) => setEditManagerMarketSpent(e.target.value)}
+                        placeholder="e.g. 1500"
+                        className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingManagerHoldings(false)}
+                        className="flex-1 py-1.5 rounded bg-slate-800 hover:bg-slate-750 text-[10px] font-bold text-slate-300 transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="flex-1 py-1.5 rounded bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-[10px] transition-all cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setEditTotalHoldings(String(reportSummary?.totalHolding || 0));
+                      setEditManagerMarketSpent(String(reportSummary?.managerMarketSpent || 0));
+                      setIsEditingManagerHoldings(true);
+                    }}
+                    className="w-full py-2 bg-slate-950/40 hover:bg-slate-950/60 border border-cyan-500/20 hover:border-cyan-500/40 rounded-xl text-[10px] font-extrabold text-cyan-400 tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Edit3 size={12} />
+                    EDIT HOLDINGS & MARKET
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1432,6 +1630,83 @@ export default function FinanceSettlement({
                   className="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs cursor-pointer"
                 >
                   CREATE BILL
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT UTILITY BILL MODAL */}
+      {showEditBillModal && editingBill && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="w-full max-w-sm p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-2xl">
+            <div className="flex justify-between items-center mb-5 border-b border-slate-850 pb-3">
+              <h3 className="text-base font-bold font-display flex items-center gap-1.5 text-cyan-400">
+                <FileSpreadsheet size={18} />
+                Edit Utility / Custom Bill
+              </h3>
+              <button onClick={() => { setShowEditBillModal(false); setEditingBill(null); }} className="text-slate-400 hover:text-white cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditBillSubmit} className="space-y-4">
+              
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Bill Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editBillName}
+                  onChange={(e) => setEditBillName(e.target.value)}
+                  placeholder="Rent, Electricity, Maid..."
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Total Cost Amount (৳)</label>
+                <input
+                  type="number"
+                  required
+                  value={editBillAmount}
+                  onChange={(e) => setEditBillAmount(e.target.value)}
+                  placeholder="1500"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Assigned Collector</label>
+                <select
+                  required
+                  value={editBillCollectorId}
+                  onChange={(e) => setEditBillCollectorId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
+                >
+                  <option value="">-- Choose Member --</option>
+                  {activeMembers.map(m => (
+                    <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t border-slate-850">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditBillModal(false); setEditingBill(null); }}
+                  className="flex-1 py-2 rounded-lg bg-slate-850 hover:bg-slate-800 text-xs font-semibold text-slate-300 cursor-pointer"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs cursor-pointer"
+                >
+                  SAVE CHANGES
                 </button>
               </div>
 
