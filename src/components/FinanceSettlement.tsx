@@ -1023,7 +1023,6 @@ export default function FinanceSettlement({
                 <th className="py-3 px-4 text-right">Market ({currencySymbol})</th>
                 <th className="py-3 px-4 text-center">Meals Count</th>
                 <th className="py-3 px-4 text-right">Meal Cost ({currencySymbol})</th>
-                <th className="py-3 px-4 text-right">Manager Holdings ({currencySymbol})</th>
                 <th className="py-3 px-4 text-right">Current Balance ({currencySymbol})</th>
                 <th className="py-3 px-4 text-right">Return / Refund Status</th>
               </tr>
@@ -1031,7 +1030,7 @@ export default function FinanceSettlement({
             <tbody className="divide-y divide-cyan-500/5">
               {!reportSummary?.memberSettlements ? (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-500">No calculations loaded. Log meals and expenses first.</td>
+                  <td colSpan={7} className="py-6 text-center text-slate-500">No calculations loaded. Log meals and expenses first.</td>
                 </tr>
               ) : (
                 reportSummary.memberSettlements.map((m: any) => {
@@ -1054,29 +1053,6 @@ export default function FinanceSettlement({
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.market}</td>
                       <td className="py-3.5 px-4 text-center font-mono font-semibold text-cyan-400">{m.mealsCount}</td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.mealCost}</td>
-                      <td className="py-2.5 px-4 text-right font-mono text-slate-500" onClick={(e) => e.stopPropagation()}>
-                        {isManagerOrAdmin ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <span className="text-[11px] text-slate-500">{currencySymbol}</span>
-                            <input
-                              type="number"
-                              defaultValue={m.holdingPaid}
-                              onBlur={async (e) => {
-                                const val = Number(e.target.value);
-                                if (val === m.holdingPaid) return;
-                                try {
-                                  await handleSaveHoldingDirect(m.memberId, val);
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }}
-                              className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-xs text-right text-white focus:outline-none focus:ring-1 focus:ring-cyan-400 font-bold"
-                            />
-                          </div>
-                        ) : (
-                          <span>{currencySymbol} {m.holdingPaid}</span>
-                        )}
-                      </td>
                       <td className={`py-3.5 px-4 text-right font-mono font-extrabold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
                         {currencySymbol} {m.balance}
                       </td>
@@ -1503,15 +1479,6 @@ export default function FinanceSettlement({
                       </span>
                     </div>
 
-                    {/* Direct Manager Holdings display */}
-                    <div className="p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-500/10 flex justify-between items-center text-xs">
-                      <div>
-                        <span className="font-bold text-cyan-400 block">Manager Holdings:</span>
-                        <p className="text-[10px] text-slate-400">Deposited pool holding for start of raw shopping</p>
-                      </div>
-                      <span className="font-extrabold font-mono text-cyan-300 text-sm">৳ {selectedMemberForAccountings?.holdingPaid || 0}</span>
-                    </div>
-
                     <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                       {memberDeposits.length === 0 ? (
                         <p className="text-xs text-slate-500 italic py-2">No deposits recorded for this cycle yet.</p>
@@ -1540,32 +1507,6 @@ export default function FinanceSettlement({
                     {isManagerOrAdmin ? (
                       <form onSubmit={handleAddIndividualDeposit} className="pt-3 border-t border-slate-850 space-y-2">
                         <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest block">Add New Entry (৳)</p>
-                        
-                        {/* Deposit Type Toggle */}
-                        <div className="flex items-center gap-4 py-1">
-                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-300">
-                            <input
-                              type="radio"
-                              name="depositType"
-                              value="regular"
-                              checked={depositType === "regular"}
-                              onChange={() => setDepositType("regular")}
-                              className="accent-cyan-500"
-                            />
-                            Cash Deposit (Direct)
-                          </label>
-                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-300">
-                            <input
-                              type="radio"
-                              name="depositType"
-                              value="holding"
-                              checked={depositType === "holding"}
-                              onChange={() => setDepositType("holding")}
-                              className="accent-cyan-500"
-                            />
-                            Manager Holdings
-                          </label>
-                        </div>
 
                         <div className="flex gap-2">
                           <input
@@ -1576,15 +1517,13 @@ export default function FinanceSettlement({
                             onChange={(e) => setNewDepAmount(e.target.value)}
                             className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
                           />
-                          {depositType === "regular" && (
-                            <input
-                              type="date"
-                              required
-                              value={newDepDate}
-                              onChange={(e) => setNewDepDate(e.target.value)}
-                              className="px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-slate-400 focus:outline-none"
-                            />
-                          )}
+                          <input
+                            type="date"
+                            required
+                            value={newDepDate}
+                            onChange={(e) => setNewDepDate(e.target.value)}
+                            className="px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-slate-400 focus:outline-none"
+                          />
                           <button
                             type="submit"
                             className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 font-bold text-xs rounded text-white cursor-pointer transition-all uppercase tracking-wide font-display shrink-0"
