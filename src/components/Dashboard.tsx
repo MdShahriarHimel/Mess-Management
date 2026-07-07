@@ -82,6 +82,7 @@ export default function Dashboard({
   const [memberGlowStyle, setMemberGlowStyle] = useState(currentUser.memberGlowStyle || "#e11d48");
   const [memberAnimation, setMemberAnimation] = useState(currentUser.memberAnimation || "none");
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [localPrevTab, setLocalPrevTab] = useState<"admin" | "member">("admin");
 
   useEffect(() => {
     if (currentUser) {
@@ -833,88 +834,85 @@ export default function Dashboard({
               {/* Tabs to toggle preview role representation */}
               {splitProfile ? (
                 <div className="w-full space-y-3">
-                  {(() => {
-                    const [localPrevTab, setLocalPrevTab] = useState<"admin" | "member">("admin");
-                    const previewGlow = localPrevTab === "admin" ? profileGlow : memberGlow;
-                    const previewGlowStyle = localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle;
-                    const previewAnimation = localPrevTab === "admin" ? profileAnimation : memberAnimation;
+                  <div className="w-full space-y-3">
+                    <div className="flex gap-1 p-1 bg-slate-950 rounded-lg border border-slate-900 w-full max-w-xs mx-auto">
+                      <button
+                        type="button"
+                        onClick={() => setLocalPrevTab("admin")}
+                        className={`flex-1 py-1 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                          localPrevTab === "admin" ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Admin Mode
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocalPrevTab("member")}
+                        className={`flex-1 py-1 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                          localPrevTab === "member" ? "bg-rose-600 text-white" : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Member Mode
+                      </button>
+                    </div>
                     
-                    return (
-                      <div className="w-full space-y-3">
-                        <div className="flex gap-1 p-1 bg-slate-950 rounded-lg border border-slate-900 w-full max-w-xs mx-auto">
-                          <button
-                            type="button"
-                            onClick={() => setLocalPrevTab("admin")}
-                            className={`flex-1 py-1 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
-                              localPrevTab === "admin" ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"
-                            }`}
-                          >
-                            Admin Mode
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setLocalPrevTab("member")}
-                            className={`flex-1 py-1 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
-                              localPrevTab === "member" ? "bg-rose-600 text-white" : "text-slate-400 hover:text-white"
-                            }`}
-                          >
-                            Member Mode
-                          </button>
-                        </div>
-                        
-                        <div className="flex justify-center py-2">
-                          <div 
-                            className={`relative overflow-hidden w-60 p-3 rounded-xl border bg-slate-900 text-white ${
-                              previewGlow && !previewGlowStyle.startsWith("#") ? `glow-${previewGlowStyle}` : ""
-                            }`}
-                            style={{
-                              boxShadow: previewGlow && previewGlowStyle.startsWith("#") ? `0 0 12px ${previewGlowStyle}30` : undefined,
-                              borderColor: previewGlow && previewGlowStyle.startsWith("#") ? `${previewGlowStyle}60` : undefined
-                            }}
-                          >
-                            {previewAnimation !== "none" && (
-                              <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
-                                {previewAnimation === "sparkles" && (
-                                  <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-yellow-500/10 to-amber-500/10 opacity-70">
-                                    <span className="absolute top-1 left-2 text-[8px] animate-bounce">✨</span>
-                                    <span className="absolute bottom-2 right-3 text-[10px] animate-pulse">✨</span>
-                                  </div>
-                                )}
-                                {previewAnimation === "confetti" && (
-                                  <div className="absolute inset-0 opacity-80">
-                                    <span className="absolute top-1 right-2 text-[8px] animate-bounce">🎊</span>
-                                    <span className="absolute bottom-1 left-4 text-[8px] animate-bounce">🎉</span>
-                                  </div>
-                                )}
-                                {previewAnimation === "bubbles" && (
-                                  <div className="absolute inset-0 opacity-60">
-                                    <span className="absolute bottom-1 right-1 text-[8px] animate-ping">🫧</span>
-                                    <span className="absolute top-3 left-4 text-[9px] animate-pulse">🫧</span>
-                                  </div>
-                                )}
-                                {previewAnimation === "pulse" && (
-                                  <div className="absolute inset-0 border border-cyan-500/20 animate-pulse rounded-xl"></div>
-                                )}
+                    <div className="flex justify-center py-2">
+                      <div 
+                        className={`relative overflow-hidden w-60 p-3 rounded-xl border bg-slate-900 text-white ${
+                          (localPrevTab === "admin" ? profileGlow : memberGlow) && !(localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle).startsWith("#") 
+                            ? `glow-${localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle}` 
+                            : ""
+                        }`}
+                        style={{
+                          boxShadow: (localPrevTab === "admin" ? profileGlow : memberGlow) && (localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle).startsWith("#") 
+                            ? `0 0 12px ${localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle}30` 
+                            : undefined,
+                          borderColor: (localPrevTab === "admin" ? profileGlow : memberGlow) && (localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle).startsWith("#") 
+                            ? `${localPrevTab === "admin" ? profileGlowStyle : memberGlowStyle}60` 
+                            : undefined
+                        }}
+                      >
+                        {(localPrevTab === "admin" ? profileAnimation : memberAnimation) !== "none" && (
+                          <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+                            {(localPrevTab === "admin" ? profileAnimation : memberAnimation) === "sparkles" && (
+                              <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-yellow-500/10 to-amber-500/10 opacity-70">
+                                <span className="absolute top-1 left-2 text-[8px] animate-bounce">✨</span>
+                                <span className="absolute bottom-2 right-3 text-[10px] animate-pulse">✨</span>
                               </div>
                             )}
+                            {(localPrevTab === "admin" ? profileAnimation : memberAnimation) === "confetti" && (
+                              <div className="absolute inset-0 opacity-80">
+                                <span className="absolute top-1 right-2 text-[8px] animate-bounce">🎊</span>
+                                <span className="absolute bottom-1 left-4 text-[8px] animate-bounce">🎉</span>
+                              </div>
+                            )}
+                            {(localPrevTab === "admin" ? profileAnimation : memberAnimation) === "bubbles" && (
+                              <div className="absolute inset-0 opacity-60">
+                                <span className="absolute bottom-1 right-1 text-[8px] animate-ping">🫧</span>
+                                <span className="absolute top-3 left-4 text-[9px] animate-pulse">🫧</span>
+                              </div>
+                            )}
+                            {(localPrevTab === "admin" ? profileAnimation : memberAnimation) === "pulse" && (
+                              <div className="absolute inset-0 border border-cyan-500/20 animate-pulse rounded-xl"></div>
+                            )}
+                          </div>
+                        )}
 
-                            <div className="flex gap-2.5 items-center relative z-20">
-                              <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0">
-                                {currentUser.nickname?.[0]?.toUpperCase() || "A"}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-extrabold text-[11px] truncate">{currentUser.name}</h4>
-                                <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
-                                <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
-                                  {localPrevTab === "admin" ? "ADMIN" : "MEMBER"}
-                                </span>
-                              </div>
-                            </div>
+                        <div className="flex gap-2.5 items-center relative z-20">
+                          <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0">
+                            {currentUser.nickname?.[0]?.toUpperCase() || "A"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-extrabold text-[11px] truncate">{currentUser.name}</h4>
+                            <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
+                            <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
+                              {localPrevTab === "admin" ? "ADMIN" : "MEMBER"}
+                            </span>
                           </div>
                         </div>
                       </div>
-                    );
-                  })()}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="w-full space-y-3 flex flex-col items-center">

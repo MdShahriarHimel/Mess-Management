@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./lib/firebase.ts";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
   FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award
@@ -927,6 +929,7 @@ const AmbientAnimationOverlay = ({
 export default function App() {
   const [sessionToken, setSessionToken] = useState<string | null>(localStorage.getItem("mess_token"));
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
+  const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace("#", "");
@@ -1279,6 +1282,24 @@ export default function App() {
     }
   };
 
+  const handleLogoutLocal = () => {
+    localStorage.removeItem("mess_token");
+    setSessionToken(null);
+    setCurrentUser(null);
+    setReportSummary(null);
+    setActiveTab("dashboard");
+  };
+
+  const handleLogout = async () => {
+    handleLogoutLocal();
+    try {
+      const { signOut } = await import("firebase/auth");
+      await signOut(auth);
+    } catch (e) {
+      console.error("Error signing out from Firebase Auth:", e);
+    }
+  };
+
   // Fetch session data
   const validateSession = async (token: string) => {
     try {
@@ -1290,11 +1311,11 @@ export default function App() {
         setCurrentUser(data.user);
         setSessionToken(token);
       } else {
-        handleLogout();
+        handleLogoutLocal();
       }
     } catch (e) {
       console.error("Session verification failed:", e);
-      handleLogout();
+      handleLogoutLocal();
     }
   };
 
@@ -1369,13 +1390,74 @@ export default function App() {
 
   useEffect(() => {
     if (sessionToken) {
+      if (sessionToken.startsWith("ey") && !firebaseAuthChecked) {
+        // Skip initial check of Firebase token, wait for onAuthStateChanged to refresh/verify
+        return;
+      }
       validateSession(sessionToken);
       fetchMonthsAndMembers(sessionToken);
       fetchSettings(sessionToken);
       fetchMesses(sessionToken);
       fetchElections(sessionToken);
     }
-  }, [sessionToken]);
+  }, [sessionToken, firebaseAuthChecked]);
+
+  // Firebase Auth persistence listener to auto-refresh expired token and handle auto-login on startup
+  useEffect(() => {
+    let isMounted = true;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const freshToken = await firebaseUser.getIdToken(true); // forces token refresh if expired
+          if (!isMounted) return;
+          localStorage.setItem("mess_token", freshToken);
+          setSessionToken(freshToken);
+          setFirebaseAuthChecked(true);
+
+          // Validate against server database
+          const response = await fetch("/api/auth/me", {
+            headers: { "Authorization": `Bearer ${freshToken}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (isMounted) {
+              setCurrentUser(data.user);
+            }
+          } else {
+            console.error("Firebase authenticated but backend user check failed.");
+            if (isMounted) {
+              const { signOut } = await import("firebase/auth");
+              await signOut(auth);
+              handleLogoutLocal();
+            }
+          }
+        } catch (e) {
+          console.error("Error on Firebase auth state change:", e);
+          if (isMounted) handleLogoutLocal();
+        }
+      } else {
+        // No Firebase user
+        const localToken = localStorage.getItem("mess_token");
+        if (localToken && !localToken.startsWith("ey")) {
+          // It's a legacy or password-based token, let's keep and validate it
+          if (isMounted) {
+            validateSession(localToken);
+            setFirebaseAuthChecked(true);
+          }
+        } else {
+          if (isMounted) {
+            handleLogoutLocal();
+            setFirebaseAuthChecked(true);
+          }
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (sessionToken && currentMonthId) {
@@ -1409,14 +1491,6 @@ export default function App() {
     setSessionToken(token);
     setCurrentUser(user);
     fetchMonthsAndMembers(token);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("mess_token");
-    setSessionToken(null);
-    setCurrentUser(null);
-    setReportSummary(null);
-    setActiveTab("dashboard");
   };
 
   const handleRefreshAll = () => {
