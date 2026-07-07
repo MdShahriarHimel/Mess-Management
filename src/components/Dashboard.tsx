@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { 
   Bell, Calendar, Coffee, ShieldAlert, Star, Users, DollarSign,
   ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
-  Vote, Award, Percent, Settings2, Sparkles, Trash2
+  Vote, Award, Percent, Settings2, Sparkles, Trash2, ShoppingCart
 } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
 import { ColorPalettePicker } from "../App.js";
@@ -1475,7 +1475,7 @@ export default function Dashboard({
 
           {/* REMAINING HOLDINGS STATUS */}
           {(() => {
-            const totalH = reportSummary?.totalHolding || 0;
+            const totalH = (reportSummary?.totalHolding || 0) + (reportSummary?.totalDeposits || 0);
             const totalM = reportSummary?.totalMarkets || 0;
             const remaining = totalH - totalM;
             const isNegative = remaining < 0;
@@ -1516,6 +1516,14 @@ export default function Dashboard({
                       <span className="text-sm font-extrabold font-mono text-orange-400 block mt-1">৳ {totalM}</span>
                     </div>
                   </div>
+
+                  <button
+                    onClick={() => onNavigateToTab("market")}
+                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs cursor-pointer transition-all shadow-md shadow-cyan-950/30"
+                  >
+                    <ShoppingCart size={14} />
+                    Go to Market Logs to List Purchases
+                  </button>
                 </div>
               </div>
             );

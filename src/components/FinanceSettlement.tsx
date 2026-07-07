@@ -1313,7 +1313,7 @@ export default function FinanceSettlement({
           <div className="space-y-3">
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
               <span className="text-slate-400 font-medium">Total Holdings Pool</span>
-              <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalHolding || 0}</span>
+              <span className="font-extrabold font-mono text-cyan-400">৳ {(reportSummary?.totalHolding || 0) + (reportSummary?.totalDeposits || 0)}</span>
             </div>
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
               <span className="text-slate-400 font-medium">Manager Market Spent</span>
@@ -1321,7 +1321,7 @@ export default function FinanceSettlement({
             </div>
 
             {(() => {
-              const totalH = reportSummary?.totalHolding || 0;
+              const totalH = (reportSummary?.totalHolding || 0) + (reportSummary?.totalDeposits || 0);
               const totalM = reportSummary?.totalMarkets || 0;
               const remaining = totalH - totalM;
               const isNegative = remaining < 0;
