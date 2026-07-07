@@ -1741,7 +1741,9 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   const totalHolding = monthHoldings.reduce((sum, h) => sum + h.amount, 0);
   
   // Effective Cost = Total Cost - Manager Holding (according to spec)
-  const effectiveCost = totalCost - totalHolding;
+  // Fix: If no raw market has been done, the actual raw food expense is 0, so the Effective Cost should be 0.
+  // We also ensure Effective Cost is never negative.
+  const effectiveCost = totalMarkets === 0 ? 0 : Math.max(0, totalCost - totalHolding);
 
   // Sum total meals in the month
   let totalMeals = 0;
@@ -2311,9 +2313,10 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
   const { targetMemberId, isPartial, shiftReason } = req.body;
   const db = loadDB();
 
-  // Validate requester has authorization (Only MANAGER or ADMIN can shift managership)
-  if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.MANAGER) {
-    res.status(403).json({ error: "Only the active Manager or the Admin can shift managership roles." });
+  // Validate requester has authorization (Only MANAGER, ADMIN, SUPERUSER, or ASSISTANT_SUPERUSER can shift managership)
+  const allowedRoles = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER];
+  if (!allowedRoles.includes(req.user!.role)) {
+    res.status(403).json({ error: "Only the active Manager, Admin, or Super Users can shift managership roles." });
     return;
   }
 

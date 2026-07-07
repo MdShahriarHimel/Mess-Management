@@ -140,7 +140,8 @@ export default function FinanceSettlement({
     
     const totalDeposits = reportSummary.totalDeposits || 0;
     const totalMarkets = reportSummary.totalMarkets || 0;
-    const totalCost = reportSummary.totalCost || 0;
+    const effectiveCost = reportSummary.effectiveCost || 0;
+    const totalHolding = reportSummary.totalHolding || 0;
     const totalMeals = reportSummary.totalMeals || 0;
     const mealRate = reportSummary.mealRate || 0;
     
@@ -149,8 +150,8 @@ export default function FinanceSettlement({
       totalDeposits,
       totalMarkets,
       totalMeals,
-      totalCost,
-      "",
+      effectiveCost,
+      totalHolding,
       "",
       `Meal Rate: ৳${mealRate}`
     ];
@@ -316,7 +317,7 @@ export default function FinanceSettlement({
               <td><strong>TOTALS:</strong></td>
               <td>৳ ${reportSummary?.totalDeposits || 0}</td>
               <td>৳ ${reportSummary?.totalMarkets || 0}</td>
-              <td>৳ ${reportSummary?.totalCost || 0}</td>
+              <td>৳ ${reportSummary?.effectiveCost || 0}</td>
               <td>৳ ${reportSummary?.totalHolding || 0}</td>
               <td colspan="2" style="text-align: right;">Meal Rate: ৳ ${reportSummary?.mealRate || 0}</td>
             </tr>
