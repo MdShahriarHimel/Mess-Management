@@ -674,11 +674,18 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-start gap-1">
               <div>
-                <h3 className="font-extrabold text-sm truncate">{member.name}</h3>
+                <h3 className="font-extrabold text-sm truncate flex items-center gap-1.5">
+                  {member.name}
+                  {member.id === currentUser.id && (
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase animate-pulse">Me</span>
+                  )}
+                </h3>
                 <p className="text-xs text-cyan-400 font-semibold">@{member.nickname}</p>
               </div>
-              <span className={getRoleStyle(displayRole)}>
-                {displayRole.replace("_", " ")}
+              <span className={member.id === currentUser.id ? "text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl border transition-all animate-pulse border-cyan-400/30 bg-cyan-500/15 text-cyan-300" : getRoleStyle(displayRole)}>
+                {member.id === currentUser.id 
+                  ? (displayRole === UserRole.MEMBER ? "ME" : `ME (${displayRole.replace("_", " ")})`) 
+                  : displayRole.replace("_", " ")}
               </span>
             </div>
 
