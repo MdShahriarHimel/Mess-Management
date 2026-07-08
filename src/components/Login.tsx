@@ -8,7 +8,7 @@ import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles
 import { Member } from "../types.js";
 
 interface LoginProps {
-  onLoginSuccess: (token: string, user: Member) => void;
+  onLoginSuccess: (token: string, user: Member, rememberMe?: boolean) => void;
   isDarkMode: boolean;
   customization?: {
     title: string;
@@ -33,6 +33,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Forgot password flow states
   const [forgotStep, setForgotStep] = useState<"send" | "verify">("send");
@@ -157,7 +158,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       }
 
       if (activeTab === "login") {
-        onLoginSuccess(data.token, data.user);
+        onLoginSuccess(data.token, data.user, rememberMe);
       } else {
         setSuccess("Account activated successfully! You can now log in using the Login tab.");
         setActiveTab("login");
@@ -191,7 +192,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       }
 
       const data = await response.json();
-      onLoginSuccess(idToken, data.user);
+      onLoginSuccess(idToken, data.user, rememberMe);
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Google Authentication failed.");
@@ -554,6 +555,25 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                 </button>
               </div>
             </div>
+
+            {/* Remember me checkbox */}
+            {activeTab === "login" && (
+              <div className="flex items-center justify-between py-1" id="remember-me-container">
+                <label className="flex items-center gap-2 cursor-pointer group select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="rounded bg-slate-900 border-cyan-500/30 text-cyan-500 focus:ring-cyan-500/50 cursor-pointer accent-cyan-500 h-4 w-4"
+                  />
+                  <span className={`text-xs font-medium transition-colors ${
+                    isDarkMode ? "text-slate-300 group-hover:text-cyan-400" : "text-slate-600 group-hover:text-cyan-600"
+                  }`}>
+                    Remember me for 10 days
+                  </span>
+                </label>
+              </div>
+            )}
 
             {/* Guidelines info for activate tab */}
             {activeTab === "activate" && (

@@ -927,7 +927,27 @@ const AmbientAnimationOverlay = ({
 };
 
 export default function App() {
-  const [sessionToken, setSessionToken] = useState<string | null>(localStorage.getItem("mess_token"));
+  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+    try {
+      const localToken = localStorage.getItem("mess_token");
+      const expiryStr = localStorage.getItem("mess_token_expiry");
+      if (localToken) {
+        if (expiryStr) {
+          const expiry = parseInt(expiryStr, 10);
+          if (Date.now() > expiry) {
+            localStorage.removeItem("mess_token");
+            localStorage.removeItem("mess_token_expiry");
+            return null;
+          }
+        }
+        return localToken;
+      }
+      return sessionStorage.getItem("mess_token");
+    } catch (e) {
+      console.error("Failed to read session token from storage", e);
+      return null;
+    }
+  });
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
   const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -1029,7 +1049,7 @@ export default function App() {
       const method = (init?.method || "GET").toUpperCase();
       const urlString = typeof input === "string" ? input : (input as any).url || "";
       
-      if (safeMode && ["POST", "PUT", "DELETE"].includes(method)) {
+      if (safeMode && currentUser && ["POST", "PUT", "DELETE"].includes(method)) {
         // Exempt auth/session endpoints so the user can still log in, log out, or verify credentials safely
         const isExempt = urlString.includes("/login") || 
                         urlString.includes("/logout") || 
@@ -1079,7 +1099,7 @@ export default function App() {
         }
       }
     };
-  }, [safeMode]);
+  }, [safeMode, currentUser]);
 
   // Date restrictions config
   const [dateRestrictions, setDateRestrictions] = useState({
@@ -1365,6 +1385,8 @@ export default function App() {
 
   const handleLogoutLocal = () => {
     localStorage.removeItem("mess_token");
+    localStorage.removeItem("mess_token_expiry");
+    sessionStorage.removeItem("mess_token");
     setSessionToken(null);
     setCurrentUser(null);
     setReportSummary(null);
@@ -1550,7 +1572,7 @@ export default function App() {
         }
       } else {
         // No Firebase user
-        const localToken = localStorage.getItem("mess_token");
+        const localToken = localStorage.getItem("mess_token") || sessionStorage.getItem("mess_token");
         if (localToken && !localToken.startsWith("ey")) {
           // It's a legacy or password-based token, let's keep and validate it
           if (isMounted) {
@@ -1599,8 +1621,20 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleLoginSuccess = (token: string, user: Member) => {
-    localStorage.setItem("mess_token", token);
+  const handleLoginSuccess = (token: string, user: Member, rememberMe?: boolean) => {
+    try {
+      if (rememberMe) {
+        localStorage.setItem("mess_token", token);
+        localStorage.setItem("mess_token_expiry", String(Date.now() + 10 * 24 * 60 * 60 * 1000)); // 10 days
+        sessionStorage.removeItem("mess_token");
+      } else {
+        localStorage.removeItem("mess_token");
+        localStorage.removeItem("mess_token_expiry");
+        sessionStorage.setItem("mess_token", token);
+      }
+    } catch (e) {
+      console.error("Storage write failed:", e);
+    }
     setSessionToken(token);
     setCurrentUser(user);
     fetchMonthsAndMembers(token);
