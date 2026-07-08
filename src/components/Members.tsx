@@ -220,9 +220,10 @@ interface MembersProps {
   onRefresh: () => void;
   currentMonthId: string;
   dropdownOptions?: string[];
+  safeMode?: boolean;
 }
 
-export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [] }: MembersProps) {
+export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [], safeMode = false }: MembersProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
@@ -496,7 +497,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
   // Archive member
   const handleArchive = async (memberId: string) => {
-    if (!confirm("Are you sure you want to archive this member? They can be restored later.")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] You are about to archive this member. Their status will change to ARCHIVED, but they can be restored later. Proceed?" 
+      : "Are you sure you want to archive this member? They can be restored later.";
+    if (!confirm(message)) return;
     try {
       const response = await fetch(`/api/members/${memberId}/archive`, {
         method: "POST",
@@ -530,7 +534,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
   // Delete member (Admin Only)
   const handleDelete = async (memberId: string) => {
-    if (!confirm("WARNING: Are you sure you want to PERMANENTLY delete this member? All login credentials will be lost. This cannot be undone.")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] DANGER: You are permanently deleting this member from the database. All login access, ratings, and records are gone forever! This CANNOT BE UNDONE. Proceed?" 
+      : "WARNING: Are you sure you want to PERMANENTLY delete this member? All login credentials will be lost. This cannot be undone.";
+    if (!confirm(message)) return;
     try {
       const response = await fetch(`/api/members/${memberId}`, {
         method: "DELETE",

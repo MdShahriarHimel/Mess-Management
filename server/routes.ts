@@ -1480,6 +1480,15 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     return;
   }
 
+  if (name.toLowerCase().includes("market") || (task && task.toLowerCase().includes("market"))) {
+    const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+    const isManager = req.user!.role === UserRole.MANAGER;
+    if (!isUltimateAdmin && !isManager) {
+      res.status(403).json({ error: "Only the Ultimate Admin and Managers can assign or manage Market duties." });
+      return;
+    }
+  }
+
   const db = loadDB();
   const newDuty: Duty = {
     id: generateUUID(),
@@ -1507,6 +1516,15 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
   }
 
   const original = db.duties[index];
+  if (original.name.toLowerCase().includes("market") || (original.task && original.task.toLowerCase().includes("market"))) {
+    const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+    const isManager = req.user!.role === UserRole.MANAGER;
+    if (!isUltimateAdmin && !isManager) {
+      res.status(403).json({ error: "Only the Ultimate Admin and Managers can assign or manage Market duties." });
+      return;
+    }
+  }
+
   db.duties.splice(index, 1);
   saveDB();
 
@@ -1994,7 +2012,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   // Admin-only customizer fields check
   const adminOnlyFields = [
     'siteColor', 'fontSize', 'fontStyle', 'logoText',
-    'customColors', 'messAnimations', 'dashboardVisibility',
+    'customColors', 'messAnimations',
     'dateRestrictions', 'loginCustomization', 'homeCustomization',
     'balanceSheetGlow', 'roleAnimations', 'adminVisibility'
   ];
@@ -2002,6 +2020,16 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (hasAdminOnlyField && role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the main Admin can modify visual layout, themes, customizers, and animation settings" });
     return;
+  }
+
+  // Dashboard visibility setting check (restricted to Higher Authorities: Admin, Super User, Ultimate Admin)
+  if (req.body.dashboardVisibility !== undefined) {
+    const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+    const isHigherAuthority = role === UserRole.ADMIN || role === UserRole.SUPERUSER || isUltimateAdmin;
+    if (!isHigherAuthority) {
+      res.status(403).json({ error: "Only Higher Authorities (Admin, Super User, Ultimate Admin) can modify dashboard visibility rules" });
+      return;
+    }
   }
 
   const currentSettings = loadSettings();

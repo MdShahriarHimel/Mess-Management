@@ -25,6 +25,7 @@ interface MarketLogsProps {
     allowFutureMealPlanner?: boolean;
     allowPreviousMealPlanner?: boolean;
   };
+  safeMode?: boolean;
 }
 
 export default function MarketLogs({ 
@@ -33,7 +34,8 @@ export default function MarketLogs({
   members, 
   isDarkMode, 
   onRefresh,
-  dateRestrictions
+  dateRestrictions,
+  safeMode = false
 }: MarketLogsProps) {
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -324,7 +326,10 @@ export default function MarketLogs({
 
   // Remove duty/schedule
   const handleRemoveDuty = async (id: string) => {
-    if (!confirm("Remove this market date assignment?")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] You are attempting to delete a market date assignment. Are you absolutely sure?" 
+      : "Remove this market date assignment?";
+    if (!confirm(message)) return;
     try {
       const response = await fetch(`/api/duties/${id}`, {
         method: "DELETE",
@@ -340,7 +345,10 @@ export default function MarketLogs({
 
   // Delete market entry
   const handleDeleteMarket = async (id: string) => {
-    if (!confirm("Are you sure you want to permanently delete this market log?")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] CRITICAL WARNING: You are permanently deleting this market log. This affects total expenses and branch calculations. Proceed?" 
+      : "Are you sure you want to permanently delete this market log?";
+    if (!confirm(message)) return;
     try {
       const response = await fetch(`/api/markets/${id}`, {
         method: "DELETE",
@@ -356,6 +364,9 @@ export default function MarketLogs({
   };
 
   const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
+  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isManager = currentUser.role === UserRole.MANAGER;
+  const canEditMarketDuty = isUltimateAdmin || isManager;
 
   return (
     <div className="space-y-6" id="market-logs-wrapper">
@@ -373,7 +384,7 @@ export default function MarketLogs({
         </div>
 
         <div className="flex gap-2">
-          {isManagerOrAdmin && (
+          {canEditMarketDuty && (
             <button
               onClick={() => { setShowScheduleModal(true); }}
               className="px-3.5 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
@@ -434,7 +445,7 @@ export default function MarketLogs({
                         <p className="text-[10px] text-slate-500 font-mono mt-0.5">{duty.name.split(": ")[1] || duty.name}</p>
                       </div>
                     </div>
-                    {isManagerOrAdmin && (
+                    {canEditMarketDuty && (
                       <button
                         onClick={() => handleRemoveDuty(duty.id)}
                         className="p-1 rounded text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"

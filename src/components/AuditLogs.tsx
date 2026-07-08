@@ -10,9 +10,10 @@ import { Member, AuditLog } from "../types.js";
 interface AuditLogsProps {
   currentUser: Member;
   isDarkMode: boolean;
+  members?: Member[];
 }
 
-export default function AuditLogs({ currentUser, isDarkMode }: AuditLogsProps) {
+export default function AuditLogs({ currentUser, isDarkMode, members = [] }: AuditLogsProps) {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -103,19 +104,44 @@ export default function AuditLogs({ currentUser, isDarkMode }: AuditLogsProps) {
                   <td colSpan={6} className="py-6 text-center text-slate-500">No matching logs recorded.</td>
                 </tr>
               ) : (
-                filteredLogs.map((l) => (
-                  <tr key={l.id} className="hover:bg-cyan-500/5">
-                    <td className="py-3 px-4 text-slate-500 flex items-center gap-1">
-                      <Clock size={11} />
-                      {new Date(l.timestamp).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 font-bold text-cyan-400">{l.userName}</td>
-                    <td className="py-3 px-4 font-bold text-orange-400">{l.action}</td>
-                    <td className="py-3 px-4 truncate max-w-[120px]" title={l.oldValue}>{l.oldValue}</td>
-                    <td className="py-3 px-4 truncate max-w-[120px]" title={l.newValue}>{l.newValue}</td>
-                    <td className="py-3 px-4 text-slate-300 max-w-[200px] whitespace-normal" title={l.reason}>{l.reason}</td>
-                  </tr>
-                ))
+                filteredLogs.map((l) => {
+                  const opMember = members.find(m => m.id === l.userId || m.nickname.toLowerCase() === l.userName.toLowerCase());
+                  const isUltimateAdminLog = opMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || 
+                                             l.userName.toLowerCase() === "mdshahriarhimel" || 
+                                             l.userName.toLowerCase() === "mdshahriarhimel@gmail.com";
+                  const isSuperUserLog = opMember?.role === "SUPERUSER" || l.reason.toLowerCase().includes("superuser");
+                  
+                  const logTime = new Date(l.timestamp).getTime();
+                  const isRecent = (Date.now() - logTime) < 24 * 60 * 60 * 1000;
+                  
+                  const rowClass = (isRecent && !isUltimateAdminLog)
+                    ? (isDarkMode ? "bg-amber-500/10 border-l-2 border-amber-500 hover:bg-amber-500/15 transition-all duration-150" : "bg-amber-50/70 border-l-2 border-amber-400 hover:bg-amber-100 transition-all duration-150")
+                    : "hover:bg-cyan-500/5 transition-all duration-150";
+
+                  return (
+                    <tr key={l.id} className={rowClass}>
+                      <td className="py-3 px-4 text-slate-500 flex items-center gap-1">
+                        <Clock size={11} />
+                        {new Date(l.timestamp).toLocaleString()}
+                        {isRecent && !isUltimateAdminLog && (
+                          <span className="ml-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-amber-500/20 text-amber-500 animate-pulse">Recent</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 font-bold text-cyan-400">
+                        <div className="flex items-center gap-1.5">
+                          <span>{l.userName}</span>
+                          {isSuperUserLog && (
+                            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Action by Super User" />
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 font-bold text-orange-400">{l.action}</td>
+                      <td className="py-3 px-4 truncate max-w-[120px]" title={l.oldValue}>{l.oldValue}</td>
+                      <td className="py-3 px-4 truncate max-w-[120px]" title={l.newValue}>{l.newValue}</td>
+                      <td className="py-3 px-4 text-slate-300 max-w-[200px] whitespace-normal" title={l.reason}>{l.reason}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

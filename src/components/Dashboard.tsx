@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { 
   Bell, Calendar, Coffee, ShieldAlert, Star, Users, DollarSign,
   ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
-  Vote, Award, Percent, Settings2, Sparkles, Trash2, ShoppingCart
+  Vote, Award, Percent, Settings2, Sparkles, Trash2, ShoppingCart, Lock
 } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
 import { ColorPalettePicker } from "../App.js";
@@ -44,6 +44,7 @@ interface DashboardProps {
   onSetMarketForcedFlowStep?: (step: string | null) => void;
   forcedMarketDate?: string;
   onSetForcedMarketDate?: (date: string) => void;
+  dashboardVisibility?: any;
 }
 
 export default function Dashboard({ 
@@ -64,7 +65,8 @@ export default function Dashboard({
   marketForcedFlowStep,
   onSetMarketForcedFlowStep,
   forcedMarketDate,
-  onSetForcedMarketDate
+  onSetForcedMarketDate,
+  dashboardVisibility
 }: DashboardProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -278,6 +280,27 @@ export default function Dashboard({
     const isToday = d.name.includes(todayStr);
     return isUser && isMarket && isToday;
   });
+
+  if (dashboardVisibility && dashboardVisibility.showDashboardOverview === false) {
+    return (
+      <div className="space-y-6" id="dashboard-wrapper">
+        <div className={`p-8 rounded-2xl border text-center ${
+          isDarkMode ? "bg-slate-900/40 border-slate-800 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+        }`} id="dashboard-restricted-view">
+          <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse border border-amber-500/20">
+            <Lock size={28} />
+          </div>
+          <h2 className="text-lg font-bold font-display uppercase tracking-wide text-amber-500">
+            Dashboard Overview Restricted
+          </h2>
+          <p className="text-xs text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
+            The interactive Dashboard Overview is currently disabled for this branch. 
+            It can only be turned on in the <strong className="text-cyan-400">ERP Control Panel</strong> by higher authorities (Ultimate Admin & Super Users).
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" id="dashboard-wrapper">

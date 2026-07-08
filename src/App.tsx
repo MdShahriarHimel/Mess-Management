@@ -997,8 +997,29 @@ export default function App() {
     showMealTracker: true,
     showFoodMenu: true,
     showNotices: true,
-    showAnalytics: true
+    showAnalytics: true,
+    showDashboardOverview: false
   });
+
+  // Safe mode state for Admins & Super Users (defaults to true)
+  const [safeMode, setSafeMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("safe_mode");
+      return saved !== null ? saved === "true" : true;
+    } catch (e) {
+      return true;
+    }
+  });
+
+  const handleToggleSafeMode = () => {
+    const newVal = !safeMode;
+    setSafeMode(newVal);
+    try {
+      localStorage.setItem("safe_mode", String(newVal));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Date restrictions config
   const [dateRestrictions, setDateRestrictions] = useState({
@@ -1319,6 +1340,36 @@ export default function App() {
     }
   };
 
+  const [hasSuperUserChangeDot, setHasSuperUserChangeDot] = useState(false);
+
+  // Check if any recent logs (last 24 hours) were made by a super user
+  const checkSuperUserRecentLogs = async (token: string, currentMembersList: Member[]) => {
+    try {
+      const response = await fetch("/api/auditlogs", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const logs: any[] = data.auditLogs || [];
+        const now = Date.now();
+        const oneDayAgo = now - 24 * 60 * 60 * 1000;
+        
+        const superUsers = currentMembersList.filter(m => m.role === UserRole.SUPERUSER).map(m => m.id);
+        
+        const hasRecentSUChange = logs.some(log => {
+          const logTime = new Date(log.timestamp).getTime();
+          const isRecent = logTime > oneDayAgo;
+          const isSuperUserOperator = superUsers.includes(log.userId) || log.reason.toLowerCase().includes("superuser");
+          return isRecent && isSuperUserOperator;
+        });
+        
+        setHasSuperUserChangeDot(hasRecentSUChange);
+      }
+    } catch (e) {
+      console.error("Error checking superuser logs:", e);
+    }
+  };
+
   // Fetch core constants
   const fetchMonthsAndMembers = async (token: string) => {
     try {
@@ -1350,7 +1401,9 @@ export default function App() {
 
       if (membersRes.ok) {
         const membersData = await membersRes.json();
-        setMembersList(membersData.members || []);
+        const mList = membersData.members || [];
+        setMembersList(mList);
+        await checkSuperUserRecentLogs(token, mList);
       }
     } catch (e) {
       console.error(e);
@@ -2156,7 +2209,10 @@ export default function App() {
                     }`}
                   >
                     {item.icon}
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.id === "audit" && hasSuperUserChangeDot && (
+                      <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
+                    )}
                   </button>
                 ))}
               </nav>
@@ -2229,7 +2285,10 @@ export default function App() {
                 }`}
               >
                 {item.icon}
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.id === "audit" && hasSuperUserChangeDot && (
+                  <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
+                )}
               </button>
             ))}
           </nav>
@@ -2322,6 +2381,21 @@ export default function App() {
               </select>
             )}
 
+            {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
+              <button
+                onClick={handleToggleSafeMode}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${
+                  safeMode 
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20" 
+                    : "bg-slate-500/5 border-slate-800 text-slate-500 hover:text-slate-400"
+                }`}
+                title={safeMode ? "Safe Mode is active to prevent accidental changes." : "Safe Mode is off."}
+              >
+                <Shield size={14} className={safeMode ? "text-emerald-400 animate-pulse" : "text-slate-500"} />
+                <span>🛡️ Safe Mode: {safeMode ? "ON" : "OFF"}</span>
+              </button>
+            )}
+
             <button
               onClick={handleRefreshAll}
               className={`p-2 rounded-lg border cursor-pointer transition-all ${
@@ -2374,6 +2448,7 @@ export default function App() {
               onSetMarketForcedFlowStep={setMarketForcedFlowStep}
               forcedMarketDate={forcedMarketDate}
               onSetForcedMarketDate={setForcedMarketDate}
+              dashboardVisibility={dashboardVisibility}
             />
           )}
 
@@ -2385,6 +2460,7 @@ export default function App() {
               onRefresh={handleRefreshAll}
               currentMonthId={currentMonthId}
               dropdownOptions={dropdownOptions}
+              safeMode={safeMode}
             />
           )}
 
@@ -2420,6 +2496,7 @@ export default function App() {
               isDarkMode={isDarkMode}
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
+              safeMode={safeMode}
             />
           )}
 
@@ -2448,6 +2525,7 @@ export default function App() {
               currencySymbol={currencySymbol}
               customColors={customColors}
               balanceSheetGlow={balanceSheetGlow}
+              safeMode={safeMode}
             />
           )}
 
@@ -2462,6 +2540,7 @@ export default function App() {
             <AuditLogs 
               currentUser={currentUser}
               isDarkMode={isDarkMode}
+              members={membersList}
             />
           )}
 
@@ -3516,6 +3595,27 @@ export default function App() {
                             />
                             <span className="text-xs text-slate-300 font-medium">Show Analytics Hub</span>
                           </label>
+
+                          <div className="flex items-center gap-2 bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 col-span-2">
+                            <input
+                              type="checkbox"
+                              checked={!!dashboardVisibility?.showDashboardOverview}
+                              disabled={!(currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || currentUser.role === UserRole.SUPERUSER)}
+                              onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showDashboardOverview: e.target.checked }))}
+                              className="accent-cyan-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            <div>
+                              <span className="text-xs text-orange-400 font-bold flex items-center gap-1.5">
+                                ★ Show Dashboard Overview
+                                {!(currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || currentUser.role === UserRole.SUPERUSER) && (
+                                  <span className="text-[8px] bg-red-500/10 text-red-400 px-1 rounded uppercase font-extrabold border border-red-500/20">Restricted</span>
+                                )}
+                              </span>
+                              <span className="text-[9px] text-slate-500 block mt-0.5">
+                                Controls metrics, balances & active reports. Toggleable by Ultimate Admin & Super Users.
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
 

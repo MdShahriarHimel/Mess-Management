@@ -30,6 +30,7 @@ interface FinanceSettlementProps {
     accentColor: string;
   };
   balanceSheetGlow?: string;
+  safeMode?: boolean;
 }
 
 export default function FinanceSettlement({ 
@@ -42,7 +43,8 @@ export default function FinanceSettlement({
   months = [],
   currencySymbol = "৳",
   customColors,
-  balanceSheetGlow = "none"
+  balanceSheetGlow = "none",
+  safeMode = false
 }: FinanceSettlementProps) {
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
@@ -715,7 +717,10 @@ export default function FinanceSettlement({
 
   // Delete bill
   const handleDeleteBill = async (billId: string) => {
-    if (!window.confirm("Are you sure you want to delete this bill?")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] You are deleting an enterprise utility bill. This will recalculate the entire settlement cost for all members. Are you absolutely sure?" 
+      : "Are you sure you want to delete this bill?";
+    if (!window.confirm(message)) return;
     setLoading(true);
     try {
       const response = await fetch(`/api/bills/${billId}`, {
@@ -943,7 +948,10 @@ export default function FinanceSettlement({
   };
 
   const handleDeleteDeposit = async (depId: string) => {
-    if (!window.confirm("Are you sure you want to delete this deposit?")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] You are deleting a cash deposit entry. This will instantly change this member's paid balance and outstanding amount. Proceed?" 
+      : "Are you sure you want to delete this deposit?";
+    if (!window.confirm(message)) return;
     try {
       const response = await fetch(`/api/deposits/${depId}`, {
         method: "DELETE",
@@ -964,7 +972,10 @@ export default function FinanceSettlement({
   };
 
   const handleDeleteMarket = async (marId: string) => {
-    if (!window.confirm("Are you sure you want to delete this market entry?")) return;
+    const message = safeMode 
+      ? "🛡️ [SAFE MODE ACTIVE] CRITICAL WARNING: You are deleting this market expense log. This will alter total calculations and other members' share. Proceed?" 
+      : "Are you sure you want to delete this market entry?";
+    if (!window.confirm(message)) return;
     try {
       const response = await fetch(`/api/markets/${marId}`, {
         method: "DELETE",
