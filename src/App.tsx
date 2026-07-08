@@ -1021,6 +1021,66 @@ export default function App() {
     }
   };
 
+  // Forcefully override window.fetch when safeMode is on to block all POST/PUT/DELETE requests across the app
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    
+    const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      const urlString = typeof input === "string" ? input : (input as any).url || "";
+      
+      if (safeMode && ["POST", "PUT", "DELETE"].includes(method)) {
+        // Exempt auth/session endpoints so the user can still log in, log out, or verify credentials safely
+        const isExempt = urlString.includes("/login") || 
+                        urlString.includes("/logout") || 
+                        urlString.includes("/verify") || 
+                        urlString.includes("/otp") ||
+                        urlString.includes("/register") ||
+                        urlString.includes("/activate");
+                        
+        if (!isExempt) {
+          alert("🛡️ SAFE MODE IS ACTIVE\n\nAll changes/modifications are currently locked to prevent accidental updates.\n\nTo make any edits, please turn OFF 'Safe Mode' using the toggle button in the header.");
+          return new Response(JSON.stringify({ error: "Safe Mode Active: All modifications are blocked." }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      }
+      return originalFetch(input, init);
+    };
+
+    try {
+      Object.defineProperty(window, "fetch", {
+        value: customFetch,
+        configurable: true,
+        writable: true
+      });
+    } catch (e) {
+      console.warn("Could not redefine window.fetch via Object.defineProperty, falling back to direct assignment", e);
+      try {
+        (window as any).fetch = customFetch;
+      } catch (err) {
+        console.error("Direct assignment of window.fetch failed:", err);
+      }
+    }
+    
+    return () => {
+      try {
+        Object.defineProperty(window, "fetch", {
+          value: originalFetch,
+          configurable: true,
+          writable: true
+        });
+      } catch (e) {
+        try {
+          (window as any).fetch = originalFetch;
+        } catch (err) {
+          // Ignore
+        }
+      }
+    };
+  }, [safeMode]);
+
   // Date restrictions config
   const [dateRestrictions, setDateRestrictions] = useState({
     allowFutureMeals: false,
@@ -2413,6 +2473,34 @@ export default function App() {
             --------------------------------------------------------- */}
         <div className="animate-fade-in">
           
+          {safeMode && (
+            <div className={`mb-6 p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse ${
+              isDarkMode 
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" 
+                : "bg-emerald-50 border-emerald-200 text-emerald-800 shadow-sm"
+            }`} id="safe-mode-banner">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl mt-0.5 shrink-0">
+                  <Shield size={18} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold font-display uppercase tracking-wider">🛡️ Safe Mode is Active</h4>
+                  <p className="text-[10px] opacity-85 leading-normal mt-0.5">
+                    To prevent accidental data updates or ledger modifications, all addition, editing, and deletion operations are currently locked. Turn off Safe Mode in the top header if you need to modify records.
+                  </p>
+                </div>
+              </div>
+              {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
+                <button
+                  onClick={handleToggleSafeMode}
+                  className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500 hover:text-white border border-emerald-500/30 text-emerald-400 font-bold text-[10px] rounded-lg cursor-pointer uppercase tracking-wider transition-all self-end sm:self-auto shrink-0"
+                >
+                  Turn Off
+                </button>
+              )}
+            </div>
+          )}
+          
           {activeTab !== "dashboard" && (
             <div className="md:hidden mb-4">
               <button
@@ -3600,19 +3688,19 @@ export default function App() {
                             <input
                               type="checkbox"
                               checked={!!dashboardVisibility?.showDashboardOverview}
-                              disabled={!(currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || currentUser.role === UserRole.SUPERUSER)}
+                              disabled={!(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com")}
                               onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showDashboardOverview: e.target.checked }))}
                               className="accent-cyan-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                             />
                             <div>
                               <span className="text-xs text-orange-400 font-bold flex items-center gap-1.5">
                                 ★ Show Dashboard Overview
-                                {!(currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || currentUser.role === UserRole.SUPERUSER) && (
+                                {!(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
                                   <span className="text-[8px] bg-red-500/10 text-red-400 px-1 rounded uppercase font-extrabold border border-red-500/20">Restricted</span>
                                 )}
                               </span>
                               <span className="text-[9px] text-slate-500 block mt-0.5">
-                                Controls metrics, balances & active reports. Toggleable by Ultimate Admin & Super Users.
+                                Controls metrics, balances & active reports. Toggleable by Admin & Super Users.
                               </span>
                             </div>
                           </div>
@@ -4544,6 +4632,115 @@ export default function App() {
                       >
                         APPLY THEME CHANGES
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Super User's Dashboard Tab Visibility Rules */}
+                {currentUser.role === UserRole.SUPERUSER && (
+                  <div className={`p-5 rounded-2xl border lg:col-span-2 ${
+                    isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+                  }`} id="superuser-dashboard-config">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Settings className="text-orange-500 animate-spin-slow" size={18} />
+                      <h3 className="text-sm font-bold font-display text-cyan-300">🛡️ Dashboard Configuration Hub (Super User)</h3>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      As a Super User, you have authority to customize branch-wide tab/dashboard visibility rules. You can toggle specific tabs or hide/show the main Dashboard Overview below.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center mb-3 border-b border-slate-800/60 pb-2">
+                        <h4 className="text-xs font-bold font-display text-cyan-300 uppercase tracking-wide">Dashboard Tab Visibility Rules (Per-Branch)</h4>
+                        <button
+                          onClick={async () => {
+                            await handleUpdateSettings({ dashboardVisibility });
+                            alert("Dashboard and tab visibility rules saved successfully.");
+                          }}
+                          className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600 border border-cyan-500/30 text-cyan-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0"
+                        >
+                          Apply Configuration
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                          <input
+                            type="checkbox"
+                            checked={dashboardVisibility?.showAuditLogs}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showAuditLogs: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">Show Audit Logs</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                          <input
+                            type="checkbox"
+                            checked={dashboardVisibility?.showCashDeposit}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showCashDeposit: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">Show Cash Deposits</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                          <input
+                            type="checkbox"
+                            checked={dashboardVisibility?.showMealTracker}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showMealTracker: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">Show Meal Tracker</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                          <input
+                            type="checkbox"
+                            checked={dashboardVisibility?.showFoodMenu}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showFoodMenu: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">Show Meal Planner</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                          <input
+                            type="checkbox"
+                            checked={dashboardVisibility?.showNotices}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showNotices: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">Show Notices</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-950/40 p-2.5 rounded-lg border border-slate-900">
+                          <input
+                            type="checkbox"
+                            checked={dashboardVisibility?.showAnalytics}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showAnalytics: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">Show Analytics Hub</span>
+                        </label>
+
+                        <div className="flex items-center gap-2 bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 col-span-1 sm:col-span-2 md:col-span-3">
+                          <input
+                            type="checkbox"
+                            checked={!!dashboardVisibility?.showDashboardOverview}
+                            onChange={(e) => setDashboardVisibility(prev => ({ ...prev, showDashboardOverview: e.target.checked }))}
+                            className="accent-cyan-500 cursor-pointer"
+                          />
+                          <div>
+                            <span className="text-xs text-orange-400 font-bold flex items-center gap-1.5">
+                              ★ Show Dashboard Overview
+                            </span>
+                            <span className="text-[9px] text-slate-500 block mt-0.5">
+                              Controls metrics, balances & active reports. Turn it on to make dashboard overview stats visible, or turn it off to hide/restrict access.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
