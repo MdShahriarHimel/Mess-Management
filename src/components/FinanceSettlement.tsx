@@ -122,7 +122,6 @@ export default function FinanceSettlement({
       "Market Spends (৳)",
       "Meals Count (Qty)",
       "Calculated Meal Cost (৳)",
-      "Manager Holdings (৳)",
       "Final Current Balance (৳)",
       "Refund / Return Status"
     ];
@@ -133,7 +132,6 @@ export default function FinanceSettlement({
       m.market,
       m.mealsCount,
       m.mealCost,
-      m.holdingPaid,
       m.balance,
       m.balance >= 0 ? `RECEIVES: ৳${m.return}` : `OWES: ৳${Math.abs(m.return)}`
     ]);
@@ -141,7 +139,6 @@ export default function FinanceSettlement({
     const totalDeposits = reportSummary.totalDeposits || 0;
     const totalMarkets = reportSummary.totalMarkets || 0;
     const effectiveCost = reportSummary.effectiveCost || 0;
-    const totalHolding = reportSummary.totalHolding || 0;
     const totalMeals = reportSummary.totalMeals || 0;
     const mealRate = reportSummary.mealRate || 0;
     
@@ -151,7 +148,6 @@ export default function FinanceSettlement({
       totalMarkets,
       totalMeals,
       effectiveCost,
-      totalHolding,
       "",
       `Meal Rate: ৳${mealRate}`
     ];
@@ -294,7 +290,6 @@ export default function FinanceSettlement({
               <th>Total Deposits</th>
               <th>Raw Market Credits</th>
               <th>Calculated Cost Share</th>
-              <th>Manager Holdings</th>
               <th>Net Balance</th>
               <th>Refund Status</th>
             </tr>
@@ -306,7 +301,6 @@ export default function FinanceSettlement({
                 <td>৳ ${m.deposit}</td>
                 <td>৳ ${m.market}</td>
                 <td>৳ ${m.mealCost}</td>
-                <td>৳ ${m.holdingPaid}</td>
                 <td class="${m.balance >= 0 ? 'receives' : 'owes'}"><strong>৳ ${m.balance}</strong></td>
                 <td>
                   <strong>${m.balance >= 0 ? `RECEIVES: ৳ ${m.return}` : `OWES: ৳ ${Math.abs(m.return)}`}</strong>
@@ -318,7 +312,6 @@ export default function FinanceSettlement({
               <td>৳ ${reportSummary?.totalDeposits || 0}</td>
               <td>৳ ${reportSummary?.totalMarkets || 0}</td>
               <td>৳ ${reportSummary?.effectiveCost || 0}</td>
-              <td>৳ ${reportSummary?.totalHolding || 0}</td>
               <td colspan="2" style="text-align: right;">Meal Rate: ৳ ${reportSummary?.mealRate || 0}</td>
             </tr>
           </tbody>
@@ -679,7 +672,6 @@ export default function FinanceSettlement({
 
   // Edit Manager Holdings states
   const [isEditingManagerHoldings, setIsEditingManagerHoldings] = useState(false);
-  const [editTotalHoldings, setEditTotalHoldings] = useState("");
   const [editManagerMarketSpent, setEditManagerMarketSpent] = useState("");
 
   // Submit updated bill
@@ -760,7 +752,7 @@ export default function FinanceSettlement({
         body: JSON.stringify({
           monthId: currentMonthId,
           memberId: currentUser.id, // current manager / admin
-          amount: Number(editTotalHoldings),
+          amount: 0,
           marketSpent: Number(editManagerMarketSpent)
         })
       });
@@ -1412,22 +1404,22 @@ export default function FinanceSettlement({
           </div>
         </div>
 
-        {/* STATS SUMMARY BOX / HOLDING ADVANCE SUMMARY */}
+        {/* STATS SUMMARY BOX / REMAINING DEPOSITS SUMMARY */}
         <div className={`p-5 rounded-2xl border ${
           isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
         }`} id="finance-holding-overview">
           <h3 className="text-sm font-bold font-display text-cyan-300 mb-3 flex items-center gap-1.5">
             <Coins className="text-cyan-400 animate-bounce" size={16} />
-            Manager Holdings
+            Remaining Deposits
           </h3>
           <p className="text-xs text-slate-400 leading-relaxed mb-4">
-            Continuous balance shows initial pool collected vs manager shopping spend.
+            Shows remaining balance of the total member deposits vs manager monthly market cost.
           </p>
 
           <div className="space-y-3">
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
-              <span className="text-slate-400 font-medium">Total Holdings Pool</span>
-              <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalHolding || 0}</span>
+              <span className="text-slate-400 font-medium">Total Deposits Pool</span>
+              <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalDeposits || 0}</span>
             </div>
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
               <span className="text-slate-400 font-medium">Manager Monthly Market</span>
@@ -1435,9 +1427,9 @@ export default function FinanceSettlement({
             </div>
 
             {(() => {
-              const totalH = reportSummary?.totalHolding || 0;
+              const totalD = reportSummary?.totalDeposits || 0;
               const totalM = reportSummary?.managerMarketSpent || 0;
-              const remaining = totalH - totalM;
+              const remaining = totalD - totalM;
               const isNegative = remaining < 0;
 
               return (
@@ -1458,17 +1450,6 @@ export default function FinanceSettlement({
                 <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 block">Manager Special Panel</span>
                 {isEditingManagerHoldings ? (
                   <form onSubmit={handleSaveManagerHoldings} className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-medium text-slate-400 block">Total Holdings Pool (৳)</label>
-                      <input
-                        type="number"
-                        required
-                        value={editTotalHoldings}
-                        onChange={(e) => setEditTotalHoldings(e.target.value)}
-                        placeholder="e.g. 5000"
-                        className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                      />
-                    </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-medium text-slate-400 block">Manager Monthly Market (৳)</label>
                       <input
@@ -1500,14 +1481,13 @@ export default function FinanceSettlement({
                 ) : (
                   <button
                     onClick={() => {
-                      setEditTotalHoldings(String(reportSummary?.totalHolding || 0));
                       setEditManagerMarketSpent(String(reportSummary?.managerMarketSpent || 0));
                       setIsEditingManagerHoldings(true);
                     }}
                     className="w-full py-2 bg-slate-950/40 hover:bg-slate-950/60 border border-cyan-500/20 hover:border-cyan-500/40 rounded-xl text-[10px] font-extrabold text-cyan-400 tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
                     <Edit3 size={12} />
-                    EDIT HOLDINGS & MARKET
+                    EDIT MANAGER MARKET COST
                   </button>
                 )}
               </div>

@@ -1299,7 +1299,7 @@ export default function Dashboard({
             </span>
           </div>
           <p className="text-[10px] text-slate-400 mt-2">
-            Total Cost - Manager Holding (৳{reportSummary?.totalHolding || 0})
+            Total active monthly raw food expense from market logs.
           </p>
         </div>
 
@@ -1473,11 +1473,11 @@ export default function Dashboard({
             )}
           </div>
 
-          {/* REMAINING HOLDINGS STATUS */}
+          {/* REMAINING DEPOSITS STATUS */}
           {(() => {
-            const totalH = (reportSummary?.totalHolding || 0) + (reportSummary?.totalDeposits || 0);
-            const totalM = reportSummary?.totalMarkets || 0;
-            const remaining = totalH - totalM;
+            const totalD = reportSummary?.totalDeposits || 0;
+            const totalM = reportSummary?.managerMarketSpent || 0;
+            const remaining = totalD - totalM;
             const isNegative = remaining < 0;
 
             return (
@@ -1486,12 +1486,12 @@ export default function Dashboard({
               }`}>
                 <h3 className="text-base font-bold font-display mb-4 flex items-center gap-1.5 text-cyan-400">
                   <DollarSign size={18} />
-                  Remaining Holdings
+                  Remaining Deposits
                 </h3>
 
                 <div className="space-y-4">
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Tracks the continuous balance between the initial pool collected from members and the manager's active market shopping:
+                    Tracks the remaining balance between the total deposits collected from members and the manager's monthly market cost:
                   </p>
 
                   <div className={`p-4 rounded-xl border text-center ${
@@ -1499,20 +1499,20 @@ export default function Dashboard({
                       ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
                       : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                   }`}>
-                    <span className="text-[10px] font-bold uppercase tracking-wider block mb-1">Current Continuous Balance</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider block mb-1">Current Remaining Deposits</span>
                     <span className="text-2xl font-black font-mono">৳ {remaining.toFixed(2)}</span>
                     <span className="text-[10px] block mt-1 opacity-80">
-                      {isNegative ? "⚠️ Holding pool depleted (Over-spending)" : "✅ Holding pool has positive balance"}
+                      {isNegative ? "⚠️ Deposits depleted (Over-spending)" : "✅ Deposits pool has positive balance"}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-2">
                     <div className="p-3 bg-slate-950/20 border border-slate-850/55 rounded-xl text-center">
-                      <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Total Holdings Pool</span>
-                      <span className="text-sm font-extrabold font-mono text-cyan-400 block mt-1">৳ {totalH}</span>
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Total Deposits Pool</span>
+                      <span className="text-sm font-extrabold font-mono text-cyan-400 block mt-1">৳ {totalD}</span>
                     </div>
                     <div className="p-3 bg-slate-950/20 border border-slate-850/55 rounded-xl text-center">
-                      <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Manager Spent</span>
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Manager Monthly Market</span>
                       <span className="text-sm font-extrabold font-mono text-orange-400 block mt-1">৳ {totalM}</span>
                     </div>
                   </div>

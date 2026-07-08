@@ -1750,14 +1750,12 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   // Total Cost = Deposits + Market Expenses (according to spec)
   const totalCost = totalDeposits + totalMarkets;
   
-  // Total holding advance
-  const totalHolding = monthHoldings.reduce((sum, h) => sum + h.amount, 0);
+  // Total holding advance (always 0 now as advance management deposits are removed)
+  const totalHolding = 0;
   const managerMarketSpent = monthHoldings.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
   
-  // Effective Cost = Total Cost - Manager Holding (according to spec)
-  // Fix: If no raw market has been done, the actual raw food expense is 0, so the Effective Cost should be 0.
-  // We also ensure Effective Cost is never negative.
-  const effectiveCost = totalMarkets === 0 ? 0 : Math.max(0, totalCost - totalHolding);
+  // Effective Cost = Total Market Expenses
+  const effectiveCost = totalMarkets;
 
   // Sum total meals in the month
   let totalMeals = 0;
