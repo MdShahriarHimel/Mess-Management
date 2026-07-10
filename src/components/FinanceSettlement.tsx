@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2
+  DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2, Search, Users
 } from "lucide-react";
 import { Member, Bill, BillStatus, UserRole, MessMonth } from "../types.js";
 import * as XLSX from "xlsx";
@@ -31,6 +31,7 @@ interface FinanceSettlementProps {
   };
   balanceSheetGlow?: string;
   safeMode?: boolean;
+  logoText?: string;
 }
 
 export default function FinanceSettlement({ 
@@ -44,7 +45,8 @@ export default function FinanceSettlement({
   currencySymbol = "৳",
   customColors,
   balanceSheetGlow = "none",
-  safeMode = false
+  safeMode = false,
+  logoText = "Ababil mess"
 }: FinanceSettlementProps) {
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
@@ -67,6 +69,67 @@ export default function FinanceSettlement({
         {initial}
       </div>
     );
+  };
+
+  const parseBillName = (fullName: string) => {
+    const parts = fullName.split(":");
+    if (parts.length >= 2) {
+      const typePart = parts[0].trim();
+      const validTypes = ["Utility", "Worker", "Rent", "Extra"];
+      if (validTypes.includes(typePart)) {
+        const remaining = parts.slice(1).join(":").trim();
+        const dateMatch = remaining.match(/\(([^)]+)\)$/);
+        const date = dateMatch ? dateMatch[1] : "";
+        const name = dateMatch ? remaining.replace(/\s*\([^)]+\)$/, "").trim() : remaining;
+        return { type: typePart as "Utility" | "Worker" | "Rent" | "Extra", name, date };
+      }
+    }
+
+    const nameLower = fullName.toLowerCase();
+    let type: "Utility" | "Worker" | "Rent" | "Extra" = "Extra";
+    if (nameLower.includes("utility") || nameLower.includes("electricity") || nameLower.includes("wifi") || nameLower.includes("water") || nameLower.includes("gas") || nameLower.includes("internet")) {
+      type = "Utility";
+    } else if (nameLower.includes("worker") || nameLower.includes("maid") || nameLower.includes("cleaner") || nameLower.includes("cook") || nameLower.includes("bua") || nameLower.includes("বুয়া") || nameLower.includes("বুলবুল")) {
+      type = "Worker";
+    } else if (nameLower.includes("rent") || nameLower.includes("house") || nameLower.includes("ভাড়া") || nameLower.includes("সিট") || nameLower.includes("সীট")) {
+      type = "Rent";
+    }
+
+    const dateMatch = fullName.match(/\(([^)]+)\)$/);
+    const date = dateMatch ? dateMatch[1] : "";
+    const name = dateMatch ? fullName.replace(/\s*\([^)]+\)$/, "").trim() : fullName;
+
+    return { type, name, date };
+  };
+
+  const getMemberBillStats = (memberId: string) => {
+    const stats = {
+      Utility: { paid: 0, total: 0 },
+      Worker: { paid: 0, total: 0 },
+      Rent: { paid: 0, total: 0 },
+      Extra: { paid: 0, total: 0 }
+    };
+
+    if (!reportSummary?.bills || reportSummary.bills.length === 0) {
+      return stats;
+    }
+
+    const totalActiveCount = activeMembers.length || 1;
+
+    reportSummary.bills.forEach((b: Bill) => {
+      const parsed = parseBillName(b.name);
+      const category = parsed.type;
+      
+      const share = b.amount / totalActiveCount;
+      const isPaid = b.status === BillStatus.PAID;
+
+      stats[category].total += share;
+      if (isPaid) {
+        stats[category].paid += share;
+      }
+    });
+
+    return stats;
   };
 
   // Excel and PDF State Managers
@@ -662,6 +725,15 @@ export default function FinanceSettlement({
   const [billName, setBillName] = useState("");
   const [billAmount, setBillAmount] = useState("");
   const [billCollectorId, setBillCollectorId] = useState("");
+  const [billType, setBillType] = useState("Utility");
+  const [billDate, setBillDate] = useState(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [billSearchQuery, setBillSearchQuery] = useState("");
 
   const [loading, setLoading] = useState(false);
 
@@ -1023,11 +1095,13 @@ export default function FinanceSettlement({
   // Submit new bill (Manager/Admin)
   const handleAddBill = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!billName || !billAmount || !billCollectorId) {
+    if (!billAmount || !billCollectorId || !billType) {
       alert("Please enter all bill fields");
       return;
     }
     setLoading(true);
+
+    const finalName = `${billType}: (${billDate})`;
 
     try {
       const response = await fetch("/api/bills", {
@@ -1038,7 +1112,7 @@ export default function FinanceSettlement({
         },
         body: JSON.stringify({
           monthId: currentMonthId,
-          name: billName,
+          name: finalName,
           amount: Number(billAmount),
           collectorId: billCollectorId,
           status: BillStatus.UNPAID
@@ -1080,15 +1154,6 @@ export default function FinanceSettlement({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {isManagerOrAdmin && (
-            <button
-              onClick={() => { setShowAddBillModal(true); }}
-              className="px-3.5 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-            >
-              <Plus size={14} />
-              ADD UTILITY BILL
-            </button>
-          )}
           <button
             onClick={exportToExcel}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
@@ -1328,91 +1393,413 @@ export default function FinanceSettlement({
       {/* 2. UTILITY BILLS & UTILITY PAYMENTS STATUS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in" id="finance-bills-holdings">
         
-        {/* UTILITY BILLS CONTROL */}
-        <div className={`lg:col-span-2 p-5 rounded-2xl border ${
-          isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-        }`} id="finance-utility-bills">
-          <h3 className="text-sm font-bold font-display text-cyan-300 mb-4 flex items-center gap-1.5">
-            <Coins className="text-cyan-400" size={16} />
-            Utility & Rent Accounts
-          </h3>
+        {/* 2. MINIMALIST BILLING UI: ADD NEW BILL, SEARCH & MONTHLY SUMMARY TABLE */}
+        <div className="lg:col-span-2 space-y-6" id="finance-utility-minimalist-panel">
+          
+          {/* ADD NEW BILL CARD */}
+          {isManagerOrAdmin && (
+            <div className={`p-5 rounded-3xl border ${
+              isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
+            }`} id="finance-add-new-bill-inline">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-extrabold shadow-sm shrink-0">
+                  <Plus size={14} className="stroke-[3px]" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black tracking-wider uppercase">ADD NEW BILL</h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Quickly add member wise utility, worker, rent & extra bills.</p>
+                </div>
+              </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
-                  <th className="py-2 px-3">Bill Name</th>
-                  <th className="py-2 px-3">Assigned Collector</th>
-                  <th className="py-2 px-3 text-right">Cost Amount (৳)</th>
-                  <th className="py-2 px-3 text-center">Payment Status</th>
-                  {isManagerOrAdmin && <th className="py-2 px-3 text-center">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-cyan-500/5">
-                {!reportSummary?.bills || reportSummary.bills.length === 0 ? (
-                  <tr>
-                    <td colSpan={isManagerOrAdmin ? 5 : 4} className="py-4 text-center text-slate-500">No active bill items generated.</td>
-                  </tr>
-                ) : (
-                  reportSummary.bills.map((b: Bill) => {
-                    const collector = members.find(u => u.id === b.collectorId);
-                    const isPaid = b.status === BillStatus.PAID;
-                    const canToggle = isManagerOrAdmin || b.collectorId === currentUser.id;
+              {/* Note Callout */}
+              <div className="mt-3 mb-4 p-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 rounded-2xl text-[10px] font-semibold leading-relaxed flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0 text-cyan-500" />
+                <span>Note: Bill amounts cannot exceed the per member limits set in bill settings.</span>
+              </div>
 
-                    return (
-                      <tr key={b.id} className="hover:bg-cyan-500/5">
-                        <td className="py-3 px-3 font-bold text-slate-250">{b.name}</td>
-                        <td className="py-3 px-3 text-cyan-400 font-semibold flex items-center gap-1.5">
-                          {collector && renderMemberPhotoBeforeName(collector.id, collector.name)}
-                          {collector?.nickname || "Admin"}
-                        </td>
-                        <td className="py-3 px-3 text-right font-extrabold font-mono">৳ {b.amount}</td>
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            disabled={!canToggle}
-                            onClick={() => toggleBillStatus(b.id, b.status)}
-                            className={`px-3 py-1 rounded text-[10px] font-black font-mono tracking-wide cursor-pointer transition-all border ${
-                              isPaid 
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                                : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                            } disabled:opacity-70 disabled:cursor-not-allowed`}
-                          >
-                            {isPaid ? "PAID" : "UNPAID"}
-                          </button>
-                        </td>
-                        {isManagerOrAdmin && (
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex justify-center gap-1.5">
-                              <button
-                                onClick={() => {
-                                  setEditingBill(b);
-                                  setEditBillName(b.name);
-                                  setEditBillAmount(String(b.amount));
-                                  setEditBillCollectorId(b.collectorId);
-                                  setShowEditBillModal(true);
-                                }}
-                                className="p-1 rounded bg-slate-850 hover:bg-slate-800 text-cyan-400 hover:text-cyan-350 transition-all cursor-pointer"
-                                title="Edit Bill Info"
-                              >
-                                <Edit3 size={13} />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteBill(b.id)}
-                                className="p-1 rounded bg-slate-850 hover:bg-rose-950/30 text-rose-400 hover:text-rose-350 transition-all cursor-pointer"
-                                title="Delete Bill"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+              <form onSubmit={handleAddBill} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  
+                  {/* SELECT MEMBER */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">SELECT MEMBER:</label>
+                    <select
+                      required
+                      value={billCollectorId}
+                      onChange={(e) => setBillCollectorId(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                        isDarkMode 
+                          ? "bg-slate-950 border-slate-800 text-white" 
+                          : "bg-slate-50 border-slate-200 text-slate-800"
+                      }`}
+                    >
+                      <option value="">-- Select Member --</option>
+                      {activeMembers.map(m => (
+                        <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* BILL TYPE */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">BILL TYPE:</label>
+                    <select
+                      required
+                      value={billType}
+                      onChange={(e) => setBillType(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                        isDarkMode 
+                          ? "bg-slate-950 border-slate-800 text-white" 
+                          : "bg-slate-50 border-slate-200 text-slate-800"
+                      }`}
+                    >
+                      <option value="Utility">Utility</option>
+                      <option value="Worker">Worker</option>
+                      <option value="Rent">Rent</option>
+                      <option value="Extra">Extra</option>
+                    </select>
+                    <span className="text-[9px] text-slate-400 font-semibold leading-none block pt-1">
+                      House rent amounts are set individually in Bill Settings
+                    </span>
+                  </div>
+
+                  {/* AMOUNT */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">AMOUNT:</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      placeholder="0.00"
+                      value={billAmount}
+                      onChange={(e) => setBillAmount(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                        isDarkMode 
+                          ? "bg-slate-950 border-slate-800 text-white" 
+                          : "bg-slate-50 border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  {/* DATE */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">DATE:</label>
+                    <input
+                      type="date"
+                      required
+                      value={billDate}
+                      onChange={(e) => setBillDate(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                        isDarkMode 
+                          ? "bg-slate-950 border-slate-800 text-white" 
+                          : "bg-slate-50 border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-600 text-white font-extrabold text-xs tracking-widest uppercase rounded-2xl transition-all shadow-[0_4px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_4px_16px_rgba(16,185,129,0.3)] cursor-pointer active:scale-[0.98]"
+                >
+                  {loading ? "ADDING BILL..." : "ADD BILL"}
+                </button>
+
+              </form>
+            </div>
+          )}
+
+          {/* SEARCH AND ACTIONS CARD */}
+          <div className={`p-4 rounded-3xl border flex flex-col md:flex-row gap-3 items-center justify-between ${
+            isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200/60 shadow-sm"
+          }`} id="finance-bills-actions-bar">
+            
+            {/* Search Box */}
+            <div className="relative w-full md:max-w-xs">
+              <Search className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
+              <input
+                type="text"
+                placeholder="Search bills by member..."
+                value={billSearchQuery}
+                onChange={(e) => setBillSearchQuery(e.target.value)}
+                className={`w-full pl-9 pr-4 py-2.5 rounded-full text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 border transition-all ${
+                  isDarkMode 
+                    ? "bg-slate-950 border-slate-850 text-white" 
+                    : "bg-slate-50 border-slate-200 text-slate-800"
+                }`}
+              />
+            </div>
+
+            {/* Export Actions */}
+            <div className="flex gap-2 w-full md:w-auto justify-end">
+              <button
+                onClick={exportToExcel}
+                className="flex-1 md:flex-none px-4 py-2.5 rounded-full text-[11px] font-extrabold tracking-wider uppercase bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+              >
+                <FileSpreadsheet size={13} />
+                Export
+              </button>
+              <button
+                onClick={handleOpenLedgerPDFModal}
+                className="flex-1 md:flex-none px-4 py-2.5 rounded-full text-[11px] font-extrabold tracking-wider uppercase bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+              >
+                <Printer size={13} />
+                PDF
+              </button>
+            </div>
+
           </div>
+
+          {/* MONTHLY SUMMARY TABLE CARD */}
+          <div className={`p-5 rounded-3xl border ${
+            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
+          }`} id="finance-monthly-summary-card">
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-850 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-purple-500/15 text-purple-500 flex items-center justify-center font-extrabold shadow-sm shrink-0">
+                  <Users size={14} />
+                </div>
+                <h3 className="text-xs font-black tracking-wider uppercase">MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT)</h3>
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-950/60 px-3 py-1 rounded-full border border-slate-200/50 dark:border-slate-850">
+                Mess: {logoText || "Ababil mess"} • {months.find(m => m.id === currentMonthId)?.name || "Active month Cycle"}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className={`border-b ${isDarkMode ? "border-slate-850 text-slate-400 bg-slate-950/20" : "border-slate-100 text-slate-500 bg-slate-50"} text-[10px] tracking-wider font-extrabold uppercase`}>
+                    <th className="py-3 px-4">MEMBER</th>
+                    <th className="py-3 px-4 text-center">UTILITY BILL</th>
+                    <th className="py-3 px-4 text-center">WORKER BILL</th>
+                    <th className="py-3 px-4 text-center">HOUSE RENT</th>
+                    <th className="py-3 px-4 text-center">EXTRA BILL</th>
+                    <th className="py-3 px-4 text-center">TOTAL</th>
+                    <th className="py-3 px-4 text-center">STATUS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                  {activeMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-slate-500 font-semibold">No active members found.</td>
+                    </tr>
+                  ) : (
+                    activeMembers
+                      .filter(m => {
+                        if (!billSearchQuery) return true;
+                        const q = billSearchQuery.toLowerCase();
+                        return m.nickname.toLowerCase().includes(q) || m.name.toLowerCase().includes(q);
+                      })
+                      .map((m) => {
+                        const stats = getMemberBillStats(m.id);
+                        const totalPaid = stats.Utility.paid + stats.Worker.paid + stats.Rent.paid + stats.Extra.paid;
+                        const totalExpected = stats.Utility.total + stats.Worker.total + stats.Rent.total + stats.Extra.total;
+                        const isFullyPaid = Math.abs(totalPaid - totalExpected) < 0.01;
+
+                        return (
+                          <tr key={m.id} className="hover:bg-cyan-500/5 transition-colors">
+                            {/* MEMBER */}
+                            <td className="py-3.5 px-4 font-bold text-xs flex items-center gap-2">
+                              {renderMemberPhotoBeforeName(m.id, m.nickname)}
+                              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{m.nickname}</span>
+                            </td>
+
+                            {/* UTILITY BILL */}
+                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                              <span className={Math.abs(stats.Utility.paid - stats.Utility.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                ৳{stats.Utility.paid.toFixed(2)}/৳{stats.Utility.total.toFixed(2)}
+                              </span>
+                            </td>
+
+                            {/* WORKER BILL */}
+                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                              <span className={Math.abs(stats.Worker.paid - stats.Worker.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                ৳{stats.Worker.paid.toFixed(2)}/৳{stats.Worker.total.toFixed(2)}
+                              </span>
+                            </td>
+
+                            {/* HOUSE RENT */}
+                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                              <span className={Math.abs(stats.Rent.paid - stats.Rent.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                ৳{stats.Rent.paid.toFixed(2)}/৳{stats.Rent.total.toFixed(2)}
+                              </span>
+                            </td>
+
+                            {/* EXTRA BILL */}
+                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                              <span className={Math.abs(stats.Extra.paid - stats.Extra.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                ৳{stats.Extra.paid.toFixed(2)}/৳{stats.Extra.total.toFixed(2)}
+                              </span>
+                            </td>
+
+                            {/* TOTAL */}
+                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                              <span className={isFullyPaid ? "text-emerald-500 font-black" : "text-amber-500 font-black"}>
+                                ৳{totalPaid.toFixed(2)}/৳{totalExpected.toFixed(2)}
+                              </span>
+                            </td>
+
+                            {/* STATUS */}
+                            <td className="py-3.5 px-4 text-center">
+                              {isFullyPaid ? (
+                                <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide bg-[#e6f4ea] text-[#137333] border border-[#c2e7cd]">
+                                  Paid
+                                </span>
+                              ) : (
+                                <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide bg-rose-50 text-rose-700 border border-rose-100">
+                                  Unpaid
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* EXPECTED / PAID TOTALS FOOTER */}
+            {(() => {
+              const expectedTotalSum = reportSummary?.bills?.reduce((sum: number, b: Bill) => sum + b.amount, 0) || 0;
+              const paidTotalSum = reportSummary?.bills?.reduce((sum: number, b: Bill) => sum + (b.status === BillStatus.PAID ? b.amount : 0), 0) || 0;
+
+              return (
+                <div className={`mt-4 p-3.5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 border ${
+                  isDarkMode ? "bg-slate-950/40 border-slate-850" : "bg-slate-50 border-slate-200/40"
+                }`}>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">TOTAL SUMMARY</span>
+                  <div className="flex flex-wrap gap-4 justify-center">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="font-bold text-slate-400 uppercase">EXPECTED TOTAL:</span>
+                      <span className="font-black font-mono text-cyan-400">৳ {expectedTotalSum.toFixed(2)}</span>
+                    </div>
+                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="font-bold text-slate-400 uppercase">PAID TOTAL:</span>
+                      <span className="font-black font-mono text-emerald-400">৳ {paidTotalSum.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+          </div>
+
+          {/* COMPACT REGISTRY OF ALL BILLS */}
+          <div className={`p-5 rounded-3xl border ${
+            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
+          }`} id="finance-all-bills-directory-card">
+            <div className="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-850 pb-3">
+              <h4 className="text-xs font-black tracking-wider uppercase text-slate-400 flex items-center gap-1.5">
+                <Coins size={14} className="text-cyan-400 animate-bounce" />
+                REGISTERED BILLS LIST DIRECTORY
+              </h4>
+              <span className="text-[10px] font-black font-mono text-cyan-400 bg-cyan-500/10 px-2.5 py-0.5 rounded-full">
+                Qty: {reportSummary?.bills?.length || 0}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto max-h-[220px] overflow-y-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-850 text-slate-400 text-[10px] tracking-wider font-extrabold uppercase">
+                    <th className="py-2.5 px-3">Bill Details</th>
+                    <th className="py-2.5 px-3">Collector</th>
+                    <th className="py-2.5 px-3 text-right">Amount</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    {isManagerOrAdmin && <th className="py-2.5 px-3 text-center">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                  {!reportSummary?.bills || reportSummary.bills.length === 0 ? (
+                    <tr>
+                      <td colSpan={isManagerOrAdmin ? 5 : 4} className="py-4 text-center text-slate-500 font-semibold italic">
+                        No bills registered this month yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    reportSummary.bills.map((b: Bill) => {
+                      const parsed = parseBillName(b.name);
+                      const collector = members.find(u => u.id === b.collectorId);
+                      const isPaid = b.status === BillStatus.PAID;
+                      const canToggle = isManagerOrAdmin || b.collectorId === currentUser.id;
+
+                      return (
+                        <tr key={b.id} className="hover:bg-cyan-500/5 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold flex items-center gap-1.5">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-extrabold uppercase font-mono">
+                                {parsed.type}
+                              </span>
+                              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>
+                                {parsed.name || "Default Bill"}
+                              </span>
+                            </div>
+                            {parsed.date && (
+                              <span className="text-[9px] text-slate-500 font-mono block mt-0.5">Date: {parsed.date}</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-400">
+                            {collector?.nickname || "Admin"}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold font-mono">
+                            ৳ {b.amount.toFixed(2)}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <button
+                              disabled={!canToggle}
+                              onClick={() => toggleBillStatus(b.id, b.status)}
+                              className={`px-2.5 py-0.5 rounded text-[9px] font-black font-mono tracking-wide cursor-pointer transition-all border ${
+                                isPaid 
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                              } disabled:opacity-70 disabled:cursor-not-allowed`}
+                            >
+                              {isPaid ? "PAID" : "UNPAID"}
+                            </button>
+                          </td>
+                          {isManagerOrAdmin && (
+                            <td className="py-2.5 px-3 text-center">
+                              <div className="flex justify-center gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setEditingBill(b);
+                                    setEditBillName(parsed.name);
+                                    setEditBillAmount(String(b.amount));
+                                    setEditBillCollectorId(b.collectorId);
+                                    setShowEditBillModal(true);
+                                  }}
+                                  className="p-1 rounded bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-cyan-400 hover:text-cyan-350 transition-all cursor-pointer"
+                                  title="Edit"
+                                >
+                                  <Edit3 size={11} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBill(b.id)}
+                                  className="p-1 rounded bg-slate-100 dark:bg-slate-850 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-400 hover:text-rose-350 transition-all cursor-pointer"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
 
         {/* STATS SUMMARY BOX / REMAINING DEPOSITS SUMMARY */}

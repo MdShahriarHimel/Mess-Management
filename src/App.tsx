@@ -8,7 +8,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
-  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award
+  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award, Save
 } from "lucide-react";
 
 // Components
@@ -2648,6 +2648,7 @@ export default function App() {
               customColors={customColors}
               balanceSheetGlow={balanceSheetGlow}
               safeMode={safeMode}
+              logoText={logoText}
             />
           )}
 
@@ -3532,6 +3533,25 @@ export default function App() {
                           <option value="17.5">17.5px</option>
                           <option value="18">18px</option>
                         </select>
+                      </div>
+
+                      {/* Save Applied Settings Button */}
+                      <div className="col-span-1 md:col-span-2 flex justify-end pb-3">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await handleUpdateSettings({ logoText, siteColor, fontStyle, fontSize });
+                              alert("Enterprise UI and branding settings saved successfully.");
+                            } catch (err) {
+                              console.error(err);
+                              alert("Failed to save branding settings.");
+                            }
+                          }}
+                          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 border border-cyan-500/30 text-white font-extrabold text-xs tracking-wider uppercase rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                        >
+                          <Save size={14} className="stroke-[2.5px]" />
+                          Save Applied Settings
+                        </button>
                       </div>
 
                       {/* RGB Custom Colors Customizer */}

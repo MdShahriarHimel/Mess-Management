@@ -231,95 +231,43 @@
 
 
 /* ==========================================
-   LIGHT MODE ACCESSIBILITY ENHANCEMENTS
+   LIGHT MODE MINIMALIST DESIGN (WITH CUSTOMIZATION SUPPORT)
    ========================================== */
 .light-mode-root {
-  color: #0f172a !important; /* Extremely high contrast near-black text */
+  color: #1e293b;
 }
 
-/* Make headers very clear and punchy in Light Mode */
+/* Light Mode Headings */
 .light-mode-root h1, 
 .light-mode-root h2, 
 .light-mode-root h3, 
 .light-mode-root h4, 
 .light-mode-root h5, 
 .light-mode-root h6 {
-  color: #0f172a !important;
-  font-weight: 800 !important;
+  color: #0f172a;
+  font-weight: 700;
 }
 
-/* Boost small text readability & thickness */
-.light-mode-root .text-[10px],
-.light-mode-root .text-[11px],
-.light-mode-root .text-xs,
-.light-mode-root .text-sm {
-  color: #1e293b !important;
-  font-weight: 500 !important;
-}
-
-/* Adjust secondary/gray text to have high-contrast Slate-600/700 colors instead of light gray */
-.light-mode-root .text-slate-400,
-.light-mode-root .text-slate-500,
-.light-mode-root .text-gray-400,
-.light-mode-root .text-gray-500,
-.light-mode-root .text-slate-300 {
-  color: #334155 !important; /* Force highly readable Slate 600 */
-  font-weight: 600 !important; /* Give it enough weight to read easily */
-}
-
-/* Keep form input labels highly readable */
+/* Soft contrast adjustments without breaking dynamic styling */
 .light-mode-root label {
-  color: #0f172a !important;
-  font-weight: 700 !important;
+  color: #334155;
+  font-weight: 600;
 }
 
-/* Ensure background of containers is solid white with clear gray borders */
-.light-mode-root .bg-slate-900\/40,
-.light-mode-root .bg-slate-900\/30,
-.light-mode-root .bg-slate-900\/20,
-.light-mode-root .bg-slate-900,
-.light-mode-root .bg-slate-950\/40,
-.light-mode-root .bg-slate-950 {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+/* Active links / tabs defaults */
+.light-mode-root .text-cyan-400 {
+  color: #0891b2;
 }
-
-/* Enhancing input fields in light mode */
-.light-mode-root input,
-.light-mode-root select,
-.light-mode-root textarea {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-  border-color: #cbd5e1 !important;
-  font-weight: 500 !important;
-}
-
-/* Enhancing tables */
-.light-mode-root table th {
-  color: #0f172a !important;
-  font-weight: 800 !important;
-  background-color: #f1f5f9 !important;
-}
-
-.light-mode-root table td {
-  color: #0f172a !important;
-  font-weight: 600 !important;
-}
-
-/* Active links / tabs */
-.light-mode-root .text-cyan-400,
 .light-mode-root .text-cyan-300 {
-  color: #0284c7 !important; /* Swap bright cyan with sky-700 in light mode */
+  color: #06b6d4;
 }
-.light-mode-root .border-cyan-500\/10,
-.light-mode-root .border-cyan-500\/15 {
-  border-color: #cbd5e1 !important;
+
+/* Base custom styled scrollbars for light mode */
+.light-mode-root ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
 }
-.light-mode-root .bg-cyan-500\/10 {
-  background-color: #f0f9ff !important;
-  color: #0369a1 !important;
+.light-mode-root ::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
 }
 
 
