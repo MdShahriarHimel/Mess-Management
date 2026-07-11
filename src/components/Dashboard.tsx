@@ -1384,16 +1384,18 @@ export default function Dashboard({
           {/* QUICK SHORTCUTS & UTILITIES */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             
-            <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
-              isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
-            }`} onClick={() => onNavigateToTab("meals")}>
-              <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                <Coffee size={16} /> Meals Tracker
-              </h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Log daily member lunch/dinner servings and compute total rates automatically.
-              </p>
-            </div>
+            {currentUser.role !== UserRole.MEMBER && (
+              <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
+              }`} onClick={() => onNavigateToTab("meals")}>
+                <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
+                  <Coffee size={16} /> Meals Tracker
+                </h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Log daily member lunch/dinner servings and compute total rates automatically.
+                </p>
+              </div>
+            )}
 
             <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
               isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"

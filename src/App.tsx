@@ -1621,6 +1621,12 @@ export default function App() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (currentUser?.role === UserRole.MEMBER && activeTab === "meals") {
+      setActiveTab("dashboard");
+    }
+  }, [currentUser, activeTab]);
+
   const handleLoginSuccess = (token: string, user: Member, rememberMe?: boolean) => {
     try {
       if (rememberMe) {
@@ -2019,6 +2025,7 @@ export default function App() {
     if (item.id === "democracy" && showResultsInDashboard) return false;
     if (item.id === "audit" && dashboardVisibility && !dashboardVisibility.showAuditLogs) return false;
     if (item.id === "deposits" && dashboardVisibility && !dashboardVisibility.showCashDeposit) return false;
+    if (item.id === "meals" && currentUser?.role === UserRole.MEMBER) return false;
     if (item.id === "meals" && dashboardVisibility && !dashboardVisibility.showMealTracker) return false;
     if (item.id === "menu" && dashboardVisibility && !dashboardVisibility.showFoodMenu) return false;
     if (item.id === "notices" && dashboardVisibility && !dashboardVisibility.showNotices) return false;
