@@ -73,23 +73,66 @@ function ensureDBDir() {
   }
 }
 
-// Asynchronous Cache Initialization from PostgreSQL
+// Asynchronous Cache Initialization from PostgreSQL with robust retry mechanism
 export async function initializeDbCache() {
-  try {
-    console.log("Loading cache from PostgreSQL Cloud SQL...");
-    const membersList = await db.select().from(membersTable);
-    const monthsList = await db.select().from(monthsTable);
-    const mealsList = await db.select().from(mealsTable);
-    const foodMenusList = await db.select().from(foodMenusTable);
-    const marketEntriesList = await db.select().from(marketEntriesTable);
-    const depositsList = await db.select().from(depositsTable);
-    const billsList = await db.select().from(billsTable);
-    const dutiesList = await db.select().from(dutiesTable);
-    const managerHoldingsList = await db.select().from(managerHoldingsTable);
-    const managerRatingsList = await db.select().from(managerRatingsTable);
-    const noticesList = await db.select().from(noticesTable);
-    const auditLogsList = await db.select().from(auditLogsTable);
+  const maxRetries = 10;
+  const retryDelayMs = 3000;
+  let membersList: any[] = [];
+  let monthsList: any[] = [];
+  let mealsList: any[] = [];
+  let foodMenusList: any[] = [];
+  let marketEntriesList: any[] = [];
+  let depositsList: any[] = [];
+  let billsList: any[] = [];
+  let dutiesList: any[] = [];
+  let managerHoldingsList: any[] = [];
+  let managerRatingsList: any[] = [];
+  let noticesList: any[] = [];
+  let auditLogsList: any[] = [];
 
+  let connected = false;
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[Database Connection] Attempt ${attempt} of ${maxRetries} to connect to PostgreSQL Cloud SQL...`);
+      membersList = await db.select().from(membersTable);
+      monthsList = await db.select().from(monthsTable);
+      mealsList = await db.select().from(mealsTable);
+      foodMenusList = await db.select().from(foodMenusTable);
+      marketEntriesList = await db.select().from(marketEntriesTable);
+      depositsList = await db.select().from(depositsTable);
+      billsList = await db.select().from(billsTable);
+      dutiesList = await db.select().from(dutiesTable);
+      managerHoldingsList = await db.select().from(managerHoldingsTable);
+      managerRatingsList = await db.select().from(managerRatingsTable);
+      noticesList = await db.select().from(noticesTable);
+      auditLogsList = await db.select().from(auditLogsTable);
+      
+      connected = true;
+      console.log("[Database Connection] Successfully connected and retrieved data from PostgreSQL Cloud SQL!");
+      break;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Database Connection] Attempt ${attempt} failed. Error: ${err.message || err}`);
+      if (attempt < maxRetries) {
+        console.log(`Waiting ${retryDelayMs / 1000} seconds before next attempt...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+
+  if (!connected) {
+    console.error("========================================================================");
+    console.error("FATAL: Could not connect to PostgreSQL Cloud SQL after multiple retries.");
+    console.error("To protect your permanent data from being accidentally wiped out, we");
+    console.error("cannot run the server in a fallback seed state.");
+    console.error("Original connection error:", lastError);
+    console.error("========================================================================");
+    throw new Error(`Cloud SQL database connection failed: ${lastError?.message || lastError}`);
+  }
+
+  try {
     if (membersList.length === 0 && monthsList.length === 0) {
       ensureDBDir();
       const BACKUP_FILE = path.join(DB_DIR, "database_backup.json");
@@ -170,21 +213,8 @@ export async function initializeDbCache() {
       }
     }
   } catch (error) {
-    console.error("Failed to initialize database cache from Postgres:", error);
-    ensureDBDir();
-    const BACKUP_FILE = path.join(DB_DIR, "database_backup.json");
-    if (fs.existsSync(BACKUP_FILE)) {
-      console.log("PostgreSQL error, but found local JSON backup. Loading backup into cache...");
-      try {
-        const data = fs.readFileSync(BACKUP_FILE, "utf-8");
-        dbCache = JSON.parse(data);
-      } catch (e) {
-        console.error("Failed to load local JSON backup:", e);
-        dbCache = getInitialSeedData();
-      }
-    } else {
-      dbCache = getInitialSeedData();
-    }
+    console.error("Failed to parse database records:", error);
+    throw error;
   }
 }
 
