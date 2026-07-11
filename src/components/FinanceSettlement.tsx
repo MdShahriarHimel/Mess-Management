@@ -838,6 +838,8 @@ export default function FinanceSettlement({
 
       if (response.ok) {
         setIsEditingManagerHoldings(false);
+        setEditManagerMarketSpent("");
+        setEditManagerMarketDesc("");
         onRefresh();
       } else {
         const err = await response.json();
@@ -846,6 +848,31 @@ export default function FinanceSettlement({
     } catch (e) {
       console.error(e);
       alert("An error occurred while saving holdings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete manager market log entry
+  const handleDeleteManagerMarketLog = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this manager market log entry?")) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/holdings/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${currentUser.id}`
+        }
+      });
+      if (response.ok) {
+        onRefresh();
+      } else {
+        const err = await response.json();
+        alert(err.error || "Failed to delete entry");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred while deleting entry");
     } finally {
       setLoading(false);
     }
@@ -1891,14 +1918,14 @@ export default function FinanceSettlement({
                 ) : (
                   <button
                     onClick={() => {
-                      setEditManagerMarketSpent(String(reportSummary?.managerMarketSpent || 0));
-                      setEditManagerMarketDesc(reportSummary?.managerMarketDescription || "");
+                      setEditManagerMarketSpent("");
+                      setEditManagerMarketDesc("");
                       setIsEditingManagerHoldings(true);
                     }}
                     className="w-full py-2 bg-slate-950/40 hover:bg-slate-950/60 border border-cyan-500/20 hover:border-cyan-500/40 rounded-xl text-[10px] font-extrabold text-cyan-400 tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
-                    <Edit3 size={12} />
-                    EDIT MANAGER MARKET COST
+                    <Plus size={12} />
+                    ADD MANAGER MARKET LOG
                   </button>
                 )}
               </div>
@@ -1922,25 +1949,42 @@ export default function FinanceSettlement({
           </span>
         </div>
         
-        {(!reportSummary?.managerMarketSpent && !reportSummary?.managerMarketDescription) ? (
+        {(!reportSummary?.managerHoldings || reportSummary.managerHoldings.length === 0) ? (
           <p className="text-xs text-slate-500 py-6 text-center italic border border-dashed border-cyan-500/10 rounded-xl">
             No manager market description or cost has been recorded yet for this month.
           </p>
         ) : (
-          <div className="p-4 rounded-xl border border-slate-850 bg-slate-950/20 space-y-3">
-            <div className="flex justify-between items-start border-b border-slate-850/40 pb-2">
-              <div>
-                <span className="text-[10px] font-mono font-bold text-slate-500">MONTHLY CYCLE SUMMARY</span>
-                <p className="text-xs text-slate-400 mt-0.5">Manager's overall bazar grocery & extra expenses.</p>
-              </div>
-              <span className="text-sm font-black font-mono text-cyan-400">৳ {reportSummary?.managerMarketSpent || 0}</span>
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest block mb-1">Market Description / Spent Details</span>
-              <p className="font-semibold text-slate-200 text-xs leading-relaxed whitespace-pre-wrap">
-                {reportSummary?.managerMarketDescription || "No detailed description entered."}
-              </p>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-[350px] overflow-y-auto pr-1">
+            {reportSummary.managerHoldings.map((h: any) => {
+              const memberObj = members.find(u => u.id === h.memberId);
+              return (
+                <div key={h.id} className="p-3.5 rounded-xl border border-slate-850 bg-slate-950/20 flex flex-col justify-between text-xs space-y-3">
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-mono font-bold text-slate-500">MANAGER LOG ENTRY</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black font-mono text-cyan-400">৳ {h.marketSpent || 0}</span>
+                        {(currentUser?.role === UserRole.MANAGER || currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
+                          <button
+                            onClick={() => handleDeleteManagerMarketLog(h.id)}
+                            className="p-1 hover:bg-rose-500/10 rounded text-rose-500/50 hover:text-rose-500 transition-all cursor-pointer"
+                            title="Delete entry"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="font-semibold text-slate-200 mt-2 leading-relaxed whitespace-pre-wrap">
+                      {h.description || "No detailed description entered."}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-t border-slate-850/30 pt-2 text-[10px] text-slate-400">
+                    <span>Logged by {memberObj?.nickname || memberObj?.name || "Manager"}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

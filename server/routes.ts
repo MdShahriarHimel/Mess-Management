@@ -1671,21 +1671,31 @@ router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Respon
     return;
   }
 
-  const { monthId, memberId, amount, marketSpent, description } = req.body;
+  const { id, monthId, memberId, amount, marketSpent, description } = req.body;
   if (!monthId || !memberId) {
     res.status(400).json({ error: "Month ID and Member ID are required" });
     return;
   }
 
   const db = loadDB();
-  const existingIndex = db.managerHoldings.findIndex(h => h.monthId === monthId && h.memberId === memberId);
+  
+  let existingIndex = -1;
+  if (id) {
+    existingIndex = db.managerHoldings.findIndex(h => h.id === id);
+  } else if (amount !== undefined && marketSpent === undefined) {
+    // This is a cash advance holding paid update. Keep it singular per user per month.
+    existingIndex = db.managerHoldings.findIndex(h => h.monthId === monthId && h.memberId === memberId && (h.amount > 0 || h.marketSpent === undefined || h.marketSpent === 0));
+  } else {
+    // This is a new manager market log entry with description & value. Always append as a new record so previous entries are not overwritten/deleted!
+    existingIndex = -1;
+  }
   
   const currentAmount = amount !== undefined ? Number(amount) : (existingIndex !== -1 ? db.managerHoldings[existingIndex].amount : 0);
   const currentMarketSpent = marketSpent !== undefined ? Number(marketSpent) : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].marketSpent || 0) : 0);
   const currentDescription = description !== undefined ? description : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].description || "") : "");
 
   const newHolding: ManagerHolding = {
-    id: existingIndex !== -1 ? db.managerHoldings[existingIndex].id : generateUUID(),
+    id: existingIndex !== -1 ? db.managerHoldings[existingIndex].id : (id || generateUUID()),
     monthId,
     memberId,
     amount: currentAmount,
@@ -1702,6 +1712,28 @@ router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Respon
   saveDB();
   logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING", "None", JSON.stringify(newHolding), `Recorded manager holding/market spent of Taka ${currentAmount} / ${currentMarketSpent}`);
   res.json({ success: true, holding: newHolding });
+});
+
+router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.ADMIN].includes(req.user!.role);
+  if (!isUltimateAdmin && !isManagerOrAdmin) {
+    res.status(403).json({ error: "Access denied. Only managers and the ultimate Admin can delete holdings." });
+    return;
+  }
+
+  const { id } = req.params;
+  const db = loadDB();
+  const existingIndex = db.managerHoldings.findIndex(h => h.id === id);
+  if (existingIndex === -1) {
+    res.status(404).json({ error: "Holding entry not found" });
+    return;
+  }
+
+  const deleted = db.managerHoldings.splice(existingIndex, 1)[0];
+  saveDB();
+  logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING_DELETE", "None", JSON.stringify(deleted), "Deleted manager market spent/holding entry");
+  res.json({ success: true });
 });
 
 // ---------------------------------------------------------
@@ -1887,18 +1919,18 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   // Sums
   const totalDeposits = monthDeposits.reduce((sum, d) => sum + d.amount, 0);
   const totalMarkets = monthMarkets.reduce((sum, m) => sum + m.amount, 0);
-  
-  // Total Cost = Deposits + Market Expenses (according to spec)
-  const totalCost = totalDeposits + totalMarkets;
-  
-  // Total holding advance (always 0 now as advance management deposits are removed)
-  const totalHolding = 0;
   const managerMarketSpent = monthHoldings.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
   const managerHoldingObj = monthHoldings.find(h => h.marketSpent !== undefined && h.marketSpent > 0) || monthHoldings[0];
   const managerMarketDescription = managerHoldingObj?.description || "";
+
+  // Total Cost = Deposits + Market Expenses + Manager Monthly Market Spent (according to spec)
+  const totalCost = totalDeposits + totalMarkets + managerMarketSpent;
   
-  // Effective Cost = Total Market Expenses
-  const effectiveCost = totalMarkets;
+  // Total holding advance (always 0 now as advance management deposits are removed)
+  const totalHolding = 0;
+  
+  // Effective Cost = Total Market Expenses + Manager Monthly Market Spent
+  const effectiveCost = totalMarkets + managerMarketSpent;
 
   // Sum total meals in the month
   let totalMeals = 0;
@@ -1912,7 +1944,8 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   // Calculate detailed balances per member
   const memberSettlements = monthMembers.map(member => {
     const memberDep = monthDeposits.filter(d => d.memberId === member.id).reduce((s, d) => s + d.amount, 0);
-    const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0);
+    const memberHoldingMarketSpent = monthHoldings.filter(h => h.memberId === member.id).reduce((s, h) => s + (h.marketSpent || 0), 0);
+    const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0) + memberHoldingMarketSpent;
     
     // Member's total meals count
     const memberMealsList = monthMeals.filter(m => m.memberId === member.id);
@@ -1955,6 +1988,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
     totalHolding,
     managerMarketSpent,
     managerMarketDescription,
+    managerHoldings: monthHoldings.filter(h => (h.marketSpent || 0) > 0 || h.description),
     effectiveCost,
     totalMeals,
     mealRate: Math.round(mealRate * 1000) / 1000,
