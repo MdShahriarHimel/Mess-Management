@@ -171,3 +171,15 @@ export interface BackupSummary {
   receiptsCount: number;
   auditCount: number;
 }
+
+export interface MealRequest {
+  id: string;
+  monthId: string;
+  date: string;
+  requesterId: string;
+  requesterName: string;
+  mealsData: string; // JSON string representing the updated meals for that date
+  status: string; // "PENDING", "APPROVED", "REJECTED"
+  timestamp: string;
+}
+

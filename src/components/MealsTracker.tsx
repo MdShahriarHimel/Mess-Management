@@ -41,8 +41,26 @@ export default function MealsTracker({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
+
+  // Fetch pending meal requests (Manager only)
+  const fetchPendingRequests = async () => {
+    if (!currentMonthId || currentUser.role !== UserRole.MANAGER) return;
+    try {
+      const response = await fetch(`/api/meal-requests/${currentMonthId}`, {
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const pending = (data.requests || []).filter((r: any) => r.status === "PENDING");
+        setPendingRequests(pending);
+      }
+    } catch (e) {
+      console.error("Error fetching pending meal requests", e);
+    }
+  };
 
   // Fetch meals for the current month
   const fetchMealsForDate = async () => {
@@ -102,6 +120,7 @@ export default function MealsTracker({
   useEffect(() => {
     fetchMealsForDate();
     checkMonthLock();
+    fetchPendingRequests();
   }, [currentMonthId, selectedDate, members]);
 
   // Handle meal count selection
@@ -145,18 +164,85 @@ export default function MealsTracker({
         })
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || "Failed to save meals");
       }
 
-      setSuccess("Daily meal counts logged and updated successfully!");
+      if (data.pendingApproval) {
+        setSuccess(data.message || "Meals update requested! Your changes have been submitted to the Manager for confirmation.");
+      } else {
+        setSuccess(data.message || "Daily meal counts logged and updated successfully!");
+      }
       onRefresh();
-      setTimeout(() => setSuccess(null), 3500);
+      fetchPendingRequests();
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) {
       setError(err.message || "Failed to log meals");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Approve a meal update request (Manager only)
+  const handleApproveRequest = async (id: string) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch(`/api/meal-requests/${id}/approve`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to approve request");
+      }
+      setSuccess(data.message || "Meal request approved and changes successfully applied!");
+      fetchPendingRequests();
+      fetchMealsForDate();
+      onRefresh();
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err: any) {
+      setError(err.message || "Failed to approve request");
+    }
+  };
+
+  // Reject a meal update request (Manager only)
+  const handleRejectRequest = async (id: string) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch(`/api/meal-requests/${id}/reject`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to reject request");
+      }
+      setSuccess(data.message || "Meal request successfully rejected.");
+      fetchPendingRequests();
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err: any) {
+      setError(err.message || "Failed to reject request");
+    }
+  };
+
+  // Parse proposal data for readable rendering
+  const parseMealsData = (jsonData: string) => {
+    try {
+      const list = JSON.parse(jsonData);
+      return list.map((item: any) => {
+        const mb = members.find(m => m.id === item.memberId);
+        return {
+          name: mb ? mb.name : "Unknown Member",
+          nickname: mb ? mb.nickname : "unknown",
+          lunch: item.lunch,
+          dinner: item.dinner,
+        };
+      }).filter((item: any) => item.lunch > 0 || item.dinner > 0);
+    } catch (e) {
+      return [];
     }
   };
 
@@ -180,6 +266,77 @@ export default function MealsTracker({
           <span>
             <strong>Access Restricted:</strong> {isFutureDate ? "Future" : "Past"} date editing is disabled by administrators for this section.
           </span>
+        </div>
+      )}
+
+      {/* Pending Approval Requests (Manager only) */}
+      {currentUser.role === UserRole.MANAGER && pendingRequests.length > 0 && (
+        <div className={`p-5 rounded-2xl border ${
+          isDarkMode ? "bg-slate-900/40 border-amber-500/20" : "bg-amber-500/5 border-amber-200"
+        }`} id="manager-pending-confirmations">
+          <h3 className="text-sm font-bold font-display text-amber-500 flex items-center gap-2 mb-2">
+            <AlertTriangle size={16} className="text-amber-500 animate-pulse" />
+            Pending Meal Update Confirmations ({pendingRequests.length})
+          </h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Admins and Super-Users submitted the following daily meal count updates that require your official confirmation.
+          </p>
+
+          <div className="space-y-3">
+            {pendingRequests.map((req) => {
+              const details = parseMealsData(req.mealsData);
+              return (
+                <div 
+                  key={req.id} 
+                  className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                    isDarkMode ? "bg-slate-950 border-slate-800" : "bg-white border-slate-100 shadow-sm"
+                  }`}
+                >
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded bg-cyan-500/10 text-cyan-400 font-mono">
+                        Date: {req.date}
+                      </span>
+                      <span className="text-xs font-bold text-slate-300">
+                        Requested by <strong className="text-cyan-400">{req.requesterName}</strong>
+                      </span>
+                    </div>
+                    
+                    <div className="mt-2 text-xs text-slate-400 space-y-1">
+                      <p className="font-semibold text-[10px] uppercase tracking-wider text-slate-500">Proposed Servings:</p>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {details.map((d: any, idx: number) => (
+                          <span key={idx} className={`px-2 py-1 rounded text-[11px] font-mono border ${
+                            isDarkMode ? "bg-slate-900/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
+                          }`}>
+                            {d.name}: Lunch({d.lunch}) | Dinner({d.dinner})
+                          </span>
+                        ))}
+                        {details.length === 0 && (
+                          <span className="text-slate-500 italic text-[11px]">No active meal servings logged</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 shrink-0 self-end md:self-center">
+                    <button
+                      onClick={() => handleRejectRequest(req.id)}
+                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 cursor-pointer transition-colors active:scale-95"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => handleApproveRequest(req.id)}
+                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 cursor-pointer transition-colors active:scale-95 flex items-center gap-1"
+                    >
+                      <Check size={12} /> Confirm & Apply
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

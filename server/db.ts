@@ -18,7 +18,8 @@ import {
   managerHoldings as managerHoldingsTable,
   managerRatings as managerRatingsTable,
   notices as noticesTable,
-  auditLogs as auditLogsTable
+  auditLogs as auditLogsTable,
+  mealRequests as mealRequestsTable
 } from "../src/db/schema.ts";
 import { sql, notInArray } from "drizzle-orm";
 import { 
@@ -36,7 +37,8 @@ import {
   ManagerHolding, 
   ManagerRating, 
   Notice, 
-  AuditLog 
+  AuditLog,
+  MealRequest
 } from "../src/types.js";
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -56,6 +58,7 @@ interface DatabaseSchema {
   managerRatings: ManagerRating[];
   notices: Notice[];
   auditLogs: AuditLog[];
+  mealRequests: MealRequest[];
 }
 
 interface CredentialsSchema {
@@ -89,6 +92,7 @@ export async function initializeDbCache() {
   let managerRatingsList: any[] = [];
   let noticesList: any[] = [];
   let auditLogsList: any[] = [];
+  let mealRequestsList: any[] = [];
 
   let connected = false;
   let lastError: any = null;
@@ -108,6 +112,14 @@ export async function initializeDbCache() {
       managerRatingsList = await db.select().from(managerRatingsTable);
       noticesList = await db.select().from(noticesTable);
       auditLogsList = await db.select().from(auditLogsTable);
+      
+      // Wrap in try-catch in case table doesn't exist yet before migration completes
+      try {
+        mealRequestsList = await db.select().from(mealRequestsTable);
+      } catch (err) {
+        console.warn("meal_requests table not accessible yet. It will be created via migration.", err);
+        mealRequestsList = [];
+      }
       
       connected = true;
       console.log("[Database Connection] Successfully connected and retrieved data from PostgreSQL Cloud SQL!");
@@ -172,6 +184,7 @@ export async function initializeDbCache() {
         managerRatings: managerRatingsList as any[],
         notices: noticesList as any[],
         auditLogs: auditLogsList as any[],
+        mealRequests: (mealRequestsList || []) as any[],
       };
       console.log("Cache loaded successfully from PostgreSQL.");
     }
@@ -344,6 +357,11 @@ async function doActualSync(cache: DatabaseSchema) {
     await db.execute(sql`DELETE FROM manager_ratings;`);
     await db.execute(sql`DELETE FROM notices;`);
     await db.execute(sql`DELETE FROM audit_logs;`);
+    try {
+      await db.execute(sql`DELETE FROM meal_requests;`);
+    } catch (e) {
+      console.warn("Could not delete from meal_requests table:", e);
+    }
 
     if (cache.meals.length > 0) {
       await db.insert(mealsTable).values(cache.meals.map(item => ({
@@ -457,6 +475,23 @@ async function doActualSync(cache: DatabaseSchema) {
         timestamp: item.timestamp,
         reason: item.reason,
       })));
+    }
+
+    if (cache.mealRequests && cache.mealRequests.length > 0) {
+      try {
+        await db.insert(mealRequestsTable).values(cache.mealRequests.map(item => ({
+          id: item.id,
+          monthId: item.monthId,
+          date: item.date,
+          requesterId: item.requesterId,
+          requesterName: item.requesterName,
+          mealsData: item.mealsData,
+          status: item.status,
+          timestamp: item.timestamp,
+        })));
+      } catch (err) {
+        console.warn("Could not insert into meal_requests table during sync:", err);
+      }
     }
   } catch (error) {
     console.error("Error in background PostgreSQL sync:", error);
@@ -668,7 +703,8 @@ function getInitialSeedData(): DatabaseSchema {
     managerHoldings: [],
     managerRatings: [],
     notices: [],
-    auditLogs: [audit]
+    auditLogs: [audit],
+    mealRequests: []
   };
 }
 

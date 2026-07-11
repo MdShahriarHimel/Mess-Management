@@ -2467,7 +2467,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex gap-2 items-center w-full sm:w-auto">
+          <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
             {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER) && (
               <select
                 value={currentMonthId}
@@ -2482,7 +2482,7 @@ export default function App() {
               </select>
             )}
 
-            {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
+            {currentUser && (
               <button
                 onClick={handleToggleSafeMode}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${

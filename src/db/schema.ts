@@ -133,3 +133,15 @@ export const auditLogs = pgTable("audit_logs", {
   timestamp: text("timestamp").notNull(),
   reason: text("reason").notNull(),
 });
+
+export const mealRequests = pgTable("meal_requests", {
+  id: text("id").primaryKey(),
+  monthId: text("month_id").notNull(),
+  date: text("date").notNull(),
+  requesterId: text("requester_id").notNull(),
+  requesterName: text("requester_name").notNull(),
+  mealsData: text("meals_data").notNull(), // JSON string representing the updated meals for that date
+  status: text("status").notNull(), // "PENDING", "APPROVED", "REJECTED"
+  timestamp: text("timestamp").notNull(),
+});
+

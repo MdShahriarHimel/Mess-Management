@@ -992,7 +992,30 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     return;
   }
 
-  // Upsert meal logs
+  // Intercept normal Admins and Super-User requests - they must be confirmed by the Manager
+  if (req.user!.role !== UserRole.MANAGER) {
+    if (!db.mealRequests) db.mealRequests = [];
+    const newRequest = {
+      id: generateUUID(),
+      monthId,
+      date: meals[0]?.date || todayStr,
+      requesterId: req.user!.id,
+      requesterName: req.user!.name,
+      mealsData: JSON.stringify(meals),
+      status: "PENDING",
+      timestamp: new Date().toISOString()
+    };
+    db.mealRequests.push(newRequest);
+    saveDB();
+    logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_REQUESTED", "None", `Requested meal logs for ${newRequest.date}`, `Meal changes submitted for manager approval`);
+    res.json({ 
+      pendingApproval: true, 
+      message: "Meals update requested! Your changes have been submitted to the Manager for confirmation." 
+    });
+    return;
+  }
+
+  // Upsert meal logs directly for Manager
   for (const m of meals) {
     if (!m.memberId || !m.date) continue;
     const existingIndex = db.meals.findIndex(
@@ -1016,7 +1039,97 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
 
   saveDB();
   logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_BULK", "Multiple", "Updated", `Logged meals for current cycle`);
-  res.json({ success: true });
+  res.json({ success: true, message: "Daily meal counts logged and updated successfully!" });
+});
+
+// Get all meal requests for a month
+router.get("/meal-requests/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const { monthId } = req.params;
+  const db = loadDB();
+  if (!db.mealRequests) db.mealRequests = [];
+  const reqs = db.mealRequests.filter(r => r.monthId === monthId);
+  res.json({ requests: reqs });
+});
+
+// Approve a meal request (Manager only)
+router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.mealRequests) db.mealRequests = [];
+  const requestIndex = db.mealRequests.findIndex(r => r.id === id);
+  if (requestIndex === -1) {
+    res.status(404).json({ error: "Meal request not found" });
+    return;
+  }
+
+  const request = db.mealRequests[requestIndex];
+  if (request.status !== "PENDING") {
+    res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}` });
+    return;
+  }
+
+  let mealsToSave: any[] = [];
+  try {
+    mealsToSave = JSON.parse(request.mealsData);
+  } catch (e) {
+    res.status(400).json({ error: "Invalid meals data in request" });
+    return;
+  }
+
+  const targetMonth = db.months.find(m => m.id === request.monthId);
+  if (targetMonth?.isLocked) {
+    res.status(403).json({ error: "Cannot approve: This month is locked." });
+    return;
+  }
+
+  for (const m of mealsToSave) {
+    if (!m.memberId || !m.date) continue;
+    const existingIndex = db.meals.findIndex(
+      meal => meal.monthId === request.monthId && meal.memberId === m.memberId && meal.date === m.date
+    );
+
+    if (existingIndex !== -1) {
+      db.meals[existingIndex].lunch = Number(m.lunch) || 0;
+      db.meals[existingIndex].dinner = Number(m.dinner) || 0;
+    } else {
+      db.meals.push({
+        id: generateUUID(),
+        monthId: request.monthId,
+        memberId: m.memberId,
+        date: m.date,
+        lunch: Number(m.lunch) || 0,
+        dinner: Number(m.dinner) || 0
+      });
+    }
+  }
+
+  request.status = "APPROVED";
+  saveDB();
+  logAudit(req.user!.id, req.user!.nickname, "MEAL_REQUEST_APPROVE", request.requesterName, "APPROVED", `Approved meal log changes from ${request.requesterName} for date ${request.date}`);
+  res.json({ success: true, message: "Meal request approved and changes successfully applied!" });
+});
+
+// Reject a meal request (Manager only)
+router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.mealRequests) db.mealRequests = [];
+  const requestIndex = db.mealRequests.findIndex(r => r.id === id);
+  if (requestIndex === -1) {
+    res.status(404).json({ error: "Meal request not found" });
+    return;
+  }
+
+  const request = db.mealRequests[requestIndex];
+  if (request.status !== "PENDING") {
+    res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}` });
+    return;
+  }
+
+  request.status = "REJECTED";
+  saveDB();
+  logAudit(req.user!.id, req.user!.nickname, "MEAL_REQUEST_REJECT", request.requesterName, "REJECTED", `Rejected meal log changes from ${request.requesterName} for date ${request.date}`);
+  res.json({ success: true, message: "Meal request successfully rejected." });
 });
 
 // ---------------------------------------------------------
