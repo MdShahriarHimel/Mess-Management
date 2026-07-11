@@ -438,6 +438,8 @@ async function doActualSync(cache: DatabaseSchema) {
         monthId: item.monthId,
         memberId: item.memberId,
         amount: item.amount,
+        marketSpent: item.marketSpent || 0,
+        description: item.description || "",
       })));
     }
 

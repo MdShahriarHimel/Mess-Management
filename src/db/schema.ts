@@ -102,6 +102,8 @@ export const managerHoldings = pgTable("manager_holdings", {
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   amount: doublePrecision("amount").notNull(),
+  marketSpent: doublePrecision("market_spent"),
+  description: text("description"),
 });
 
 export const managerRatings = pgTable("manager_ratings", {

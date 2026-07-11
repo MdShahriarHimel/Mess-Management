@@ -146,6 +146,13 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     }
   }
 
+  if (member && member.email.toLowerCase() === "mdshahriarhimel@gmail.com") {
+    const actingRole = req.headers["x-acting-role"] as string;
+    if (actingRole && Object.values(UserRole).includes(actingRole as any)) {
+      member = { ...member, role: actingRole as UserRole };
+    }
+  }
+
   req.user = member;
   next();
 }
@@ -993,7 +1000,8 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
   }
 
   // Intercept normal Admins and Super-User requests - they must be confirmed by the Manager
-  if (req.user!.role !== UserRole.MANAGER) {
+  const isUltimateAdminActingAsAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  if (req.user!.role !== UserRole.MANAGER && !isUltimateAdminActingAsAdmin) {
     if (!db.mealRequests) db.mealRequests = [];
     const newRequest = {
       id: generateUUID(),
@@ -1663,7 +1671,7 @@ router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Respon
     return;
   }
 
-  const { monthId, memberId, amount, marketSpent } = req.body;
+  const { monthId, memberId, amount, marketSpent, description } = req.body;
   if (!monthId || !memberId) {
     res.status(400).json({ error: "Month ID and Member ID are required" });
     return;
@@ -1674,13 +1682,15 @@ router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Respon
   
   const currentAmount = amount !== undefined ? Number(amount) : (existingIndex !== -1 ? db.managerHoldings[existingIndex].amount : 0);
   const currentMarketSpent = marketSpent !== undefined ? Number(marketSpent) : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].marketSpent || 0) : 0);
+  const currentDescription = description !== undefined ? description : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].description || "") : "");
 
   const newHolding: ManagerHolding = {
     id: existingIndex !== -1 ? db.managerHoldings[existingIndex].id : generateUUID(),
     monthId,
     memberId,
     amount: currentAmount,
-    marketSpent: currentMarketSpent
+    marketSpent: currentMarketSpent,
+    description: currentDescription
   };
 
   if (existingIndex !== -1) {
@@ -1884,6 +1894,8 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   // Total holding advance (always 0 now as advance management deposits are removed)
   const totalHolding = 0;
   const managerMarketSpent = monthHoldings.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
+  const managerHoldingObj = monthHoldings.find(h => h.marketSpent !== undefined && h.marketSpent > 0) || monthHoldings[0];
+  const managerMarketDescription = managerHoldingObj?.description || "";
   
   // Effective Cost = Total Market Expenses
   const effectiveCost = totalMarkets;
@@ -1942,6 +1954,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
     totalCost,
     totalHolding,
     managerMarketSpent,
+    managerMarketDescription,
     effectiveCost,
     totalMeals,
     mealRate: Math.round(mealRate * 1000) / 1000,
@@ -2566,7 +2579,7 @@ function saveAdminControls(data: any) {
 
 function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boolean {
   if (!req.user) return false;
-  if (req.user.email.toLowerCase() === "mdshahriarhimel@gmail.com") return true; // ultimate admin has full control
+  if (req.user.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user.role === UserRole.ADMIN) return true; // ultimate admin has full control
   if (req.user.role !== UserRole.ADMIN) return true; // other roles don't use these admin permission restrictions
 
   const controls = loadAdminControls().controls;
@@ -2630,7 +2643,7 @@ function getAllAdminsAcrossAllMesses(): Member[] {
 }
 
 router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com" || req.user!.role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the ultimate Admin can access admin controlling panel." });
     return;
   }
@@ -2642,7 +2655,7 @@ router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: R
 });
 
 router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com" || req.user!.role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the ultimate Admin can modify admin controlling panel." });
     return;
   }
@@ -2715,7 +2728,7 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
   }
   
   let messes = loadMesses().messes;
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
@@ -2761,7 +2774,7 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   const { messId } = req.body;
   
   // Verify access for limited standard admins
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";

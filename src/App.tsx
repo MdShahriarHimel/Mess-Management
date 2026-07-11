@@ -1021,6 +1021,16 @@ export default function App() {
     showDashboardOverview: false
   });
 
+  // Synchronise acting role for ultimate admin
+  useEffect(() => {
+    if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com") {
+      const storedActingRole = localStorage.getItem("acting_role");
+      if (storedActingRole && storedActingRole !== currentUser.role) {
+        setCurrentUser(prev => prev ? { ...prev, role: storedActingRole as UserRole } : null);
+      }
+    }
+  }, [currentUser]);
+
   // Safe mode state for Admins & Super Users (defaults to true)
   const [safeMode, setSafeMode] = useState<boolean>(() => {
     try {
@@ -1042,6 +1052,7 @@ export default function App() {
   };
 
   // Forcefully override window.fetch when safeMode is on to block all POST/PUT/DELETE requests across the app
+  // and inject X-Acting-Role header for ultimate admin
   useEffect(() => {
     const originalFetch = window.fetch;
     
@@ -1066,7 +1077,20 @@ export default function App() {
           });
         }
       }
-      return originalFetch(input, init);
+
+      // Add X-Acting-Role header for ultimate admin
+      let headers = init?.headers ? new Headers(init.headers) : new Headers();
+      const actingRole = localStorage.getItem("acting_role");
+      if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && actingRole) {
+        headers.set("X-Acting-Role", actingRole);
+      }
+
+      const newInit = {
+        ...init,
+        headers
+      };
+      
+      return originalFetch(input, newInit);
     };
 
     try {
@@ -2495,6 +2519,30 @@ export default function App() {
                 <Shield size={14} className={safeMode ? "text-emerald-400 animate-pulse" : "text-slate-500"} />
                 <span>🛡️ Safe Mode: {safeMode ? "ON" : "OFF"}</span>
               </button>
+            )}
+
+            {currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+              <div className="flex items-center gap-1.5" id="ultimate-admin-role-selector">
+                <span className="text-[10px] text-slate-400 font-bold uppercase whitespace-nowrap">Act As:</span>
+                <select
+                  value={currentUser.role}
+                  onChange={(e) => {
+                    const newRole = e.target.value;
+                    localStorage.setItem("acting_role", newRole);
+                    setCurrentUser(prev => prev ? { ...prev, role: newRole as UserRole } : null);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer ${
+                    isDarkMode ? "bg-slate-950 border-slate-800 text-orange-400 font-bold" : "bg-white border-slate-200 text-orange-600 font-bold"
+                  }`}
+                >
+                  <option value={UserRole.ADMIN}>Admin (Myself)</option>
+                  <option value={UserRole.SUPERUSER}>Super User</option>
+                  <option value={UserRole.ASSISTANT_SUPERUSER}>Asst. Super User</option>
+                  <option value={UserRole.MANAGER}>Manager</option>
+                  <option value={UserRole.PARTIAL_MANAGER}>Partial Manager</option>
+                  <option value={UserRole.MEMBER}>Member</option>
+                </select>
+              </div>
             )}
 
             <button

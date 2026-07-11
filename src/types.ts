@@ -130,6 +130,7 @@ export interface ManagerHolding {
   memberId: string;
   amount: number; // Advance paid to manager
   marketSpent?: number; // Manager's monthly market spent
+  description?: string; // Manager's monthly market description
 }
 
 export interface ManagerRating {
