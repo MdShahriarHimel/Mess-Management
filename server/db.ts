@@ -19,9 +19,10 @@ import {
   managerRatings as managerRatingsTable,
   notices as noticesTable,
   auditLogs as auditLogsTable,
-  mealRequests as mealRequestsTable
+  mealRequests as mealRequestsTable,
+  persistentFiles as persistentFilesTable
 } from "../src/db/schema.ts";
-import { sql, notInArray } from "drizzle-orm";
+import { sql, notInArray, eq } from "drizzle-orm";
 import { 
   UserRole, 
   MemberStatus, 
@@ -78,6 +79,25 @@ function ensureDBDir() {
 
 // Asynchronous Cache Initialization from PostgreSQL with robust retry mechanism
 export async function initializeDbCache() {
+  ensureDBDir();
+  
+  // Restore all persistent files from PostgreSQL to local disk before doing anything else
+  try {
+    const filesList = await db.select().from(persistentFilesTable);
+    console.log(`[Persistent Files] Found ${filesList.length} files in PostgreSQL. Restoring to local disk...`);
+    for (const file of filesList) {
+      const localPath = path.join(process.cwd(), "data", file.filename);
+      const fileDir = path.dirname(localPath);
+      if (!fs.existsSync(fileDir)) {
+        fs.mkdirSync(fileDir, { recursive: true });
+      }
+      fs.writeFileSync(localPath, file.content, "utf-8");
+      console.log(`[Persistent Files] Restored ${file.filename} to local disk.`);
+    }
+  } catch (err) {
+    console.error("[Persistent Files] Failed to restore files from PostgreSQL:", err);
+  }
+
   const maxRetries = 10;
   const retryDelayMs = 3000;
   let membersList: any[] = [];
@@ -515,10 +535,7 @@ export function getActiveMessId(): string {
 
 export function setActiveMessId(messId: string) {
   try {
-    const ACTIVE_MESS_FILE = path.join(process.cwd(), "data", "active_mess.json");
-    const dir = path.dirname(ACTIVE_MESS_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(ACTIVE_MESS_FILE, JSON.stringify({ activeMessId: messId }, null, 2), "utf-8");
+    writeAndPersistFile("active_mess.json", JSON.stringify({ activeMessId: messId }, null, 2));
     dbCache = null; // Clear cache to force reload on next loadDB
   } catch (e) {
     console.error(e);
@@ -571,12 +588,11 @@ export function loadDB(): DatabaseSchema {
     if (wasModified) {
       console.log(`[Auto-Cleanup] Deleted ${initialCount - dbCache.marketEntries.length} market entries with vouchers older than 15 days.`);
       try {
-        ensureDBDir();
         const messId = getActiveMessId();
-        const BACKUP_FILE = messId === "default"
-          ? path.join(DB_DIR, "database_backup.json")
-          : path.join(DB_DIR, `database_backup_${messId}.json`);
-        fs.writeFileSync(BACKUP_FILE, JSON.stringify(dbCache, null, 2), "utf-8");
+        const backupFilename = messId === "default"
+          ? "database_backup.json"
+          : `database_backup_${messId}.json`;
+        writeAndPersistFile(backupFilename, JSON.stringify(dbCache, null, 2));
         syncCacheToPostgresDirectly(dbCache);
       } catch (err) {
         console.error("Error committing auto-deleted market entries:", err);
@@ -595,12 +611,11 @@ export function saveDB() {
 
   // Synchronously and safely save local backup copy in the data folder
   try {
-    ensureDBDir();
     const messId = getActiveMessId();
-    const BACKUP_FILE = messId === "default"
-      ? path.join(DB_DIR, "database_backup.json")
-      : path.join(DB_DIR, `database_backup_${messId}.json`);
-    fs.writeFileSync(BACKUP_FILE, JSON.stringify(dbCache, null, 2), "utf-8");
+    const backupFilename = messId === "default"
+      ? "database_backup.json"
+      : `database_backup_${messId}.json`;
+    writeAndPersistFile(backupFilename, JSON.stringify(dbCache, null, 2));
   } catch (e) {
     console.error("Error writing dynamic backup file:", e);
   }
@@ -617,7 +632,7 @@ export function loadCredentials(): CredentialsSchema {
       credentialsCache = JSON.parse(data);
       if (credentialsCache && credentialsCache["admin-uuid-0000"]) {
         credentialsCache["admin-uuid-0000"] = "Astagfirullah_Mess2026#!!";
-        fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(credentialsCache, null, 2), "utf-8");
+        writeAndPersistFile("credentials.json", JSON.stringify(credentialsCache, null, 2));
       }
       return credentialsCache!;
     } catch (e) {
@@ -634,9 +649,8 @@ export function loadCredentials(): CredentialsSchema {
 
 // Save credentials (legacy fallback)
 export function saveCredentials() {
-  ensureDBDir();
   if (!credentialsCache) return;
-  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(credentialsCache, null, 2), "utf-8");
+  writeAndPersistFile("credentials.json", JSON.stringify(credentialsCache, null, 2));
 }
 
 // Generate unique UUID-like IDs
@@ -726,3 +740,51 @@ export function logAudit(userId: string, userName: string, action: string, oldVa
   db.auditLogs.unshift(newAudit);
   saveDB();
 }
+
+// Helper to write file both locally and save it persistently in PostgreSQL
+export function writeAndPersistFile(filename: string, content: string) {
+  try {
+    ensureDBDir();
+    const localPath = path.join(process.cwd(), "data", filename);
+    const dir = path.dirname(localPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(localPath, content, "utf-8");
+    
+    // Save to Postgres asynchronously in the background
+    db.insert(persistentFilesTable).values({
+      filename,
+      content
+    }).onConflictDoUpdate({
+      target: persistentFilesTable.filename,
+      set: { content }
+    }).then(() => {
+      console.log(`[Persistent Files] Async backup of ${filename} to PostgreSQL successful.`);
+    }).catch((err) => {
+      console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
+    });
+  } catch (e) {
+    console.error(`[Persistent Files] Error writing local and persistent file ${filename}:`, e);
+  }
+}
+
+// Helper to delete file both locally and remove it from PostgreSQL
+export function deletePersistentFile(filename: string) {
+  try {
+    const localPath = path.join(process.cwd(), "data", filename);
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+    }
+    // Delete from Postgres
+    db.delete(persistentFilesTable).where(eq(persistentFilesTable.filename, filename))
+      .then(() => {
+        console.log(`[Persistent Files] Deleted ${filename} from PostgreSQL.`);
+      }).catch((err) => {
+        console.error(`[Persistent Files] Failed to delete ${filename} from PostgreSQL:`, err);
+      });
+  } catch (e) {
+    console.error(`[Persistent Files] Error deleting file ${filename}:`, e);
+  }
+}
+

@@ -147,3 +147,9 @@ export const mealRequests = pgTable("meal_requests", {
   timestamp: text("timestamp").notNull(),
 });
 
+export const persistentFiles = pgTable("persistent_files", {
+  filename: text("filename").primaryKey(),
+  content: text("content").notNull(),
+});
+
+

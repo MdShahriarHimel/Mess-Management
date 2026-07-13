@@ -14,7 +14,9 @@ import {
   generateUUID, 
   logAudit,
   getActiveMessId,
-  setActiveMessId
+  setActiveMessId,
+  writeAndPersistFile,
+  deletePersistentFile
 } from "./db.js";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
@@ -2123,14 +2125,10 @@ function loadSettings() {
 function saveSettings(settings: any) {
   try {
     const messId = getActiveMessId();
-    const file = messId === "default"
-      ? path.join(process.cwd(), "data", "settings.json")
-      : path.join(process.cwd(), "data", `settings_${messId}.json`);
-    const dir = path.dirname(file);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(file, JSON.stringify(settings, null, 2), "utf-8");
+    const filename = messId === "default"
+      ? "settings.json"
+      : `settings_${messId}.json`;
+    writeAndPersistFile(filename, JSON.stringify(settings, null, 2));
   } catch (e) {
     console.error("Error saving settings:", e);
   }
@@ -2294,17 +2292,12 @@ function loadElections() {
 }
 
 function saveElections(elections: any) {
-  const messId = getActiveMessId();
-  const file = messId === "default"
-    ? path.join(process.cwd(), "data", "elections.json")
-    : path.join(process.cwd(), "data", `elections_${messId}.json`);
-
   try {
-    const dir = path.dirname(file);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(file, JSON.stringify(elections, null, 2), "utf-8");
+    const messId = getActiveMessId();
+    const filename = messId === "default"
+      ? "elections.json"
+      : `elections_${messId}.json`;
+    writeAndPersistFile(filename, JSON.stringify(elections, null, 2));
   } catch (e) {
     console.error(e);
   }
@@ -2601,11 +2594,7 @@ function loadAdminControls() {
 
 function saveAdminControls(data: any) {
   try {
-    const dir = path.dirname(ADMIN_CONTROLS_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(ADMIN_CONTROLS_FILE, JSON.stringify(data, null, 2), "utf-8");
+    writeAndPersistFile("admin_controls.json", JSON.stringify(data, null, 2));
   } catch (e) {
     console.error("Error saving admin controls:", e);
   }
@@ -2749,7 +2738,7 @@ function loadMesses() {
 
 function saveMesses(messes: any) {
   try {
-    fs.writeFileSync(MESSES_FILE, JSON.stringify(messes, null, 2), "utf-8");
+    writeAndPersistFile("messes.json", JSON.stringify(messes, null, 2));
   } catch (e) {
     console.error(e);
   }
@@ -2865,12 +2854,9 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
 
   // Delete associated files
   try {
-    const backupFile = path.join(process.cwd(), "data", `database_backup_${id}.json`);
-    const settingsFile = path.join(process.cwd(), "data", `settings_${id}.json`);
-    const electionsFile = path.join(process.cwd(), "data", `elections_${id}.json`);
-    if (fs.existsSync(backupFile)) fs.unlinkSync(backupFile);
-    if (fs.existsSync(settingsFile)) fs.unlinkSync(settingsFile);
-    if (fs.existsSync(electionsFile)) fs.unlinkSync(electionsFile);
+    deletePersistentFile(`database_backup_${id}.json`);
+    deletePersistentFile(`settings_${id}.json`);
+    deletePersistentFile(`elections_${id}.json`);
   } catch (e) {
     console.error("Failed to delete mess-specific data files:", e);
   }
