@@ -1645,6 +1645,11 @@ export default function App() {
     }
   }, [activeTab]);
 
+  // Scroll to the top of the page when activeTab changes to prevent starting from the middle/bottom
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
+
   useEffect(() => {
     if (currentUser?.role === UserRole.MEMBER && activeTab === "meals") {
       setActiveTab("dashboard");

@@ -1259,7 +1259,13 @@ export default function FinanceSettlement({
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.deposit}</td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.market}</td>
-                      <td className="py-3.5 px-4 text-center font-mono font-semibold text-cyan-400">{m.mealsCount}</td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full font-bold font-mono text-xs ${
+                          isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {m.mealsCount} Qty
+                        </span>
+                      </td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.mealCost}</td>
                       <td className={`py-3.5 px-4 text-right font-mono font-extrabold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
                         {currencySymbol} {m.balance}
@@ -1280,6 +1286,33 @@ export default function FinanceSettlement({
                 })
               )}
             </tbody>
+            {reportSummary?.memberSettlements && reportSummary.memberSettlements.length > 0 && (
+              <tfoot>
+                <tr className={`border-t font-extrabold text-[11px] ${
+                  isDarkMode ? "bg-slate-950/20 border-slate-800 text-cyan-300" : "bg-slate-100/50 border-slate-200 text-slate-700"
+                }`}>
+                  <td className="py-3.5 px-4 font-black">TOTALS</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.totalDeposits || 0}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.totalMarkets || 0}</td>
+                  <td className="py-3.5 px-4 text-center">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full font-black font-mono text-xs ${
+                      isDarkMode ? "bg-slate-950 text-slate-400 border border-slate-800/80" : "bg-slate-200 text-slate-700 border border-slate-300"
+                    }`}>
+                      {reportSummary.totalMeals || 0} Qty
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.effectiveCost || 0}</td>
+                  <td className={`py-3.5 px-4 text-right font-mono font-black ${
+                    (reportSummary.totalDeposits + reportSummary.totalMarkets - reportSummary.effectiveCost) >= 0 ? "text-emerald-400" : "text-rose-400"
+                  }`}>
+                    {currencySymbol} {(reportSummary.totalDeposits + reportSummary.totalMarkets - reportSummary.effectiveCost).toFixed(2)}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-semibold font-sans text-[10px] text-slate-400">
+                    Rate: {currencySymbol} {reportSummary.mealRate || 0}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
