@@ -1,9 +1,9 @@
-{
-  "projectId": "iconic-service-6wjrd",
-  "appId": "1:266330554955:web:899f13a7b2c0cf695dc3ce",
+{  
+  "projectId": "mess-managing",
+  "appId": "AIzaSyC7SnylyJvxPhFfqpivcTGICZ_qdCsHCHQ",
   "apiKey": "AIzaSyCXSO46F2QvWbDzWKPX6sVeMlT2aBOLXpg",
-  "authDomain": "iconic-service-6wjrd.firebaseapp.com",
-  "storageBucket": "iconic-service-6wjrd.firebasestorage.app",
-  "messagingSenderId": "266330554955",
-  "measurementId": ""
+  "authDomain": "mess-managing.firebaseapp.com",
+  "storageBucket": "mess-managing.firebasestorage.app",
+  "messagingSenderId": "1055947161976",
+  "measurementId": "G-D7L4B1HQ1R"
 }
