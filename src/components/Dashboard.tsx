@@ -1542,13 +1542,15 @@ export default function Dashboard({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => onNavigateToTab("market")}
-                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs cursor-pointer transition-all shadow-md shadow-cyan-950/30"
-                  >
-                    <ShoppingCart size={14} />
-                    Go to Market Logs to List Purchases
-                  </button>
+                  {isManagerOrAdmin && (
+                    <button
+                      onClick={() => onNavigateToTab("market")}
+                      className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs cursor-pointer transition-all shadow-md shadow-cyan-950/30"
+                    >
+                      <ShoppingCart size={14} />
+                      Go to Market Logs to List Purchases
+                    </button>
+                  )}
                 </div>
               </div>
             );

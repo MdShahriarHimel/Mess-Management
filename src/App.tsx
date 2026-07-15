@@ -955,6 +955,7 @@ export default function App() {
     const hash = window.location.hash.replace("#", "");
     return hash || "dashboard";
   });
+  const [marketSubTab, setMarketSubTab] = useState<"standard" | "managerial">("standard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // General Month states
@@ -1648,6 +1649,10 @@ export default function App() {
   // Scroll to the top of the page when activeTab changes to prevent starting from the middle/bottom
   useEffect(() => {
     window.scrollTo(0, 0);
+    const mainEl = document.querySelector("main");
+    if (mainEl) {
+      mainEl.scrollTo(0, 0);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -2615,7 +2620,12 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               isDarkMode={isDarkMode}
-              onNavigateToTab={(tab) => { setActiveTab(tab); }}
+              onNavigateToTab={(tab) => { 
+                setActiveTab(tab); 
+                if (tab === "market") {
+                  setMarketSubTab("managerial");
+                }
+              }}
               reportSummary={reportSummary}
               triggerRefresh={handleRefreshAll}
               months={months}
@@ -2679,6 +2689,8 @@ export default function App() {
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
               safeMode={safeMode}
+              subTab={marketSubTab}
+              onSetSubTab={setMarketSubTab}
             />
           )}
 

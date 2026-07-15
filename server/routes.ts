@@ -1947,7 +1947,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   const memberSettlements = monthMembers.map(member => {
     const memberDep = monthDeposits.filter(d => d.memberId === member.id).reduce((s, d) => s + d.amount, 0);
     const memberHoldingMarketSpent = monthHoldings.filter(h => h.memberId === member.id).reduce((s, h) => s + (h.marketSpent || 0), 0);
-    const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0) + memberHoldingMarketSpent;
+    const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0);
     
     // Member's total meals count
     const memberMealsList = monthMeals.filter(m => m.memberId === member.id);

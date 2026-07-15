@@ -1263,7 +1263,7 @@ export default function FinanceSettlement({
                         <span className={`inline-block px-2 py-0.5 rounded-full font-bold font-mono text-xs ${
                           isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
                         }`}>
-                          {m.mealsCount} Qty
+                          {m.mealsCount} Meals (Value)
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.mealCost}</td>
@@ -1298,7 +1298,7 @@ export default function FinanceSettlement({
                     <span className={`inline-block px-2.5 py-0.5 rounded-full font-black font-mono text-xs ${
                       isDarkMode ? "bg-slate-950 text-slate-400 border border-slate-800/80" : "bg-slate-200 text-slate-700 border border-slate-300"
                     }`}>
-                      {reportSummary.totalMeals || 0} Qty
+                      {reportSummary.totalMeals || 0} Meals (Value)
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.effectiveCost || 0}</td>
