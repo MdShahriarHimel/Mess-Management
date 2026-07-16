@@ -4,5 +4,15 @@ dist/
 coverage/
 .DS_Store
 *.log
+
 .env*
 !.env.example
+
+# Local database/cache
+data/
+
+# Credentials
+credentials.json
+
+# Drizzle generated files (optional)
+drizzle/meta/

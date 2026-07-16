@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-View your app in AI Studio: https://ai.studio/apps/e6d8d833-ebeb-44d7-ab99-f9251071cb45
+View your app in HIMEL Studio:  Shahriar Himel
 
 ## Run Locally
 

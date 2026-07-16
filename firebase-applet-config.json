@@ -1,9 +1,9 @@
-{  
-  "projectId": "mess-managing",
-  "appId": "AIzaSyC7SnylyJvxPhFfqpivcTGICZ_qdCsHCHQ",
-  "apiKey": "AIzaSyCXSO46F2QvWbDzWKPX6sVeMlT2aBOLXpg",
-  "authDomain": "mess-managing.firebaseapp.com",
-  "storageBucket": "mess-managing.firebasestorage.app",
-  "messagingSenderId": "1055947161976",
-  "measurementId": "G-D7L4B1HQ1R"
+{
+    "apiKey": "AIzaSyC7SnylyJvxPhFfqpivcTGICZ_qdCsHCHQ",
+    "authDomain": "mess-managing.firebaseapp.com",
+    "projectId": "mess-managing",
+    "storageBucket": "mess-managing.firebasestorage.app",
+    "messagingSenderId": "1055947161976",
+    "appId": "1:1055947161976:web:129e2a1442782de851c88d",
+    "measurementId": "G-D7L4B1HQ1R"
 }

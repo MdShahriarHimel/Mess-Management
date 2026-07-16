@@ -26,8 +26,6 @@ interface MarketLogsProps {
     allowPreviousMealPlanner?: boolean;
   };
   safeMode?: boolean;
-  subTab?: "standard" | "managerial";
-  onSetSubTab?: (tab: "standard" | "managerial") => void;
 }
 
 export default function MarketLogs({ 
@@ -37,9 +35,7 @@ export default function MarketLogs({
   isDarkMode, 
   onRefresh,
   dateRestrictions,
-  safeMode = false,
-  subTab = "standard",
-  onSetSubTab
+  safeMode = false
 }: MarketLogsProps) {
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -71,14 +67,6 @@ export default function MarketLogs({
   const [success, setSuccess] = useState<string | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<string | null>(null);
 
-  // Managerial cost states
-  const [depositsList, setDepositsList] = useState<any[]>([]);
-  const [holdingsList, setHoldingsList] = useState<any[]>([]);
-  const [showAddManagerialModal, setShowAddManagerialModal] = useState(false);
-  const [managerialDate, setManagerialDate] = useState(new Date().toISOString().split("T")[0]);
-  const [managerialAmount, setManagerialAmount] = useState("");
-  const [managerialDesc, setManagerialDesc] = useState("");
-
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 
   // Fetch market entries
@@ -89,8 +77,6 @@ export default function MarketLogs({
       
       const mRes = await fetch(`/api/markets/${currentMonthId}`, { headers: authHeader });
       const dRes = await fetch(`/api/duties/${currentMonthId}`, { headers: authHeader });
-      const depRes = await fetch(`/api/deposits/${currentMonthId}`, { headers: authHeader });
-      const holdRes = await fetch(`/api/holdings/${currentMonthId}`, { headers: authHeader });
       
       if (mRes.ok) {
         const mData = await mRes.json();
@@ -99,14 +85,6 @@ export default function MarketLogs({
       if (dRes.ok) {
         const dData = await dRes.json();
         setDuties(dData.duties || []);
-      }
-      if (depRes.ok) {
-        const depData = await depRes.json();
-        setDepositsList(depData.deposits || []);
-      }
-      if (holdRes.ok) {
-        const holdData = await holdRes.json();
-        setHoldingsList(holdData.holdings || []);
       }
     } catch (e) {
       console.error(e);
@@ -390,63 +368,6 @@ export default function MarketLogs({
   const isManager = currentUser.role === UserRole.MANAGER;
   const canEditMarketDuty = isUltimateAdmin || isManager;
 
-  const handleDeleteManagerialExpense = async (id: string) => {
-    if (!confirm("Are you sure you want to permanently delete this manager expense entry?")) return;
-    try {
-      const response = await fetch(`/api/holdings/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
-      });
-      if (response.ok) {
-        fetchMarketsAndSchedules();
-        onRefresh();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleAddManagerialExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const response = await fetch("/api/holdings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
-        },
-        body: JSON.stringify({
-          monthId: currentMonthId,
-          memberId: currentUser.id,
-          amount: 0,
-          marketSpent: Number(managerialAmount),
-          description: `[${managerialDate}] ${managerialDesc}`
-        })
-      });
-
-      if (response.ok) {
-        setShowAddManagerialModal(false);
-        setManagerialAmount("");
-        setManagerialDesc("");
-        setManagerialDate(new Date().toISOString().split("T")[0]);
-        fetchMarketsAndSchedules();
-        onRefresh();
-      } else {
-        const err = await response.json();
-        alert(err.error || "Failed to save managerial cost");
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const totalDeposits = depositsList.reduce((sum, d) => sum + d.amount, 0);
-  const totalManagerialCost = holdingsList.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
-  const remainingDeposits = totalDeposits - totalManagerialCost;
-
   return (
     <div className="space-y-6" id="market-logs-wrapper">
       
@@ -455,190 +376,36 @@ export default function MarketLogs({
         <div>
           <h2 className="text-xl font-bold font-display flex items-center gap-2">
             <ShoppingCart className="text-cyan-400" />
-            {subTab === "standard" ? "Market Schedule & Expenses" : "Monthly Expenses of Manager"}
+            Market Schedule & Expenses
           </h2>
           <p className="text-xs text-slate-400">
-            {subTab === "standard" 
-              ? "Log physical cash expenditures on daily groceries and rotate scheduled dates." 
-              : "Track and manage managerial/mass expenses such as rice bags, mass spices, etc."}
+            Log physical cash expenditures on daily groceries and rotate scheduled dates.
           </p>
         </div>
 
         <div className="flex gap-2">
-          {subTab === "standard" ? (
-            <>
-              {canEditMarketDuty && (
-                <button
-                  onClick={() => { setShowScheduleModal(true); }}
-                  className="px-3.5 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
-                >
-                  <UserPlus size={14} />
-                  ASSIGN SCHEDULE
-                </button>
-              )}
-
-              <button
-                onClick={() => { resetForm(); setShowAddModal(true); }}
-                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Plus size={15} />
-                SUBMIT VOUCHER
-              </button>
-            </>
-          ) : (
-            isManagerOrAdmin && (
-              <button
-                onClick={() => {
-                  setManagerialDate(new Date().toISOString().split("T")[0]);
-                  setManagerialAmount("");
-                  setManagerialDesc("");
-                  setShowAddManagerialModal(true);
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Plus size={15} />
-                ADD MANAGERIAL EXPENSE
-              </button>
-            )
+          {canEditMarketDuty && (
+            <button
+              onClick={() => { setShowScheduleModal(true); }}
+              className="px-3.5 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+            >
+              <UserPlus size={14} />
+              ASSIGN SCHEDULE
+            </button>
           )}
+
+          <button
+            onClick={() => { resetForm(); setShowAddModal(true); }}
+            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+          >
+            <Plus size={15} />
+            SUBMIT VOUCHER
+          </button>
         </div>
       </div>
 
-      {/* Sub-tab Switcher */}
-      <div className="flex border-b border-cyan-500/10 mb-4">
-        <button
-          onClick={() => onSetSubTab?.("standard")}
-          className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 cursor-pointer ${
-            subTab === "standard"
-              ? "border-cyan-500 text-cyan-400"
-              : "border-transparent text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          STANDARD MARKET & DUTIES
-        </button>
-        <button
-          onClick={() => onSetSubTab?.("managerial")}
-          className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 cursor-pointer ${
-            subTab === "managerial"
-              ? "border-cyan-500 text-cyan-400"
-              : "border-transparent text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          MONTHLY EXPENSES OF MANAGER
-        </button>
-      </div>
-
-      {subTab === "managerial" ? (
-        <div className="space-y-6 animate-fade-in" id="managerial-expenses-tab">
-          {/* Summary KPIs */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className={`p-4 rounded-xl border ${
-              isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-            }`}>
-              <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1">Total Deposits Pool</span>
-              <span className="text-xl font-black font-mono text-cyan-400">৳ {totalDeposits.toFixed(2)}</span>
-            </div>
-            
-            <div className={`p-4 rounded-xl border ${
-              isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-            }`}>
-              <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1">Monthly Managerial Cost</span>
-              <span className="text-xl font-black font-mono text-orange-400">৳ {totalManagerialCost.toFixed(2)}</span>
-            </div>
-
-            <div className={`p-4 rounded-xl border ${
-              remainingDeposits < 0 
-                ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
-                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-            }`}>
-              <span className="text-[10px] uppercase tracking-wider block font-bold mb-1">Remaining Deposits</span>
-              <span className="text-xl font-black font-mono">৳ {remainingDeposits.toFixed(2)}</span>
-            </div>
-          </div>
-
-          {/* List of Managerial Expenses */}
-          <div className={`p-5 rounded-2xl border ${
-            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-          }`} id="managerial-expenses-list-panel">
-            <div className="flex justify-between items-center mb-4 border-b border-cyan-500/10 pb-3">
-              <h3 className="text-sm font-bold font-display flex items-center gap-1.5 text-cyan-400">
-                <ShoppingCart size={16} />
-                Monthly Expenses of Manager
-              </h3>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
-                    <th className="py-3 px-4">Manager / Buyer</th>
-                    <th className="py-3 px-4">Shopping Date</th>
-                    <th className="py-3 px-4">Items / Details</th>
-                    <th className="py-3 px-4 text-right">Amount (৳)</th>
-                    {isManagerOrAdmin && <th className="py-3 px-4 text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-cyan-500/5">
-                  {holdingsList.filter(h => (h.marketSpent || 0) > 0).length === 0 ? (
-                    <tr>
-                      <td colSpan={isManagerOrAdmin ? 5 : 4} className="py-6 text-center text-slate-500">No managerial expenses logged yet.</td>
-                    </tr>
-                  ) : (
-                    holdingsList.filter(h => (h.marketSpent || 0) > 0).map((h) => {
-                      const buyer = members.find(u => u.id === h.memberId);
-                      
-                      // Parse Date and Text from description
-                      const match = (h.description || "").match(/^\[(\d{4}-\d{2}-\d{2})\]\s*(.*)$/);
-                      const parsedDate = match ? match[1] : "N/A";
-                      const parsedText = match ? match[2] : h.description;
-
-                      return (
-                        <tr key={h.id} className="hover:bg-cyan-500/5">
-                          <td className="py-3.5 px-4 font-bold text-cyan-400">
-                            <div className="flex items-center gap-2">
-                              {buyer?.photo ? (
-                                <img 
-                                  src={buyer.photo} 
-                                  alt={buyer.nickname} 
-                                  className="w-7 h-7 rounded-full object-cover border border-cyan-500/20 shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-7 h-7 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-[10px] uppercase shrink-0 font-display">
-                                  {(buyer?.nickname || "??").slice(0, 2)}
-                                </div>
-                              )}
-                              <span>{buyer?.nickname || "Manager"}</span>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 font-mono">{parsedDate}</td>
-                          <td className="py-3.5 px-4 font-semibold text-slate-200">{parsedText || "Managerial Market Expense"}</td>
-                          <td className="py-3.5 px-4 text-right font-bold font-mono text-cyan-400">
-                            ৳ {h.marketSpent}
-                          </td>
-                          {isManagerOrAdmin && (
-                            <td className="py-3.5 px-4 text-right">
-                              <button
-                                onClick={() => handleDeleteManagerialExpense(h.id)}
-                                className="p-1 text-rose-400 hover:bg-rose-500/10 rounded cursor-pointer"
-                                title="Delete entry"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Grid Layout: Left is Assigned Schedules, Right is Expense list */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in" id="market-dashboard-grid">
+      {/* Grid Layout: Left is Assigned Schedules, Right is Expense list */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="market-dashboard-grid">
         
         {/* Market schedule Calendar */}
         <div className={`p-5 rounded-2xl border ${
@@ -794,7 +561,6 @@ export default function MarketLogs({
         </div>
 
       </div>
-      )}
 
       {/* VIEW RECEIPT MODAL */}
       {activeReceipt && (
@@ -1100,81 +866,6 @@ export default function MarketLogs({
                   className="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs cursor-pointer"
                 >
                   ASSIGN DUTY
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ADD MANAGERIAL EXPENSE MODAL */}
-      {showAddManagerialModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-sm p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-2xl">
-            <div className="flex justify-between items-center mb-5 border-b border-slate-850 pb-3">
-              <h3 className="text-base font-bold font-display flex items-center gap-1.5 text-orange-500">
-                <ShoppingCart size={18} className="text-cyan-400" />
-                Add Managerial Expense
-              </h3>
-              <button onClick={() => setShowAddManagerialModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddManagerialExpense} className="space-y-4">
-              
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Shopping Date</label>
-                <input
-                  type="date"
-                  required
-                  value={managerialDate}
-                  onChange={(e) => setManagerialDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Amount Spent (৳)</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  step="any"
-                  value={managerialAmount}
-                  placeholder="e.g. 1800"
-                  onChange={(e) => setManagerialAmount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Items & Details</label>
-                <textarea
-                  required
-                  value={managerialDesc}
-                  rows={3}
-                  placeholder="e.g. Bought Rice of 25KG"
-                  onChange={(e) => setManagerialDesc(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white resize-none"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-3 border-t border-slate-850">
-                <button
-                  type="button"
-                  onClick={() => setShowAddManagerialModal(false)}
-                  className="flex-1 py-2 rounded-lg bg-slate-850 hover:bg-slate-800 text-xs font-semibold text-slate-300 cursor-pointer"
-                >
-                  CANCEL
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs cursor-pointer"
-                >
-                  {loading ? "SAVING..." : "ADD EXPENSE"}
                 </button>
               </div>
 
