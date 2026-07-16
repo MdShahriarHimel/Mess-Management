@@ -16,3 +16,5 @@ credentials.json
 
 # Drizzle generated files (optional)
 drizzle/meta/
+
+test-db.js
