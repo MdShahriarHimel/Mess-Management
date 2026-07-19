@@ -8,30 +8,87 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { router as apiRouter } from "./server/routes.js";
-import { initializeDbCache } from "./server/db.js";
+import { initializeDbCache, pendingSyncPromises } from "./server/db.js";
+import { pool } from "./src/db/index.js";
 
 dotenv.config();
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  // Initialize DB Cache from Cloud SQL
-  await initializeDbCache();
+// Increase payload size limit to allow base64 images for member profiles and receipts
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // Increase payload size limit to allow base64 images for member profiles and receipts
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// Vercel Serverless background database synchronization flusher middleware
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  (res as any).send = async function (body: any) {
+    if (pendingSyncPromises && pendingSyncPromises.length > 0) {
+      console.log(`[Vercel Sync] Waiting for ${pendingSyncPromises.length} background DB sync promises...`);
+      try {
+        await Promise.all(pendingSyncPromises);
+      } catch (err) {
+        console.error("[Vercel Sync] Error flushing background database sync:", err);
+      }
+    }
+    return originalSend.call(this, body);
+  };
+  next();
+});
 
-  // Mount API router
-  app.use("/api", apiRouter);
+// Async database cache initialization
+let isDbInitialized = false;
+let dbInitPromise: Promise<void> | null = null;
 
-  // Health check route
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
-  });
+export async function ensureDbInitialized() {
+  if (isDbInitialized) return;
+  if (!dbInitPromise) {
+    dbInitPromise = (async () => {
+      console.log("[Database] Initializing DB Cache...");
+      await initializeDbCache();
+      isDbInitialized = true;
+      console.log("[Database] DB Cache initialized successfully.");
+    })();
+  }
+  return dbInitPromise;
+}
 
-  // Handle Vite middleware integration based on environment
+// Middleware to guarantee that database cache is fully loaded before any endpoint handles request
+app.use(async (req, res, next) => {
+  try {
+    await ensureDbInitialized();
+    next();
+  } catch (err) {
+    console.error("Failed to initialize database cache:", err);
+    res.status(500).json({ error: "Internal Server Error: Database initialization failed" });
+  }
+});
+
+// Mount API router
+app.use("/api", apiRouter);
+
+// Health check route
+app.get("/api/health", async (req, res) => {
+  try {
+    const dbResult = await pool.query("SELECT version();");
+    const version = dbResult.rows[0]?.version || "Unknown";
+    res.json({
+      status: "ok",
+      database: "connected",
+      version: version
+    });
+  } catch (err) {
+    console.error("Database health check failed:", err);
+    res.status(500).json({
+      status: "error",
+      database: "disconnected"
+    });
+  }
+});
+
+// Configure serving of assets and SPA routing based on environment
+async function configureApp() {
   if (process.env.NODE_ENV !== "production") {
     console.log("Starting server in DEVELOPMENT mode...");
     const vite = await createViteServer({
@@ -50,13 +107,26 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Mess ERP server running on http://0.0.0.0:${PORT}`);
-  });
 }
 
-startServer().catch((err) => {
-  console.error("Critical error starting server:", err);
-  process.exit(1);
-});
+// Trigger setup configuration and conditional listening
+const initPromise = (async () => {
+  await configureApp();
+  // Trigger eager DB cache initialization in background
+  ensureDbInitialized().catch(err => {
+    console.error("Eager database initialization failed:", err);
+  });
+
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Mess ERP server running on http://0.0.0.0:${PORT}`);
+    });
+  }
+})();
+
+// For CommonJS export compatibility on Vercel
+if (typeof module !== "undefined") {
+  module.exports = app;
+}
+
+export default app;

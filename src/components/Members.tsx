@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronUp
 } from "lucide-react";
 import { Member, UserRole, MemberStatus } from "../types.js";
+import { ColorPalettePicker } from "../App.tsx";
 
 const COLOR_PALETTES = [
   { name: "Sunset Orange", hex: "#ea580c" },
@@ -25,131 +26,6 @@ const COLOR_PALETTES = [
   { name: "Ice Blue", hex: "#38bdf8" },
   { name: "Pure White", hex: "#ffffff" }
 ];
-
-function ColorPalettePicker({ 
-  value, 
-  onChange 
-}: { 
-  value: string; 
-  onChange: (color: string) => void; 
-}) {
-  const activeHex = value ? (value.startsWith("#") ? value.slice(0, 7).toLowerCase() : "#ffffff") : "#ffffff";
-
-  // Helper to parse hex to r, g, b
-  const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16)
-    } : { r: 255, g: 255, b: 255 };
-  };
-
-  const rgbToHex = (r: number, g: number, b: number) => {
-    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-  };
-
-  const rgb = hexToRgb(activeHex);
-
-  const handleRgbChange = (channel: 'r' | 'g' | 'b', val: number) => {
-    const updated = { ...rgb, [channel]: Math.max(0, Math.min(255, val)) };
-    onChange(rgbToHex(updated.r, updated.g, updated.b));
-  };
-
-  return (
-    <div className="space-y-2 p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/80">
-      {/* Predefined Quick Palettes */}
-      <div className="flex flex-wrap gap-1.5 justify-start">
-        {COLOR_PALETTES.map((color) => {
-          const isSelected = activeHex === color.hex.toLowerCase();
-          return (
-            <button
-              key={color.hex}
-              type="button"
-              onClick={() => onChange(color.hex)}
-              title={color.name}
-              className={`w-4 h-4 rounded-full border cursor-pointer transition-all hover:scale-110 active:scale-95 ${
-                isSelected ? "border-white ring-2 ring-cyan-500/50 scale-110" : "border-slate-800/60"
-              }`}
-              style={{ backgroundColor: color.hex }}
-            />
-          );
-        })}
-      </div>
-
-      {/* RGB Slider controls & native picker */}
-      <div className="pt-2 border-t border-slate-900 flex items-center gap-3">
-        {/* Color Preview Block and Native Color Input */}
-        <div className="relative group flex-shrink-0">
-          <div 
-            className="w-8 h-8 rounded border border-slate-700/80 cursor-pointer shadow-lg relative overflow-hidden"
-            style={{ backgroundColor: activeHex }}
-            title="Click to open color spectrum picker"
-          >
-            <input 
-              type="color" 
-              value={activeHex}
-              onChange={(e) => onChange(e.target.value)}
-              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-            />
-            {/* Tiny icon/overlay indicating you can pick */}
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-              <span className="text-[9px] text-white font-bold">RGB</span>
-            </div>
-          </div>
-        </div>
-
-        {/* RGB Sliders */}
-        <div className="flex-grow space-y-1">
-          {/* Red Slider */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold text-rose-500 w-3">R</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="255" 
-              value={rgb.r}
-              onChange={(e) => handleRgbChange('r', parseInt(e.target.value))}
-              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-rose-500"
-            />
-            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.r}</span>
-          </div>
-          {/* Green Slider */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold text-emerald-500 w-3">G</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="255" 
-              value={rgb.g}
-              onChange={(e) => handleRgbChange('g', parseInt(e.target.value))}
-              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-            />
-            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.g}</span>
-          </div>
-          {/* Blue Slider */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold text-cyan-400 w-3">B</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="255" 
-              value={rgb.b}
-              onChange={(e) => handleRgbChange('b', parseInt(e.target.value))}
-              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-            />
-            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.b}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center text-[9px] text-slate-500 font-mono">
-        <span>RGB({rgb.r}, {rgb.g}, {rgb.b})</span>
-        <span>HEX {activeHex.toUpperCase()}</span>
-      </div>
-    </div>
-  );
-}
 
 function MicroAnimationOverlay({ animationType }: { animationType?: string }) {
   if (!animationType || animationType === "none") return null;
@@ -221,9 +97,10 @@ interface MembersProps {
   currentMonthId: string;
   dropdownOptions?: string[];
   safeMode?: boolean;
+  mealTypes?: any[];
 }
 
-export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [], safeMode = false }: MembersProps) {
+export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [], safeMode = false, mealTypes }: MembersProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
@@ -376,6 +253,31 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
         const base64 = canvas.toDataURL("image/jpeg", 0.7);
         setPhoto(base64);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle Edit Photo selection and base64 resizing
+  const handleEditPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingMember) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const MAX_WIDTH = 200;
+        const scale = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scale;
+
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const base64 = canvas.toDataURL("image/jpeg", 0.7);
+        setEditingMember({ ...editingMember, photo: base64 });
       };
       img.src = event.target?.result as string;
     };
@@ -1309,6 +1211,41 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
             <form onSubmit={handleEditSubmit} className="space-y-4 max-h-[480px] overflow-y-auto pr-2">
               
+              {/* Profile Photo Customizer */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Profile Photo</label>
+                <div className="flex gap-3 items-center">
+                  {editingMember.photo ? (
+                    <div className="relative group shrink-0">
+                      <img 
+                        src={editingMember.photo} 
+                        className="w-14 h-14 rounded-xl object-cover border border-cyan-500/20" 
+                        alt="Preview" 
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEditingMember({ ...editingMember, photo: null })}
+                        className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white p-0.5 rounded-full border border-rose-500/30 transition-all cursor-pointer flex items-center justify-center w-4 h-4"
+                        title="Remove photo"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl bg-cyan-500/10 border border-cyan-500/15 flex items-center justify-center text-cyan-400 text-xs font-bold shrink-0">
+                      EMPTY
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleEditPhotoUpload}
+                    className="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-500/10 file:text-cyan-400 file:cursor-pointer hover:file:bg-cyan-500/20"
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Full Name</label>
@@ -2256,7 +2193,19 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     <div className="p-3 rounded-xl bg-slate-950/40 border border-orange-500/10 text-center">
                       <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wider block mb-0.5">Total Meals</span>
                       <span className="text-sm font-black font-mono text-orange-500">
-                        {memberMeals.reduce((sum, m) => sum + (m.lunch || 0) + (m.dinner || 0), 0)}
+                        {(() => {
+                          const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+                            { id: "lunch", name: "Lunch" },
+                            { id: "dinner", name: "Dinner" }
+                          ];
+                          return memberMeals.reduce((sum, m) => {
+                            let itemSum = 0;
+                            activeMealTypes.forEach((type) => {
+                              itemSum += (m as any)[type.id] || 0;
+                            });
+                            return sum + itemSum;
+                          }, 0);
+                        })()}
                       </span>
                     </div>
                   </div>
@@ -2312,42 +2261,61 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
                   {/* Daily Meals Tracker Grid */}
                   <div className="p-4 rounded-xl bg-slate-950/30 border border-slate-850 space-y-2">
-                    <p className="text-[10px] font-extrabold uppercase text-orange-500 tracking-wider">
-                      Daily Meal Counts (Lunch & Dinner)
-                    </p>
+                    {(() => {
+                      const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+                        { id: "lunch", name: "Lunch" },
+                        { id: "dinner", name: "Dinner" }
+                      ];
+                      return (
+                        <>
+                          <p className="text-[10px] font-extrabold uppercase text-orange-500 tracking-wider">
+                            Daily Meal Counts ({activeMealTypes.map(t => t.name).join(" & ")})
+                          </p>
 
-                    <div className="border border-slate-850 rounded-lg overflow-hidden bg-slate-950/20">
-                      <div className="max-h-[160px] overflow-y-auto pr-1">
-                        <table className="w-full text-xs text-left">
-                          <thead className="text-[9px] uppercase font-bold text-slate-500 border-b border-slate-850 bg-slate-950/60 sticky top-0">
-                            <tr>
-                              <th className="py-2 px-3">Date</th>
-                              <th className="py-2 px-3 text-center">Lunch</th>
-                              <th className="py-2 px-3 text-center">Dinner</th>
-                              <th className="py-2 px-3 text-center">Day Total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-850/60 font-mono">
-                            {memberMeals.length === 0 ? (
-                              <tr>
-                                <td colSpan={4} className="py-6 text-center text-slate-500 italic">
-                                  No meal accounts posted for this month cycle.
-                                </td>
-                              </tr>
-                            ) : (
-                              memberMeals.map((m, index) => (
-                                <tr key={index} className="hover:bg-slate-900/30">
-                                  <td className="py-1.5 px-3 font-sans font-medium text-slate-300">{m.date}</td>
-                                  <td className="py-1.5 px-3 text-center text-cyan-400 font-semibold">{m.lunch}</td>
-                                  <td className="py-1.5 px-3 text-center text-cyan-400 font-semibold">{m.dinner}</td>
-                                  <td className="py-1.5 px-3 text-center text-orange-400 font-bold">{(m.lunch || 0) + (m.dinner || 0)}</td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                          <div className="border border-slate-850 rounded-lg overflow-hidden bg-slate-950/20">
+                            <div className="max-h-[160px] overflow-y-auto pr-1">
+                              <table className="w-full text-xs text-left">
+                                <thead className="text-[9px] uppercase font-bold text-slate-500 border-b border-slate-850 bg-slate-950/60 sticky top-0">
+                                  <tr>
+                                    <th className="py-2 px-3">Date</th>
+                                    {activeMealTypes.map((type) => (
+                                      <th key={type.id} className="py-2 px-3 text-center">{type.name}</th>
+                                    ))}
+                                    <th className="py-2 px-3 text-center">Day Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-850/60 font-mono">
+                                  {memberMeals.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={2 + activeMealTypes.length} className="py-6 text-center text-slate-500 italic">
+                                        No meal accounts posted for this month cycle.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    memberMeals.map((m, index) => {
+                                      let dayTotal = 0;
+                                      return (
+                                        <tr key={index} className="hover:bg-slate-900/30">
+                                          <td className="py-1.5 px-3 font-sans font-medium text-slate-300">{m.date}</td>
+                                          {activeMealTypes.map((type) => {
+                                            const val = (m as any)[type.id] || 0;
+                                            dayTotal += val;
+                                            return (
+                                              <td key={type.id} className="py-1.5 px-3 text-center text-cyan-400 font-semibold">{val}</td>
+                                            );
+                                          })}
+                                          <td className="py-1.5 px-3 text-center text-orange-400 font-bold">{dayTotal}</td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex justify-end pt-2">

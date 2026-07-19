@@ -16,7 +16,8 @@ import {
   getActiveMessId,
   setActiveMessId,
   writeAndPersistFile,
-  deletePersistentFile
+  deletePersistentFile,
+  DB_DIR
 } from "./db.js";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
@@ -39,6 +40,41 @@ import {
 } from "../src/types.js";
 
 const router = Router();
+
+// ---------------------------------------------------------
+// PUBLIC FILE SERVING
+// ---------------------------------------------------------
+router.get("/files/:filename", (req: Request, res: Response): void => {
+  const { filename } = req.params;
+  if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
+  const filePath = path.join(DB_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    try {
+      const fileContent = fs.readFileSync(filePath, "utf-8");
+      if (fileContent.startsWith("data:")) {
+        const match = fileContent.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          const contentType = match[1];
+          const base64Data = match[2];
+          const buffer = Buffer.from(base64Data, "base64");
+          res.setHeader("Content-Type", contentType);
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          res.send(buffer);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error(`Error reading persistent file ${filename}:`, err);
+    }
+    // Fallback: send file directly
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ error: "File not found" });
+  }
+});
 
 // Interfaces for custom requests
 interface AuthenticatedRequest extends Request {
@@ -247,9 +283,34 @@ router.post("/auth/login", (req: Request, res: Response): void => {
   const storedPassword = creds[member.id];
 
   if (storedPassword === password) {
-    logAudit(member.id, member.nickname, "LOGIN", "None", "Logged In Successfully", "User logged into system.");
+    logAudit(
+      member.id,
+      member.nickname,
+      "LOGIN",
+      "None",
+      "Logged In Successfully",
+      "User logged into system.",
+      {
+        userRole: member.role,
+        browser: req.headers["user-agent"] as string,
+        ipAddress: req.ip as string
+      }
+    );
     res.json({ token: member.id, user: member });
   } else {
+    logAudit(
+      member.id,
+      member.nickname,
+      "LOGIN_FAILED",
+      "None",
+      "Login Failed",
+      "User supplied incorrect credentials during login.",
+      {
+        userRole: member.role,
+        browser: req.headers["user-agent"] as string,
+        ipAddress: req.ip as string
+      }
+    );
     res.status(401).json({ error: "Invalid email or password" });
   }
 });
@@ -570,6 +631,12 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
     return;
   }
 
+  if (newMember.photo && newMember.photo.startsWith("data:")) {
+    const filename = `profile_pic_${newId}_${Date.now()}.jpg`;
+    writeAndPersistFile(filename, newMember.photo);
+    newMember.photo = `/api/files/${filename}`;
+  }
+
   db.members.push(newMember);
   saveDB();
 
@@ -748,6 +815,28 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
           delete updates.leavingDate;
           delete updates.permissions;
         }
+      }
+    }
+  }
+
+  // Handle profile photo persistence and deletion of previous image
+  if (updates.photo !== undefined) {
+    if (updates.photo && updates.photo.startsWith("data:")) {
+      // 1. Delete previous file if it was a persistent file
+      if (original.photo && original.photo.startsWith("/api/files/")) {
+        const prevFilename = original.photo.replace("/api/files/", "");
+        deletePersistentFile(prevFilename);
+      }
+      
+      // 2. Write new photo as a persistent file
+      const filename = `profile_pic_${id}_${Date.now()}.jpg`;
+      writeAndPersistFile(filename, updates.photo);
+      updates.photo = `/api/files/${filename}`;
+    } else if (!updates.photo && original.photo) {
+      // User removed their photo
+      if (original.photo.startsWith("/api/files/")) {
+        const prevFilename = original.photo.replace("/api/files/", "");
+        deletePersistentFile(prevFilename);
       }
     }
   }
@@ -1026,6 +1115,13 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
   }
 
   // Upsert meal logs directly for Manager
+  const settings = loadSettings();
+  const mealTypes = settings.mealTypes || [
+    { id: "lunch", name: "Lunch", enabled: true },
+    { id: "dinner", name: "Dinner", enabled: true },
+    { id: "breakfast", name: "Breakfast", enabled: false }
+  ];
+
   for (const m of meals) {
     if (!m.memberId || !m.date) continue;
     const existingIndex = db.meals.findIndex(
@@ -1033,17 +1129,20 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     );
 
     if (existingIndex !== -1) {
-      db.meals[existingIndex].lunch = Number(m.lunch) || 0;
-      db.meals[existingIndex].dinner = Number(m.dinner) || 0;
+      mealTypes.forEach((t: any) => {
+        (db.meals[existingIndex] as any)[t.id] = Number((m as any)[t.id]) || 0;
+      });
     } else {
-      db.meals.push({
+      const newMeal: any = {
         id: generateUUID(),
         monthId,
         memberId: m.memberId,
-        date: m.date,
-        lunch: Number(m.lunch) || 0,
-        dinner: Number(m.dinner) || 0
+        date: m.date
+      };
+      mealTypes.forEach((t: any) => {
+        newMeal[t.id] = Number((m as any)[t.id]) || 0;
       });
+      db.meals.push(newMeal);
     }
   }
 
@@ -1092,6 +1191,13 @@ router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MA
     return;
   }
 
+  const settings = loadSettings();
+  const mealTypes = settings.mealTypes || [
+    { id: "lunch", name: "Lunch", enabled: true },
+    { id: "dinner", name: "Dinner", enabled: true },
+    { id: "breakfast", name: "Breakfast", enabled: false }
+  ];
+
   for (const m of mealsToSave) {
     if (!m.memberId || !m.date) continue;
     const existingIndex = db.meals.findIndex(
@@ -1099,17 +1205,20 @@ router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MA
     );
 
     if (existingIndex !== -1) {
-      db.meals[existingIndex].lunch = Number(m.lunch) || 0;
-      db.meals[existingIndex].dinner = Number(m.dinner) || 0;
+      mealTypes.forEach((t: any) => {
+        (db.meals[existingIndex] as any)[t.id] = Number((m as any)[t.id]) || 0;
+      });
     } else {
-      db.meals.push({
+      const newMeal: any = {
         id: generateUUID(),
         monthId: request.monthId,
         memberId: m.memberId,
-        date: m.date,
-        lunch: Number(m.lunch) || 0,
-        dinner: Number(m.dinner) || 0
+        date: m.date
+      };
+      mealTypes.forEach((t: any) => {
+        newMeal[t.id] = Number((m as any)[t.id]) || 0;
       });
+      db.meals.push(newMeal);
     }
   }
 
@@ -1899,8 +2008,107 @@ router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 // AUDIT LOGS API
 // ---------------------------------------------------------
 router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const role = user.role;
+  
+  const isAdmin = role === UserRole.ADMIN;
+  const isSuperUser = role === UserRole.SUPERUSER;
+  
+  if (!isAdmin && !isSuperUser) {
+    res.status(403).json({ error: "Access Denied: You do not have permission to view audit logs." });
+    return;
+  }
+  
   const db = loadDB();
-  res.json({ auditLogs: db.auditLogs });
+  let logs = db.auditLogs || [];
+  
+  // 1. Enforce Hierarchical Access Control
+  if (isSuperUser) {
+    // Determine Super User's allowed messes from admin controls, falling back to the active mess
+    const controls = loadAdminControls().controls;
+    const emailKey = user.email ? user.email.toLowerCase() : "";
+    const userControls = (emailKey && controls[emailKey]) || controls[user.id];
+    let allowedMesses: string[] = [];
+    if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
+      allowedMesses = userControls.allowedMesses;
+    } else {
+      allowedMesses = [getActiveMessId()];
+    }
+    
+    // Filter logs to only include those belonging to the Super User's own messes
+    logs = logs.filter(log => allowedMesses.includes(log.messId || "default"));
+  }
+  
+  // 2. Apply Filters from query params
+  const { startDate, endDate, userId, userRole, module, action, messId, superUserId } = req.query;
+  
+  if (startDate) {
+    logs = logs.filter(log => log.date && log.date >= (startDate as string));
+  }
+  if (endDate) {
+    logs = logs.filter(log => log.date && log.date <= (endDate as string));
+  }
+  if (userId) {
+    logs = logs.filter(log => log.userId === (userId as string));
+  }
+  if (userRole) {
+    logs = logs.filter(log => log.userRole === (userRole as string));
+  }
+  if (module) {
+    logs = logs.filter(log => log.module === (module as string));
+  }
+  if (action) {
+    logs = logs.filter(log => log.actionType === (action as string) || log.action === (action as string));
+  }
+  if (messId) {
+    if (isSuperUser) {
+      const controls = loadAdminControls().controls;
+      const emailKey = user.email ? user.email.toLowerCase() : "";
+      const userControls = (emailKey && controls[emailKey]) || controls[user.id];
+      let allowedMesses: string[] = [];
+      if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
+        allowedMesses = userControls.allowedMesses;
+      } else {
+        allowedMesses = [getActiveMessId()];
+      }
+      
+      if (allowedMesses.includes(messId as string)) {
+        logs = logs.filter(log => log.messId === (messId as string));
+      } else {
+        logs = []; // requested mess is outside allowed scope
+      }
+    } else {
+      logs = logs.filter(log => log.messId === (messId as string));
+    }
+  }
+  if (superUserId) {
+    if (isAdmin) {
+      logs = logs.filter(log => log.superUserId === (superUserId as string));
+    }
+  }
+  
+  res.json({ auditLogs: logs });
+});
+
+router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const { format, reason } = req.body;
+  
+  logAudit(
+    user.id,
+    user.nickname,
+    format === "pdf" ? "EXPORT_PDF" : "EXPORT_EXCEL",
+    "None",
+    `Exported Audit Logs as ${format?.toUpperCase()}`,
+    reason || `Exported audit logs list in ${format} format`,
+    {
+      userRole: user.role,
+      browser: req.headers["user-agent"] as string,
+      ipAddress: req.ip as string
+    }
+  );
+  
+  res.json({ success: true });
 });
 
 // ---------------------------------------------------------
@@ -1925,33 +2133,50 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   const managerHoldingObj = monthHoldings.find(h => h.marketSpent !== undefined && h.marketSpent > 0) || monthHoldings[0];
   const managerMarketDescription = managerHoldingObj?.description || "";
 
-  // Total Cost = Deposits + Market Expenses + Manager Monthly Market Spent (according to spec)
-  const totalCost = totalDeposits + totalMarkets + managerMarketSpent;
+  // Total Cost = Deposits + Market Expenses
+  const totalCost = totalDeposits + totalMarkets;
   
   // Total holding advance (always 0 now as advance management deposits are removed)
   const totalHolding = 0;
   
-  // Effective Cost = Total Market Expenses + Manager Monthly Market Spent
-  const effectiveCost = totalMarkets + managerMarketSpent;
+  // Effective Cost is now equal to totalCost to align meal rate calculations properly
+  const effectiveCost = totalCost;
 
-  // Sum total meals in the month
+  // Sum total meals in the month dynamically based on configured meal types
+  const settings = loadSettings();
+  const mealTypes = settings.mealTypes || [
+    { id: "lunch", name: "Lunch", enabled: true },
+    { id: "dinner", name: "Dinner", enabled: true },
+    { id: "breakfast", name: "Breakfast", enabled: false }
+  ];
+  const activeMealKeys = mealTypes.filter((t: any) => t.enabled).map((t: any) => t.id);
+
   let totalMeals = 0;
   monthMeals.forEach(meal => {
-    totalMeals += (meal.lunch || 0) + (meal.dinner || 0);
+    activeMealKeys.forEach((key: string) => {
+      totalMeals += (meal as any)[key] || 0;
+    });
   });
 
   // Prevent divide-by-zero
-  const mealRate = totalMeals > 0 ? (effectiveCost / totalMeals) : 0;
+  // Meal rate = Total cost / Total Meal count
+  const mealRate = totalMeals > 0 ? (totalCost / totalMeals) : 0;
 
   // Calculate detailed balances per member
   const memberSettlements = monthMembers.map(member => {
     const memberDep = monthDeposits.filter(d => d.memberId === member.id).reduce((s, d) => s + d.amount, 0);
     const memberHoldingMarketSpent = monthHoldings.filter(h => h.memberId === member.id).reduce((s, h) => s + (h.marketSpent || 0), 0);
-    const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0) + memberHoldingMarketSpent;
+    const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0);
     
     // Member's total meals count
     const memberMealsList = monthMeals.filter(m => m.memberId === member.id);
-    const mealsCount = memberMealsList.reduce((s, m) => s + (m.lunch || 0) + (m.dinner || 0), 0);
+    const mealsCount = memberMealsList.reduce((s, m) => {
+      let count = 0;
+      activeMealKeys.forEach((key: string) => {
+        count += (m as any)[key] || 0;
+      });
+      return s + count;
+    }, 0);
     
     // Meal Cost = Meals count * Meal Rate
     const mealCost = mealsCount * mealRate;
@@ -2005,8 +2230,8 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
 function loadSettings() {
   const messId = getActiveMessId();
   const file = messId === "default"
-    ? path.join(process.cwd(), "data", "settings.json")
-    : path.join(process.cwd(), "data", `settings_${messId}.json`);
+    ? path.join(DB_DIR, "settings.json")
+    : path.join(DB_DIR, `settings_${messId}.json`);
 
   const defaultSettings = {
     messName: messId === "default" ? "Ababil mess" : `Mess ${messId.toUpperCase()}`,
@@ -2022,6 +2247,12 @@ function loadSettings() {
     superUserCanEditMeals: true,
     currencySymbol: "৳",
     enableManagerRating: true,
+    auditRetentionDays: 30,
+    mealTypes: [
+      { id: "lunch", name: "Lunch", enabled: true },
+      { id: "dinner", name: "Dinner", enabled: true },
+      { id: "breakfast", name: "Breakfast", enabled: false }
+    ],
     balanceSheetGlow: "none",
     customColors: {
       cashDepositBg: "#f973161a", // Orange (10% opacity)
@@ -2172,7 +2403,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     'siteColor', 'fontSize', 'fontStyle', 'logoText',
     'customColors', 'messAnimations',
     'dateRestrictions', 'loginCustomization', 'homeCustomization',
-    'balanceSheetGlow', 'roleAnimations', 'adminVisibility'
+    'balanceSheetGlow', 'roleAnimations', 'adminVisibility', 'typographySettings'
   ];
   const hasAdminOnlyField = adminOnlyFields.some(field => req.body[field] !== undefined);
   if (hasAdminOnlyField && role !== UserRole.ADMIN) {
@@ -2213,8 +2444,18 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     homeCustomization,
     enableManagerRating,
     balanceSheetGlow,
-    adminVisibility
+    adminVisibility,
+    typographySettings,
+    auditRetentionDays
   } = req.body;
+
+  if (auditRetentionDays !== undefined) {
+    if (role !== UserRole.ADMIN) {
+      res.status(403).json({ error: "Only the main Admin can configure audit log retention period" });
+      return;
+    }
+    currentSettings.auditRetentionDays = Number(auditRetentionDays);
+  }
 
   if (siteColor !== undefined) currentSettings.siteColor = siteColor;
   if (fontSize !== undefined) currentSettings.fontSize = fontSize;
@@ -2236,6 +2477,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (enableManagerRating !== undefined) currentSettings.enableManagerRating = enableManagerRating;
   if (balanceSheetGlow !== undefined) currentSettings.balanceSheetGlow = balanceSheetGlow;
   if (adminVisibility !== undefined) currentSettings.adminVisibility = { ...currentSettings.adminVisibility, ...adminVisibility };
+  if (typographySettings !== undefined) currentSettings.typographySettings = { ...currentSettings.typographySettings, ...typographySettings };
 
   if (messName !== undefined) {
     if (role !== UserRole.ADMIN) {
@@ -2277,8 +2519,8 @@ function loadElections() {
     }
   };
   const file = messId === "default"
-    ? path.join(process.cwd(), "data", "elections.json")
-    : path.join(process.cwd(), "data", `elections_${messId}.json`);
+    ? path.join(DB_DIR, "elections.json")
+    : path.join(DB_DIR, `elections_${messId}.json`);
 
   try {
     if (fs.existsSync(file)) {
@@ -2577,7 +2819,7 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
 // ---------------------------------------------------------
 // ADMIN PERMISSION CONTROLS (ULTIMATE ADMIN OVERRIDES)
 // ---------------------------------------------------------
-const ADMIN_CONTROLS_FILE = path.join(process.cwd(), "data", "admin_controls.json");
+const ADMIN_CONTROLS_FILE = path.join(DB_DIR, "admin_controls.json");
 
 function loadAdminControls() {
   const defaultControls = { controls: {} };
@@ -2621,7 +2863,6 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
 function getAllAdminsAcrossAllMesses(): Member[] {
   const adminsMap = new Map<string, Member>();
   try {
-    const DB_DIR = path.join(process.cwd(), "data");
     if (fs.existsSync(DB_DIR)) {
       const files = fs.readdirSync(DB_DIR);
       for (const file of files) {
@@ -2714,7 +2955,7 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
 // ---------------------------------------------------------
 // MULTI-MESS MANAGEMENT ENDPOINTS (ADMIN ONLY)
 // ---------------------------------------------------------
-const MESSES_FILE = path.join(process.cwd(), "data", "messes.json");
+const MESSES_FILE = path.join(DB_DIR, "messes.json");
 
 function loadMesses() {
   const defaultMesses = {

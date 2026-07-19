@@ -74,6 +74,8 @@ export interface Meal {
   date: string; // YYYY-MM-DD
   lunch: number; // 0, 0.5, 1, 2, 5, 6
   dinner: number; // 0, 0.5, 1, 2, 5, 6
+  breakfast?: number; // 0, 0.5, 1, 2, 5, 6
+  [key: string]: any;
 }
 
 export interface FoodMenu {
@@ -162,6 +164,18 @@ export interface AuditLog {
   newValue: string;
   timestamp: string;
   reason: string;
+  
+  // Optional hierarchical and audit metadata fields
+  date?: string;
+  time?: string;
+  userRole?: string;
+  superUserId?: string;
+  messId?: string;
+  module?: string;
+  actionType?: string;
+  description?: string;
+  browser?: string;
+  ipAddress?: string;
 }
 
 export interface BackupSummary {

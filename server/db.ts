@@ -42,8 +42,19 @@ import {
   MealRequest
 } from "../src/types.js";
 
-const DB_DIR = path.join(process.cwd(), "data");
+export const DB_DIR = process.env.VERCEL ? "/tmp/data" : path.join(process.cwd(), "data");
 const CREDENTIALS_FILE = path.join(DB_DIR, "credentials.json");
+
+// Global queue of pending DB sync promises
+export let pendingSyncPromises: Promise<any>[] = [];
+
+export function trackPromise<T>(promise: Promise<T>): Promise<T> {
+  pendingSyncPromises.push(promise);
+  promise.finally(() => {
+    pendingSyncPromises = pendingSyncPromises.filter(p => p !== promise);
+  });
+  return promise;
+}
 
 // Define DB structure
 interface DatabaseSchema {
@@ -86,7 +97,7 @@ export async function initializeDbCache() {
     const filesList = await db.select().from(persistentFilesTable);
     console.log(`[Persistent Files] Found ${filesList.length} files in PostgreSQL. Restoring to local disk...`);
     for (const file of filesList) {
-      const localPath = path.join(process.cwd(), "data", file.filename);
+      const localPath = path.join(DB_DIR, file.filename);
       const fileDir = path.dirname(localPath);
       if (!fs.existsSync(fileDir)) {
         fs.mkdirSync(fileDir, { recursive: true });
@@ -255,25 +266,30 @@ let isSyncing = false;
 let pendingSyncCache: DatabaseSchema | null = null;
 
 // Background sync function
-async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
+export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
   if (isSyncing) {
     pendingSyncCache = cache;
     return;
   }
   isSyncing = true;
   
-  try {
-    await doActualSync(cache);
-  } finally {
-    isSyncing = false;
-    if (pendingSyncCache) {
-      const nextCache = pendingSyncCache;
-      pendingSyncCache = null;
-      setTimeout(() => {
-        syncCacheToPostgresDirectly(nextCache);
-      }, 50);
+  const syncPromise = (async () => {
+    try {
+      await doActualSync(cache);
+    } finally {
+      isSyncing = false;
+      if (pendingSyncCache) {
+        const nextCache = pendingSyncCache;
+        pendingSyncCache = null;
+        setTimeout(() => {
+          syncCacheToPostgresDirectly(nextCache);
+        }, 50);
+      }
     }
-  }
+  })();
+
+  trackPromise(syncPromise);
+  return syncPromise;
 }
 
 async function doActualSync(cache: DatabaseSchema) {
@@ -384,15 +400,16 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.meals.length > 0) {
-      await db.insert(mealsTable).values(cache.meals.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        date: item.date,
-        lunch: item.lunch,
-        dinner: item.dinner,
-      })));
-    }
+       await db.insert(mealsTable).values(cache.meals.map(item => ({
+         id: item.id,
+         monthId: item.monthId,
+         memberId: item.memberId,
+         date: item.date,
+         lunch: item.lunch,
+         dinner: item.dinner,
+         breakfast: item.breakfast || 0,
+       })));
+     }
 
     if (cache.foodMenus.length > 0) {
       await db.insert(foodMenusTable).values(cache.foodMenus.map(item => ({
@@ -496,6 +513,16 @@ async function doActualSync(cache: DatabaseSchema) {
         newValue: item.newValue,
         timestamp: item.timestamp,
         reason: item.reason,
+        date: item.date || null,
+        time: item.time || null,
+        userRole: item.userRole || null,
+        superUserId: item.superUserId || null,
+        messId: item.messId || null,
+        module: item.module || null,
+        actionType: item.actionType || null,
+        description: item.description || null,
+        browser: item.browser || null,
+        ipAddress: item.ipAddress || null,
       })));
     }
 
@@ -522,7 +549,7 @@ async function doActualSync(cache: DatabaseSchema) {
 
 export function getActiveMessId(): string {
   try {
-    const ACTIVE_MESS_FILE = path.join(process.cwd(), "data", "active_mess.json");
+    const ACTIVE_MESS_FILE = path.join(DB_DIR, "active_mess.json");
     if (fs.existsSync(ACTIVE_MESS_FILE)) {
       const data = fs.readFileSync(ACTIVE_MESS_FILE, "utf-8");
       return JSON.parse(data).activeMessId || "default";
@@ -596,6 +623,55 @@ export function loadDB(): DatabaseSchema {
         syncCacheToPostgresDirectly(dbCache);
       } catch (err) {
         console.error("Error committing auto-deleted market entries:", err);
+      }
+    }
+  }
+
+  // Auto-delete audit logs older than the configured retention period
+  if (dbCache && dbCache.auditLogs && dbCache.auditLogs.length > 0) {
+    let retentionDays = 30; // default 30 days
+    try {
+      const messId = getActiveMessId();
+      const settingsFile = messId === "default"
+        ? path.join(DB_DIR, "settings.json")
+        : path.join(DB_DIR, `settings_${messId}.json`);
+      if (fs.existsSync(settingsFile)) {
+        const settings = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
+        if (settings.auditRetentionDays) {
+          retentionDays = Number(settings.auditRetentionDays);
+        }
+      }
+    } catch (e) {
+      console.error("Error determining audit retention days for cleanup:", e);
+    }
+
+    const today = new Date();
+    const retentionLimit = new Date(today.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+    retentionLimit.setHours(0, 0, 0, 0);
+
+    let wasAuditModified = false;
+    const initialAuditCount = dbCache.auditLogs.length;
+
+    dbCache.auditLogs = dbCache.auditLogs.filter(log => {
+      const logDate = new Date(log.timestamp);
+      if (!isNaN(logDate.getTime()) && logDate < retentionLimit) {
+        wasAuditModified = true;
+        return false; // delete expired log
+      }
+      return true;
+    });
+
+    if (wasAuditModified) {
+      console.log(`[Auto-Cleanup] Deleted ${initialAuditCount - dbCache.auditLogs.length} audit logs older than ${retentionDays} days.`);
+      try {
+        const messId = getActiveMessId();
+        const backupFilename = messId === "default"
+          ? "database_backup.json"
+          : `database_backup_${messId}.json`;
+        writeAndPersistFile(backupFilename, JSON.stringify(dbCache, null, 2));
+        syncCacheToPostgresDirectly(dbCache);
+      } catch (err) {
+        console.error("Error committing auto-deleted audit logs:", err);
       }
     }
   }
@@ -724,9 +800,115 @@ function getInitialSeedData(): DatabaseSchema {
   };
 }
 
-// Log an action to Audit Log
-export function logAudit(userId: string, userName: string, action: string, oldValue: string, newValue: string, reason: string) {
+function getSuperUserForMess(messId: string): string {
+  try {
+    const MESSES_FILE = path.join(DB_DIR, "messes.json");
+    if (fs.existsSync(MESSES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(MESSES_FILE, "utf-8"));
+      const foundMess = data.messes?.find((m: any) => m.id === messId);
+      if (foundMess && foundMess.superUserId) {
+        return foundMess.superUserId;
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  
+  try {
+    const ADMIN_CONTROLS_FILE = path.join(DB_DIR, "admin_controls.json");
+    if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(ADMIN_CONTROLS_FILE, "utf-8"));
+      const controlsData = data.controls || {};
+      for (const key of Object.keys(controlsData)) {
+        const ctrl = controlsData[key];
+        if (ctrl.allowedMesses && ctrl.allowedMesses.includes(messId)) {
+          return key;
+        }
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  try {
+    const db = loadDB();
+    const su = db.members.find(m => m.role === UserRole.SUPERUSER);
+    if (su) return su.id;
+  } catch (e) {}
+  
+  return "system_superuser";
+}
+
+function deduceModuleAndActionType(action: string, extra?: any) {
+  let module = extra?.module || "OTHER";
+  let actionType = extra?.actionType || action;
+  
+  if (extra?.module && extra?.actionType) {
+    return { module, actionType };
+  }
+  
+  const act = action.toUpperCase();
+  if (act.includes("LOGIN") || act.includes("LOGOUT") || act.includes("PASSWORD")) {
+    module = "AUTH";
+  } else if (act.includes("MEMBER") || act.includes("ACCOUNT")) {
+    module = "MEMBERS";
+  } else if (act.includes("MANAGER") || act.includes("HOLDING")) {
+    module = "MANAGER";
+  } else if (act.includes("MEAL")) {
+    module = "MEALS";
+  } else if (act.includes("BREAKFAST") || act.includes("MEAL_TYPE")) {
+    module = "MEAL_CONFIG";
+  } else if (act.includes("MARKET") || act.includes("BAZAAR")) {
+    module = "MARKET";
+  } else if (act.includes("BILL")) {
+    module = "BILLS";
+  } else if (act.includes("DEPOSIT")) {
+    module = "DEPOSITS";
+  } else if (act.includes("DUTY")) {
+    module = "DUTIES";
+  } else if (act.includes("NOTICE") || act.includes("NOTIFICATION")) {
+    module = "NOTIFICATIONS";
+  } else if (act.includes("EXPORT") || act.includes("REPORT")) {
+    module = "REPORTS";
+  } else if (act.includes("SETTING") || act.includes("CURRENCY") || act.includes("CYCLE") || act.includes("RETENTION") || act.includes("PERMISSION")) {
+    module = "SETTINGS";
+  } else if (act.includes("ROLE")) {
+    module = "PERMISSIONS";
+  }
+  
+  return { module, actionType };
+}
+
+// Log an action to Audit Log with optional metadata parameters for rich hierarchical indexing
+export function logAudit(
+  userId: string,
+  userName: string,
+  action: string,
+  oldValue: string,
+  newValue: string,
+  reason: string,
+  extra?: {
+    userRole?: string;
+    superUserId?: string;
+    messId?: string;
+    module?: string;
+    actionType?: string;
+    description?: string;
+    browser?: string;
+    ipAddress?: string;
+  }
+) {
   const db = loadDB();
+  const timestampStr = new Date().toISOString();
+  const dateStr = timestampStr.split("T")[0];
+  const timeStr = new Date().toTimeString().split(" ")[0];
+  
+  const mId = extra?.messId || getActiveMessId() || "default";
+  const suId = extra?.superUserId || getSuperUserForMess(mId);
+  const desc = extra?.description || reason || `Action ${action} performed.`;
+  
+  const { module, actionType } = deduceModuleAndActionType(action, extra);
+
   const newAudit: AuditLog = {
     id: generateUUID(),
     userId,
@@ -734,9 +916,21 @@ export function logAudit(userId: string, userName: string, action: string, oldVa
     action,
     oldValue,
     newValue,
-    timestamp: new Date().toISOString(),
-    reason
+    timestamp: timestampStr,
+    reason,
+    
+    date: dateStr,
+    time: timeStr,
+    userRole: extra?.userRole || "UNKNOWN",
+    superUserId: suId,
+    messId: mId,
+    module,
+    actionType,
+    description: desc,
+    browser: extra?.browser || "Unknown",
+    ipAddress: extra?.ipAddress || "Unknown"
   };
+
   db.auditLogs.unshift(newAudit);
   saveDB();
 }
@@ -745,7 +939,7 @@ export function logAudit(userId: string, userName: string, action: string, oldVa
 export function writeAndPersistFile(filename: string, content: string) {
   try {
     ensureDBDir();
-    const localPath = path.join(process.cwd(), "data", filename);
+    const localPath = path.join(DB_DIR, filename);
     const dir = path.dirname(localPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -753,7 +947,7 @@ export function writeAndPersistFile(filename: string, content: string) {
     fs.writeFileSync(localPath, content, "utf-8");
     
     // Save to Postgres asynchronously in the background
-    db.insert(persistentFilesTable).values({
+    const dbPromise = db.insert(persistentFilesTable).values({
       filename,
       content
     }).onConflictDoUpdate({
@@ -764,6 +958,8 @@ export function writeAndPersistFile(filename: string, content: string) {
     }).catch((err) => {
       console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
     });
+
+    trackPromise(dbPromise);
   } catch (e) {
     console.error(`[Persistent Files] Error writing local and persistent file ${filename}:`, e);
   }
@@ -772,17 +968,19 @@ export function writeAndPersistFile(filename: string, content: string) {
 // Helper to delete file both locally and remove it from PostgreSQL
 export function deletePersistentFile(filename: string) {
   try {
-    const localPath = path.join(process.cwd(), "data", filename);
+    const localPath = path.join(DB_DIR, filename);
     if (fs.existsSync(localPath)) {
       fs.unlinkSync(localPath);
     }
     // Delete from Postgres
-    db.delete(persistentFilesTable).where(eq(persistentFilesTable.filename, filename))
+    const deletePromise = db.delete(persistentFilesTable).where(eq(persistentFilesTable.filename, filename))
       .then(() => {
         console.log(`[Persistent Files] Deleted ${filename} from PostgreSQL.`);
       }).catch((err) => {
         console.error(`[Persistent Files] Failed to delete ${filename} from PostgreSQL:`, err);
       });
+
+    trackPromise(deletePromise);
   } catch (e) {
     console.error(`[Persistent Files] Error deleting file ${filename}:`, e);
   }

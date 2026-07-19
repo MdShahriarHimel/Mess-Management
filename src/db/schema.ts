@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { pgTable, text, boolean, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, doublePrecision, index } from "drizzle-orm/pg-core";
 
 export const members = pgTable("members", {
   id: text("id").primaryKey(), // Firebase Auth uid (or generated ID)
@@ -47,6 +47,7 @@ export const meals = pgTable("meals", {
   date: text("date").notNull(),
   lunch: doublePrecision("lunch").notNull().default(0),
   dinner: doublePrecision("dinner").notNull().default(0),
+  breakfast: doublePrecision("breakfast").notNull().default(0),
 });
 
 export const foodMenus = pgTable("food_menus", {
@@ -134,6 +135,28 @@ export const auditLogs = pgTable("audit_logs", {
   newValue: text("new_value").notNull(),
   timestamp: text("timestamp").notNull(),
   reason: text("reason").notNull(),
+  
+  // New Hierarchical and Audit Fields:
+  date: text("date"),
+  time: text("time"),
+  userRole: text("user_role"),
+  superUserId: text("super_user_id"),
+  messId: text("mess_id"),
+  module: text("module"),
+  actionType: text("action_type"),
+  description: text("description"),
+  browser: text("browser"),
+  ipAddress: text("ip_address"),
+}, (table) => {
+  return {
+    userIdIdx: index("audit_logs_user_id_idx").on(table.userId),
+    dateIdx: index("audit_logs_date_idx").on(table.date),
+    userRoleIdx: index("audit_logs_user_role_idx").on(table.userRole),
+    superUserIdIdx: index("audit_logs_super_user_id_idx").on(table.superUserId),
+    messIdIdx: index("audit_logs_mess_id_idx").on(table.messId),
+    moduleIdx: index("audit_logs_module_idx").on(table.module),
+    actionTypeIdx: index("audit_logs_action_type_idx").on(table.actionType),
+  };
 });
 
 export const mealRequests = pgTable("meal_requests", {

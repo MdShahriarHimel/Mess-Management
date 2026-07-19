@@ -45,6 +45,7 @@ interface DashboardProps {
   forcedMarketDate?: string;
   onSetForcedMarketDate?: (date: string) => void;
   dashboardVisibility?: any;
+  mealTypes?: any[];
 }
 
 export default function Dashboard({ 
@@ -66,7 +67,8 @@ export default function Dashboard({
   onSetMarketForcedFlowStep,
   forcedMarketDate,
   onSetForcedMarketDate,
-  dashboardVisibility
+  dashboardVisibility,
+  mealTypes
 }: DashboardProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -134,7 +136,7 @@ export default function Dashboard({
   };
 
   // Individual meals summary state for current user
-  const [myMeals, setMyMeals] = useState<{ lunch: number; dinner: number; total: number }>({ lunch: 0, dinner: 0, total: 0 });
+  const [myMeals, setMyMeals] = useState<Record<string, number>>({});
   const [members, setMembers] = useState<Member[]>([]);
 
   // Fetch notices
@@ -209,13 +211,17 @@ export default function Dashboard({
         const data = await response.json();
         const rawMeals = data.meals || [];
         const userMeals = rawMeals.filter((m: any) => m.memberId === currentUser.id);
-        const lunch = userMeals.reduce((sum: number, m: any) => sum + (m.lunch || 0), 0);
-        const dinner = userMeals.reduce((sum: number, m: any) => sum + (m.dinner || 0), 0);
-        setMyMeals({
-          lunch,
-          dinner,
-          total: lunch + dinner
+        
+        const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+          { id: "lunch", name: "Lunch", enabled: true },
+          { id: "dinner", name: "Dinner", enabled: true }
+        ];
+
+        const mealsObj: Record<string, number> = {};
+        activeMealTypes.forEach((type) => {
+          mealsObj[type.id] = userMeals.reduce((sum: number, m: any) => sum + (m[type.id] || 0), 0);
         });
+        setMyMeals(mealsObj);
       }
     } catch (e) {
       console.error("Error fetching user meals:", e);
@@ -1226,24 +1232,31 @@ export default function Dashboard({
           <Coffee size={16} className="text-cyan-400" />
           Your Individual Meal Summary (Current Month)
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-          <div className="p-3.5 rounded-xl bg-slate-950/25 border border-slate-850/40">
-            <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Lunch Served</span>
-            <span className="text-2xl font-extrabold text-cyan-400 font-mono mt-0.5 block">{myMeals.lunch}</span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-950/25 border border-slate-850/40">
-            <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Dinner Served</span>
-            <span className="text-2xl font-extrabold text-cyan-400 font-mono mt-0.5 block">{myMeals.dinner}</span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-950/25 border border-slate-850/40">
-            <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total Servings</span>
-            <span className="text-2xl font-extrabold text-orange-400 font-mono mt-0.5 block">{myMeals.total}</span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-950/25 border border-cyan-500/15">
-            <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Estimated Cost</span>
-            <span className="text-2xl font-extrabold text-emerald-400 font-mono mt-0.5 block">৳ {((myMeals.total) * (reportSummary?.mealRate || 0)).toFixed(2)}</span>
-          </div>
-        </div>
+        {(() => {
+          const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+            { id: "lunch", name: "Lunch", enabled: true },
+            { id: "dinner", name: "Dinner", enabled: true }
+          ];
+          const totalServings = activeMealTypes.reduce((sum, type) => sum + (myMeals[type.id] || 0), 0);
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4 text-center">
+              {activeMealTypes.map((type) => (
+                <div key={type.id} className="p-3.5 rounded-xl bg-slate-950/25 border border-slate-850/40">
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">{type.name} Served</span>
+                  <span className="text-2xl font-extrabold text-cyan-400 font-mono mt-0.5 block">{myMeals[type.id] || 0}</span>
+                </div>
+              ))}
+              <div className="p-3.5 rounded-xl bg-slate-950/25 border border-slate-850/40">
+                <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total Servings</span>
+                <span className="text-2xl font-extrabold text-orange-400 font-mono mt-0.5 block">{totalServings}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-950/25 border border-cyan-500/15">
+                <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Estimated Cost</span>
+                <span className="text-2xl font-extrabold text-emerald-400 font-mono mt-0.5 block">৳ {(totalServings * (reportSummary?.mealRate || 0)).toFixed(2)}</span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Primary KPI Stats */}
@@ -1283,7 +1296,7 @@ export default function Dashboard({
             </span>
           </div>
           <p className="text-[10px] text-slate-400 mt-2">
-            Deposits (৳{reportSummary?.totalDeposits || 0}) + Markets (৳{reportSummary?.totalMarkets || 0})
+            member's markets (৳{reportSummary?.totalMarkets || 0}) + Deposits (৳{reportSummary?.totalDeposits || 0})
           </p>
         </div>
 
@@ -1303,26 +1316,26 @@ export default function Dashboard({
             </span>
             <span className="text-xs text-slate-400">meals</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">Sum of all active members' lunch and dinner count.</p>
+          <p className="text-[10px] text-slate-400 mt-2">Sum of all active members' active meals count.</p>
         </div>
 
-        {/* KPI: Effective Cost */}
+        {/* KPI: Manager Monthly Market */}
         <div className={`p-5 rounded-2xl border transition-all ${
           isDarkMode ? "bg-slate-900/50 border-cyan-500/10 text-white" : "bg-white border-slate-200 text-slate-800"
         }`}>
           <div className="flex justify-between items-center mb-2">
-            <span className="text-xs font-bold text-orange-500 uppercase tracking-wider">Effective Cost</span>
+            <span className="text-xs font-bold text-orange-500 uppercase tracking-wider">Manager Monthly Market</span>
             <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
-              <CheckCircle2 size={18} />
+              <ShoppingCart size={18} />
             </div>
           </div>
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-extrabold tracking-tight">
-              ৳ {reportSummary ? reportSummary.effectiveCost : "0.00"}
+              ৳ {reportSummary ? reportSummary.managerMarketSpent : "0.00"}
             </span>
           </div>
           <p className="text-[10px] text-slate-400 mt-2">
-            Total active monthly raw food expense from market logs.
+            Total monthly bazaar spending managed by the active manager.
           </p>
         </div>
 
@@ -1382,7 +1395,8 @@ export default function Dashboard({
           </div>
 
           {/* QUICK SHORTCUTS & UTILITIES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Desktop/Tablet Layout */}
+          <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
             
             {currentUser.role !== UserRole.MEMBER && (
               <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
@@ -1430,6 +1444,122 @@ export default function Dashboard({
               </p>
             </div>
 
+          </div>
+
+          {/* Mobile Phone Layout (Minimalist Compound Box) */}
+          <div className={`block sm:hidden p-5 rounded-2xl border transition-all ${
+            isDarkMode 
+              ? "bg-gradient-to-br from-slate-900/60 to-slate-900/40 border-cyan-500/15 text-white" 
+              : "bg-white border-slate-200/80 shadow-sm text-slate-800"
+          }`} id="dashboard-mobile-shortcuts">
+            <h3 className="text-[11px] font-black uppercase tracking-widest text-orange-500 mb-3.5 flex items-center gap-2 border-b border-slate-100 dark:border-slate-850/60 pb-2">
+              <Settings2 size={13} className="text-cyan-400" />
+              Simplified Mess Summary
+            </h3>
+            
+            <div className="grid grid-cols-2 gap-3 text-center">
+              {/* MEAL TRACKER */}
+              <div 
+                onClick={() => {
+                  if (currentUser.role !== UserRole.MEMBER) {
+                    onNavigateToTab("meals");
+                  }
+                }}
+                className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                  isDarkMode 
+                    ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Meal Tracker</span>
+                  <Coffee size={12} className="text-cyan-400 shrink-0" />
+                </div>
+                <div className="mt-1">
+                  <span className="text-base font-black text-cyan-400 font-mono block leading-tight">
+                    {myMeals.total} <span className="text-[9px] font-bold text-slate-500">Meals</span>
+                  </span>
+                  <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                    {currentUser.role !== UserRole.MEMBER ? "Tap to log servings" : "Admin access only"}
+                  </span>
+                </div>
+              </div>
+
+              {/* MARKET SCHEDULE */}
+              <div 
+                onClick={() => onNavigateToTab("market")}
+                className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                  isDarkMode 
+                    ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Market Cost</span>
+                  <Calendar size={12} className="text-cyan-400 shrink-0" />
+                </div>
+                <div className="mt-1">
+                  <span className="text-base font-black text-orange-400 font-mono block leading-tight">
+                    ৳{reportSummary?.totalMarkets || 0}
+                  </span>
+                  <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                    Tap to view vouchers
+                  </span>
+                </div>
+              </div>
+
+              {/* LIVE BALANCE SHEET */}
+              {(() => {
+                const mySettlement = reportSummary?.memberSettlements?.find((s: any) => s.memberId === currentUser.id);
+                const myBalance = mySettlement?.balance ?? 0;
+                return (
+                  <div 
+                    onClick={() => onNavigateToTab("finance")}
+                    className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                      isDarkMode 
+                        ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                        : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Live Balance</span>
+                      <DollarSign size={12} className="text-cyan-400 shrink-0" />
+                    </div>
+                    <div className="mt-1">
+                      <span className={`text-base font-black font-mono block leading-tight ${myBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        ৳{myBalance >= 0 ? "+" : ""}{myBalance.toFixed(0)}
+                      </span>
+                      <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                        {myBalance >= 0 ? "Return amount" : "Owed amount"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* FOOD MENU PLANNER */}
+              <div 
+                onClick={() => onNavigateToTab("menu")}
+                className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                  isDarkMode 
+                    ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Menu Planner</span>
+                  <FileText size={12} className="text-cyan-400 shrink-0" />
+                </div>
+                <div className="mt-1">
+                  <span className="text-base font-black text-pink-400 block leading-tight truncate">
+                    Active Plan
+                  </span>
+                  <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                    Tap to view weekly meals
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -1542,13 +1672,15 @@ export default function Dashboard({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => onNavigateToTab("market")}
-                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs cursor-pointer transition-all shadow-md shadow-cyan-950/30"
-                  >
-                    <ShoppingCart size={14} />
-                    Go to Market Logs to List Purchases
-                  </button>
+                  {isManagerOrAdmin && (
+                    <button
+                      onClick={() => onNavigateToTab("market")}
+                      className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs cursor-pointer transition-all shadow-md shadow-cyan-950/30"
+                    >
+                      <ShoppingCart size={14} />
+                      Go to Market Logs to List Purchases
+                    </button>
+                  )}
                 </div>
               </div>
             );

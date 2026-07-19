@@ -10,6 +10,7 @@ import {
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
   FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award, Save
 } from "lucide-react";
+import * as LucideIcons from "lucide-react";
 
 // Components
 import Login from "./components/Login.tsx";
@@ -24,6 +25,9 @@ import AuditLogs from "./components/AuditLogs.tsx";
 import Notices from "./components/Notices.tsx";
 import Democracy from "./components/Democracy.tsx";
 import { AdminControlsPanel } from "./components/AdminControlsPanel.tsx";
+import RgbColorPicker from "./components/RgbColorPicker.tsx";
+import { ThemeEnginePanel } from "./components/ThemeEnginePanel.tsx";
+import { THEME_TEMPLATES } from "./themeTemplates.ts";
 
 // Types
 import { Member, MessMonth, UserRole } from "./types.js";
@@ -43,133 +47,242 @@ const COLOR_PALETTES = [
   { name: "Pure White", hex: "#ffffff" }
 ];
 
+export const VISUAL_THEMES = [
+  { id: "default", name: "Default Slate", icon: "LayoutGrid", desc: "Clean, high-contrast structural theme", bg: "linear-gradient(135deg, #0f172a 0%, #020617 100%)", lightBg: "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)" },
+  { id: "cosmic-void", name: "Cosmic Purple", icon: "Sparkles", desc: "Deep cosmic purple and indigo blend", bg: "radial-gradient(circle at 50% 50%, #1e1b4b 0%, #020005 100%)", lightBg: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" },
+  { id: "midnight-nebula", name: "Midnight Nebula", icon: "Moon", desc: "Nebulous violet cosmic depths", bg: "linear-gradient(135deg, #020617 0%, #581c87 100%)", lightBg: "linear-gradient(135deg, #e0f2fe 0%, #7dd3fc 100%)" },
+  { id: "cyberpunk-grid", name: "Cyberpunk Grid", icon: "Cpu", desc: "Retro-futuristic cyan-pink grid", bg: "linear-gradient(rgba(139,92,246,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.05) 1px, transparent 1px)", lightBg: "linear-gradient(rgba(14,116,144,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(14,116,144,0.03) 1px, transparent 1px)" },
+  { id: "sunset-glow", name: "Sunset Velvet", icon: "Sun", desc: "Warm rich golden amber gradients", bg: "linear-gradient(135deg, #180020 0%, #9a3412 100%)", lightBg: "linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)" },
+  { id: "ocean-depth", name: "Ocean Depths", icon: "Waves", desc: "Teal marine evergreen waters", bg: "linear-gradient(180deg, #022c22 0%, #064e3b 100%)", lightBg: "linear-gradient(135deg, #ecfeff 0%, #a5f3fc 100%)" },
+  { id: "forest-whisper", name: "Forest Whisper", icon: "Trees", desc: "Peaceful sage evergreen woodland", bg: "linear-gradient(135deg, #022c22 0%, #052e16 100%)", lightBg: "linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)" },
+  { id: "aurora-borealis", name: "Aurora Glow", icon: "Compass", desc: "Dynamic green-blue polar glow", bg: "linear-gradient(135deg, #020617 0%, #043530 100%)", lightBg: "linear-gradient(135deg, #f0fdfa 0%, #99f6e4 100%)" },
+  { id: "neon-shallows", name: "Neon Shallows", icon: "Zap", desc: "High-contrast cyan-pink cyber aura", bg: "linear-gradient(135deg, #020617 0%, #4c0519 100%)", lightBg: "linear-gradient(135deg, #fdf2f8 0%, #fbcfe8 100%)" },
+  { id: "sahara-sand", name: "Sahara Dune", icon: "Flame", desc: "Cozy warm dunes golden sand", bg: "linear-gradient(135deg, #0f0502 0%, #451a03 100%)", lightBg: "linear-gradient(135deg, #fefce8 0%, #fef08a 100%)" },
+  { id: "deep-space", name: "Deep Space", icon: "Globe", desc: "Pure deep space absolute obsidian", bg: "radial-gradient(circle, #030712 0%, #020202 100%)", lightBg: "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)" },
+  { id: "electric-indigo", name: "Electric Indigo", icon: "Radio", desc: "High voltage deep electric indigo", bg: "linear-gradient(180deg, #03000a 0%, #1e1b4b 100%)", lightBg: "linear-gradient(135deg, #f5f3ff 0%, #c7d2fe 100%)" },
+  { id: "magma-flow", name: "Magma Flow", icon: "Activity", desc: "Molten volcanic lava crimson glow", bg: "linear-gradient(135deg, #000000 0%, #450a0a 100%)", lightBg: "linear-gradient(135deg, #fff5f5 0%, #fca5a5 100%)" },
+  { id: "cyber-emerald", name: "Matrix Cyber", icon: "Terminal", desc: "System console emerald matrix grids", bg: "radial-gradient(circle at center, rgba(6, 78, 59, 0.15) 0%, #010502 85%)", lightBg: "radial-gradient(circle at center, rgba(16, 185, 129, 0.06) 0%, #f4fbf7 85%)" },
+  { id: "sakura-blossom", name: "Sakura Blossom", icon: "Heart", desc: "Soft romantic pink flower gardens", bg: "linear-gradient(135deg, #0a0104 0%, #4c051e 100%)", lightBg: "linear-gradient(135deg, #fff1f2 0%, #fecdd3 100%)" },
+  { id: "ice-glacier", name: "Arctic Glacier", icon: "Wind", desc: "Frosted polar glacier shelves", bg: "linear-gradient(135deg, #010a14 0%, #083344 100%)", lightBg: "linear-gradient(135deg, #f0f9ff 0%, #bae6fd 100%)" },
+  { id: "bento-grid-dark", name: "Bento Minimal", icon: "Grid", desc: "Carbon fiber technical outline grid", bg: "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px)", lightBg: "linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)" },
+  { id: "solar-storm", name: "Solar Storm", icon: "AlertTriangle", desc: "Solar flares and amber cosmic winds", bg: "linear-gradient(135deg, #080200 0%, #431407 100%)", lightBg: "linear-gradient(135deg, #fffbeb 0%, #fde68a 100%)" },
+  { id: "custom", name: "Custom Image", icon: "Image", desc: "Specify your own custom background URL", bg: "linear-gradient(45deg, #1e293b, #0f172a)", lightBg: "linear-gradient(45deg, #f1f5f9, #cbd5e1)" }
+];
+
 export function ColorPalettePicker({ 
   value, 
-  onChange 
+  onChange,
+  defaultValue,
+  onReset
 }: { 
   value: string; 
   onChange: (color: string) => void; 
+  defaultValue?: string;
+  onReset?: () => void;
 }) {
-  const activeHex = value ? (value.startsWith("#") ? value.slice(0, 7).toLowerCase() : "#ffffff") : "#ffffff";
+  const [isOpen, setIsOpen] = useState(false);
+  const [tempColor, setTempColor] = useState(value);
+  const originalColorRef = React.useRef(value);
 
-  // Helper to parse hex to r, g, b
-  const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16)
-    } : { r: 255, g: 255, b: 255 };
+  // When value changes from outside, sync tempColor
+  useEffect(() => {
+    setTempColor(value);
+  }, [value]);
+
+  const handleOpen = () => {
+    originalColorRef.current = value;
+    setTempColor(value);
+    setIsOpen(true);
   };
 
-  const rgbToHex = (r: number, g: number, b: number) => {
-    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  const handleLiveChange = (color: string) => {
+    setTempColor(color);
+    // Instant real-time update of actual ERP style behind popup
+    onChange(color);
   };
 
-  const rgb = hexToRgb(activeHex);
+  const handleSave = () => {
+    onChange(tempColor);
+    setIsOpen(false);
+  };
 
-  const handleRgbChange = (channel: 'r' | 'g' | 'b', val: number) => {
-    const updated = { ...rgb, [channel]: Math.max(0, Math.min(255, val)) };
-    onChange(rgbToHex(updated.r, updated.g, updated.b));
+  const handleCancel = () => {
+    // Revert to original color on cancel
+    onChange(originalColorRef.current);
+    setTempColor(originalColorRef.current);
+    setIsOpen(false);
+  };
+
+  const handleResetToDefault = () => {
+    if (defaultValue) {
+      handleLiveChange(defaultValue);
+    } else if (onReset) {
+      onReset();
+    }
   };
 
   return (
-    <div className="space-y-2 p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/80">
-      {/* Predefined Quick Palettes */}
-      <div className="flex flex-wrap gap-1.5 justify-start">
-        {COLOR_PALETTES.map((color) => {
-          const isSelected = activeHex === color.hex.toLowerCase();
-          return (
-            <button
-              key={color.hex}
-              type="button"
-              onClick={() => onChange(color.hex)}
-              title={color.name}
-              className={`w-4 h-4 rounded-full border cursor-pointer transition-all hover:scale-110 active:scale-95 ${
-                isSelected ? "border-white ring-2 ring-cyan-500/50 scale-110" : "border-slate-800/60"
-              }`}
-              style={{ backgroundColor: color.hex }}
-            />
-          );
-        })}
-      </div>
+    <div className="relative inline-block">
+      {/* Trigger Button */}
+      <button
+        type="button"
+        onClick={handleOpen}
+        className="flex items-center gap-2.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 hover:text-white border border-slate-800 rounded-xl transition-all cursor-pointer text-xs text-slate-300 font-bold group shadow-sm shrink-0"
+      >
+        <span 
+          className="w-4 h-4 rounded-full border border-white/20 shadow-sm shrink-0 transition-transform group-hover:scale-110" 
+          style={{ backgroundColor: value }} 
+        />
+        <span className="font-mono tracking-wider">{value?.toUpperCase() || "#FFFFFF"}</span>
+        <span className="text-[10px] text-slate-500 group-hover:text-cyan-400 transition-colors uppercase font-display ml-1">Change Color</span>
+      </button>
 
-      {/* RGB Slider controls & native picker */}
-      <div className="pt-2 border-t border-slate-900 flex items-center gap-3">
-        {/* Color Preview Block and Native Color Input */}
-        <div className="relative group flex-shrink-0">
-          <div 
-            className="w-8 h-8 rounded border border-slate-700/80 cursor-pointer shadow-lg relative overflow-hidden"
-            style={{ backgroundColor: activeHex }}
-            title="Click to open color spectrum picker"
-          >
-            <input 
-              type="color" 
-              value={activeHex}
-              onChange={(e) => onChange(e.target.value)}
-              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-            />
-            {/* Tiny icon/overlay indicating you can pick */}
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-              <span className="text-[9px] text-white font-bold">RGB</span>
+      {/* POPUP MODAL */}
+      {isOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in select-none">
+          <div className="bg-slate-950 border border-slate-800 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-900 bg-slate-900/40 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-5.5 h-5.5 rounded-lg flex items-center justify-center bg-cyan-950 border border-cyan-500/20 text-cyan-400">
+                  <span className="text-xs font-black">RGB</span>
+                </div>
+                <div>
+                  <h3 className="text-xs font-black font-display text-white uppercase tracking-wider leading-none">ERP Color Studio</h3>
+                  <p className="text-[9px] text-slate-400 font-semibold mt-1">Live tuning active color option in real-time</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={handleCancel}
+                className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-slate-900 transition-all cursor-pointer"
+              >
+                <X size={16} />
+              </button>
             </div>
+
+            {/* Modal Body */}
+            <div className="flex-grow p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-6">
+              {/* Left Side: Color Picker */}
+              <div className="md:col-span-7 flex flex-col gap-4">
+                <RgbColorPicker
+                  value={tempColor}
+                  onChange={handleLiveChange}
+                  isDarkMode={true}
+                />
+                
+                {/* Reset Buttons */}
+                {(defaultValue || onReset) && (
+                  <button
+                    type="button"
+                    onClick={handleResetToDefault}
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-400 hover:text-white font-bold text-xs uppercase transition-all cursor-pointer"
+                  >
+                    Reset to Default Option ({defaultValue || "Original"})
+                  </button>
+                )}
+              </div>
+
+              {/* Right Side: High-Fidelity Mini Live Preview */}
+              <div className="md:col-span-5 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Live Mockup Preview</span>
+                  <span className="text-[8px] bg-cyan-950 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded font-black uppercase tracking-widest">
+                    Real-time
+                  </span>
+                </div>
+
+                {/* Simulated ERP Mockup */}
+                <div 
+                  className="flex-1 rounded-2xl border flex flex-col overflow-hidden text-slate-300 font-sans shadow-md min-h-[250px]"
+                  style={{ backgroundColor: "#020617" }}
+                >
+                  {/* Top Bar */}
+                  <div className="px-3 py-2 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between text-[10px] font-black shrink-0">
+                    <span className="text-white">ERP Control Panel</span>
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 flex overflow-hidden text-[9px] font-bold">
+                    {/* Sidebar */}
+                    <div className="w-14 border-r border-slate-850 p-1.5 flex flex-col gap-1 shrink-0" style={{ backgroundColor: "#0f172a" }}>
+                      <div className="w-full h-1.5 rounded-full bg-slate-700 opacity-60" />
+                      <div className="w-8 h-1.5 rounded-full bg-slate-800 mt-1" />
+                      <div className="w-10 h-1.5 rounded-full bg-slate-800" />
+                    </div>
+
+                    {/* Main content area */}
+                    <div className="flex-1 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-extrabold text-white">System Balance</span>
+                        <span className="text-[7px] px-1 rounded bg-cyan-950 text-cyan-400 border border-cyan-500/20">Live</span>
+                      </div>
+                      
+                      <div className="p-2 rounded-lg border border-slate-800 bg-slate-900/20 space-y-1">
+                        <div className="text-[11px] font-black text-white">$24,850</div>
+                        <div className="h-3 w-full flex items-end gap-1 pt-1">
+                          {[25, 60, 45, 90, 75, 100].map((h, i) => (
+                            <div 
+                              key={i}
+                              className="flex-1 rounded-sm bg-cyan-400"
+                              style={{ 
+                                height: `${h}%`,
+                                backgroundColor: tempColor
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Interactive Button Preview */}
+                      <button 
+                        type="button"
+                        className="w-full py-1 rounded text-[8px] font-black text-white animate-pulse"
+                        style={{ backgroundColor: tempColor }}
+                      >
+                        Sample Styled Element
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-[9px] text-slate-500 font-medium leading-relaxed">
+                  Notice: Changes are instantly applied to the main ERP view behind this dialog. Click Save to keep them, or Cancel to revert.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-900 bg-slate-900/40 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 border border-cyan-500/30 text-white font-extrabold text-xs tracking-wider uppercase rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save size={13} />
+                Save Color
+              </button>
+            </div>
+
           </div>
         </div>
-
-        {/* RGB Sliders */}
-        <div className="flex-grow space-y-1">
-          {/* Red Slider */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold text-rose-500 w-3">R</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="255" 
-              value={rgb.r}
-              onChange={(e) => handleRgbChange('r', parseInt(e.target.value))}
-              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-rose-500"
-            />
-            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.r}</span>
-          </div>
-          {/* Green Slider */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold text-emerald-500 w-3">G</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="255" 
-              value={rgb.g}
-              onChange={(e) => handleRgbChange('g', parseInt(e.target.value))}
-              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-            />
-            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.g}</span>
-          </div>
-          {/* Blue Slider */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold text-cyan-400 w-3">B</span>
-            <input 
-              type="range" 
-              min="0" 
-              max="255" 
-              value={rgb.b}
-              onChange={(e) => handleRgbChange('b', parseInt(e.target.value))}
-              className="flex-grow h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-            />
-            <span className="text-[9px] font-mono text-slate-400 w-5 text-right">{rgb.b}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center text-[9px] text-slate-500 font-mono">
-        <span>RGB({rgb.r}, {rgb.g}, {rgb.b})</span>
-        <span>HEX {activeHex.toUpperCase()}</span>
-      </div>
+      )}
     </div>
   );
 }
 
 const AmbientAnimationOverlay = ({ 
-  animations 
+  animations,
+  isDarkMode = true
 }: { 
   animations: { 
     enableEffect: boolean; 
@@ -179,7 +292,8 @@ const AmbientAnimationOverlay = ({
     customBackgroundUrl?: string;
     backgroundOpacity?: number;
     interactiveBubbles?: boolean;
-  } 
+  };
+  isDarkMode?: boolean;
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
@@ -216,6 +330,20 @@ const AmbientAnimationOverlay = ({
 
     const speedMultiplier = animations.animationSpeed === "slow" ? 0.5 : animations.animationSpeed === "fast" ? 2 : 1;
 
+    // Light/Dark mode specific style constants for background animations
+    const isDark = isDarkMode;
+    const starColor = isDark ? "rgba(255, 255, 255, " : "rgba(15, 23, 42, ";
+    const starShadow = isDark ? "#ffffff" : "#0f172a";
+    const flakeColor = isDark ? "rgba(255, 255, 255, 0.8)" : "rgba(15, 23, 42, 0.7)";
+    const flakeShadow = isDark ? "#ffffff" : "#0f172a";
+    const matrixBg = isDark ? "rgba(10, 15, 30, 0.08)" : "rgba(255, 255, 255, 0.08)";
+    const matrixColor = isDark ? "#22d3ee" : "#0e7490";
+    const bubbleStroke = isDark ? "rgba(255, 255, 255, 0.4)" : "rgba(15, 23, 42, 0.4)";
+    const bubbleShine = isDark ? "rgba(255, 255, 255, 0.5)" : "rgba(15, 23, 42, 0.3)";
+    const rainStroke = isDark ? "rgba(14, 165, 233, 0.7)" : "rgba(2, 132, 199, 0.8)";
+    const fireflyColor = isDark ? "rgba(234, 179, 8, 0.7)" : "rgba(180, 83, 9, 0.85)";
+    const fireflyShadow = isDark ? "rgba(234, 179, 8, 0.9)" : "rgba(180, 83, 9, 0.9)";
+
     // Sparks array for interactive trailing
     const sparks: Array<{ x: number; y: number; vx: number; vy: number; r: number; alpha: number; color: string }> = [];
 
@@ -237,10 +365,10 @@ const AmbientAnimationOverlay = ({
       const yPositions = Array(columns).fill(0);
 
       const render = () => {
-        ctx.fillStyle = "rgba(10, 15, 30, 0.08)";
+        ctx.fillStyle = matrixBg;
         ctx.fillRect(0, 0, width, height);
 
-        ctx.fillStyle = "#22d3ee";
+        ctx.fillStyle = matrixColor;
         ctx.font = "14px monospace";
 
         for (let i = 0; i < yPositions.length; i++) {
@@ -337,9 +465,9 @@ const AmbientAnimationOverlay = ({
 
           ctx.beginPath();
           ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255, 255, 255, ${s.alpha})`;
+          ctx.fillStyle = `${starColor}${s.alpha})`;
           ctx.shadowBlur = 4;
-          ctx.shadowColor = "#ffffff";
+          ctx.shadowColor = starShadow;
           ctx.fill();
         }
         ctx.shadowBlur = 0; // reset
@@ -441,7 +569,7 @@ const AmbientAnimationOverlay = ({
           ctx.beginPath();
           ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
           ctx.fillStyle = b.color;
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.strokeStyle = bubbleStroke;
           ctx.lineWidth = 1;
           ctx.fill();
           ctx.stroke();
@@ -449,7 +577,7 @@ const AmbientAnimationOverlay = ({
           // Highlight shine inside bubble
           ctx.beginPath();
           ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.15, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.fillStyle = bubbleShine;
           ctx.fill();
         }
 
@@ -489,9 +617,9 @@ const AmbientAnimationOverlay = ({
 
           ctx.beginPath();
           ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+          ctx.fillStyle = flakeColor;
           ctx.shadowBlur = 3;
-          ctx.shadowColor = "#ffffff";
+          ctx.shadowColor = flakeShadow;
           ctx.fill();
         }
         ctx.shadowBlur = 0;
@@ -510,7 +638,7 @@ const AmbientAnimationOverlay = ({
           vy: (Math.random() - 0.5) * 0.8 * speedMultiplier,
           alpha: Math.random(),
           cycle: Math.random() * Math.PI,
-          color: "rgba(234, 179, 8, 0.7)" // Cozy warm yellow
+          color: fireflyColor
         });
       }
 
@@ -535,7 +663,7 @@ const AmbientAnimationOverlay = ({
           ctx.fillStyle = f.color;
           ctx.globalAlpha = f.alpha;
           ctx.shadowBlur = 10;
-          ctx.shadowColor = "rgba(234, 179, 8, 0.9)";
+          ctx.shadowColor = fireflyShadow;
           ctx.fill();
         }
         ctx.globalAlpha = 1.0;
@@ -557,7 +685,7 @@ const AmbientAnimationOverlay = ({
 
       const render = () => {
         ctx.clearRect(0, 0, width, height);
-        ctx.strokeStyle = "rgba(14, 165, 233, 0.7)";
+        ctx.strokeStyle = rainStroke;
         ctx.lineWidth = 1.5;
 
         for (let i = 0; i < drops.length; i++) {
@@ -904,6 +1032,402 @@ const AmbientAnimationOverlay = ({
         animationFrameId = requestAnimationFrame(render);
       };
       render();
+    } else if (animations.effectType === "galaxy") {
+      const stars: Array<{ x: number; y: number; r: number; alpha: number; angle: number; dist: number; speed: number }> = [];
+      for (let i = 0; i < 120; i++) {
+        stars.push({
+          x: 0, y: 0,
+          r: Math.random() * 1.5 + 0.4,
+          alpha: Math.random() * 0.8 + 0.2,
+          angle: Math.random() * Math.PI * 2,
+          dist: Math.random() * Math.min(width, height) * 0.75,
+          speed: (Math.random() * 0.0015 + 0.0003) * speedMultiplier
+        });
+      }
+      const render = () => {
+        ctx.fillStyle = isDark ? "rgba(3, 1, 8, 0.15)" : "rgba(245, 243, 250, 0.15)";
+        ctx.fillRect(0, 0, width, height);
+        const cx = width / 2;
+        const cy = height / 2;
+
+        const nebula = ctx.createRadialGradient(cx, cy, 5, cx, cy, Math.min(width, height) * 0.55);
+        nebula.addColorStop(0, isDark ? "rgba(109, 40, 217, 0.14)" : "rgba(196, 181, 253, 0.14)");
+        nebula.addColorStop(0.4, isDark ? "rgba(30, 58, 138, 0.07)" : "rgba(191, 219, 254, 0.07)");
+        nebula.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = nebula;
+        ctx.fillRect(0, 0, width, height);
+
+        stars.forEach(s => {
+          s.angle += s.speed;
+          s.x = cx + Math.cos(s.angle) * s.dist;
+          s.y = cy + Math.sin(s.angle) * s.dist;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? `rgba(255, 255, 255, ${s.alpha})` : `rgba(15, 23, 42, ${s.alpha})`;
+          ctx.fill();
+        });
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "water-waves") {
+      let offset = 0;
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        offset += 0.012 * speedMultiplier;
+        
+        for (let w = 0; w < 3; w++) {
+          ctx.beginPath();
+          ctx.moveTo(0, height);
+          for (let x = 0; x <= width + 10; x += 15) {
+            const sinVal = Math.sin(x * 0.004 + offset + w * 1.8);
+            const cosVal = Math.cos(x * 0.0015 + offset * 0.6 + w);
+            const y = height - 100 + sinVal * 30 + cosVal * 15 - w * 25;
+            ctx.lineTo(x, y);
+          }
+          ctx.lineTo(width, height);
+          ctx.closePath();
+          ctx.fillStyle = w === 0 
+            ? (isDark ? "rgba(6, 182, 212, 0.06)" : "rgba(186, 230, 253, 0.2)")
+            : w === 1
+            ? (isDark ? "rgba(8, 145, 178, 0.09)" : "rgba(125, 211, 252, 0.15)")
+            : (isDark ? "rgba(14, 116, 144, 0.12)" : "rgba(56, 189, 248, 0.1)");
+          ctx.fill();
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "smoke") {
+      const smokeParticles: Array<{ x: number; y: number; r: number; vx: number; vy: number; alpha: number; life: number; maxLife: number }> = [];
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        if (smokeParticles.length < 35) {
+          smokeParticles.push({
+            x: Math.random() * width,
+            y: height + Math.random() * 20,
+            r: Math.random() * 35 + 20,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: - (Math.random() * 1.0 + 0.3),
+            alpha: Math.random() * 0.12 + 0.04,
+            life: 0,
+            maxLife: Math.random() * 250 + 150
+          });
+        }
+        for (let i = smokeParticles.length - 1; i >= 0; i--) {
+          const p = smokeParticles[i];
+          p.x += p.vx * speedMultiplier;
+          p.y += p.vy * speedMultiplier;
+          p.r += 0.12 * speedMultiplier;
+          p.life += speedMultiplier;
+          const currentAlpha = p.alpha * (1 - p.life / p.maxLife);
+          if (p.life >= p.maxLife || p.y < -p.r) {
+            smokeParticles.splice(i, 1);
+            continue;
+          }
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? `rgba(200, 200, 255, ${currentAlpha})` : `rgba(75, 85, 105, ${currentAlpha})`;
+          ctx.fill();
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "clouds") {
+      const clouds: Array<{ x: number; y: number; r: number; speed: number; opacity: number }> = [];
+      for (let i = 0; i < 12; i++) {
+        clouds.push({
+          x: Math.random() * width,
+          y: Math.random() * height * 0.5,
+          r: Math.random() * 70 + 50,
+          speed: (Math.random() * 0.12 + 0.03) * speedMultiplier,
+          opacity: Math.random() * 0.08 + 0.03
+        });
+      }
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        clouds.forEach(c => {
+          c.x += c.speed;
+          if (c.x - c.r > width) {
+            c.x = -c.r;
+            c.y = Math.random() * height * 0.5;
+          }
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+          ctx.arc(c.x - c.r * 0.4, c.y + c.r * 0.15, c.r * 0.65, 0, Math.PI * 2);
+          ctx.arc(c.x + c.r * 0.4, c.y + c.r * 0.15, c.r * 0.65, 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? `rgba(255, 255, 255, ${c.opacity})` : `rgba(148, 163, 184, ${c.opacity})`;
+          ctx.fill();
+        });
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "hexagon") {
+      let wave = 0;
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        wave += 0.015 * speedMultiplier;
+        const hexRadius = 40;
+        const h = hexRadius * Math.sqrt(3);
+        
+        for (let y = 0; y < height + h; y += h) {
+          for (let x = 0; x < width + hexRadius * 3; x += hexRadius * 3) {
+            const drawHex = (cx: number, cy: number) => {
+              ctx.beginPath();
+              for (let side = 0; side < 6; side++) {
+                const angle = (side * Math.PI) / 3;
+                const px = cx + hexRadius * Math.cos(angle);
+                const py = cy + hexRadius * Math.sin(angle);
+                if (side === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+              }
+              ctx.closePath();
+              const dist = Math.sqrt((cx - mouse.x) * (cx - mouse.x) + (cy - mouse.y) * (cy - mouse.y));
+              if (dist < 180 && mouse.active) {
+                ctx.strokeStyle = isDark 
+                  ? `rgba(34, 211, 238, ${(180 - dist) / 180 * 0.35})` 
+                  : `rgba(14, 116, 144, ${(180 - dist) / 180 * 0.35})`;
+                ctx.lineWidth = 1.2;
+              } else {
+                const pulse = (Math.sin(cx * 0.003 + cy * 0.003 + wave) + 1) / 2;
+                ctx.strokeStyle = isDark 
+                  ? `rgba(34, 211, 238, ${pulse * 0.05 + 0.01})` 
+                  : `rgba(14, 116, 144, ${pulse * 0.06 + 0.01})`;
+                ctx.lineWidth = 0.8;
+              }
+              ctx.stroke();
+            };
+            drawHex(x, y);
+            drawHex(x + hexRadius * 1.5, y + h / 2);
+          }
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "geometric") {
+      const shapes: Array<{ x: number; y: number; r: number; vx: number; vy: number; angle: number; speed: number; type: string; color: string }> = [];
+      const types = ["square", "triangle", "circle"];
+      const colors = isDark 
+        ? ["rgba(34, 211, 238, 0.12)", "rgba(244, 63, 94, 0.12)", "rgba(167, 139, 250, 0.12)"]
+        : ["rgba(14, 116, 144, 0.1)", "rgba(225, 29, 72, 0.1)", "rgba(109, 40, 217, 0.1)"];
+      for (let i = 0; i < 15; i++) {
+        shapes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * 15 + 12,
+          vx: (Math.random() - 0.5) * 1.2,
+          vy: (Math.random() - 0.5) * 1.2,
+          angle: Math.random() * Math.PI * 2,
+          speed: (Math.random() * 0.015 - 0.0075) * speedMultiplier,
+          type: types[Math.floor(Math.random() * types.length)],
+          color: colors[Math.floor(Math.random() * colors.length)]
+        });
+      }
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        shapes.forEach(s => {
+          s.x += s.vx * speedMultiplier;
+          s.y += s.vy * speedMultiplier;
+          s.angle += s.speed;
+          if (s.x - s.r < 0 || s.x + s.r > width) s.vx *= -1;
+          if (s.y - s.r < 0 || s.y + s.r > height) s.vy *= -1;
+
+          ctx.save();
+          ctx.translate(s.x, s.y);
+          ctx.rotate(s.angle);
+          ctx.strokeStyle = s.color;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          if (s.type === "square") {
+            ctx.strokeRect(-s.r, -s.r, s.r * 2, s.r * 2);
+          } else if (s.type === "triangle") {
+            ctx.moveTo(0, -s.r);
+            ctx.lineTo(s.r, s.r);
+            ctx.lineTo(-s.r, s.r);
+            ctx.closePath();
+            ctx.stroke();
+          } else {
+            ctx.arc(0, 0, s.r, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        });
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "circuit") {
+      const lines: Array<{ x: number; y: number; vx: number; vy: number; length: number; maxLength: number; branches: number }> = [];
+      const completedLines: Array<{ path: Array<{ x: number; y: number }> }> = [];
+      const spawnLine = () => {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const dir = Math.floor(Math.random() * 4);
+        const vx = dir === 0 ? 1.5 : dir === 1 ? -1.5 : 0;
+        const vy = dir === 2 ? 1.5 : dir === 3 ? -1.5 : 0;
+        return { x, y, vx, vy, length: 0, maxLength: Math.random() * 120 + 40, branches: 0 };
+      };
+      for (let i = 0; i < 12; i++) lines.push(spawnLine());
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        ctx.strokeStyle = isDark ? "rgba(34, 211, 238, 0.12)" : "rgba(14, 116, 144, 0.15)";
+        ctx.lineWidth = 1.2;
+
+        completedLines.forEach(l => {
+          ctx.beginPath();
+          ctx.moveTo(l.path[0].x, l.path[0].y);
+          for (let i = 1; i < l.path.length; i++) ctx.lineTo(l.path[i].x, l.path[i].y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(l.path[l.path.length - 1].x, l.path[l.path.length - 1].y, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? "rgba(34, 211, 238, 0.25)" : "rgba(14, 116, 144, 0.3)";
+          ctx.fill();
+        });
+
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const l = lines[i];
+          const prevX = l.x;
+          const prevY = l.y;
+          l.x += l.vx * speedMultiplier;
+          l.y += l.vy * speedMultiplier;
+          l.length += Math.abs(l.vx + l.vy) * speedMultiplier;
+
+          ctx.beginPath();
+          ctx.moveTo(prevX, prevY);
+          ctx.lineTo(l.x, l.y);
+          ctx.stroke();
+
+          if (l.length >= l.maxLength) {
+            if (l.branches < 2 && Math.random() < 0.4) {
+              const dir = Math.random() < 0.5 ? { vx: l.vy, vy: -l.vx } : { vx: -l.vy, vy: l.vx };
+              lines.push({
+                x: l.x,
+                y: l.y,
+                vx: dir.vx,
+                vy: dir.vy,
+                length: 0,
+                maxLength: Math.random() * 80 + 20,
+                branches: l.branches + 1
+              });
+            }
+            completedLines.push({ path: [{ x: prevX, y: prevY }, { x: l.x, y: l.y }] });
+            if (completedLines.length > 35) completedLines.shift();
+            lines[i] = spawnLine();
+          }
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "light-rays") {
+      let angle = 0;
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        angle += 0.0008 * speedMultiplier;
+        const numRays = 14;
+        ctx.fillStyle = isDark ? "rgba(255, 255, 255, 0.012)" : "rgba(30, 41, 59, 0.012)";
+        const cx = width * 0.15;
+        const cy = -40;
+        for (let i = 0; i < numRays; i++) {
+          const rayAngle = (i * Math.PI * 2) / numRays + angle;
+          const rayAngleEnd = rayAngle + 0.1 + Math.sin(angle * 2.5 + i) * 0.03;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(rayAngle) * width * 1.4, cy + Math.sin(rayAngle) * height * 1.4);
+          ctx.lineTo(cx + Math.cos(rayAngleEnd) * width * 1.4, cy + Math.sin(rayAngleEnd) * height * 1.4);
+          ctx.closePath();
+          ctx.fill();
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "moving-gradients" || animations.effectType === "mesh-gradients") {
+      const blobs: Array<{ x: number; y: number; r: number; vx: number; vy: number; color1: string; color2: string }> = [];
+      const colors = isDark
+        ? [
+            ["rgba(124, 58, 237, 0.12)", "rgba(0,0,0,0)"],
+            ["rgba(8, 145, 178, 0.12)", "rgba(0,0,0,0)"],
+            ["rgba(13, 148, 136, 0.12)", "rgba(0,0,0,0)"],
+            ["rgba(219, 39, 119, 0.08)", "rgba(0,0,0,0)"]
+          ]
+        : [
+            ["rgba(196, 181, 253, 0.16)", "rgba(255,255,255,0)"],
+            ["rgba(165, 243, 252, 0.18)", "rgba(255,255,255,0)"],
+            ["rgba(153, 246, 228, 0.16)", "rgba(255,255,255,0)"],
+            ["rgba(252, 165, 203, 0.12)", "rgba(255,255,255,0)"]
+          ];
+      for (let i = 0; i < 4; i++) {
+        blobs.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: Math.random() * width * 0.3 + width * 0.15,
+          vx: (Math.random() - 0.5) * 0.6,
+          vy: (Math.random() - 0.5) * 0.6,
+          color1: colors[i][0],
+          color2: colors[i][1]
+        });
+      }
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+
+        blobs.forEach(b => {
+          b.x += b.vx * speedMultiplier;
+          b.y += b.vy * speedMultiplier;
+          if (b.x - b.r * 0.5 < 0 || b.x + b.r * 0.5 > width) b.vx *= -1;
+          if (b.y - b.r * 0.5 < 0 || b.y + b.r * 0.5 > height) b.vy *= -1;
+
+          const grad = ctx.createRadialGradient(b.x, b.y, b.r * 0.1, b.x, b.y, b.r);
+          grad.addColorStop(0, b.color1);
+          grad.addColorStop(1, b.color2);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
+    } else if (animations.effectType === "floating-polygons") {
+      const nodes: Array<{ x: number; y: number; vx: number; vy: number; r: number }> = [];
+      for (let i = 0; i < 35; i++) {
+        nodes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: (Math.random() - 0.5) * 0.8,
+          r: Math.random() * 2.0 + 1.0
+        });
+      }
+      const render = () => {
+        ctx.clearRect(0, 0, width, height);
+        
+        nodes.forEach(n => {
+          n.x += n.vx * speedMultiplier;
+          n.y += n.vy * speedMultiplier;
+          if (n.x < 0 || n.x > width) n.vx *= -1;
+          if (n.y < 0 || n.y > height) n.vy *= -1;
+
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+          ctx.fillStyle = isDark ? "rgba(34, 211, 238, 0.4)" : "rgba(14, 116, 144, 0.45)";
+          ctx.fill();
+        });
+
+        ctx.lineWidth = 0.6;
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const dx = nodes[i].x - nodes[j].x;
+            const dy = nodes[i].y - nodes[j].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 100) {
+              ctx.beginPath();
+              ctx.moveTo(nodes[i].x, nodes[i].y);
+              ctx.lineTo(nodes[j].x, nodes[j].y);
+              const alpha = (100 - dist) / 100 * 0.12;
+              ctx.strokeStyle = isDark ? `rgba(34, 211, 238, ${alpha})` : `rgba(14, 116, 144, ${alpha})`;
+              ctx.stroke();
+            }
+          }
+        }
+        animationFrameId = requestAnimationFrame(render);
+      };
+      render();
     }
 
     return () => {
@@ -955,6 +1479,7 @@ export default function App() {
     const hash = window.location.hash.replace("#", "");
     return hash || "dashboard";
   });
+  const [marketSubTab, setMarketSubTab] = useState<"standard" | "managerial">("standard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // General Month states
@@ -989,8 +1514,11 @@ export default function App() {
     accentGlow: true,
     backgroundTheme: "default", // "default", "cosmic-void", "midnight-nebula", "cyberpunk-grid", "sunset-glow", "ocean-depth", "forest-whisper", "aurora-borealis", "custom"
     customBackgroundUrl: "",
-    backgroundOpacity: 20
+    backgroundOpacity: 20,
+    themeTemplate: "default-erp"
   });
+
+  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
 
   const [enableManagerRating, setEnableManagerRating] = useState(true);
   const [balanceSheetGlow, setBalanceSheetGlow] = useState("none");
@@ -1152,6 +1680,11 @@ export default function App() {
   const [logoText, setLogoText] = useState("Ababil mess");
   const [dropdownOptions, setDropdownOptions] = useState<string[]>(["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"]);
   const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [mealTypes, setMealTypes] = useState<any[]>([
+    { id: "lunch", name: "Lunch", enabled: true },
+    { id: "dinner", name: "Dinner", enabled: true },
+    { id: "breakfast", name: "Breakfast", enabled: false }
+  ]);
 
   // Login page customizer
   const [loginCustomization, setLoginCustomization] = useState({
@@ -1184,6 +1717,33 @@ export default function App() {
     accentColor: "#22d3ee",
     showQuickActions: true,
     showBanner: true
+  });
+
+  // Typography customization settings state
+  const [typographySettings, setTypographySettings] = useState({
+    primaryFontColor: "",
+    secondaryFontColor: "",
+    headingColor: "",
+    menuTextColor: "",
+    sidebarTextColor: "",
+    navbarTextColor: "",
+    cardTextColor: "",
+    tableTextColor: "",
+    buttonTextColor: "",
+    linkColor: "",
+    successTextColor: "",
+    warningTextColor: "",
+    errorTextColor: "",
+    globalFontSize: 14,
+    headingSize: 18,
+    sidebarFontSize: 12,
+    navigationFontSize: 12,
+    cardTitleSize: 14,
+    cardBodySize: 12,
+    tableFontSize: 12,
+    buttonFontSize: 12,
+    fontFamily: "Inter",
+    accessibilityPreset: "normal"
   });
 
   // Elections/Ballot voting states
@@ -1295,6 +1855,7 @@ export default function App() {
         if (data.logoText) setLogoText(data.logoText);
         if (data.dropdownOptions) setDropdownOptions(data.dropdownOptions);
         if (data.translations) setTranslations(data.translations);
+        if (data.mealTypes) setMealTypes(data.mealTypes);
         if (data.currencySymbol) setCurrencySymbol(data.currencySymbol);
         if (data.customColors) setCustomColors(prev => ({ ...prev, ...data.customColors }));
         if (data.messAnimations) setMessAnimations(prev => ({ ...prev, ...data.messAnimations }));
@@ -1306,6 +1867,7 @@ export default function App() {
         if (data.balanceSheetGlow !== undefined) setBalanceSheetGlow(data.balanceSheetGlow);
         if (data.roleAnimations !== undefined) setRoleAnimations(data.roleAnimations);
         if (data.adminVisibility !== undefined) setAdminVisibility(data.adminVisibility);
+        if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
       }
     } catch (e) {
       console.error("Failed to fetch settings:", e);
@@ -1336,6 +1898,7 @@ export default function App() {
           if (s.logoText) setLogoText(s.logoText);
           if (s.dropdownOptions) setDropdownOptions(s.dropdownOptions);
           if (s.translations) setTranslations(s.translations);
+          if (s.mealTypes) setMealTypes(s.mealTypes);
           if (s.currencySymbol) setCurrencySymbol(s.currencySymbol);
           if (s.customColors) setCustomColors(s.customColors);
           if (s.messAnimations) setMessAnimations(s.messAnimations);
@@ -1347,6 +1910,7 @@ export default function App() {
           if (s.balanceSheetGlow !== undefined) setBalanceSheetGlow(s.balanceSheetGlow);
           if (s.roleAnimations !== undefined) setRoleAnimations(s.roleAnimations);
           if (s.adminVisibility !== undefined) setAdminVisibility(s.adminVisibility);
+          if (s.typographySettings) setTypographySettings(s.typographySettings);
         }
         return true;
       } else {
@@ -1648,6 +2212,10 @@ export default function App() {
   // Scroll to the top of the page when activeTab changes to prevent starting from the middle/bottom
   useEffect(() => {
     window.scrollTo(0, 0);
+    const mainEl = document.querySelector("main");
+    if (mainEl) {
+      mainEl.scrollTo(0, 0);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -1824,7 +2392,7 @@ export default function App() {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += `BANGLADESH MESS LEDGER REPORT - ${activeMonth?.name || "MONTH"}\r\n`;
     csvContent += `Total Cost,৳ ${reportSummary.totalCost}\r\n`;
-    csvContent += `Effective Cost,৳ ${reportSummary.effectiveCost}\r\n`;
+    csvContent += `Manager Monthly Market,৳ ${reportSummary.managerMarketSpent || 0}\r\n`;
     csvContent += `Meal Rate,৳ ${reportSummary.mealRate}\r\n\r\n`;
     csvContent += "Nickname,Deposits,Market Expenses,Meals Consumed,Meal Cost,Balance,Refund Status\r\n";
 
@@ -2062,13 +2630,17 @@ export default function App() {
   });
 
   const getThemeBgStyle = () => {
-    const theme = messAnimations?.backgroundTheme || "default";
+    const currentTemplateId = previewTemplateId || messAnimations?.themeTemplate || "default-erp";
+    const currentTemplate = THEME_TEMPLATES.find(t => t.id === currentTemplateId) || THEME_TEMPLATES[0];
+    const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
     const customUrl = messAnimations?.customBackgroundUrl || "";
     const opacity = (messAnimations?.backgroundOpacity ?? 20) / 100;
+    const activeIsDarkMode = previewTemplateId ? currentTemplate.isDarkMode : isDarkMode;
 
     if (theme === "custom" && customUrl) {
+      const overlayColor = activeIsDarkMode ? "10, 15, 30" : "255, 255, 255";
       return {
-        backgroundImage: `linear-gradient(rgba(10, 15, 30, ${1 - opacity}), rgba(10, 15, 30, ${1 - opacity})), url("${customUrl}")`,
+        backgroundImage: `linear-gradient(rgba(${overlayColor}, ${1 - opacity}), rgba(${overlayColor}, ${1 - opacity})), url("${customUrl}")`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundAttachment: "fixed",
@@ -2076,139 +2648,403 @@ export default function App() {
       };
     }
 
-    if (theme === "cosmic-void") {
-      return {
-        backgroundImage: "radial-gradient(circle at 50% 50%, #1e1b4b 0%, #090514 70%, #020005 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "midnight-nebula") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #020617 0%, #1e1b4b 30%, #581c87 60%, #4a044e 85%, #020617 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "cyberpunk-grid") {
-      return {
-        backgroundColor: "#030008",
-        backgroundImage: `
-          linear-gradient(rgba(139, 92, 246, 0.05) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(139, 92, 246, 0.05) 1px, transparent 1px),
-          radial-gradient(circle at center, rgba(14, 116, 144, 0.15) 0%, #030008 80%)
-        `,
-        backgroundSize: "40px 40px, 40px 40px, 100% 100%",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "sunset-glow") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #180020 0%, #3b0764 40%, #701a75 70%, #9a3412 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "ocean-depth") {
-      return {
-        backgroundImage: "linear-gradient(180deg, #022c22 0%, #042f2e 30%, #115e59 70%, #064e3b 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "forest-whisper") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #022c22 0%, #064e3b 40%, #14532d 80%, #052e16 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "aurora-borealis") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #020617 0%, #043530 30%, #0f172a 60%, #1e1b4b 80%, #020617 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "neon-shallows") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #020617 0%, #064e3b 25%, #4c0519 75%, #020617 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "sahara-sand") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #0f0502 0%, #2a0800 35%, #451a03 70%, #170500 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "deep-space") {
-      return {
-        backgroundImage: "radial-gradient(circle at 30% 20%, #030712 0%, #09090b 60%, #020202 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "electric-indigo") {
-      return {
-        backgroundImage: "linear-gradient(180deg, #03000a 0%, #050014 40%, #1e1b4b 80%, #03000a 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "magma-flow") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #000000 0%, #1c0202 40%, #450a0a 75%, #020000 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "cyber-emerald") {
-      return {
-        backgroundColor: "#010502",
-        backgroundImage: `
-          linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px),
-          radial-gradient(circle at center, rgba(6, 78, 59, 0.15) 0%, #010502 85%)
-        `,
-        backgroundSize: "32px 32px, 32px 32px, 100% 100%",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "sakura-blossom") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #0a0104 0%, #20010c 35%, #4c051e 70%, #0a0104 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "ice-glacier") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #010a14 0%, #021a30 40%, #083344 80%, #010a14 100%)",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "bento-grid-dark") {
-      return {
-        backgroundColor: "#09090b",
-        backgroundImage: `
-          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
-        `,
-        backgroundSize: "60px 60px",
-        backgroundAttachment: "fixed"
-      };
-    }
-    if (theme === "solar-storm") {
-      return {
-        backgroundImage: "linear-gradient(135deg, #080200 0%, #240a00 35%, #431407 75%, #080200 100%)",
-        backgroundAttachment: "fixed"
-      };
+    if (!activeIsDarkMode) {
+      // PREMIUM LIGHT MODE SPECTRUM THEMES
+      if (theme === "cosmic-void") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 50%, #ddd6fe 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "midnight-nebula") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #7dd3fc 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "cyberpunk-grid") {
+        return {
+          backgroundColor: "#f8fafc",
+          backgroundImage: `
+            linear-gradient(rgba(14, 116, 144, 0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(14, 116, 144, 0.04) 1px, transparent 1px),
+            radial-gradient(circle at center, rgba(34, 211, 238, 0.12) 0%, #f8fafc 80%)
+          `,
+          backgroundSize: "40px 40px, 40px 40px, 100% 100%",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "sunset-glow") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "ocean-depth") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "forest-whisper") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #bbf7d0 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "aurora-borealis") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 50%, #99f6e4 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "neon-shallows") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "sahara-sand") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #fefce8 0%, #fef9c3 50%, #fef08a 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "deep-space") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "electric-indigo") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #f5f3ff 0%, #e0e7ff 50%, #c7d2fe 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "magma-flow") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #fff5f5 0%, #fee2e2 50%, #fca5a5 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "cyber-emerald") {
+        return {
+          backgroundColor: "#f4fbf7",
+          backgroundImage: `
+            linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+            radial-gradient(circle at center, rgba(16, 185, 129, 0.06) 0%, #f4fbf7 85%)
+          `,
+          backgroundSize: "32px 32px, 32px 32px, 100% 100%",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "sakura-blossom") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #fff1f2 0%, #ffe4e6 50%, #fecdd3 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "ice-glacier") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #bae6fd 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "bento-grid-dark") {
+        return {
+          backgroundColor: "#ffffff",
+          backgroundImage: `
+            linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px)
+          `,
+          backgroundSize: "60px 60px",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "solar-storm") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 50%, #fde68a 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+    } else {
+      // PREMIUM DARK MODE SPECTRUM THEMES
+      if (theme === "cosmic-void") {
+        return {
+          backgroundImage: "radial-gradient(circle at 50% 50%, #1e1b4b 0%, #090514 70%, #020005 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "midnight-nebula") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #020617 0%, #1e1b4b 30%, #581c87 60%, #4a044e 85%, #020617 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "cyberpunk-grid") {
+        return {
+          backgroundColor: "#030008",
+          backgroundImage: `
+            linear-gradient(rgba(139, 92, 246, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(139, 92, 246, 0.05) 1px, transparent 1px),
+            radial-gradient(circle at center, rgba(14, 116, 144, 0.15) 0%, #030008 80%)
+          `,
+          backgroundSize: "40px 40px, 40px 40px, 100% 100%",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "sunset-glow") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #180020 0%, #3b0764 40%, #701a75 70%, #9a3412 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "ocean-depth") {
+        return {
+          backgroundImage: "linear-gradient(180deg, #022c22 0%, #042f2e 30%, #115e59 70%, #064e3b 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "forest-whisper") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #022c22 0%, #064e3b 40%, #14532d 80%, #052e16 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "aurora-borealis") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #020617 0%, #043530 30%, #0f172a 60%, #1e1b4b 80%, #020617 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "neon-shallows") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #020617 0%, #064e3b 25%, #4c0519 75%, #020617 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "sahara-sand") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #0f0502 0%, #2a0800 35%, #451a03 70%, #170500 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "deep-space") {
+        return {
+          backgroundImage: "radial-gradient(circle at 30% 20%, #030712 0%, #09090b 60%, #020202 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "electric-indigo") {
+        return {
+          backgroundImage: "linear-gradient(180deg, #03000a 0%, #050014 40%, #1e1b4b 80%, #03000a 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "magma-flow") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #000000 0%, #1c0202 40%, #450a0a 75%, #020000 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "cyber-emerald") {
+        return {
+          backgroundColor: "#010502",
+          backgroundImage: `
+            linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+            radial-gradient(circle at center, rgba(6, 78, 59, 0.15) 0%, #010502 85%)
+          `,
+          backgroundSize: "32px 32px, 32px 32px, 100% 100%",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "sakura-blossom") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #0a0104 0%, #20010c 35%, #4c051e 70%, #0a0104 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "ice-glacier") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #010a14 0%, #021a30 40%, #083344 80%, #010a14 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "bento-grid-dark") {
+        return {
+          backgroundColor: "#09090b",
+          backgroundImage: `
+            linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
+          `,
+          backgroundSize: "60px 60px",
+          backgroundAttachment: "fixed"
+        };
+      }
+      if (theme === "solar-storm") {
+        return {
+          backgroundImage: "linear-gradient(135deg, #080200 0%, #240a00 35%, #431407 75%, #080200 100%)",
+          backgroundAttachment: "fixed"
+        };
+      }
     }
 
     return {};
   };
 
+  // Contrast YIQ calculator for ensuring text contrast dynamically on any background!
+  const getContrastColor = (hexcolor: string, lightColor = "#ffffff", darkColor = "#0f172a") => {
+    if (!hexcolor) return darkColor;
+    let r, g, b;
+    let hex = hexcolor.trim().replace("#", "");
+    if (hex.length === 3) {
+      hex = hex.split("").map(c => c + c).join("");
+    }
+    if (hex.length === 6) {
+      r = parseInt(hex.substring(0, 2), 16);
+      g = parseInt(hex.substring(2, 4), 16);
+      b = parseInt(hex.substring(4, 6), 16);
+    } else {
+      return darkColor;
+    }
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? darkColor : lightColor;
+  };
+
+  const getFontFamilyStack = (family: string) => {
+    switch (family) {
+      case "Poppins": return '"Poppins", "Outfit", sans-serif';
+      case "Roboto": return '"Roboto", sans-serif';
+      case "Nunito": return '"Nunito", sans-serif';
+      case "Montserrat": return '"Montserrat", sans-serif';
+      case "Open Sans": return '"Open Sans", sans-serif';
+      case "Lato": return '"Lato", sans-serif';
+      case "Inter":
+      default: return '"Inter", "Outfit", sans-serif';
+    }
+  };
+
+  const getActiveTypographySettings = (isDark: boolean) => {
+    const defaults = {
+      primaryFontColor: isDark ? "#f8fafc" : "#0f172a",
+      secondaryFontColor: isDark ? "#94a3b8" : "#475569",
+      headingColor: isDark ? "#22d3ee" : "#0f172a",
+      menuTextColor: isDark ? "#cbd5e1" : "#1e293b",
+      sidebarTextColor: isDark ? "#94a3b8" : "#f1f5f9",
+      navbarTextColor: isDark ? "#cbd5e1" : "#0f172a",
+      cardTextColor: isDark ? "#cbd5e1" : "#1e293b",
+      tableTextColor: isDark ? "#cbd5e1" : "#1e293b",
+      buttonTextColor: isDark ? "#ffffff" : "#0f172a",
+      linkColor: isDark ? "#38bdf8" : "#0284c7",
+      successTextColor: isDark ? "#4ade80" : "#16a34a",
+      warningTextColor: isDark ? "#facc15" : "#d97706",
+      errorTextColor: isDark ? "#f87171" : "#dc2626",
+      
+      globalFontSize: 14,
+      headingSize: 18,
+      sidebarFontSize: 12,
+      navigationFontSize: 12,
+      cardTitleSize: 14,
+      cardBodySize: 12,
+      tableFontSize: 12,
+      buttonFontSize: 12,
+      
+      fontFamily: "Inter",
+      accessibilityPreset: "normal"
+    };
+
+    // Accessibility Preset overrides
+    const preset = typographySettings?.accessibilityPreset || "normal";
+    if (preset === "large-text") {
+      defaults.globalFontSize = 16;
+      defaults.headingSize = 22;
+      defaults.sidebarFontSize = 14;
+      defaults.navigationFontSize = 14;
+      defaults.cardTitleSize = 16;
+      defaults.cardBodySize = 14;
+      defaults.tableFontSize = 14;
+      defaults.buttonFontSize = 14;
+    } else if (preset === "high-contrast") {
+      defaults.primaryFontColor = isDark ? "#ffffff" : "#000000";
+      defaults.secondaryFontColor = isDark ? "#cbd5e1" : "#1e293b";
+      defaults.headingColor = isDark ? "#38bdf8" : "#000000";
+      defaults.menuTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.sidebarTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.navbarTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.cardTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.tableTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.linkColor = isDark ? "#0ea5e9" : "#0284c7";
+      defaults.successTextColor = isDark ? "#22c55e" : "#15803d";
+      defaults.warningTextColor = isDark ? "#eab308" : "#b45309";
+      defaults.errorTextColor = isDark ? "#ef4444" : "#b91c1c";
+    } else if (preset === "accessibility-mode") {
+      defaults.globalFontSize = 18;
+      defaults.headingSize = 24;
+      defaults.sidebarFontSize = 16;
+      defaults.navigationFontSize = 16;
+      defaults.cardTitleSize = 18;
+      defaults.cardBodySize = 16;
+      defaults.tableFontSize = 16;
+      defaults.buttonFontSize = 16;
+      
+      defaults.primaryFontColor = isDark ? "#ffffff" : "#000000";
+      defaults.secondaryFontColor = isDark ? "#e2e8f0" : "#0f172a";
+      defaults.headingColor = isDark ? "#38bdf8" : "#000000";
+      defaults.menuTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.sidebarTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.navbarTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.cardTextColor = isDark ? "#ffffff" : "#000000";
+      defaults.tableTextColor = isDark ? "#ffffff" : "#000000";
+    }
+
+    return {
+      primaryFontColor: typographySettings?.primaryFontColor || defaults.primaryFontColor,
+      secondaryFontColor: typographySettings?.secondaryFontColor || defaults.secondaryFontColor,
+      headingColor: typographySettings?.headingColor || defaults.headingColor,
+      menuTextColor: typographySettings?.menuTextColor || defaults.menuTextColor,
+      sidebarTextColor: typographySettings?.sidebarTextColor || defaults.sidebarTextColor,
+      navbarTextColor: typographySettings?.navbarTextColor || defaults.navbarTextColor,
+      cardTextColor: typographySettings?.cardTextColor || defaults.cardTextColor,
+      tableTextColor: typographySettings?.tableTextColor || defaults.tableTextColor,
+      buttonTextColor: typographySettings?.buttonTextColor || defaults.buttonTextColor,
+      linkColor: typographySettings?.linkColor || defaults.linkColor,
+      successTextColor: typographySettings?.successTextColor || defaults.successTextColor,
+      warningTextColor: typographySettings?.warningTextColor || defaults.warningTextColor,
+      errorTextColor: typographySettings?.errorTextColor || defaults.errorTextColor,
+      
+      globalFontSize: typographySettings?.globalFontSize !== undefined ? Number(typographySettings.globalFontSize) : defaults.globalFontSize,
+      headingSize: typographySettings?.headingSize !== undefined ? Number(typographySettings.headingSize) : defaults.headingSize,
+      sidebarFontSize: typographySettings?.sidebarFontSize !== undefined ? Number(typographySettings.sidebarFontSize) : defaults.sidebarFontSize,
+      navigationFontSize: typographySettings?.navigationFontSize !== undefined ? Number(typographySettings.navigationFontSize) : defaults.navigationFontSize,
+      cardTitleSize: typographySettings?.cardTitleSize !== undefined ? Number(typographySettings.cardTitleSize) : defaults.cardTitleSize,
+      cardBodySize: typographySettings?.cardBodySize !== undefined ? Number(typographySettings.cardBodySize) : defaults.cardBodySize,
+      tableFontSize: typographySettings?.tableFontSize !== undefined ? Number(typographySettings.tableFontSize) : defaults.tableFontSize,
+      buttonFontSize: typographySettings?.buttonFontSize !== undefined ? Number(typographySettings.buttonFontSize) : defaults.buttonFontSize,
+      
+      fontFamily: typographySettings?.fontFamily || defaults.fontFamily,
+      accessibilityPreset: preset
+    };
+  };
+
+  const currentTemplateId = previewTemplateId || messAnimations?.themeTemplate || "default-erp";
+  const currentTemplate = THEME_TEMPLATES.find(t => t.id === currentTemplateId) || THEME_TEMPLATES[0];
+  const activeIsDarkMode = previewTemplateId ? currentTemplate.isDarkMode : isDarkMode;
+  const activeCustomColors = previewTemplateId ? currentTemplate.customColors : (customColors || THEME_TEMPLATES[0].customColors);
+  const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
+
+  const activeTypography = getActiveTypographySettings(activeIsDarkMode);
+
   return (
     <div 
       style={getThemeBgStyle()}
-      className={`min-h-screen transition-all duration-300 flex flex-col md:flex-row ${
-        isDarkMode && (!messAnimations?.backgroundTheme || messAnimations?.backgroundTheme === "default") 
-          ? "bg-slate-950 text-white font-sans" 
-          : !isDarkMode && (!messAnimations?.backgroundTheme || messAnimations?.backgroundTheme === "default")
-            ? "bg-slate-50 text-slate-800 font-sans light-mode-root"
-            : "text-white font-sans" // Force elegant high-contrast dark style text if immersive themes are active
-      } ${!isDarkMode ? "light-mode-root" : ""}`}
+      className={`min-h-screen transition-all duration-300 flex flex-col md:flex-row theme-${currentTemplateId} ${
+        activeIsDarkMode
+          ? "text-white font-sans " + (theme === "default" || !theme ? "bg-slate-950" : "")
+          : "text-slate-900 font-sans light-mode-root " + (theme === "default" || !theme ? "bg-slate-50" : "")
+      }`}
     >
       <style>{`
         :root {
@@ -2218,16 +3054,142 @@ export default function App() {
           --color-cyan-600: ${colors.c600} !important;
           --font-sans: ${fonts.sans} !important;
           --font-display: ${fonts.display} !important;
-          --custom-sidebar-bg: ${customColors?.sidebarBg || "#0f172a"};
-          --custom-header-bg: ${customColors?.headerBg || "#0f172a"};
-          --custom-card-bg: ${customColors?.cardBg || "#1e293b"};
-          --custom-accent-color: ${customColors?.accentColor || "#22d3ee"};
-          --custom-typography-highlight: ${customColors?.typographyHighlightRgb || "#67e8f9"};
-          --custom-layout-scale-color: ${customColors?.layoutScaleColorRgb || "#a78bfa"};
+          --custom-sidebar-bg: ${activeCustomColors?.sidebarBg || "#0f172a"};
+          --custom-header-bg: ${activeCustomColors?.headerBg || "#0f172a"};
+          --custom-card-bg: ${activeCustomColors?.cardBg || "#1e293b"};
+          --custom-accent-color: ${activeCustomColors?.accentColor || "#22d3ee"};
+          --custom-typography-highlight: ${activeCustomColors?.typographyHighlightRgb || "#67e8f9"};
+          --custom-layout-scale-color: ${activeCustomColors?.layoutScaleColorRgb || "#a78bfa"};
+
+          /* Typography Custom Colors */
+          --typo-primary-color: ${activeTypography.primaryFontColor};
+          --typo-secondary-color: ${activeTypography.secondaryFontColor};
+          --typo-heading-color: ${activeTypography.headingColor};
+          --typo-menu-color: ${activeTypography.menuTextColor};
+          --typo-sidebar-color: ${activeTypography.sidebarTextColor};
+          --typo-navbar-color: ${activeTypography.navbarTextColor};
+          --typo-card-color: ${activeTypography.cardTextColor};
+          --typo-table-color: ${activeTypography.tableTextColor};
+          --typo-button-color: ${activeTypography.buttonTextColor};
+          --typo-link-color: ${activeTypography.linkColor};
+          --typo-success-color: ${activeTypography.successTextColor};
+          --typo-warning-color: ${activeTypography.warningTextColor};
+          --typo-error-color: ${activeTypography.errorTextColor};
+
+          /* Typography Sizes */
+          --typo-global-size: ${activeTypography.globalFontSize}px;
+          --typo-heading-size: ${activeTypography.headingSize}px;
+          --typo-sidebar-size: ${activeTypography.sidebarFontSize}px;
+          --typo-navigation-size: ${activeTypography.navigationFontSize}px;
+          --typo-card-title-size: ${activeTypography.cardTitleSize}px;
+          --typo-card-body-size: ${activeTypography.cardBodySize}px;
+          --typo-table-size: ${activeTypography.tableFontSize}px;
+          --typo-button-size: ${activeTypography.buttonFontSize}px;
+
+          /* Typography Font Family */
+          --typo-font-family: ${getFontFamilyStack(activeTypography.fontFamily)};
         }
+
+        /* Applying custom typography rules globally */
+        body, html, .font-sans, p, span, div, input, select, textarea, label {
+          font-family: var(--typo-font-family), system-ui, sans-serif !important;
+        }
+
+        /* Global base size overrides */
+        body, html {
+          font-size: var(--typo-global-size) !important;
+        }
+
+        /* Headings text override */
+        h1, h2, h3, h4, h5, h6, .font-display, .text-cyan-300, .text-cyan-400, .text-cyan-500 {
+          color: var(--typo-heading-color) !important;
+          font-family: var(--typo-font-family), system-ui, sans-serif !important;
+        }
+
+        /* Adjusting header sizing based on customization */
+        h1, .text-xl, .text-2xl, .text-3xl {
+          font-size: var(--typo-heading-size) !important;
+        }
+        h2, .text-lg {
+          font-size: calc(var(--typo-heading-size) - 2px) !important;
+        }
+        h3, h4, .text-base {
+          font-size: calc(var(--typo-heading-size) - 4px) !important;
+        }
+
+        /* Sidebar/Navigation overrides */
+        aside, .sidebar-container, [id^="sidebar"], .sidebar-link {
+          font-size: var(--typo-sidebar-size) !important;
+        }
+        aside span, aside a, aside button, .sidebar-link, .sidebar-text {
+          color: var(--typo-sidebar-color) !important;
+          font-size: var(--typo-sidebar-size) !important;
+        }
+
+        /* Navigation elements text */
+        nav a, nav button, header a, header button, .nav-item {
+          color: var(--typo-navbar-color) !important;
+          font-size: var(--typo-navigation-size) !important;
+        }
+
+        /* Card and Panel text/body size overrides */
+        .glass-panel, .glass-panel-light, .card-container, .bg-slate-900\/50, .bg-slate-950\/40 {
+          color: var(--typo-card-color) !important;
+        }
+        .glass-panel p, .glass-panel span, .card-container p, .card-container span {
+          font-size: var(--typo-card-body-size) !important;
+        }
+        .glass-panel h3, .glass-panel h4, .card-container h3, .card-container h4, .card-title {
+          font-size: var(--typo-card-title-size) !important;
+        }
+
+        /* Table font style overrides */
+        table, .table-container, th, td, tr, thead, tbody {
+          color: var(--typo-table-color) !important;
+          font-size: var(--typo-table-size) !important;
+        }
+
+        /* Link colors overrides */
+        a:not([role="button"]):not(.btn), .link {
+          color: var(--typo-link-color) !important;
+        }
+
+        /* Button sizes & text colors */
+        button:not(.nav-item), .btn {
+          font-size: var(--typo-button-size) !important;
+        }
+
+        /* Statuses color overrides */
+        .text-emerald-400, .text-emerald-500, .text-green-400, .text-green-500, .text-success {
+          color: var(--typo-success-color) !important;
+        }
+        .text-yellow-400, .text-yellow-500, .text-amber-500, .text-orange-500, .text-warning {
+          color: var(--typo-warning-color) !important;
+        }
+        .text-red-400, .text-red-500, .text-rose-500, .text-rose-400, .text-error {
+          color: var(--typo-error-color) !important;
+        }
+
+        /* Fix text contrast in light mode dynamically on common light mode containers */
+        .light-mode-root .text-slate-200,
+        .light-mode-root .text-gray-200,
+        .light-mode-root .text-slate-300,
+        .light-mode-root .text-gray-300,
+        .light-mode-root .text-slate-400,
+        .light-mode-root .text-gray-400 {
+          color: var(--typo-primary-color) !important;
+        }
+
+        .light-mode-root .bg-slate-950\/40,
+        .light-mode-root .bg-slate-950\/60,
+        .light-mode-root .bg-slate-900\/50,
+        .light-mode-root .bg-slate-950 {
+          background-color: #f1f5f9 !important;
+          border-color: #cbd5e1 !important;
+        }
+
         body, html {
           ${sizeStyle}
-          font-family: ${fonts.sans} !important;
         }
         ::-webkit-scrollbar-thumb {
           background: rgba(${colors.rgb}, 0.4) !important;
@@ -2237,7 +3199,7 @@ export default function App() {
         }
         .glass-panel {
           border-color: rgba(${colors.rgb}, 0.15) !important;
-          background-color: ${isDarkMode && customColors?.cardBg ? customColors.cardBg : "rgba(30, 41, 59, 0.4)"} !important;
+          background-color: ${activeIsDarkMode && activeCustomColors?.cardBg ? activeCustomColors.cardBg : "rgba(30, 41, 59, 0.4)"} !important;
         }
         .glass-panel-light {
           border-color: rgba(${colors.rgb}, 0.2) !important;
@@ -2253,24 +3215,87 @@ export default function App() {
         }
         ${messAnimations?.enableEffect && messAnimations?.effectType === "neon" ? `
           .glass-panel, .rounded-2xl {
-            box-shadow: 0 0 15px ${customColors?.accentColor || colors.c400}40 !important;
-            border-color: ${customColors?.accentColor || colors.c400}60 !important;
+            box-shadow: 0 0 15px ${activeCustomColors?.accentColor || colors.c400}40 !important;
+            border-color: ${activeCustomColors?.accentColor || colors.c400}60 !important;
           }
           button:hover {
-            box-shadow: 0 0 12px ${customColors?.accentColor || colors.c400}80 !important;
+            box-shadow: 0 0 12px ${activeCustomColors?.accentColor || colors.c400}80 !important;
           }
         ` : ""}
         ${fontStyle === "custom" ? `
           h1, h2, h3, h4, .font-display, .text-cyan-300, .text-cyan-400 {
-            color: ${customColors?.typographyHighlightRgb || "#67e8f9"} !important;
+            color: ${activeCustomColors?.typographyHighlightRgb || "#67e8f9"} !important;
           }
         ` : ""}
         .scale-indicator-dot {
-          background-color: ${customColors?.layoutScaleColorRgb || "#a78bfa"} !important;
+          background-color: ${activeCustomColors?.layoutScaleColorRgb || "#a78bfa"} !important;
         }
+        
+        /* Custom styles for theme template */
+        ${currentTemplate.customStyles || ""}
+
+        /* Specialized Premium Visual Effects */
+        ${messAnimations?.glowingLabels ? `
+          label, .text-cyan-400, .text-cyan-300, .text-slate-400 {
+            text-shadow: 0 0 6px ${activeCustomColors?.accentColor || "#22d3ee"}50 !important;
+          }
+        ` : ""}
+        ${messAnimations?.glowingButtons ? `
+          button:not(.nav-item), .btn {
+            box-shadow: 0 0 10px ${activeCustomColors?.accentColor || "#22d3ee"}40 !important;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          }
+          button:not(.nav-item):hover, .btn:hover {
+            box-shadow: 0 0 15px ${activeCustomColors?.accentColor || "#22d3ee"}75 !important;
+            transform: translateY(-0.5px);
+          }
+        ` : ""}
+        ${messAnimations?.glowingIcons ? `
+          svg, .lucide {
+            filter: drop-shadow(0 0 4px ${activeCustomColors?.accentColor || "#22d3ee"}40) !important;
+          }
+        ` : ""}
+        ${messAnimations?.glowingCards ? `
+          .glass-panel, .rounded-2xl {
+            box-shadow: 0 0 18px ${activeCustomColors?.accentColor || "#22d3ee"}25 !important;
+          }
+        ` : ""}
+        ${messAnimations?.neonBorders ? `
+          .glass-panel, .rounded-2xl {
+            border-color: ${activeCustomColors?.accentColor || "#22d3ee"}75 !important;
+            border-width: 1.25px !important;
+          }
+        ` : ""}
+        ${messAnimations?.rgbHover ? `
+          .glass-panel:hover, .rounded-2xl:hover {
+            border-color: transparent !important;
+            box-shadow: 0 0 15px rgba(34, 211, 238, 0.4) !important;
+            transition: all 0.3s ease !important;
+          }
+        ` : ""}
+        ${messAnimations?.animatedShadows ? `
+          .glass-panel, .rounded-2xl {
+            animation: animateShadow 8s infinite alternate ease-in-out !important;
+          }
+          @keyframes animateShadow {
+            0% { box-shadow: 0 0 10px rgba(34, 211, 238, 0.15); }
+            50% { box-shadow: 0 0 18px rgba(167, 139, 250, 0.25); }
+            100% { box-shadow: 0 0 10px rgba(244, 63, 94, 0.15); }
+          }
+        ` : ""}
+        ${messAnimations?.glassCards ? `
+          .glass-panel, .rounded-2xl {
+            background: ${activeIsDarkMode 
+              ? "linear-gradient(135deg, rgba(15, 23, 42, 0.65) 0%, rgba(30, 41, 59, 0.35) 100%)" 
+              : "linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(241, 245, 249, 0.6) 100%)"} !important;
+            backdrop-filter: blur(14px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+          }
+        ` : ""}
       `}</style>
       
-      <AmbientAnimationOverlay animations={messAnimations} />
+      <AmbientAnimationOverlay animations={messAnimations} isDarkMode={activeIsDarkMode} />
       
       {/* ---------------------------------------------------------
           HEADER FOR MOBILE / VIEW CONTROL
@@ -2380,10 +3405,10 @@ export default function App() {
           --------------------------------------------------------- */}
       <aside 
         style={{
-          backgroundColor: isDarkMode ? customColors?.sidebarBg || undefined : undefined
+          backgroundColor: activeIsDarkMode ? activeCustomColors?.sidebarBg || undefined : undefined
         }}
         className={`hidden md:flex flex-col justify-between w-64 shrink-0 border-r h-screen sticky top-0 z-10 transition-all ${
-          isDarkMode ? "border-slate-900" : "bg-white border-slate-200"
+          activeIsDarkMode ? "border-slate-900" : "bg-white border-slate-200"
         }`}
       >
         <div className="p-6">
@@ -2490,8 +3515,7 @@ export default function App() {
             <div>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Active Monthly Cycle</p>
               <span className="text-xs font-extrabold text-cyan-400 font-display">
-                {new Date().toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} • {selectedMonth?.name || "July 2026"} 
-                {selectedMonth?.isLocked ? " (Locked)" : " (Active)"}
+                {new Date().toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
               </span>
             </div>
           </div>
@@ -2568,26 +3592,21 @@ export default function App() {
         <div className="animate-fade-in">
           
           {safeMode && (
-            <div className={`mb-6 p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse ${
-              isDarkMode 
-                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" 
-                : "bg-emerald-50 border-emerald-200 text-emerald-800 shadow-sm"
+            <div className={`mb-6 p-2.5 px-4 rounded-xl border flex items-center justify-between gap-3 ${
+              activeIsDarkMode 
+                ? "bg-emerald-950/25 border-emerald-500/15 text-emerald-400" 
+                : "bg-emerald-50/70 border-emerald-200/80 text-emerald-800 shadow-sm"
             }`} id="safe-mode-banner">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl mt-0.5 shrink-0">
-                  <Shield size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold font-display uppercase tracking-wider">🛡️ Safe Mode is Active</h4>
-                  <p className="text-[10px] opacity-85 leading-normal mt-0.5">
-                    To prevent accidental data updates or ledger modifications, all addition, editing, and deletion operations are currently locked. Turn off Safe Mode in the top header if you need to modify records.
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
+                <Shield size={14} className="text-emerald-400 shrink-0" />
+                <span className="text-[11px] font-bold">
+                  Safe mode is on to prevent unwanted changes
+                </span>
               </div>
               {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
                 <button
                   onClick={handleToggleSafeMode}
-                  className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500 hover:text-white border border-emerald-500/30 text-emerald-400 font-bold text-[10px] rounded-lg cursor-pointer uppercase tracking-wider transition-all self-end sm:self-auto shrink-0"
+                  className="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-400 font-extrabold text-[9px] rounded-md cursor-pointer uppercase tracking-wider transition-all shrink-0"
                 >
                   Turn Off
                 </button>
@@ -2615,7 +3634,12 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               isDarkMode={isDarkMode}
-              onNavigateToTab={(tab) => { setActiveTab(tab); }}
+              onNavigateToTab={(tab) => { 
+                setActiveTab(tab); 
+                if (tab === "market") {
+                  setMarketSubTab("managerial");
+                }
+              }}
               reportSummary={reportSummary}
               triggerRefresh={handleRefreshAll}
               months={months}
@@ -2631,6 +3655,7 @@ export default function App() {
               forcedMarketDate={forcedMarketDate}
               onSetForcedMarketDate={setForcedMarketDate}
               dashboardVisibility={dashboardVisibility}
+              mealTypes={mealTypes}
             />
           )}
 
@@ -2643,6 +3668,7 @@ export default function App() {
               currentMonthId={currentMonthId}
               dropdownOptions={dropdownOptions}
               safeMode={safeMode}
+              mealTypes={mealTypes}
             />
           )}
 
@@ -2654,6 +3680,7 @@ export default function App() {
               isDarkMode={isDarkMode}
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
+              mealTypes={mealTypes}
             />
           )}
 
@@ -2679,6 +3706,8 @@ export default function App() {
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
               safeMode={safeMode}
+              subTab={marketSubTab}
+              onSetSubTab={setMarketSubTab}
             />
           )}
 
@@ -2709,6 +3738,7 @@ export default function App() {
               balanceSheetGlow={balanceSheetGlow}
               safeMode={safeMode}
               logoText={logoText}
+              mealTypes={mealTypes}
             />
           )}
 
@@ -3512,10 +4542,103 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Theme Templates Customizer */}
+                {currentUser.role === UserRole.ADMIN && (
+                  <div className={`p-5 rounded-2xl border lg:col-span-2 ${
+                    activeIsDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+                  }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/60 pb-3 mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold font-display text-cyan-300 flex items-center gap-2">
+                          <LucideIcons.Palette size={16} className="text-cyan-400" />
+                          Enterprise Theme Engine
+                        </h3>
+                        <p className="text-[11px] text-slate-400">
+                          Configure live-previewable UI themes, customizable typography variables, and professional background effects.
+                        </p>
+                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm("Reset entire appearance to factory defaults? This will restore standard fonts, colors, and default themes.")) {
+                            try {
+                              const defaultTemplate = THEME_TEMPLATES[0];
+                              setSiteColor(defaultTemplate.siteColor);
+                              setFontStyle(defaultTemplate.fontStyle);
+                              setIsDarkMode(defaultTemplate.isDarkMode);
+                              setCustomColors(defaultTemplate.customColors);
+                              setMessAnimations(prev => ({
+                                ...prev,
+                                backgroundTheme: defaultTemplate.backgroundTheme,
+                                themeTemplate: defaultTemplate.id,
+                                glowingLabels: false,
+                                glowingButtons: false,
+                                glowingIcons: false,
+                                glowingCards: false,
+                                neonBorders: false,
+                                rgbHover: false,
+                                animatedShadows: false,
+                                glassCards: false
+                              }));
+                              setPreviewTemplateId(null);
+                              
+                              await handleUpdateSettings({
+                                siteColor: defaultTemplate.siteColor,
+                                fontStyle: defaultTemplate.fontStyle,
+                                customColors: defaultTemplate.customColors,
+                                messAnimations: {
+                                  ...messAnimations,
+                                  backgroundTheme: defaultTemplate.backgroundTheme,
+                                  themeTemplate: defaultTemplate.id,
+                                  glowingLabels: false,
+                                  glowingButtons: false,
+                                  glowingIcons: false,
+                                  glowingCards: false,
+                                  neonBorders: false,
+                                  rgbHover: false,
+                                  animatedShadows: false,
+                                  glassCards: false
+                                }
+                              });
+                              alert("Appearance settings restored to default successfully.");
+                            } catch (e) {
+                              console.error(e);
+                              alert("Failed to reset settings.");
+                            }
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/30 text-rose-300 rounded-xl cursor-pointer transition-all uppercase tracking-wider text-[10px] font-bold flex items-center gap-1.5 shrink-0 self-start sm:self-center"
+                      >
+                        <LucideIcons.RotateCcw size={11} />
+                        Reset Theme Engine
+                      </button>
+                    </div>
+
+                    <ThemeEnginePanel
+                      messAnimations={messAnimations}
+                      setMessAnimations={setMessAnimations}
+                      isDarkMode={isDarkMode}
+                      setIsDarkMode={setIsDarkMode}
+                      siteColor={siteColor}
+                      setSiteColor={setSiteColor}
+                      fontStyle={fontStyle}
+                      setFontStyle={setFontStyle}
+                      customColors={customColors}
+                      setCustomColors={setCustomColors}
+                      previewTemplateId={previewTemplateId}
+                      setPreviewTemplateId={setPreviewTemplateId}
+                      handleUpdateSettings={handleUpdateSettings}
+                      typographySettings={typographySettings}
+                      setTypographySettings={setTypographySettings}
+                    />
+                  </div>
+                )}
+
                 {/* Visual UI Customizer */}
                 {currentUser.role === UserRole.ADMIN && (
                   <div className={`p-5 rounded-2xl border lg:col-span-2 ${
-                    isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+                    activeIsDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
                   }`}>
                     <h3 className="text-sm font-bold font-display text-cyan-300 mb-3">Enterprise UI Customizer & Branding</h3>
                     <p className="text-xs text-slate-400 leading-relaxed mb-4">
@@ -3634,6 +4757,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.cashDepositBg || "#ea580c"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, cashDepositBg: color + "1a" }))}
+                              defaultValue="#ea580c"
+                              onReset={() => setCustomColors(prev => ({ ...prev, cashDepositBg: "#ea580c" }))}
                             />
                           </div>
 
@@ -3642,6 +4767,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.cashDepositBorder || "#ea580c"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, cashDepositBorder: color }))}
+                              defaultValue="#ea580c"
+                              onReset={() => setCustomColors(prev => ({ ...prev, cashDepositBorder: "#ea580c" }))}
                             />
                           </div>
 
@@ -3650,6 +4777,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.settlementBg || "#16a34a"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, settlementBg: color + "1a" }))}
+                              defaultValue="#16a34a"
+                              onReset={() => setCustomColors(prev => ({ ...prev, settlementBg: "#16a34a" }))}
                             />
                           </div>
 
@@ -3658,6 +4787,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.settlementBorder || "#16a34a"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, settlementBorder: color }))}
+                              defaultValue="#16a34a"
+                              onReset={() => setCustomColors(prev => ({ ...prev, settlementBorder: "#16a34a" }))}
                             />
                           </div>
 
@@ -3666,6 +4797,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.sidebarBg || "#0f172a"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, sidebarBg: color }))}
+                              defaultValue="#0f172a"
+                              onReset={() => setCustomColors(prev => ({ ...prev, sidebarBg: "#0f172a" }))}
                             />
                           </div>
 
@@ -3674,6 +4807,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.headerBg || "#0f172a"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, headerBg: color }))}
+                              defaultValue="#0f172a"
+                              onReset={() => setCustomColors(prev => ({ ...prev, headerBg: "#0f172a" }))}
                             />
                           </div>
 
@@ -3682,6 +4817,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.cardBg || "#1e293b"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, cardBg: color }))}
+                              defaultValue="#1e293b"
+                              onReset={() => setCustomColors(prev => ({ ...prev, cardBg: "#1e293b" }))}
                             />
                           </div>
 
@@ -3690,6 +4827,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.accentColor || "#22d3ee"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, accentColor: color }))}
+                              defaultValue="#22d3ee"
+                              onReset={() => setCustomColors(prev => ({ ...prev, accentColor: "#22d3ee" }))}
                             />
                           </div>
 
@@ -3698,6 +4837,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.siteAccentColorRgb || "#22d3ee"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: color }))}
+                              defaultValue="#22d3ee"
+                              onReset={() => setCustomColors(prev => ({ ...prev, siteAccentColorRgb: "#22d3ee" }))}
                             />
                           </div>
 
@@ -3706,6 +4847,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.typographyHighlightRgb || "#67e8f9"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: color }))}
+                              defaultValue="#67e8f9"
+                              onReset={() => setCustomColors(prev => ({ ...prev, typographyHighlightRgb: "#67e8f9" }))}
                             />
                           </div>
 
@@ -3714,6 +4857,8 @@ export default function App() {
                             <ColorPalettePicker
                               value={customColors?.layoutScaleColorRgb || "#a78bfa"}
                               onChange={(color) => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: color }))}
+                              defaultValue="#a78bfa"
+                              onReset={() => setCustomColors(prev => ({ ...prev, layoutScaleColorRgb: "#a78bfa" }))}
                             />
                           </div>
                         </div>
@@ -3892,60 +5037,80 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Background Theme</label>
-                              <select
-                                value={messAnimations?.backgroundTheme || "default"}
-                                onChange={(e) => setMessAnimations(prev => ({ ...prev, backgroundTheme: e.target.value }))}
-                                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                          <div className="space-y-4 pt-1 col-span-1 md:col-span-2">
+                            <div className="flex justify-between items-center border-b border-slate-800/60 pb-2">
+                              <label className="text-[10px] font-bold text-slate-400 block uppercase font-display flex items-center gap-2">
+                                <LucideIcons.LayoutGrid size={12} className="text-cyan-400" />
+                                Visual Theme Selection Grid
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMessAnimations(prev => ({
+                                    ...prev,
+                                    backgroundTheme: "default",
+                                    customBackgroundUrl: "",
+                                    backgroundOpacity: 20
+                                  }));
+                                }}
+                                className="text-[10px] text-cyan-400 hover:text-cyan-300 font-extrabold flex items-center gap-1 cursor-pointer hover:underline"
+                                title="Reset theme to default"
                               >
-                                <option value="default">Default (Standard Slate)</option>
-                                <option value="cosmic-void">Cosmic Void (Deep Purple)</option>
-                                <option value="midnight-nebula">Midnight Nebula (Nebulous violet)</option>
-                                <option value="cyberpunk-grid">Cyberpunk Neon Grid (Techno)</option>
-                                <option value="sunset-glow">Sunset Velvet (Warm Amber)</option>
-                                <option value="ocean-depth">Ocean Depths (Teal Marine)</option>
-                                <option value="forest-whisper">Forest Whisper (Cozy Evergreen)</option>
-                                <option value="aurora-borealis">Aurora Lights (Boreal Glow)</option>
-                                <option value="neon-shallows">Retro Neon Shallows (Cyan-Pink Glow)</option>
-                                <option value="sahara-sand">Sahara Dune Dust (Warm Gold)</option>
-                                <option value="deep-space">Deep Space Eclipse (Pure Obsidian)</option>
-                                <option value="electric-indigo">Electric Indigo Wave (Cobalt)</option>
-                                <option value="magma-flow">Volcanic Magma Flow (Molten Crimson)</option>
-                                <option value="cyber-emerald">Matrix Green Cyber (Emerald Grid)</option>
-                                <option value="sakura-blossom">Sakura Blossom Garden (Pastel Pink)</option>
-                                <option value="ice-glacier">Arctic Glacier Shelf (Cyan Ice)</option>
-                                <option value="bento-grid-dark">Monochrome Bento Grid (Minimal Carbon)</option>
-                                <option value="solar-storm">Solar Storm Flares (Solar Amber)</option>
-                                <option value="custom">Custom Image Background URL</option>
-                              </select>
+                                <LucideIcons.RotateCcw size={10} />
+                                Reset Theme
+                              </button>
+                            </div>
+                            
+                            {/* Theme Cards Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                              {VISUAL_THEMES.map((t) => {
+                                const isSelected = (messAnimations?.backgroundTheme || "default") === t.id;
+                                const IconComponent = (LucideIcons as any)[t.icon] || LucideIcons.Sparkles;
+                                return (
+                                  <div
+                                    key={t.id}
+                                    onClick={() => setMessAnimations(prev => ({ ...prev, backgroundTheme: t.id }))}
+                                    className={`p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left relative overflow-hidden group ${
+                                      isSelected
+                                        ? "border-cyan-400 ring-2 ring-cyan-500/20 bg-slate-900/80"
+                                        : "border-slate-800/80 hover:border-slate-700 bg-slate-950/40"
+                                    }`}
+                                  >
+                                    {/* Visual Circle Preview of Gradient */}
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div
+                                        className="w-5 h-5 rounded-md border border-white/10 flex items-center justify-center shadow-inner"
+                                        style={{ background: isDarkMode ? t.bg : t.lightBg }}
+                                      >
+                                        <IconComponent size={10} className={isSelected ? "text-cyan-400" : "text-slate-400 group-hover:text-white transition-colors"} />
+                                      </div>
+                                      {isSelected && (
+                                        <div className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-400 flex items-center justify-center text-cyan-400">
+                                          <LucideIcons.Check size={8} className="stroke-[3]" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-bold text-slate-200 truncate">{t.name}</p>
+                                      <p className="text-[9px] text-slate-500 leading-tight mt-0.5 group-hover:text-slate-400 transition-colors line-clamp-2">{t.desc}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
 
-                            <div className="space-y-1 col-span-1 sm:col-span-2">
-                              {messAnimations?.backgroundTheme === "custom" ? (
-                                <div className="space-y-1">
-                                  <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Custom Image URL</label>
-                                  <input
-                                    type="text"
-                                    placeholder="https://images.unsplash.com/... or relative path"
-                                    value={messAnimations?.customBackgroundUrl || ""}
-                                    onChange={(e) => setMessAnimations(prev => ({ ...prev, customBackgroundUrl: e.target.value }))}
-                                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                                  />
-                                </div>
-                              ) : (
-                                <div className="space-y-1 opacity-40">
-                                  <label className="text-[10px] font-bold text-slate-500 block uppercase font-display">Custom Image URL (Disabled)</label>
-                                  <input
-                                    type="text"
-                                    disabled
-                                    placeholder="Select Custom Background Theme to edit"
-                                    className="w-full px-3 py-2 rounded-lg bg-slate-950/40 border border-slate-900 text-xs text-slate-600 cursor-not-allowed focus:outline-none"
-                                  />
-                                </div>
-                              )}
-                            </div>
+                            {messAnimations?.backgroundTheme === "custom" && (
+                              <div className="space-y-1 pt-1">
+                                <label className="text-[10px] font-bold text-slate-400 block uppercase font-display">Custom Image URL</label>
+                                <input
+                                  type="text"
+                                  placeholder="https://images.unsplash.com/... or relative path"
+                                  value={messAnimations?.customBackgroundUrl || ""}
+                                  onChange={(e) => setMessAnimations(prev => ({ ...prev, customBackgroundUrl: e.target.value }))}
+                                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                                />
+                              </div>
+                            )}
                           </div>
 
                           {messAnimations?.backgroundTheme === "custom" && (
@@ -4750,6 +5915,219 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Typography Settings Section */}
+                {currentUser.role === UserRole.ADMIN && (
+                  <div className={`p-5 rounded-2xl border lg:col-span-2 mt-6 ${
+                    activeIsDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+                  }`}>
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="text-sm font-bold font-display text-cyan-300">Typography Settings</h3>
+                      <button
+                        onClick={async () => {
+                          const defaultTypo = {
+                            primaryFontColor: "",
+                            secondaryFontColor: "",
+                            headingColor: "",
+                            menuTextColor: "",
+                            sidebarTextColor: "",
+                            navbarTextColor: "",
+                            cardTextColor: "",
+                            tableTextColor: "",
+                            buttonTextColor: "",
+                            linkColor: "",
+                            successTextColor: "",
+                            warningTextColor: "",
+                            errorTextColor: "",
+                            globalFontSize: 14,
+                            headingSize: 18,
+                            sidebarFontSize: 12,
+                            navigationFontSize: 12,
+                            cardTitleSize: 14,
+                            cardBodySize: 12,
+                            tableFontSize: 12,
+                            buttonFontSize: 12,
+                            fontFamily: "Inter",
+                            accessibilityPreset: "normal"
+                          };
+                          setTypographySettings(defaultTypo);
+                          await handleUpdateSettings({ typographySettings: defaultTypo });
+                          alert("Typography settings reset to defaults.");
+                        }}
+                        className="px-2.5 py-1 bg-red-500/10 hover:bg-red-600 border border-red-500/20 hover:border-red-500 text-red-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0 flex items-center gap-1"
+                      >
+                        <LucideIcons.RotateCcw size={10} />
+                        Reset Typography
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      Customize typeface families, font size sliders, and custom colors. Includes accessibility presets to guarantee readability and high-contrast styling automatically.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      
+                      {/* Column 1: Font Family & Presets */}
+                      <div className="space-y-4">
+                        <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-4">
+                          <p className="text-xs font-bold text-slate-200 border-b border-slate-800/60 pb-1.5 flex items-center gap-1.5">
+                            <LucideIcons.Type size={12} className="text-cyan-400" />
+                            Typeface Family
+                          </p>
+                          
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Select Font Family</label>
+                            <select
+                              value={typographySettings.fontFamily || "Inter"}
+                              onChange={(e) => setTypographySettings(prev => ({ ...prev, fontFamily: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            >
+                              <option value="Inter">Inter (Clean modern/neutral)</option>
+                              <option value="Poppins">Poppins (Friendly geometric)</option>
+                              <option value="Roboto">Roboto (Technical sans)</option>
+                              <option value="Nunito">Nunito (Rounded and soft)</option>
+                              <option value="Montserrat">Montserrat (Bold geometric)</option>
+                              <option value="Open Sans">Open Sans (Optimized readable)</option>
+                              <option value="Lato">Lato (Warm sans)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accessibility Mode Presets</label>
+                            <select
+                              value={typographySettings.accessibilityPreset || "normal"}
+                              onChange={(e) => {
+                                const preset = e.target.value;
+                                setTypographySettings(prev => ({ ...prev, accessibilityPreset: preset }));
+                              }}
+                              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            >
+                              <option value="normal">Normal Presets</option>
+                              <option value="large-text">Large Readable Text</option>
+                              <option value="high-contrast">High Contrast Mode</option>
+                              <option value="accessibility-mode">Maximum Accessibility (18px Base)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Interactive Font Preview box */}
+                        <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-3">
+                          <p className="text-xs font-bold text-slate-200 border-b border-slate-800/60 pb-1.5">Live Font Preview Area</p>
+                          <div 
+                            style={{ fontFamily: getFontFamilyStack(typographySettings.fontFamily) }}
+                            className="p-3 bg-slate-950/70 border border-slate-900 rounded-lg space-y-2"
+                          >
+                            <p className="text-xs font-black text-cyan-400 uppercase tracking-wider">ABCDEFGHIJKLM</p>
+                            <p className="text-xs text-slate-300">
+                              The quick brown fox jumps over the lazy dog. 1234567890
+                            </p>
+                            <div className="flex gap-1.5 pt-1">
+                              <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded font-bold uppercase">Success</span>
+                              <span className="text-[9px] bg-red-500/15 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase">Error</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Column 2: Font Sizes (Sliders and Numbers) */}
+                      <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-3.5">
+                        <p className="text-xs font-bold text-slate-200 border-b border-slate-800/60 pb-1.5 flex items-center gap-1.5">
+                          <LucideIcons.Layout size={12} className="text-cyan-400" />
+                          Font Size Overrides (Slider & Input)
+                        </p>
+
+                        {[
+                          { label: "Global Font Size", key: "globalFontSize", min: 11, max: 20 },
+                          { label: "Heading Font Size", key: "headingSize", min: 14, max: 28 },
+                          { label: "Sidebar Font Size", key: "sidebarFontSize", min: 10, max: 18 },
+                          { label: "Navigation Size", key: "navigationFontSize", min: 10, max: 18 },
+                          { label: "Card Title Size", key: "cardTitleSize", min: 11, max: 22 },
+                          { label: "Card Body Size", key: "cardBodySize", min: 10, max: 18 },
+                          { label: "Table Font Size", key: "tableFontSize", min: 10, max: 18 },
+                          { label: "Button Font Size", key: "buttonFontSize", min: 10, max: 18 },
+                        ].map((sz) => (
+                          <div key={sz.key} className="space-y-1">
+                            <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span>{sz.label}</span>
+                              <span className="font-mono text-cyan-400">{(typographySettings as any)[sz.key] || sz.min}px</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="range"
+                                min={sz.min}
+                                max={sz.max}
+                                value={(typographySettings as any)[sz.key] || sz.min}
+                                onChange={(e) => setTypographySettings(prev => ({ ...prev, [sz.key]: parseInt(e.target.value) }))}
+                                className="h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-cyan-400 flex-1"
+                              />
+                              <input
+                                type="number"
+                                min={sz.min}
+                                max={sz.max}
+                                value={(typographySettings as any)[sz.key] || sz.min}
+                                onChange={(e) => setTypographySettings(prev => ({ ...prev, [sz.key]: parseInt(e.target.value) || sz.min }))}
+                                className="w-12 bg-slate-950 border border-slate-800 text-[10px] text-white rounded px-1 py-0.5 text-center focus:outline-none font-mono"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Column 3: Typography Custom Colors */}
+                      <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-3.5">
+                        <p className="text-xs font-bold text-slate-200 border-b border-slate-800/60 pb-1.5 flex items-center gap-1.5">
+                          <LucideIcons.Palette size={12} className="text-cyan-400" />
+                          Granular Typography Colors
+                        </p>
+
+                        <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1.5 custom-scrollbar">
+                          {[
+                            { label: "Primary Font Color", key: "primaryFontColor", def: activeIsDarkMode ? "#f8fafc" : "#0f172a" },
+                            { label: "Secondary Font Color", key: "secondaryFontColor", def: activeIsDarkMode ? "#94a3b8" : "#475569" },
+                            { label: "Heading Color", key: "headingColor", def: activeIsDarkMode ? "#22d3ee" : "#0f172a" },
+                            { label: "Menu Text Color", key: "menuTextColor", def: activeIsDarkMode ? "#cbd5e1" : "#1e293b" },
+                            { label: "Sidebar Text Color", key: "sidebarTextColor", def: activeIsDarkMode ? "#94a3b8" : "#f1f5f9" },
+                            { label: "Navbar Text Color", key: "navbarTextColor", def: activeIsDarkMode ? "#cbd5e1" : "#0f172a" },
+                            { label: "Card Text Color", key: "cardTextColor", def: activeIsDarkMode ? "#cbd5e1" : "#1e293b" },
+                            { label: "Table Text Color", key: "tableTextColor", def: activeIsDarkMode ? "#cbd5e1" : "#1e293b" },
+                            { label: "Button Text Color", key: "buttonTextColor", def: activeIsDarkMode ? "#ffffff" : "#0f172a" },
+                            { label: "Link Color", key: "linkColor", def: activeIsDarkMode ? "#38bdf8" : "#0284c7" },
+                            { label: "Success Text Color", key: "successTextColor", def: activeIsDarkMode ? "#4ade80" : "#16a34a" },
+                            { label: "Warning Text Color", key: "warningTextColor", def: activeIsDarkMode ? "#facc15" : "#d97706" },
+                            { label: "Error Text Color", key: "errorTextColor", def: activeIsDarkMode ? "#f87171" : "#dc2626" },
+                          ].map((col) => (
+                            <div key={col.key} className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">{col.label}</label>
+                              <ColorPalettePicker
+                                value={(typographySettings as any)[col.key] || col.def}
+                                onChange={(color) => setTypographySettings(prev => ({ ...prev, [col.key]: color }))}
+                                defaultValue={col.def}
+                                onReset={() => setTypographySettings(prev => ({ ...prev, [col.key]: "" }))}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <div className="mt-5 flex justify-end">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await handleUpdateSettings({ typographySettings });
+                            alert("Typography customizations and sizes applied and persisted successfully.");
+                          } catch (err) {
+                            console.error(err);
+                            alert("Failed to save typography settings.");
+                          }
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 font-bold text-xs text-white rounded-xl cursor-pointer transition-all uppercase font-display tracking-wide"
+                      >
+                        SAVE TYPOGRAPHY SETTINGS
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Super User's Dashboard Tab Visibility Rules */}
                 {currentUser.role === UserRole.SUPERUSER && (
                   <div className={`p-5 rounded-2xl border lg:col-span-2 ${
@@ -4855,6 +6233,56 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Configurable Meal Type System */}
+                {[UserRole.ADMIN, UserRole.SUPERUSER].includes(currentUser.role) && (
+                  <div className={`p-5 rounded-2xl border lg:col-span-2 ${
+                    isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+                  }`}>
+                    <h3 className="text-sm font-bold font-display text-cyan-300 mb-3">Meal Type Configuration</h3>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      Configure active meal schedules. Enabled meals will appear in meal entries, calculations, reports, and calendars.
+                    </p>
+
+                    <div className="space-y-4">
+                      {mealTypes.map((mealType) => (
+                        <div key={mealType.id} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
+                          <div>
+                            <span className="text-xs font-bold text-white block capitalize">{mealType.name}</span>
+                            <span className="text-[10px] text-slate-500">
+                              {mealType.id === "breakfast" ? "Configurable breakfast meal session." : `Standard system ${mealType.name.toLowerCase()} session.`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {mealType.id === "breakfast" ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = mealTypes.map((t) =>
+                                    t.id === mealType.id ? { ...t, enabled: !t.enabled } : t
+                                  );
+                                  setMealTypes(updated);
+                                  handleUpdateSettings({ mealTypes: updated });
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  mealType.enabled
+                                    ? "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                                    : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                                }`}
+                              >
+                                {mealType.enabled ? "Enabled" : "Disabled"}
+                              </button>
+                            ) : (
+                              <span className="text-xs font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-lg">
+                                Always Enabled
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

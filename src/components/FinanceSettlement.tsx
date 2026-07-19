@@ -32,6 +32,7 @@ interface FinanceSettlementProps {
   balanceSheetGlow?: string;
   safeMode?: boolean;
   logoText?: string;
+  mealTypes?: any[];
 }
 
 export default function FinanceSettlement({ 
@@ -46,7 +47,8 @@ export default function FinanceSettlement({
   customColors,
   balanceSheetGlow = "none",
   safeMode = false,
-  logoText = "Ababil mess"
+  logoText = "Ababil mess",
+  mealTypes
 }: FinanceSettlementProps) {
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
@@ -102,6 +104,46 @@ export default function FinanceSettlement({
     return { type, name, date };
   };
 
+  const [customBillOverrides, setCustomBillOverrides] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
+    try {
+      const saved = localStorage.getItem("custom_bill_overrides");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const handleUpdateOverride = (memberId: string, category: string, value: string) => {
+    const numeric = value === "" ? undefined : Number(value);
+    
+    setCustomBillOverrides((prev) => {
+      const updated = { ...prev };
+      if (!updated[currentMonthId]) {
+        updated[currentMonthId] = {};
+      }
+      if (!updated[currentMonthId][memberId]) {
+        updated[currentMonthId][memberId] = {};
+      }
+
+      if (numeric === undefined) {
+        delete updated[currentMonthId][memberId][category];
+      } else {
+        updated[currentMonthId][memberId][category] = numeric;
+      }
+
+      // Cleanup empty objects
+      if (Object.keys(updated[currentMonthId][memberId]).length === 0) {
+        delete updated[currentMonthId][memberId];
+      }
+      if (Object.keys(updated[currentMonthId]).length === 0) {
+        delete updated[currentMonthId];
+      }
+
+      localStorage.setItem("custom_bill_overrides", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const getMemberBillStats = (memberId: string) => {
     const stats = {
       Utility: { paid: 0, total: 0 },
@@ -110,22 +152,43 @@ export default function FinanceSettlement({
       Extra: { paid: 0, total: 0 }
     };
 
-    if (!reportSummary?.bills || reportSummary.bills.length === 0) {
-      return stats;
+    const overrides = customBillOverrides[currentMonthId]?.[memberId] || {};
+
+    if (reportSummary?.bills && reportSummary.bills.length > 0) {
+      const totalActiveCount = activeMembers.length || 1;
+
+      reportSummary.bills.forEach((b: Bill) => {
+        const parsed = parseBillName(b.name);
+        const category = parsed.type;
+        
+        const share = b.amount / totalActiveCount;
+        const isPaid = b.status === BillStatus.PAID;
+
+        stats[category].total += share;
+        if (isPaid) {
+          stats[category].paid += share;
+        }
+      });
     }
 
-    const totalActiveCount = activeMembers.length || 1;
-
-    reportSummary.bills.forEach((b: Bill) => {
-      const parsed = parseBillName(b.name);
-      const category = parsed.type;
-      
-      const share = b.amount / totalActiveCount;
-      const isPaid = b.status === BillStatus.PAID;
-
-      stats[category].total += share;
-      if (isPaid) {
-        stats[category].paid += share;
+    // Apply overrides if defined
+    const categories: ("Utility" | "Worker" | "Rent" | "Extra")[] = ["Utility", "Worker", "Rent", "Extra"];
+    categories.forEach(category => {
+      if (overrides[category] !== undefined) {
+        const customTotal = overrides[category];
+        
+        // Find if all bills in this category are marked as PAID.
+        // If there are no bills registered for this category, we count it as paid.
+        let allPaid = true;
+        if (reportSummary?.bills && reportSummary.bills.length > 0) {
+          const billsInCat = reportSummary.bills.filter((b: Bill) => parseBillName(b.name).type === category);
+          if (billsInCat.length > 0) {
+            allPaid = billsInCat.every((b: Bill) => b.status === BillStatus.PAID);
+          }
+        }
+        
+        stats[category].total = customTotal;
+        stats[category].paid = allPaid ? customTotal : 0;
       }
     });
 
@@ -622,7 +685,15 @@ export default function FinanceSettlement({
           if (!map[meal.memberId]) {
             map[meal.memberId] = {};
           }
-          map[meal.memberId][meal.date] = (Number(meal.lunch) || 0) + (Number(meal.dinner) || 0);
+          const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+            { id: "lunch", name: "Lunch", enabled: true },
+            { id: "dinner", name: "Dinner", enabled: true }
+          ];
+          let sum = 0;
+          activeMealTypes.forEach((type) => {
+            sum += (Number(meal[type.id]) || 0);
+          });
+          map[meal.memberId][meal.date] = sum;
         });
         setSpreadsheetData(map);
       }
@@ -668,19 +739,27 @@ export default function FinanceSettlement({
     setSaveLoading(true);
     setSaveSuccess(false);
 
+    const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+      { id: "lunch", name: "Lunch", enabled: true },
+      { id: "dinner", name: "Dinner", enabled: true }
+    ];
+
     const mealsToSave: any[] = [];
     activeMembers.forEach(member => {
       datesList.forEach(d => {
         const total = spreadsheetData[member.id]?.[d] !== undefined ? spreadsheetData[member.id][d] : 0;
-        // Split total into lunch and dinner
-        const lunch = total / 2;
-        const dinner = total / 2;
-        mealsToSave.push({
+        // Evenly distribute the total among active meal types
+        const countOfTypes = activeMealTypes.length || 1;
+        const share = total / countOfTypes;
+        
+        const entry: any = {
           memberId: member.id,
-          date: d,
-          lunch,
-          dinner
+          date: d
+        };
+        activeMealTypes.forEach((type) => {
+          entry[type.id] = share;
         });
+        mealsToSave.push(entry);
       });
     });
 
@@ -1263,7 +1342,7 @@ export default function FinanceSettlement({
                         <span className={`inline-block px-2 py-0.5 rounded-full font-bold font-mono text-xs ${
                           isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
                         }`}>
-                          {m.mealsCount} Qty
+                          {m.mealsCount} Meals (Value)
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.mealCost}</td>
@@ -1298,7 +1377,7 @@ export default function FinanceSettlement({
                     <span className={`inline-block px-2.5 py-0.5 rounded-full font-black font-mono text-xs ${
                       isDarkMode ? "bg-slate-950 text-slate-400 border border-slate-800/80" : "bg-slate-200 text-slate-700 border border-slate-300"
                     }`}>
-                      {reportSummary.totalMeals || 0} Qty
+                      {reportSummary.totalMeals || 0} Meals (Value)
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.effectiveCost || 0}</td>
@@ -1642,6 +1721,7 @@ export default function FinanceSettlement({
                     <th className="py-3 px-4 text-center">WORKER BILL</th>
                     <th className="py-3 px-4 text-center">HOUSE RENT</th>
                     <th className="py-3 px-4 text-center">EXTRA BILL</th>
+                    <th className="py-3 px-4 text-center">INDIVIDUAL MEALS</th>
                     <th className="py-3 px-4 text-center">TOTAL</th>
                     <th className="py-3 px-4 text-center">STATUS</th>
                   </tr>
@@ -1649,7 +1729,7 @@ export default function FinanceSettlement({
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
                   {activeMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-6 text-center text-slate-500 font-semibold">No active members found.</td>
+                      <td colSpan={8} className="py-6 text-center text-slate-500 font-semibold">No active members found.</td>
                     </tr>
                   ) : (
                     activeMembers
@@ -1660,8 +1740,16 @@ export default function FinanceSettlement({
                       })
                       .map((m) => {
                         const stats = getMemberBillStats(m.id);
-                        const totalPaid = stats.Utility.paid + stats.Worker.paid + stats.Rent.paid + stats.Extra.paid;
-                        const totalExpected = stats.Utility.total + stats.Worker.total + stats.Rent.total + stats.Extra.total;
+                        
+                        // Find this member's meals count and meal cost from reportSummary
+                        const settlement = reportSummary?.memberSettlements?.find((s: any) => s.memberId === m.id);
+                        const mealsCount = settlement?.mealsCount || 0;
+                        const defaultMealCost = settlement?.mealCost || 0;
+                        const overrideMealCost = customBillOverrides[currentMonthId]?.[m.id]?.Meals;
+                        const effectiveMealCost = overrideMealCost !== undefined ? overrideMealCost : defaultMealCost;
+
+                        const totalPaid = stats.Utility.paid + stats.Worker.paid + stats.Rent.paid + stats.Extra.paid + effectiveMealCost;
+                        const totalExpected = stats.Utility.total + stats.Worker.total + stats.Rent.total + stats.Extra.total + effectiveMealCost;
                         const isFullyPaid = Math.abs(totalPaid - totalExpected) < 0.01;
 
                         return (
@@ -1674,35 +1762,123 @@ export default function FinanceSettlement({
 
                             {/* UTILITY BILL */}
                             <td className="py-3.5 px-4 text-center font-mono text-[11px]">
-                              <span className={Math.abs(stats.Utility.paid - stats.Utility.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
-                                ৳{stats.Utility.paid.toFixed(2)}/৳{stats.Utility.total.toFixed(2)}
-                              </span>
+                              {isManagerOrAdmin ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={customBillOverrides[currentMonthId]?.[m.id]?.Utility ?? ""}
+                                    placeholder={stats.Utility.total.toFixed(0)}
+                                    onChange={(e) => handleUpdateOverride(m.id, "Utility", e.target.value)}
+                                    className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-cyan-400 focus:outline-none focus:border-cyan-400 placeholder-slate-400"
+                                  />
+                                  <span className="text-[9px] text-slate-500 font-bold">
+                                    Paid: ৳{stats.Utility.paid.toFixed(0)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={Math.abs(stats.Utility.paid - stats.Utility.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                  ৳{stats.Utility.paid.toFixed(2)}/৳{stats.Utility.total.toFixed(2)}
+                                </span>
+                              )}
                             </td>
 
                             {/* WORKER BILL */}
                             <td className="py-3.5 px-4 text-center font-mono text-[11px]">
-                              <span className={Math.abs(stats.Worker.paid - stats.Worker.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
-                                ৳{stats.Worker.paid.toFixed(2)}/৳{stats.Worker.total.toFixed(2)}
-                              </span>
+                              {isManagerOrAdmin ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={customBillOverrides[currentMonthId]?.[m.id]?.Worker ?? ""}
+                                    placeholder={stats.Worker.total.toFixed(0)}
+                                    onChange={(e) => handleUpdateOverride(m.id, "Worker", e.target.value)}
+                                    className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-cyan-400 focus:outline-none focus:border-cyan-400 placeholder-slate-400"
+                                  />
+                                  <span className="text-[9px] text-slate-500 font-bold">
+                                    Paid: ৳{stats.Worker.paid.toFixed(0)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={Math.abs(stats.Worker.paid - stats.Worker.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                  ৳{stats.Worker.paid.toFixed(2)}/৳{stats.Worker.total.toFixed(2)}
+                                </span>
+                              )}
                             </td>
 
                             {/* HOUSE RENT */}
                             <td className="py-3.5 px-4 text-center font-mono text-[11px]">
-                              <span className={Math.abs(stats.Rent.paid - stats.Rent.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
-                                ৳{stats.Rent.paid.toFixed(2)}/৳{stats.Rent.total.toFixed(2)}
-                              </span>
+                              {isManagerOrAdmin ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={customBillOverrides[currentMonthId]?.[m.id]?.Rent ?? ""}
+                                    placeholder={stats.Rent.total.toFixed(0)}
+                                    onChange={(e) => handleUpdateOverride(m.id, "Rent", e.target.value)}
+                                    className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-cyan-400 focus:outline-none focus:border-cyan-400 placeholder-slate-400"
+                                  />
+                                  <span className="text-[9px] text-slate-500 font-bold">
+                                    Paid: ৳{stats.Rent.paid.toFixed(0)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={Math.abs(stats.Rent.paid - stats.Rent.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                  ৳{stats.Rent.paid.toFixed(2)}/৳{stats.Rent.total.toFixed(2)}
+                                </span>
+                              )}
                             </td>
 
                             {/* EXTRA BILL */}
                             <td className="py-3.5 px-4 text-center font-mono text-[11px]">
-                              <span className={Math.abs(stats.Extra.paid - stats.Extra.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
-                                ৳{stats.Extra.paid.toFixed(2)}/৳{stats.Extra.total.toFixed(2)}
-                              </span>
+                              {isManagerOrAdmin ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={customBillOverrides[currentMonthId]?.[m.id]?.Extra ?? ""}
+                                    placeholder={stats.Extra.total.toFixed(0)}
+                                    onChange={(e) => handleUpdateOverride(m.id, "Extra", e.target.value)}
+                                    className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-cyan-400 focus:outline-none focus:border-cyan-400 placeholder-slate-400"
+                                  />
+                                  <span className="text-[9px] text-slate-500 font-bold">
+                                    Paid: ৳{stats.Extra.paid.toFixed(0)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={Math.abs(stats.Extra.paid - stats.Extra.total) < 0.01 ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                  ৳{stats.Extra.paid.toFixed(2)}/৳{stats.Extra.total.toFixed(2)}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* INDIVIDUAL MEALS */}
+                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                              {isManagerOrAdmin ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={customBillOverrides[currentMonthId]?.[m.id]?.Meals ?? ""}
+                                    placeholder={defaultMealCost.toFixed(0)}
+                                    onChange={(e) => handleUpdateOverride(m.id, "Meals", e.target.value)}
+                                    className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-orange-400 focus:outline-none focus:border-orange-400 placeholder-slate-400 font-bold"
+                                  />
+                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                                    {mealsCount} meals (৳{(reportSummary?.mealRate || 0).toFixed(1)})
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <span className="font-extrabold text-orange-400">৳{effectiveMealCost.toFixed(2)}</span>
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{mealsCount} meals</span>
+                                </div>
+                              )}
                             </td>
 
                             {/* TOTAL */}
                             <td className="py-3.5 px-4 text-center font-mono text-[11px]">
-                              <span className={isFullyPaid ? "text-emerald-500 font-black" : "text-amber-500 font-black"}>
+                              <span className={isFullyPaid ? "text-emerald-500 font-black text-xs" : "text-amber-500 font-black text-xs"}>
                                 ৳{totalPaid.toFixed(2)}/৳{totalExpected.toFixed(2)}
                               </span>
                             </td>
@@ -1729,8 +1905,23 @@ export default function FinanceSettlement({
 
             {/* EXPECTED / PAID TOTALS FOOTER */}
             {(() => {
-              const expectedTotalSum = reportSummary?.bills?.reduce((sum: number, b: Bill) => sum + b.amount, 0) || 0;
-              const paidTotalSum = reportSummary?.bills?.reduce((sum: number, b: Bill) => sum + (b.status === BillStatus.PAID ? b.amount : 0), 0) || 0;
+              const expectedTotalSum = activeMembers.reduce((sum, m) => {
+                const stats = getMemberBillStats(m.id);
+                const settlement = reportSummary?.memberSettlements?.find((s: any) => s.memberId === m.id);
+                const defaultMealCost = settlement?.mealCost || 0;
+                const overrideMealCost = customBillOverrides[currentMonthId]?.[m.id]?.Meals;
+                const effectiveMealCost = overrideMealCost !== undefined ? overrideMealCost : defaultMealCost;
+                return sum + stats.Utility.total + stats.Worker.total + stats.Rent.total + stats.Extra.total + effectiveMealCost;
+              }, 0);
+
+              const paidTotalSum = activeMembers.reduce((sum, m) => {
+                const stats = getMemberBillStats(m.id);
+                const settlement = reportSummary?.memberSettlements?.find((s: any) => s.memberId === m.id);
+                const defaultMealCost = settlement?.mealCost || 0;
+                const overrideMealCost = customBillOverrides[currentMonthId]?.[m.id]?.Meals;
+                const effectiveMealCost = overrideMealCost !== undefined ? overrideMealCost : defaultMealCost;
+                return sum + stats.Utility.paid + stats.Worker.paid + stats.Rent.paid + stats.Extra.paid + effectiveMealCost;
+              }, 0);
 
               return (
                 <div className={`mt-4 p-3.5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 border ${

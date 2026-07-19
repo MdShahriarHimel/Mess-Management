@@ -25,6 +25,7 @@ interface MealsTrackerProps {
     allowFutureMealPlanner?: boolean;
     allowPreviousMealPlanner?: boolean;
   };
+  mealTypes?: any[];
 }
 
 export default function MealsTracker({ 
@@ -33,10 +34,11 @@ export default function MealsTracker({
   members, 
   isDarkMode, 
   onRefresh,
-  dateRestrictions
+  dateRestrictions,
+  mealTypes
 }: MealsTrackerProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
-  const [mealsData, setMealsData] = useState<Record<string, { lunch: number; dinner: number }>>({});
+  const [mealsData, setMealsData] = useState<Record<string, Record<string, number>>>({});
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,11 @@ export default function MealsTracker({
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
+
+  const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+    { id: "lunch", name: "Lunch", enabled: true },
+    { id: "dinner", name: "Dinner", enabled: true }
+  ];
 
   // Fetch pending meal requests (Manager only)
   const fetchPendingRequests = async () => {
@@ -74,20 +81,25 @@ export default function MealsTracker({
         const rawMeals: Meal[] = data.meals || [];
         
         // Parse into map
-        const map: Record<string, { lunch: number; dinner: number }> = {};
+        const map: Record<string, Record<string, number>> = {};
         
         // Default entries for active members
         activeMembers.forEach(m => {
-          map[m.id] = { lunch: 0, dinner: 0 }; // Default to 0 meal each by default
+          const entry: Record<string, number> = {};
+          activeMealTypes.forEach((type) => {
+            entry[type.id] = 0;
+          });
+          map[m.id] = entry;
         });
 
         // Overlay actual saved meals
         rawMeals.forEach(meal => {
           if (meal.date === selectedDate) {
-            map[meal.memberId] = {
-              lunch: meal.lunch,
-              dinner: meal.dinner
-            };
+            const entry: Record<string, number> = {};
+            activeMealTypes.forEach((type) => {
+              entry[type.id] = (meal as any)[type.id] || 0;
+            });
+            map[meal.memberId] = entry;
           }
         });
 
@@ -124,12 +136,12 @@ export default function MealsTracker({
   }, [currentMonthId, selectedDate, members]);
 
   // Handle meal count selection
-  const updateMealCell = (memberId: string, type: "lunch" | "dinner", val: number) => {
+  const updateMealCell = (memberId: string, type: string, val: number) => {
     if (isLocked) return;
     setMealsData(prev => ({
       ...prev,
       [memberId]: {
-        ...prev[memberId],
+        ...(prev[memberId] || {}),
         [type]: val
       }
     }));
@@ -142,13 +154,15 @@ export default function MealsTracker({
     setLoading(true);
 
     const mealsToSave = Object.entries(mealsData).map(([memberId, item]) => {
-      const mealVal = item as { lunch: number; dinner: number };
-      return {
+      const mealVal = item as Record<string, number>;
+      const entry: any = {
         memberId,
-        date: selectedDate,
-        lunch: mealVal.lunch,
-        dinner: mealVal.dinner
+        date: selectedDate
       };
+      activeMealTypes.forEach((type) => {
+        entry[type.id] = mealVal[type.id] || 0;
+      });
+      return entry;
     });
 
     try {
@@ -234,13 +248,15 @@ export default function MealsTracker({
       const list = JSON.parse(jsonData);
       return list.map((item: any) => {
         const mb = members.find(m => m.id === item.memberId);
-        return {
+        const res: any = {
           name: mb ? mb.name : "Unknown Member",
           nickname: mb ? mb.nickname : "unknown",
-          lunch: item.lunch,
-          dinner: item.dinner,
         };
-      }).filter((item: any) => item.lunch > 0 || item.dinner > 0);
+        activeMealTypes.forEach((type) => {
+          res[type.id] = item[type.id] || 0;
+        });
+        return res;
+      }).filter((item: any) => activeMealTypes.some((type) => (item[type.id] || 0) > 0));
     } catch (e) {
       return [];
     }
@@ -309,7 +325,7 @@ export default function MealsTracker({
                           <span key={idx} className={`px-2 py-1 rounded text-[11px] font-mono border ${
                             isDarkMode ? "bg-slate-900/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
                           }`}>
-                            {d.name}: Lunch({d.lunch}) | Dinner({d.dinner})
+                            {d.name}: {activeMealTypes.map((type) => `${type.name}(${d[type.id] || 0})`).join(" | ")}
                           </span>
                         ))}
                         {details.length === 0 && (
@@ -441,20 +457,21 @@ export default function MealsTracker({
                 isDarkMode ? "bg-slate-950/40 border-cyan-500/10 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"
               }`}>
                 <th className="py-4 px-5">Member Name</th>
-                <th className="py-4 px-5 text-center text-orange-500 font-extrabold">Lunch serving (৳)</th>
-                <th className="py-4 px-5 text-center text-orange-500 font-extrabold">Dinner serving (৳)</th>
+                {activeMealTypes.map((type) => (
+                  <th key={type.id} className="py-4 px-5 text-center text-orange-500 font-extrabold">{type.name} serving (৳)</th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-cyan-500/5">
               {activeMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="py-8 text-center text-xs text-slate-500">
+                  <td colSpan={1 + activeMealTypes.length} className="py-8 text-center text-xs text-slate-500">
                     No active members found. Add or activate members to track meals.
                   </td>
                 </tr>
               ) : (
                 activeMembers.map((member) => {
-                  const data = mealsData[member.id] || { lunch: 0, dinner: 0 };
+                  const data = mealsData[member.id] || {};
                   return (
                     <tr 
                       key={member.id} 
@@ -479,129 +496,71 @@ export default function MealsTracker({
                         </div>
                       </td>
 
-                      {/* Lunch selector box system */}
-                      <td className="py-4 px-5">
-                        <div className="flex gap-1 justify-center items-center max-w-sm mx-auto">
-                          <button
-                            type="button"
-                            disabled={isLocked || !canEditMeals || data.lunch <= 0}
-                            onClick={() => {
-                              const current = data.lunch || 0;
-                              const next = Math.max(0, current - 0.5);
-                              updateMealCell(member.id, "lunch", next);
-                            }}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
-                              isDarkMode 
-                                ? "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400" 
-                                : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-600 hover:text-cyan-600"
-                            } disabled:opacity-30 disabled:cursor-not-allowed`}
-                          >
-                            -
-                          </button>
-                          
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            max="50"
-                            disabled={isLocked || !canEditMeals}
-                            value={data.lunch === 0 ? "" : data.lunch}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              if (raw === "") {
-                                updateMealCell(member.id, "lunch", 0);
-                                return;
-                              }
-                              const val = parseFloat(raw);
-                              updateMealCell(member.id, "lunch", isNaN(val) ? 0 : val);
-                            }}
-                            className={`w-16 h-8 text-center font-mono font-extrabold text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                              isDarkMode 
-                                ? "bg-slate-950/80 border-slate-800 text-cyan-300 focus:border-cyan-500" 
-                                : "bg-white border-slate-200 text-slate-800 focus:border-cyan-400"
-                            } disabled:opacity-75 disabled:cursor-not-allowed`}
-                          />
+                      {activeMealTypes.map((type) => {
+                        const mealVal = data[type.id] || 0;
+                        return (
+                          <td key={type.id} className="py-4 px-5">
+                            <div className="flex gap-1 justify-center items-center max-w-sm mx-auto">
+                              <button
+                                type="button"
+                                disabled={isLocked || !canEditMeals || mealVal <= 0}
+                                onClick={() => {
+                                  const current = mealVal;
+                                  const next = Math.max(0, current - 0.5);
+                                  updateMealCell(member.id, type.id, next);
+                                }}
+                                className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
+                                  isDarkMode 
+                                    ? "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400" 
+                                    : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-600 hover:text-cyan-600"
+                                } disabled:opacity-30 disabled:cursor-not-allowed`}
+                              >
+                                -
+                              </button>
+                              
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                max="50"
+                                disabled={isLocked || !canEditMeals}
+                                value={mealVal === 0 ? "" : mealVal}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  if (raw === "") {
+                                    updateMealCell(member.id, type.id, 0);
+                                    return;
+                                  }
+                                  const val = parseFloat(raw);
+                                  updateMealCell(member.id, type.id, isNaN(val) ? 0 : val);
+                                }}
+                                className={`w-16 h-8 text-center font-mono font-extrabold text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                                  isDarkMode 
+                                    ? "bg-slate-950/80 border-slate-800 text-cyan-300 focus:border-cyan-500" 
+                                    : "bg-white border-slate-200 text-slate-800 focus:border-cyan-400"
+                                } disabled:opacity-75 disabled:cursor-not-allowed`}
+                              />
 
-                          <button
-                            type="button"
-                            disabled={isLocked || !canEditMeals}
-                            onClick={() => {
-                              const current = data.lunch || 0;
-                              const next = current + 0.5;
-                              updateMealCell(member.id, "lunch", next);
-                            }}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
-                              isDarkMode 
-                                ? "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400" 
-                                : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-600 hover:text-cyan-600"
-                            } disabled:opacity-30 disabled:cursor-not-allowed`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* Dinner selector box system */}
-                      <td className="py-4 px-5">
-                        <div className="flex gap-1 justify-center items-center max-w-sm mx-auto">
-                          <button
-                            type="button"
-                            disabled={isLocked || !canEditMeals || data.dinner <= 0}
-                            onClick={() => {
-                              const current = data.dinner || 0;
-                              const next = Math.max(0, current - 0.5);
-                              updateMealCell(member.id, "dinner", next);
-                            }}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
-                              isDarkMode 
-                                ? "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400" 
-                                : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-600 hover:text-cyan-600"
-                            } disabled:opacity-30 disabled:cursor-not-allowed`}
-                          >
-                            -
-                          </button>
-                          
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            max="50"
-                            disabled={isLocked || !canEditMeals}
-                            value={data.dinner === 0 ? "" : data.dinner}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              if (raw === "") {
-                                updateMealCell(member.id, "dinner", 0);
-                                return;
-                              }
-                              const val = parseFloat(raw);
-                              updateMealCell(member.id, "dinner", isNaN(val) ? 0 : val);
-                            }}
-                            className={`w-16 h-8 text-center font-mono font-extrabold text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                              isDarkMode 
-                                ? "bg-slate-950/80 border-slate-800 text-cyan-300 focus:border-cyan-500" 
-                                : "bg-white border-slate-200 text-slate-800 focus:border-cyan-400"
-                            } disabled:opacity-75 disabled:cursor-not-allowed`}
-                          />
-
-                          <button
-                            type="button"
-                            disabled={isLocked || !canEditMeals}
-                            onClick={() => {
-                              const current = data.dinner || 0;
-                              const next = current + 0.5;
-                              updateMealCell(member.id, "dinner", next);
-                            }}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
-                              isDarkMode 
-                                ? "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400" 
-                                : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-600 hover:text-cyan-600"
-                            } disabled:opacity-30 disabled:cursor-not-allowed`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </td>
+                              <button
+                                type="button"
+                                disabled={isLocked || !canEditMeals}
+                                onClick={() => {
+                                  const current = mealVal;
+                                  const next = current + 0.5;
+                                  updateMealCell(member.id, type.id, next);
+                                }}
+                                className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
+                                  isDarkMode 
+                                    ? "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400" 
+                                    : "bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-600 hover:text-cyan-600"
+                                } disabled:opacity-30 disabled:cursor-not-allowed`}
+                              >
+                                +
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })
@@ -616,7 +575,7 @@ export default function MealsTracker({
             isDarkMode ? "bg-slate-950/40 border-cyan-500/10" : "bg-slate-50 border-slate-200"
           }`}>
             <p className="text-[11px] text-slate-400 italic">
-              * Click "SAVE DAILY Servings" to write the logs and trigger balance calculations.
+              * Click "SAVE DAILY SERVINGS" to write the logs and trigger balance calculations.
             </p>
             <button
               id="save-meals-btn"
