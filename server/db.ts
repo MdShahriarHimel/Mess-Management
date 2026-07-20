@@ -563,6 +563,11 @@ export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
 async function doActualSync(cache: DatabaseSchema) {
   try {
     if (cache.members.length > 0) {
+      const activeMemberIds = cache.members.map(m => m.id);
+      if (activeMemberIds.length > 0) {
+        await db.delete(membersTable).where(notInArray(membersTable.id, activeMemberIds));
+      }
+
       for (const item of cache.members) {
         await db.insert(membersTable).values({
           id: item.id,
@@ -615,11 +620,6 @@ async function doActualSync(cache: DatabaseSchema) {
             gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
           }
         });
-      }
-      
-      const activeMemberIds = cache.members.map(m => m.id);
-      if (activeMemberIds.length > 0) {
-        await db.delete(membersTable).where(notInArray(membersTable.id, activeMemberIds));
       }
     }
 

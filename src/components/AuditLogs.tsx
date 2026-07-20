@@ -11,6 +11,8 @@ import {
   Trash2, Sliders, LayoutGrid
 } from "lucide-react";
 import { Member, AuditLog } from "../types.js";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { RefreshButton } from "./RefreshButton.tsx";
 
 interface AuditLogsProps {
   currentUser: Member;
@@ -25,6 +27,7 @@ interface MessOption {
 }
 
 export default function AuditLogs({ currentUser, isDarkMode, members = [] }: AuditLogsProps) {
+  const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   // State variables
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [messes, setMesses] = useState<MessOption[]>([]);
@@ -153,10 +156,11 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
 
   // Init loads
   useEffect(() => {
+    if (isModuleDisabled("auditLog")) return;
     fetchLogs();
     fetchMesses();
     fetchSettings();
-  }, [startDate, endDate, selectedRole, selectedModule, selectedMess, selectedSuperUser]);
+  }, [startDate, endDate, selectedRole, selectedModule, selectedMess, selectedSuperUser, refreshTriggers.auditLog]);
 
   // Client-side search filters combined with API results
   const filteredLogs = logs.filter(l => {
@@ -333,6 +337,12 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton 
+            module="auditLog" 
+            onRefresh={async () => {
+              await fetchLogs();
+            }}
+          />
           <button
             onClick={() => setIsFilterExpanded(!isFilterExpanded)}
             className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-all ${

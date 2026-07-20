@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { Member, Bill, BillStatus, UserRole, MessMonth } from "../types.js";
 import * as XLSX from "xlsx";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { RefreshButton } from "./RefreshButton.tsx";
 
 interface FinanceSettlementProps {
   currentUser: Member;
@@ -50,6 +52,7 @@ export default function FinanceSettlement({
   logoText = "Ababil mess",
   mealTypes
 }: FinanceSettlementProps) {
+  const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const [showAddBillModal, setShowAddBillModal] = useState(false);
 
   const renderMemberPhotoBeforeName = (memberId: string, name: string) => {
@@ -720,9 +723,10 @@ export default function FinanceSettlement({
   };
 
   useEffect(() => {
+    if (isModuleDisabled("revenue") && isModuleDisabled("statistics")) return;
     fetchMeals();
     fetchAllMarkets();
-  }, [currentMonthId]);
+  }, [currentMonthId, refreshTriggers.revenue, refreshTriggers.statistics]);
 
   const handleCellChange = (memberId: string, dateStr: string, rawVal: string) => {
     const parsed = rawVal === "" ? 0 : Number(rawVal);
@@ -1296,9 +1300,20 @@ export default function FinanceSettlement({
           <h3 className="text-sm font-bold font-display text-orange-500 uppercase tracking-wider">
             Individual Month Balance Sheet
           </h3>
-          <span className="text-[10px] text-slate-400 bg-cyan-500/10 px-2 py-0.5 rounded font-bold">
-            💡 Click any row to manage Deposits & Market Spends
-          </span>
+          <div className="flex items-center gap-2">
+            <RefreshButton 
+              module="statistics" 
+              onRefresh={async () => {
+                await Promise.all([
+                  fetchMeals(),
+                  fetchAllMarkets()
+                ]);
+              }}
+            />
+            <span className="text-[10px] text-slate-400 bg-cyan-500/10 px-2 py-0.5 rounded font-bold">
+              💡 Click any row to manage Deposits & Market Spends
+            </span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

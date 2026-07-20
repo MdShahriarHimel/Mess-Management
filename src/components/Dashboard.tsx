@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
 import { ColorPalettePicker } from "../App.js";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { RefreshButton } from "./RefreshButton.tsx";
 
 interface DashboardProps {
   currentUser: Member;
@@ -70,6 +72,7 @@ export default function Dashboard({
   dashboardVisibility,
   mealTypes
 }: DashboardProps) {
+  const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
   const [ratingError, setRatingError] = useState<string | null>(null);
@@ -229,11 +232,12 @@ export default function Dashboard({
   };
 
   useEffect(() => {
+    if (isModuleDisabled("dashboard")) return;
     fetchNotices();
     fetchRatings();
     fetchMyMeals();
     fetchMembers();
-  }, [currentMonthId, currentUser]);
+  }, [currentMonthId, currentUser, refreshTriggers.dashboard]);
 
   const handleRateManager = async (score: number) => {
     setRatingError(null);
@@ -566,6 +570,17 @@ export default function Dashboard({
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <RefreshButton 
+                module="dashboard" 
+                onRefresh={async () => {
+                  await Promise.all([
+                    fetchNotices(),
+                    fetchRatings(),
+                    fetchMyMeals(),
+                    fetchMembers()
+                  ]);
+                }} 
+              />
               {currentUser.role === UserRole.ADMIN && (
                 <button
                   onClick={() => setShowProfileCustomizer(!showProfileCustomizer)}

@@ -26,6 +26,7 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
   // Account provider states
   const [isGoogleOnly, setIsGoogleOnly] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const [firebaseUser, setFirebaseUser] = useState<any>(auth.currentUser);
 
   // Email/Password user states
   const [currentPassword, setCurrentPassword] = useState("");
@@ -42,15 +43,21 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Determine auth provider on mount
+  // Determine auth provider on mount with listener for state synchronization
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      setUserEmail(user.email || currentUser.email || "");
-      const isGoogle = user.providerData.some(p => p.providerId === "google.com") && 
-                       !user.providerData.some(p => p.providerId === "password");
-      setIsGoogleOnly(isGoogle);
-    }
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setFirebaseUser(user);
+      if (user) {
+        setUserEmail(user.email || currentUser.email || "");
+        const isGoogle = user.providerData.some(p => p.providerId === "google.com") && 
+                         !user.providerData.some(p => p.providerId === "password");
+        setIsGoogleOnly(isGoogle);
+      } else {
+        setIsGoogleOnly(false);
+        setUserEmail(currentUser.email || "");
+      }
+    });
+    return () => unsubscribe();
   }, [currentUser]);
 
   // Password Validation Rules
@@ -81,13 +88,13 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
   const strength = getStrengthLabel();
 
   // Create audit log on backend
-  const triggerAuditLog = async () => {
+  const triggerAuditLog = async (tokenToUse: string) => {
     try {
       await fetch("/api/auth/change-password-audit", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${sessionToken}`
+          "Authorization": `Bearer ${tokenToUse}`
         }
       });
     } catch (e) {
@@ -101,8 +108,10 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
     setError(null);
     setSuccess(null);
 
-    const user = auth.currentUser;
-    if (!user) {
+    const isFirebase = sessionToken && sessionToken.startsWith("ey");
+    const user = firebaseUser || auth.currentUser;
+
+    if (isFirebase && !user) {
       setError("No active authenticated session found. Please reload or sign in again.");
       return;
     }
@@ -124,52 +133,99 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
 
     setLoading(true);
 
+    let freshToken = sessionToken;
+
     try {
-      if (isGoogleOnly) {
-        // Link password credential (Set Password for Google account)
-        const credential = EmailAuthProvider.credential(user.email!, newPassword);
-        await linkWithCredential(user, credential);
-        
-        // Success
-        await triggerAuditLog();
-        setSuccess("Password has been set successfully! Your account is now linked with Email & Password credentials.");
-        setIsGoogleOnly(false); // No longer Google-only, now has password
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      } else {
-        // Regular email/password change
-        // 1. Re-authenticate
-        const credential = EmailAuthProvider.credential(user.email!, currentPassword);
+      if (isFirebase && user) {
+        // Refresh the ID token using Firebase's built-in token refresh mechanism
         try {
-          await reauthenticateWithCredential(user, credential);
-        } catch (reauthErr: any) {
-          console.error("Re-authentication failed:", reauthErr);
-          if (reauthErr.code === "auth/wrong-password" || reauthErr.code === "auth/invalid-credential") {
-            throw new Error("Current password is incorrect.");
-          } else if (reauthErr.code === "auth/too-many-requests") {
-            throw new Error("Too many failed attempts. Please try again later.");
-          } else {
-            throw new Error("Failed to re-authenticate: " + (reauthErr.message || "Invalid current credentials."));
+          freshToken = await user.getIdToken(true);
+        } catch (tokenErr: any) {
+          console.error("Token refresh failed:", tokenErr);
+          if (tokenErr.code === "auth/user-token-expired") {
+            throw tokenErr;
           }
         }
 
-        // 2. Update Password
-        try {
-          await updatePassword(user, newPassword);
-        } catch (updateErr: any) {
-          console.error("Password update failed:", updateErr);
-          if (updateErr.code === "auth/weak-password") {
-            throw new Error("The selected password is too weak according to Firebase security policies.");
-          } else if (updateErr.code === "auth/requires-recent-login") {
-            throw new Error("For security reasons, this operation requires a recent login. Please log out and log back in.");
-          } else {
-            throw new Error("Firebase password update failed: " + (updateErr.message || "Unknown error."));
+        if (isGoogleOnly) {
+          // Link password credential (Set Password for Google account)
+          const credential = EmailAuthProvider.credential(user.email!, newPassword);
+          await linkWithCredential(user, credential);
+          
+          // Success
+          await triggerAuditLog(freshToken);
+          setSuccess("Password has been set successfully! Your account is now linked with Email & Password credentials.");
+          setIsGoogleOnly(false); // No longer Google-only, now has password
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+        } else {
+          // Regular Firebase email/password change
+          // 1. Re-authenticate
+          const credential = EmailAuthProvider.credential(user.email!, currentPassword);
+          try {
+            await reauthenticateWithCredential(user, credential);
+          } catch (reauthErr: any) {
+            console.error("Re-authentication failed:", reauthErr);
+            if (reauthErr.code === "auth/wrong-password" || reauthErr.code === "auth/invalid-credential") {
+              throw new Error("Current password is incorrect.");
+            } else if (reauthErr.code === "auth/too-many-requests") {
+              throw new Error("Too many failed attempts. Please try again later.");
+            } else {
+              throw reauthErr;
+            }
           }
+
+          // 2. Update Password
+          try {
+            await updatePassword(user, newPassword);
+          } catch (updateErr: any) {
+            console.error("Password update failed:", updateErr);
+            if (updateErr.code === "auth/weak-password") {
+              throw new Error("The selected password is too weak according to Firebase security policies.");
+            } else if (updateErr.code === "auth/requires-recent-login") {
+              throw updateErr;
+            } else {
+              throw updateErr;
+            }
+          }
+
+          // 3. Trigger audit log and clear form
+          await triggerAuditLog(freshToken);
+          setSuccess("Password changed successfully.");
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+        }
+      } else {
+        // Regular local email/password change using the secure backend endpoint
+        // 1. Re-authenticate local user
+        const reauthRes = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: currentUser.email, password: currentPassword })
+        });
+        if (!reauthRes.ok) {
+          const errData = await reauthRes.json().catch(() => ({}));
+          throw new Error(errData.error || "Current password is incorrect.");
+        }
+        
+        // 2. Change password
+        const resetRes = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${sessionToken}`
+          },
+          body: JSON.stringify({ memberId: currentUser.id, newPassword })
+        });
+        if (!resetRes.ok) {
+          const errData = await resetRes.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to update password on the server.");
         }
 
         // 3. Trigger audit log and clear form
-        await triggerAuditLog();
+        await triggerAuditLog(sessionToken);
         setSuccess("Password changed successfully.");
         setCurrentPassword("");
         setNewPassword("");
@@ -177,8 +233,27 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
       }
     } catch (err: any) {
       console.error("Change Password Error:", err);
-      // Ensure we display safe friendly messages and never raw Firebase crash exceptions
-      setError(err.message || "An unexpected error occurred while updating your password. Please try again.");
+      
+      let friendlyMessage = err.message || "An unexpected error occurred while updating your password. Please try again.";
+      
+      // Map specific Firebase Auth error codes to helpful messages
+      if (err.code === "auth/user-token-expired") {
+        friendlyMessage = "Your session has expired. Please reload the page or sign in again.";
+      } else if (err.code === "auth/requires-recent-login") {
+        friendlyMessage = "For security reasons, this operation requires a recent login. Please log out and sign in again.";
+      } else if (err.code === "auth/no-current-user") {
+        friendlyMessage = "No active authenticated session found. Please sign in again.";
+      } else if (err.code === "auth/network-request-failed") {
+        friendlyMessage = "A network error occurred. Please check your internet connection and try again.";
+      } else if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+        friendlyMessage = "Current password is incorrect.";
+      } else if (err.code === "auth/weak-password") {
+        friendlyMessage = "The selected password is too weak according to Firebase security policies.";
+      } else if (err.code === "auth/too-many-requests") {
+        friendlyMessage = "Too many failed attempts. Please try again later.";
+      }
+      
+      setError(friendlyMessage);
     } finally {
       setLoading(false);
     }

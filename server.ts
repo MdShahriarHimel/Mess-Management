@@ -10,6 +10,7 @@ import dotenv from "dotenv";
 import { router as apiRouter } from "./server/routes.js";
 import { initializeDbCache, pendingSyncPromises } from "./server/db.js";
 import { pool } from "./src/db/index.js";
+import { seedMonetizationModule } from "./server/monetization.js";
 
 dotenv.config();
 
@@ -47,6 +48,7 @@ export async function ensureDbInitialized() {
     dbInitPromise = (async () => {
       console.log("[Database] Initializing DB Cache...");
       await initializeDbCache();
+      await seedMonetizationModule();
       isDbInitialized = true;
       console.log("[Database] DB Cache initialized successfully.");
     })();

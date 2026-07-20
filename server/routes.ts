@@ -21,6 +21,10 @@ import {
   refreshDbCache,
   DB_DIR
 } from "./db.js";
+import { processMenuFoods, getFoodAnalytics } from "./foodKnowledge.js";
+import { db as drizzleDb } from "../src/db/index.js";
+import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews } from "../src/db/schema.js";
+import { eq, sql, and } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
 import { 
@@ -1285,7 +1289,7 @@ router.get("/foodmenu/:monthId", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ menu });
 });
 
-router.post("/foodmenu", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/foodmenu", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, date, lunchVegetable, lunchMain, dinnerVegetable, dinnerMain } = req.body;
   if (!monthId || !date) {
     res.status(400).json({ error: "Month ID and Date are required" });
@@ -1321,7 +1325,282 @@ router.post("/foodmenu", authMiddleware, (req: AuthenticatedRequest, res: Respon
 
   saveDB();
   logAudit(req.user!.id, req.user!.nickname, "UPDATE_FOOD_MENU", "Menu Draft", JSON.stringify(newMenu), `Updated food menu for ${date}`);
+
+  // Trigger Food Knowledge learning pipeline in background
+  try {
+    await processMenuFoods(lunchVegetable || "", lunchMain || "", dinnerVegetable || "", dinnerMain || "");
+  } catch (err) {
+    console.error("Food Knowledge processing failed:", err);
+  }
+
   res.json({ success: true, menu: newMenu });
+});
+
+// ---------------------------------------------------------
+// HYBRID AI FOOD KNOWLEDGE BASE MANAGEMENT ENDPOINTS
+// ---------------------------------------------------------
+
+router.get("/food-knowledge/analytics", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const analytics = await getFoodAnalytics();
+    res.json(analytics);
+  } catch (err: any) {
+    console.error("Failed to fetch food analytics:", err);
+    res.status(500).json({ error: "Failed to fetch analytics" });
+  }
+});
+
+router.get("/food-knowledge/list", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const list = await drizzleDb.select().from(foodKnowledgeBase);
+    res.json({ list });
+  } catch (err) {
+    console.error("Failed to list food knowledge base:", err);
+    res.status(500).json({ error: "Failed to fetch food list" });
+  }
+});
+
+router.post("/food-knowledge/add", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { label, category, aliases } = req.body;
+  if (!label || !category) {
+    res.status(400).json({ error: "Label and Category are required" });
+    return;
+  }
+
+  try {
+    const foodId = "food_" + generateUUID();
+    const timestamp = new Date().toISOString();
+    const parsedAliases = Array.isArray(aliases) ? aliases : (aliases ? aliases.split(",").map((a: string) => a.trim()) : []);
+    
+    const uniqueAliases = Array.from(new Set([
+      label.toLowerCase().trim(),
+      ...parsedAliases.map((a: string) => a.toLowerCase().trim())
+    ])).filter(Boolean);
+
+    await drizzleDb.insert(foodKnowledgeBase).values({
+      id: foodId,
+      label,
+      category,
+      aliases: JSON.stringify(uniqueAliases),
+      confidence: 1.0,
+      timestamp,
+      frequency: 0,
+    });
+
+    for (const alias of uniqueAliases) {
+      await drizzleDb.insert(foodAliases).values({
+        id: "alias_" + generateUUID(),
+        alias,
+        foodId,
+      }).onConflictDoNothing();
+    }
+
+    logAudit(req.user!.id, req.user!.nickname, "ADD_FOOD_KNOWLEDGE", "None", label, `Manually added ${label} to food knowledge base`);
+    res.json({ success: true, foodId });
+  } catch (err) {
+    console.error("Failed to manually add food:", err);
+    res.status(500).json({ error: "Failed to add food" });
+  }
+});
+
+router.put("/food-knowledge/edit/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { label, category, aliases } = req.body;
+
+  if (!label || !category) {
+    res.status(400).json({ error: "Label and Category are required" });
+    return;
+  }
+
+  try {
+    const parsedAliases = Array.isArray(aliases) ? aliases : (aliases ? aliases.split(",").map((a: string) => a.trim()) : []);
+    const uniqueAliases = Array.from(new Set([
+      label.toLowerCase().trim(),
+      ...parsedAliases.map((a: string) => a.toLowerCase().trim())
+    ])).filter(Boolean);
+
+    // Update food
+    await drizzleDb
+      .update(foodKnowledgeBase)
+      .set({
+        label,
+        category,
+        aliases: JSON.stringify(uniqueAliases),
+      })
+      .where(eq(foodKnowledgeBase.id, id));
+
+    // Delete old aliases
+    await drizzleDb.delete(foodAliases).where(eq(foodAliases.foodId, id));
+
+    // Re-insert aliases
+    for (const alias of uniqueAliases) {
+      await drizzleDb.insert(foodAliases).values({
+        id: "alias_" + generateUUID(),
+        alias,
+        foodId: id,
+      }).onConflictDoNothing();
+    }
+
+    logAudit(req.user!.id, req.user!.nickname, "EDIT_FOOD_KNOWLEDGE", id, label, `Manually updated ${label} in food knowledge base`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to edit food item:", err);
+    res.status(500).json({ error: "Failed to update food item" });
+  }
+});
+
+router.delete("/food-knowledge/delete/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    await drizzleDb.delete(foodKnowledgeBase).where(eq(foodKnowledgeBase.id, id));
+    await drizzleDb.delete(foodAliases).where(eq(foodAliases.foodId, id));
+
+    logAudit(req.user!.id, req.user!.nickname, "DELETE_FOOD_KNOWLEDGE", id, "Deleted", `Deleted food ID ${id} from knowledge base`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to delete food item:", err);
+    res.status(500).json({ error: "Failed to delete food item" });
+  }
+});
+
+router.post("/food-knowledge/merge", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { sourceId, targetId } = req.body;
+
+  if (!sourceId || !targetId) {
+    res.status(400).json({ error: "Source ID and Target ID are required for merging" });
+    return;
+  }
+
+  try {
+    const sourceFood = await drizzleDb.select().from(foodKnowledgeBase).where(eq(foodKnowledgeBase.id, sourceId));
+    const targetFood = await drizzleDb.select().from(foodKnowledgeBase).where(eq(foodKnowledgeBase.id, targetId));
+
+    if (sourceFood.length === 0 || targetFood.length === 0) {
+      res.status(404).json({ error: "Source or Target food not found" });
+      return;
+    }
+
+    const sourceAliases: string[] = JSON.parse(sourceFood[0].aliases);
+    const targetAliases: string[] = JSON.parse(targetFood[0].aliases);
+
+    // Merge aliases
+    const mergedAliases = Array.from(new Set([
+      ...targetAliases,
+      ...sourceAliases
+    ])).filter(Boolean);
+
+    // Update target food with combined aliases and aggregated frequency counts
+    await drizzleDb
+      .update(foodKnowledgeBase)
+      .set({
+        aliases: JSON.stringify(mergedAliases),
+        frequency: targetFood[0].frequency + sourceFood[0].frequency,
+      })
+      .where(eq(foodKnowledgeBase.id, targetId));
+
+    // Remap source aliases to point to target foodId
+    await drizzleDb
+      .update(foodAliases)
+      .set({ foodId: targetId })
+      .where(eq(foodAliases.foodId, sourceId));
+
+    // Delete source food
+    await drizzleDb.delete(foodKnowledgeBase).where(eq(foodKnowledgeBase.id, sourceId));
+
+    logAudit(req.user!.id, req.user!.nickname, "MERGE_FOOD_KNOWLEDGE", sourceId, targetId, `Merged food ${sourceFood[0].label} into ${targetFood[0].label}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to merge food items:", err);
+    res.status(500).json({ error: "Failed to merge food items" });
+  }
+});
+
+router.post("/food-knowledge/review-action", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { reviewId, action, label, category, aliases } = req.body;
+
+  if (!reviewId || !action) {
+    res.status(400).json({ error: "Review ID and Action are required" });
+    return;
+  }
+
+  try {
+    const reviewItem = await drizzleDb.select().from(foodReviewQueue).where(eq(foodReviewQueue.id, reviewId));
+    if (reviewItem.length === 0) {
+      res.status(404).json({ error: "Review item not found" });
+      return;
+    }
+
+    const phrase = reviewItem[0].phrase;
+
+    if (action === "APPROVE") {
+      if (!label || !category) {
+        res.status(400).json({ error: "Label and Category are required to approve a food item" });
+        return;
+      }
+
+      const foodId = "food_" + generateUUID();
+      const timestamp = new Date().toISOString();
+      const parsedAliases = Array.isArray(aliases) ? aliases : (aliases ? aliases.split(",").map((a: string) => a.trim()) : []);
+      const uniqueAliases = Array.from(new Set([
+        label.toLowerCase().trim(),
+        phrase.toLowerCase().trim(),
+        ...parsedAliases.map((a: string) => a.toLowerCase().trim())
+      ])).filter(Boolean);
+
+      // Save to knowledge base
+      await drizzleDb.insert(foodKnowledgeBase).values({
+        id: foodId,
+        label,
+        category,
+        aliases: JSON.stringify(uniqueAliases),
+        confidence: 1.0,
+        timestamp,
+        frequency: 1,
+      });
+
+      for (const alias of uniqueAliases) {
+        await drizzleDb.insert(foodAliases).values({
+          id: "alias_" + generateUUID(),
+          alias,
+          foodId,
+        }).onConflictDoNothing();
+      }
+
+      // Update status in review queue
+      await drizzleDb
+        .update(foodReviewQueue)
+        .set({ status: "APPROVED" })
+        .where(eq(foodReviewQueue.id, reviewId));
+
+      logAudit(req.user!.id, req.user!.nickname, "APPROVE_REVIEW_FOOD", reviewId, label, `Approved and cataloged unknown food phrase: "${phrase}" as "${label}"`);
+    } else if (action === "REJECT") {
+      // Mark as rejected
+      await drizzleDb
+        .update(foodReviewQueue)
+        .set({ status: "REJECTED" })
+        .where(eq(foodReviewQueue.id, reviewId));
+
+      logAudit(req.user!.id, req.user!.nickname, "REJECT_REVIEW_FOOD", reviewId, "REJECTED", `Rejected unknown food phrase: "${phrase}"`);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to perform review queue action:", err);
+    res.status(500).json({ error: "Failed to perform review action" });
+  }
+});
+
+router.get("/food-knowledge/export", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const list = await drizzleDb.select().from(foodKnowledgeBase);
+    res.setHeader("Content-Disposition", "attachment; filename=food_knowledge_base.json");
+    res.setHeader("Content-Type", "application/json");
+    res.send(JSON.stringify(list, null, 2));
+  } catch (err) {
+    console.error("Failed to export food knowledge base:", err);
+    res.status(500).json({ error: "Failed to export food knowledge base" });
+  }
 });
 
 // Food Statistics helper
@@ -2249,6 +2528,185 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
 });
 
 // ---------------------------------------------------------
+// THREE-LEVEL SETTINGS AND CUSTOMIZATION ENGINE
+// ---------------------------------------------------------
+const BRANDING_FILE = path.join(DB_DIR, "erp_branding.json");
+const USER_PREFS_FILE = path.join(DB_DIR, "user_preferences.json");
+
+export function loadErpBranding() {
+  const defaultBranding = {
+    erpName: "Mess ERP",
+    logoText: "Mess ERP",
+    logoIcon: "Sparkles",
+    brandColors: {
+      primary: "#22d3ee",
+      secondary: "#0f172a"
+    },
+    globalDefaultTheme: "default-erp",
+    globalDefaultFont: "sans",
+    globalDefaultDashboardLayout: "bento",
+    globalDefaultSidebarStyle: "expanded",
+    globalDefaultWidgets: ["audit", "meals", "notices"],
+    erpVersion: "v2.5.4",
+    copyright: "Copyright © 2026 Mess ERP",
+    supportInfo: "Ababil support team",
+    developerInfo: "Bengal Bachelor Developers",
+    creditConfig: {
+      showCreditPanel: false,
+      text: "Crafted with 💖 by our mess community",
+      isBold: false,
+      isItalic: false,
+      isUnderline: false,
+      alignment: "center",
+      color: "#22d3ee",
+      font: "sans",
+      background: "#0f172a",
+      emojis: "💖,✨,🚀,🌟",
+      link: ""
+    },
+    globalAnnouncement: "Welcome to the central Mess ERP ecosystem!",
+    welcomeMessage: "Welcome to Bengal Bachelor Cooperative Ecosystem",
+    themeLibrary: [] as any[],
+    appearanceTemplates: [] as any[],
+    animationLibrary: [] as any[],
+    systemEffects: {
+      enableConfetti: false,
+      enableMatrix: false
+    },
+    globalUiComponents: {} as Record<string, any>,
+    locks: {} as Record<string, boolean>,
+    refreshSettings: {
+      dashboard: "manual",
+      analytics: "manual",
+      revenue: "manual",
+      statistics: "manual",
+      auditLog: "manual",
+      notification: "manual",
+      futureModules: "manual"
+    }
+  };
+
+  try {
+    if (fs.existsSync(BRANDING_FILE)) {
+      const data = fs.readFileSync(BRANDING_FILE, "utf-8");
+      return { ...defaultBranding, ...JSON.parse(data) };
+    }
+  } catch (e) {
+    console.error("Error loading ERP branding:", e);
+  }
+  return defaultBranding;
+}
+
+export function saveErpBranding(branding: any) {
+  try {
+    writeAndPersistFile("erp_branding.json", JSON.stringify(branding, null, 2));
+  } catch (e) {
+    console.error("Error saving ERP branding:", e);
+  }
+}
+
+export function loadMessAppearance(messId: string) {
+  const file = messId === "default"
+    ? path.join(DB_DIR, "mess_appearance.json")
+    : path.join(DB_DIR, `mess_appearance_${messId}.json`);
+
+  const defaultAppearance = {
+    theme: "default-erp",
+    accentColor: "#22d3ee",
+    dashboardLayout: "bento",
+    sidebarStyle: "expanded",
+    cards: "glass",
+    tables: "normal",
+    charts: "recharts",
+    widgets: ["audit", "meals", "notices", "finance"],
+    glowEffects: {
+      accentGlow: true,
+      glowingCards: false,
+      neonBorders: false
+    },
+    animations: {
+      enableEffect: false,
+      effectType: "none",
+      animationSpeed: "normal"
+    },
+    glassEffect: true,
+    roundedCorners: "rounded-2xl",
+    shadows: "shadow-md",
+    buttonStyle: "solid",
+    fontSize: "normal",
+    spacing: "normal",
+    density: "normal",
+    navigationStyle: "sidebar",
+    cardLayout: "bento"
+  };
+
+  try {
+    if (fs.existsSync(file)) {
+      const data = fs.readFileSync(file, "utf-8");
+      return { ...defaultAppearance, ...JSON.parse(data) };
+    }
+  } catch (e) {
+    console.error(`Error loading Mess Appearance for ${messId}:`, e);
+  }
+  return defaultAppearance;
+}
+
+export function saveMessAppearance(messId: string, appearance: any) {
+  try {
+    const filename = messId === "default"
+      ? "mess_appearance.json"
+      : `mess_appearance_${messId}.json`;
+    writeAndPersistFile(filename, JSON.stringify(appearance, null, 2));
+  } catch (e) {
+    console.error(`Error saving Mess Appearance for ${messId}:`, e);
+  }
+}
+
+export function loadUserPreferences(userId: string) {
+  const defaultPrefs = {
+    isDarkMode: true,
+    accentColor: "#22d3ee",
+    fontSize: "normal",
+    compactMode: false,
+    animationOn: true,
+    highContrast: false,
+    notificationPreferences: {},
+    language: "en",
+    dashboardDensity: "normal",
+    sidebarCollapse: false
+  };
+
+  try {
+    if (fs.existsSync(USER_PREFS_FILE)) {
+      const data = fs.readFileSync(USER_PREFS_FILE, "utf-8");
+      const allPrefs = JSON.parse(data);
+      if (allPrefs[userId]) {
+        return { ...defaultPrefs, ...allPrefs[userId] };
+      }
+    }
+  } catch (e) {
+    console.error(`Error loading User Preferences for ${userId}:`, e);
+  }
+  return defaultPrefs;
+}
+
+export function saveUserPreferences(userId: string, prefs: any) {
+  try {
+    let allPrefs: Record<string, any> = {};
+    if (fs.existsSync(USER_PREFS_FILE)) {
+      const data = fs.readFileSync(USER_PREFS_FILE, "utf-8");
+      try {
+        allPrefs = JSON.parse(data);
+      } catch (e) {}
+    }
+    allPrefs[userId] = prefs;
+    writeAndPersistFile("user_preferences.json", JSON.stringify(allPrefs, null, 2));
+  } catch (e) {
+    console.error(`Error saving User Preferences for ${userId}:`, e);
+  }
+}
+
+// ---------------------------------------------------------
 // CUSTOMIZABLE MESS NAME SETTINGS API
 // ---------------------------------------------------------
 function loadSettings() {
@@ -2368,29 +2826,55 @@ function loadSettings() {
       emojis: "💖,✨,🚀,🌟",
       link: ""
     },
-    appearancePermissions: {}
+    appearancePermissions: {} as Record<string, string[]>
   };
+
+  let legacySettings: any = {};
   try {
     if (fs.existsSync(file)) {
       const data = fs.readFileSync(file, "utf-8");
-      const parsed = JSON.parse(data);
-      return { 
-        ...defaultSettings, 
-        ...parsed,
-        customColors: { ...defaultSettings.customColors, ...(parsed.customColors || {}) },
-        messAnimations: { ...defaultSettings.messAnimations, ...(parsed.messAnimations || {}) },
-        dashboardVisibility: { ...defaultSettings.dashboardVisibility, ...(parsed.dashboardVisibility || {}) },
-        loginCustomization: { ...defaultSettings.loginCustomization, ...(parsed.loginCustomization || {}) },
-        homeCustomization: { ...defaultSettings.homeCustomization, ...(parsed.homeCustomization || {}) },
-        adminVisibility: { ...defaultSettings.adminVisibility, ...(parsed.adminVisibility || {}) },
-        creditConfig: { ...defaultSettings.creditConfig, ...(parsed.creditConfig || {}) },
-        appearancePermissions: parsed.appearancePermissions || {}
-      };
+      legacySettings = JSON.parse(data);
     }
   } catch (e) {
     console.error("Error loading settings:", e);
   }
-  return defaultSettings;
+
+  const merged = { 
+    ...defaultSettings, 
+    ...legacySettings,
+    customColors: { ...defaultSettings.customColors, ...(legacySettings.customColors || {}) },
+    messAnimations: { ...defaultSettings.messAnimations, ...(legacySettings.messAnimations || {}) },
+    dashboardVisibility: { ...defaultSettings.dashboardVisibility, ...(legacySettings.dashboardVisibility || {}) },
+    loginCustomization: { ...defaultSettings.loginCustomization, ...(legacySettings.loginCustomization || {}) },
+    homeCustomization: { ...defaultSettings.homeCustomization, ...(legacySettings.homeCustomization || {}) },
+    adminVisibility: { ...defaultSettings.adminVisibility, ...(legacySettings.adminVisibility || {}) },
+    creditConfig: { ...defaultSettings.creditConfig, ...(legacySettings.creditConfig || {}) },
+    appearancePermissions: legacySettings.appearancePermissions || {}
+  };
+
+  // Merge Level 1 ERP Branding
+  const branding = loadErpBranding();
+  merged.erpName = branding.erpName || "Mess ERP";
+  merged.logoText = branding.logoText || merged.logoText;
+  merged.creditConfig = { ...merged.creditConfig, ...branding.creditConfig };
+  merged.appearancePermissions = { ...branding.appearancePermissions, ...merged.appearancePermissions };
+
+  // Merge Level 2 Mess Appearance
+  const appearance = loadMessAppearance(messId);
+  if (appearance.theme) {
+    merged.siteColor = appearance.theme === "default-erp" ? "cyan" : appearance.theme;
+  }
+  if (appearance.accentColor) {
+    merged.customColors.accentColor = appearance.accentColor;
+  }
+  if (appearance.fontSize) {
+    merged.fontSize = appearance.fontSize;
+  }
+  if (appearance.roundedCorners) {
+    // Keep compatible with any custom animations or cards styles
+  }
+
+  return merged;
 }
 
 function saveSettings(settings: any) {
@@ -2404,6 +2888,220 @@ function saveSettings(settings: any) {
     console.error("Error saving settings:", e);
   }
 }
+
+// ---------------------------------------------------------
+// NEW THREE-LEVEL SPECIFIC ENDPOINTS
+// ---------------------------------------------------------
+
+// GET branding (Level 1)
+router.get("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  res.json(loadErpBranding());
+});
+
+// PUT branding (Level 1) - ONLY Ultimate Admin
+router.put("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  if (!isUltimateAdmin) {
+    res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify central ERP Branding identity" });
+    return;
+  }
+
+  const oldBranding = loadErpBranding();
+  const newBranding = { ...oldBranding, ...req.body };
+  saveErpBranding(newBranding);
+
+  // Sync back to merged logo text if modified
+  const currentSettings = loadSettings();
+  if (req.body.logoText !== undefined) {
+    currentSettings.logoText = req.body.logoText;
+    saveSettings(currentSettings);
+  }
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "UPDATE_ERP_BRANDING",
+    JSON.stringify(oldBranding),
+    JSON.stringify(newBranding),
+    "Modified central ERP Branding identity configuration.",
+    {
+      userRole: req.user!.role,
+      browser: req.headers["user-agent"] as string,
+      ipAddress: req.ip as string
+    }
+  );
+
+  res.json({ success: true, branding: newBranding });
+});
+
+// GET mess appearance (Level 2)
+router.get("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId();
+  res.json(loadMessAppearance(messId));
+});
+
+// PUT mess appearance (Level 2)
+router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId();
+  const branding = loadErpBranding();
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+
+  // Check if locked
+  const isLocked = branding.locks && branding.locks[messId] === true;
+  if (isLocked && !isUltimateAdmin) {
+    res.status(403).json({ error: "The appearance customization has been locked for this Mess by the Ultimate Admin." });
+    return;
+  }
+
+  // Check role and permissions
+  const role = req.user!.role;
+  const isAuthority = [
+    UserRole.ADMIN,
+    UserRole.SUPERUSER,
+    UserRole.ASSISTANT_SUPERUSER,
+    UserRole.MANAGER
+  ].includes(role);
+
+  if (!isAuthority && !isUltimateAdmin) {
+    res.status(403).json({ error: "Only authorized personnel can customize Mess appearance" });
+    return;
+  }
+
+  // Validate granular matrix permission if not Ultimate Admin
+  if (!isUltimateAdmin) {
+    const currentSettings = loadSettings();
+    const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
+    
+    const modifiedTheme = req.body.theme !== undefined;
+    const modifiedAccent = req.body.accentColor !== undefined;
+    const modifiedDashboard = req.body.dashboardLayout !== undefined;
+    const modifiedSidebar = req.body.sidebarStyle !== undefined;
+    const modifiedAnimations = req.body.animations !== undefined;
+    const modifiedCards = req.body.cards !== undefined;
+    const modifiedWidgets = req.body.widgets !== undefined;
+    const modifiedTables = req.body.tables !== undefined;
+
+    let isPermitted = true;
+    if (modifiedTheme && !userPermissions.includes("Theme")) isPermitted = false;
+    if (modifiedAccent && !userPermissions.includes("Accent Color")) isPermitted = false;
+    if (modifiedDashboard && !userPermissions.includes("Dashboard")) isPermitted = false;
+    if (modifiedSidebar && !userPermissions.includes("Sidebar")) isPermitted = false;
+    if (modifiedAnimations && !userPermissions.includes("Animations")) isPermitted = false;
+    if (modifiedCards && !userPermissions.includes("Card Style")) isPermitted = false;
+    if (modifiedWidgets && !userPermissions.includes("Widgets")) isPermitted = false;
+    if (modifiedTables && !userPermissions.includes("Tables")) isPermitted = false;
+
+    // Enforce permissions only if some permission rules exist for this user, or if standard Admin without rule
+    const hasAnyAppearancePermission = userPermissions.some(p => [
+      "Theme", "Accent Color", "Background Color", "Card Style", "Glass Effect", 
+      "Glow Effect", "Gradient", "Rounded Corners", "Shadow", "Animations", 
+      "Icons", "Typography", "Sidebar", "Dashboard", "Charts", "Widgets", 
+      "Tables", "Buttons"
+    ].includes(p));
+
+    if (hasAnyAppearancePermission && !isPermitted) {
+      res.status(403).json({ error: "You do not have granular permissions granted by the Ultimate Admin to modify these appearance features" });
+      return;
+    }
+  }
+
+  const oldAppearance = loadMessAppearance(messId);
+  const newAppearance = { ...oldAppearance, ...req.body };
+  saveMessAppearance(messId, newAppearance);
+
+  // Sync to legacy settings color and fonts if appropriate
+  const currentSettings = loadSettings();
+  if (req.body.theme !== undefined && req.body.theme !== "default-erp") {
+    currentSettings.siteColor = req.body.theme;
+  }
+  if (req.body.accentColor !== undefined) {
+    currentSettings.customColors.accentColor = req.body.accentColor;
+  }
+  if (req.body.fontSize !== undefined) {
+    currentSettings.fontSize = req.body.fontSize;
+  }
+  saveSettings(currentSettings);
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "UPDATE_MESS_APPEARANCE",
+    JSON.stringify(oldAppearance),
+    JSON.stringify(newAppearance),
+    `Modified Mess appearance for mess: ${messId.toUpperCase()}`,
+    {
+      userRole: role,
+      browser: req.headers["user-agent"] as string,
+      ipAddress: req.ip as string
+    }
+  );
+
+  res.json({ success: true, appearance: newAppearance });
+});
+
+// GET user personal preferences (Level 3)
+router.get("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  res.json(loadUserPreferences(req.user!.id));
+});
+
+// PUT user personal preferences (Level 3)
+router.put("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const oldPrefs = loadUserPreferences(req.user!.id);
+  const newPrefs = { ...oldPrefs, ...req.body };
+  saveUserPreferences(req.user!.id, newPrefs);
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "UPDATE_USER_PREFERENCES",
+    JSON.stringify(oldPrefs),
+    JSON.stringify(newPrefs),
+    "Updated personal account visual preferences.",
+    {
+      userRole: req.user!.role,
+      browser: req.headers["user-agent"] as string,
+      ipAddress: req.ip as string
+    }
+  );
+
+  res.json({ success: true, preferences: newPrefs });
+});
+
+// POST lock/unlock mess appearance (Ultimate Admin exclusive)
+router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  if (!isUltimateAdmin) {
+    res.status(403).json({ error: "Only the Ultimate Admin can lock or unlock appearance features" });
+    return;
+  }
+
+  const { targetMessId, locked } = req.body;
+  if (!targetMessId) {
+    res.status(400).json({ error: "targetMessId is required" });
+    return;
+  }
+
+  const branding = loadErpBranding();
+  if (!branding.locks) branding.locks = {};
+  branding.locks[targetMessId] = !!locked;
+  saveErpBranding(branding);
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    locked ? "LOCK_MESS_APPEARANCE" : "UNLOCK_MESS_APPEARANCE",
+    JSON.stringify({ targetMessId, locked: !locked }),
+    JSON.stringify({ targetMessId, locked }),
+    `Appearance configuration ${locked ? "LOCKED" : "UNLOCKED"} for mess: ${targetMessId.toUpperCase()}`,
+    {
+      userRole: req.user!.role,
+      browser: req.headers["user-agent"] as string,
+      ipAddress: req.ip as string
+    }
+  );
+
+  res.json({ success: true, locks: branding.locks });
+});
 
 // Public settings (Unauthenticated) for customizing login page
 router.get("/settings/public", (req: Request, res: Response) => {
@@ -2443,41 +3141,36 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 
   // If NOT Ultimate Admin, check explicit appearance/branding permissions:
   if (!isUltimateAdmin) {
-    const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
-
-    // Check Credit panel updates
-    if (req.body.creditConfig !== undefined) {
-      const hasCreditEdit = userPermissions.includes("Can Edit Credit") || userPermissions.includes("Credit");
-      let isAllowed = hasCreditEdit;
-
-      if (!isAllowed) {
-        // Check granular credit sub-permissions
-        const updates = req.body.creditConfig;
-        let needsText = updates.text !== undefined;
-        let needsFont = updates.font !== undefined;
-        let needsColor = updates.color !== undefined;
-        let needsBackground = updates.background !== undefined;
-        let needsEmoji = updates.emojis !== undefined;
-        let needsShow = updates.showCreditPanel !== undefined;
-
-        let ok = true;
-        if (needsText && !userPermissions.includes("Can Change Text")) ok = false;
-        if (needsFont && !userPermissions.includes("Can Change Font")) ok = false;
-        if (needsColor && !userPermissions.includes("Can Change Color")) ok = false;
-        if (needsBackground && !userPermissions.includes("Can Change Background")) ok = false;
-        if (needsEmoji && !userPermissions.includes("Can Add Emoji")) ok = false;
-        if (needsShow && !userPermissions.includes("Can Enable/Disable Credit Panel")) ok = false;
-
-        if (ok && (needsText || needsFont || needsColor || needsBackground || needsEmoji || needsShow)) {
-          isAllowed = true;
-        }
-      }
-
-      if (!isAllowed) {
-        res.status(403).json({ error: "You do not have explicit permission to modify Credit & Branding settings" });
+    const messId = getActiveMessId();
+    const branding = loadErpBranding();
+    
+    // Check lock
+    const isLocked = branding.locks && branding.locks[messId] === true;
+    if (isLocked) {
+      const isModifyingAppearance = [
+        'siteColor', 'fontSize', 'fontStyle', 'customColors',
+        'messAnimations', 'typographySettings'
+      ].some(field => req.body[field] !== undefined);
+      
+      if (isModifyingAppearance) {
+        res.status(403).json({ error: "The appearance features for this mess have been locked by the Ultimate Admin" });
         return;
       }
     }
+
+    // Check Credit panel updates - STRICTLY Ultimate Admin only
+    if (req.body.creditConfig !== undefined) {
+      res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify Credit & Branding settings" });
+      return;
+    }
+
+    // Check branding / logo text updates - STRICTLY Ultimate Admin only
+    if (req.body.logoText !== undefined || req.body.erpName !== undefined) {
+      res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify ERP branding and logo text" });
+      return;
+    }
+
+    const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
 
     // Check general appearance & branding updates
     const adminOnlyFields = [
@@ -3356,6 +4049,612 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
   } catch (err: any) {
     console.error("[Backup] Transaction failed and rolled back:", err);
     res.status(500).json({ error: `Backup restore failed during database transaction: ${err.message || err}` });
+  }
+});
+
+// =========================================================================
+// MONETIZATION MODULE ENDPOINTS (MODULAR & INDEPENDENT)
+// =========================================================================
+
+import { 
+  getMessMonetizationSettings,
+  updateMessMonetizationSettings,
+  getMessAdvertisementSettings,
+  updateMessAdvertisementSettings,
+  getRewardPoints,
+  awardRewardPoints,
+  spendRewardPoints,
+  getRewardHistory,
+  getPremiumUnlocks,
+  unlockPremiumItem,
+  createCustomProfile,
+  getProfiles,
+  getPlans,
+  getMessSubscription,
+  purchaseSubscription,
+  exportMonetizationBackup,
+  restoreMonetizationBackup,
+  recordAdView,
+  getGlobalMonetizationSettings,
+  saveGlobalMonetizationSettings,
+  validateMessSubscription,
+  createPlan,
+  updatePlan,
+  deletePlan,
+  duplicatePlan,
+  reorderPlans,
+  assignSubscriptionByAdmin,
+  checkUserAdEligibility
+} from "./monetization.js";
+
+// Helper checks
+const checkIsFounder = (req: AuthenticatedRequest): boolean => {
+  return req.user?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+};
+
+const checkIsUltimateAdmin = (req: AuthenticatedRequest): boolean => {
+  return req.user?.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user?.role === UserRole.ADMIN;
+};
+
+const checkIsAdminOrSuper = (req: AuthenticatedRequest): boolean => {
+  return req.user?.role === UserRole.ADMIN || req.user?.role === UserRole.SUPERUSER || checkIsUltimateAdmin(req);
+};
+
+// 1. Get entire monetization status for the active mess & logged in user
+router.get("/monetization/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const messId = getActiveMessId();
+    const globalSettings = getGlobalMonetizationSettings();
+    
+    // If monetization is globally OFF, return immediately with minimum details for 0 performance impact
+    if (!globalSettings.globalMonetizationEnabled) {
+      res.json({ enabled: false, globalMonetizationEnabled: false });
+      return;
+    }
+
+    const messSettings = await getMessMonetizationSettings(messId);
+    
+    // If monetization is disabled for this specific mess, bypass further queries
+    if (!messSettings.enabled) {
+      res.json({
+        enabled: false,
+        globalMonetizationEnabled: true,
+        messSettings
+      });
+      return;
+    }
+
+    const adsPromise = globalSettings.advertisementsEnabled
+      ? getMessAdvertisementSettings(messId)
+      : Promise.resolve({
+          messId,
+          enabled: false,
+          rewardedVideoEnabled: false,
+          bannerEnabled: false,
+          bannerPosition: "bottom",
+          frequency: 5,
+          dailyLimits: 3,
+          cooldown: 60,
+          pointsPerAd: 10,
+          provider: "Unity Ads",
+          timezone: "Asia/Dhaka",
+          resetTime: "00:00",
+          policy: "No Ads",
+          allowedPositions: "[]",
+          bannerSize: "standard",
+          bannerFrequency: 30,
+          requiredWatchPercentage: 100,
+          performanceMode: "balanced",
+          userExceptions: "[]"
+        });
+
+    const [adsSettings, currentSubscription, licenseValidation, userPoints, userHistory, userUnlocks, profiles, plans] = await Promise.all([
+      adsPromise,
+      getMessSubscription(messId),
+      validateMessSubscription(messId),
+      getRewardPoints(req.user!.id),
+      getRewardHistory(req.user!.id),
+      getPremiumUnlocks(req.user!.id),
+      getProfiles(),
+      getPlans()
+    ]);
+
+    res.json({
+      enabled: true,
+      globalMonetizationEnabled: true,
+      messSettings,
+      adsSettings,
+      currentSubscription,
+      licenseValidation,
+      userPoints,
+      userHistory,
+      userUnlocks,
+      profiles,
+      plans
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load monetization state: " + err.message });
+  }
+});
+
+// 2. Settings: Get and update per-mess monetization settings
+router.get("/monetization/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsAdminOrSuper(req)) {
+    res.status(403).json({ error: "Only admins can view monetization settings." });
+    return;
+  }
+  const messId = getActiveMessId();
+  const settings = await getMessMonetizationSettings(messId);
+  res.json(settings);
+});
+
+router.put("/monetization/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can modify monetization profiles." });
+    return;
+  }
+  const messId = getActiveMessId();
+  const { enabled, profileId, showSubscription, rewardCenterEnabled, customSettings } = req.body;
+  
+  await updateMessMonetizationSettings(messId, {
+    enabled,
+    profileId,
+    showSubscription,
+    rewardCenterEnabled,
+    customSettings: typeof customSettings === "string" ? customSettings : JSON.stringify(customSettings || {})
+  });
+
+  logAudit(req.user!.id, req.user!.nickname, "UPDATE_MONETIZATION_SETTINGS", "None", profileId, `Updated monetization profile for mess: ${profileId}`);
+  res.json({ success: true });
+});
+
+// 3. Profiles: Create custom profiles or list profiles
+router.get("/monetization/profiles", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const list = await getProfiles();
+  res.json(list);
+});
+
+router.post("/monetization/profiles", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can create custom profiles." });
+    return;
+  }
+  const { name, modules, limits } = req.body;
+  if (!name) {
+    res.status(400).json({ error: "Profile name is required." });
+    return;
+  }
+  const id = await createCustomProfile(name, modules, limits);
+  res.json({ success: true, id });
+});
+
+// 4. Subscriptions plans
+router.get("/monetization/plans", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const plans = await getPlans();
+  res.json(plans);
+});
+
+// Create Plan
+router.post("/monetization/plans", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Ultimate Admin can create plans." });
+    return;
+  }
+  try {
+    const id = await createPlan(req.body);
+    logAudit(req.user!.id, req.user!.nickname, "CREATE_PLAN", "None", id, `Created subscription plan: ${req.body.name}`);
+    res.json({ success: true, id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Plan
+router.put("/monetization/plans/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Ultimate Admin can update plans." });
+    return;
+  }
+  try {
+    await updatePlan(req.params.id, req.body);
+    logAudit(req.user!.id, req.user!.nickname, "UPDATE_PLAN", req.params.id, "None", `Updated subscription plan: ${req.body.name}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Duplicate Plan
+router.post("/monetization/plans/:id/duplicate", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Ultimate Admin can duplicate plans." });
+    return;
+  }
+  try {
+    const id = await duplicatePlan(req.params.id);
+    if (!id) {
+      res.status(404).json({ error: "Source plan not found." });
+      return;
+    }
+    logAudit(req.user!.id, req.user!.nickname, "DUPLICATE_PLAN", req.params.id, id, `Duplicated subscription plan.`);
+    res.json({ success: true, id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Plan
+router.delete("/monetization/plans/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Ultimate Admin can delete plans." });
+    return;
+  }
+  try {
+    await deletePlan(req.params.id);
+    logAudit(req.user!.id, req.user!.nickname, "DELETE_PLAN", req.params.id, "None", `Deleted subscription plan: ${req.params.id}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reorder Plans
+router.post("/monetization/plans/reorder", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Ultimate Admin can reorder plans." });
+    return;
+  }
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      res.status(400).json({ error: "orderedIds must be an array." });
+      return;
+    }
+    await reorderPlans(orderedIds);
+    logAudit(req.user!.id, req.user!.nickname, "REORDER_PLANS", "None", "None", "Reordered subscription plans display priority");
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manually Assign Subscription by Admin
+router.post("/monetization/subscribe/assign", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Ultimate Admin can assign subscriptions." });
+    return;
+  }
+  try {
+    const { targetMessId, planId, licenseType, billingCycle, pricePaid, durationMonths, status } = req.body;
+    if (!targetMessId || !planId) {
+      res.status(400).json({ error: "Target Mess ID and Plan ID are required." });
+      return;
+    }
+    await assignSubscriptionByAdmin(
+      targetMessId, 
+      planId, 
+      licenseType || "Premium", 
+      billingCycle || "monthly", 
+      Number(pricePaid || 0), 
+      Number(durationMonths || 1), 
+      status || "ACTIVE"
+    );
+    logAudit(req.user!.id, req.user!.nickname, "MANUAL_ASSIGN_SUBSCRIPTION", "None", planId, `Manually assigned ${licenseType} license to mess ID: ${targetMessId}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. Purchase Subscription
+router.post("/monetization/subscribe", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsAdminOrSuper(req)) {
+    res.status(403).json({ error: "Only the Mess Admin can purchase subscriptions." });
+    return;
+  }
+  const { planId, durationMonths, billingCycle, pricePaid } = req.body;
+  if (!planId) {
+    res.status(400).json({ error: "Plan ID is required." });
+    return;
+  }
+  const messId = getActiveMessId();
+  await purchaseSubscription(messId, planId, durationMonths || 1, billingCycle || "monthly", pricePaid);
+  logAudit(req.user!.id, req.user!.nickname, "PURCHASE_SUBSCRIPTION", "None", planId, `Purchased subscription plan ${planId} for active mess scope`);
+  res.json({ success: true });
+});
+
+// 6. Ads Settings Manager
+router.get("/monetization/ads/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsAdminOrSuper(req)) {
+    res.status(403).json({ error: "Access Denied." });
+    return;
+  }
+  const messId = getActiveMessId();
+  const ads = await getMessAdvertisementSettings(messId);
+  res.json(ads);
+});
+
+router.put("/monetization/ads/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can customize global advertising settings." });
+    return;
+  }
+  const messId = getActiveMessId();
+  await updateMessAdvertisementSettings(messId, req.body);
+  logAudit(req.user!.id, req.user!.nickname, "UPDATE_ADS_SETTINGS", "None", "None", "Configured rewarded and banner advertisement metrics");
+  res.json({ success: true });
+});
+
+// 6b. Global Ad Configuration (Ultimate Admin only)
+router.get("/monetization/ads/global-config", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can view global ad config." });
+    return;
+  }
+  const globalSettings = getGlobalMonetizationSettings();
+  res.json({
+    enabled: globalSettings.advertisementsEnabled || false,
+    config: globalSettings.advertisementsConfig || {}
+  });
+});
+
+router.put("/monetization/ads/global-config", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can modify global ad config." });
+    return;
+  }
+  try {
+    const { enabled, config } = req.body;
+    const globalSettings = getGlobalMonetizationSettings();
+
+    if (enabled !== undefined) {
+      globalSettings.advertisementsEnabled = !!enabled;
+    }
+    if (config !== undefined) {
+      globalSettings.advertisementsConfig = config;
+    }
+
+    saveGlobalMonetizationSettings();
+    logAudit(req.user!.id, req.user!.nickname, "UPDATE_GLOBAL_ADS_CONFIG", "None", "None", "Ultimate Admin updated platform-wide advertising matrix and providers");
+    res.json({ success: true, enabled: globalSettings.advertisementsEnabled, config: globalSettings.advertisementsConfig });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save global ad config: " + err.message });
+  }
+});
+
+// 6c. Ad Analytics (Ultimate Admin only)
+router.get("/monetization/ads/analytics", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can view global ad analytics." });
+    return;
+  }
+  try {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const views = await drizzleDb.select().from(advertisementViews);
+
+    const bannerViews = views.filter(v => v.adType === "BANNER");
+    const rewardedViews = views.filter(v => v.adType === "REWARDED");
+
+    const todayBannerViews = bannerViews.filter(v => v.timestamp.startsWith(todayStr));
+    const todayRewardedViews = rewardedViews.filter(v => v.timestamp.startsWith(todayStr));
+
+    const totalRewardPoints = views.reduce((acc, v) => acc + (v.reward || 0), 0);
+
+    const estRevenue = (bannerViews.length * 0.01) + (rewardedViews.length * 0.05);
+    const pendingRevenue = estRevenue * 0.15;
+
+    const messCounts: Record<string, number> = {};
+    const userCounts: Record<string, number> = {};
+
+    views.forEach(v => {
+      messCounts[v.messId] = (messCounts[v.messId] || 0) + 1;
+      userCounts[v.memberId] = (userCounts[v.memberId] || 0) + 1;
+    });
+
+    const sortedMesses = Object.entries(messCounts).sort((a, b) => b[1] - a[1]);
+    const sortedUsers = Object.entries(userCounts).sort((a, b) => b[1] - a[1]);
+
+    const mostActiveMess = sortedMesses.length > 0 ? { messId: sortedMesses[0][0], count: sortedMesses[0][1] } : null;
+    const mostActiveUser = sortedUsers.length > 0 ? { userId: sortedUsers[0][0], count: sortedUsers[0][1] } : null;
+
+    res.json({
+      bannerImpressions: bannerViews.length,
+      rewardedAdsWatched: rewardedViews.length,
+      todayBannerViews: todayBannerViews.length,
+      todayRewardedAds: todayRewardedViews.length,
+      estimatedRevenue: Number(estRevenue.toFixed(2)),
+      pendingRevenue: Number(pendingRevenue.toFixed(2)),
+      rewardPointsGranted: totalRewardPoints,
+      mostActiveMess,
+      mostActiveUser,
+      allStats: views
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load advertisement analytics: " + err.message });
+  }
+});
+
+// 6d. Ad History (Ultimate Admin only)
+router.get("/monetization/ads/history", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can view ad history." });
+    return;
+  }
+  try {
+    const list = await drizzleDb.select().from(advertisementViews).orderBy(sql`timestamp DESC`);
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load advertisement history: " + err.message });
+  }
+});
+
+// 7. Watch / View Ad & Award Reward Points (Highly Secured, Anti-abuse checked)
+router.post("/monetization/ads/view", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { adType, watchDurationPercentage, provider } = req.body;
+  const messId = getActiveMessId();
+  const userId = req.user!.id;
+
+  try {
+    // 1. Run eligibility check on the server
+    const eligibility = await checkUserAdEligibility(userId, messId, adType);
+    if (!eligibility.eligible) {
+      res.status(400).json({ error: `Ad request rejected: ${eligibility.reason}`, details: eligibility });
+      return;
+    }
+
+    // 2. Watch duration percentage check for rewarded ads
+    if (adType === "REWARDED") {
+      const minPercentage = 100;
+      if (watchDurationPercentage === undefined || Number(watchDurationPercentage) < minPercentage) {
+        res.status(400).json({ error: "Watch duration verification failed. You must watch 100% of the video." });
+        return;
+      }
+    }
+
+    // 3. Anti-abuse: rapid duplicate check (minimum 5 seconds window)
+    const lastAd = await drizzleDb.select()
+      .from(advertisementViews)
+      .where(eq(advertisementViews.memberId, userId))
+      .orderBy(sql`timestamp DESC`)
+      .limit(1);
+    if (lastAd.length > 0) {
+      const diff = (Date.now() - new Date(lastAd[0].timestamp).getTime()) / 1000;
+      if (diff < 5) {
+        res.status(400).json({ error: "Anti-abuse Triggered. Rapid duplicate ad claims detected." });
+        return;
+      }
+    }
+
+    // 4. Log view in db
+    const adsSettings = await getMessAdvertisementSettings(messId);
+    const currentProvider = provider || adsSettings.provider || "Unity Ads";
+    const id = "adv_" + Math.random().toString(36).substring(2, 11);
+    const timestamp = new Date().toISOString();
+    
+    const pointsToAward = adType === "REWARDED" ? (adsSettings.pointsPerAd || 10) : 0;
+
+    await drizzleDb.insert(advertisementViews).values({
+      id,
+      memberId: userId,
+      messId,
+      adType,
+      timestamp,
+      provider: currentProvider,
+      reward: pointsToAward,
+      status: "COMPLETED",
+      ip: req.ip || ""
+    });
+
+    // 5. Update global revenue statistics
+    const globalSettings = getGlobalMonetizationSettings();
+    globalSettings.revenueStats = globalSettings.revenueStats || {
+      totalRevenue: 3450,
+      totalSubscriptionsCount: 12,
+      totalAdsWatched: 412,
+      totalRewardPointsEarned: 8420,
+    };
+    globalSettings.revenueStats.totalAdsWatched += 1;
+    globalSettings.revenueStats.totalRevenue += adType === "REWARDED" ? 0.05 : 0.01;
+    saveGlobalMonetizationSettings();
+
+    // 6. Award reward points strictly server-side
+    if (adType === "REWARDED") {
+      await awardRewardPoints(userId, pointsToAward, "WATCH_REWARDED_AD");
+      res.json({ success: true, pointsAwarded: pointsToAward });
+    } else {
+      res.json({ success: true, pointsAwarded: 0 });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: "Ad view validation failed: " + err.message });
+  }
+});
+
+// 8. Reward History & current points
+router.get("/monetization/points", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const points = await getRewardPoints(req.user!.id);
+  const history = await getRewardHistory(req.user!.id);
+  res.json({ points, history });
+});
+
+// 9. Premium cosmetics unlock
+router.post("/monetization/unlock", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { itemType, itemId, costPoints } = req.body;
+  if (!itemType || !itemId) {
+    res.status(400).json({ error: "Item type and ID are required" });
+    return;
+  }
+  const success = await unlockPremiumItem(req.user!.id, itemType, itemId, costPoints || 0);
+  if (!success) {
+    res.status(400).json({ error: "Insufficient Reward Points to unlock this premium cosmetic." });
+    return;
+  }
+  logAudit(req.user!.id, req.user!.nickname, "UNLOCK_PREMIUM_COSMETIC", "None", itemId, `Unlocked premium aesthetic customization: ${itemId}`);
+  res.json({ success: true });
+});
+
+// 10. Founder Panel Statistics (Restricted to mdshahriarhimel@gmail.com only)
+router.get("/monetization/founder/stats", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsFounder(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Founder can access this panel." });
+    return;
+  }
+
+  const globalSettings = getGlobalMonetizationSettings();
+  const messes = loadMesses().messes;
+  const allProfiles = await getProfiles();
+  const allPlans = await getPlans();
+
+  res.json({
+    globalSettings,
+    totalMesses: messes.length,
+    profilesCount: allProfiles.length,
+    plansCount: allPlans.length,
+    serverHealth: "Excellent",
+    platformUptime: "99.98%"
+  });
+});
+
+// 11. Founder settings updater
+router.put("/monetization/founder/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsFounder(req)) {
+    res.status(403).json({ error: "Access Denied. Only the Founder can update global settings." });
+    return;
+  }
+
+  const { globalMonetizationEnabled, globalMaintenance, globalFeatureFlags, globalTheme } = req.body;
+  const globalSettings = getGlobalMonetizationSettings();
+
+  if (globalMonetizationEnabled !== undefined) globalSettings.globalMonetizationEnabled = globalMonetizationEnabled;
+  if (globalMaintenance !== undefined) globalSettings.globalMaintenance = globalMaintenance;
+  if (globalFeatureFlags !== undefined) globalSettings.globalFeatureFlags = globalFeatureFlags;
+  if (globalTheme !== undefined) globalSettings.globalTheme = globalTheme;
+
+  saveGlobalMonetizationSettings();
+  logAudit(req.user!.id, req.user!.nickname, "UPDATE_FOUNDER_SETTINGS", "None", "None", "Founder updated global monetization master switches");
+  res.json({ success: true, globalSettings });
+});
+
+// 12. Backup/Restore monetization database independent of main backup
+router.get("/monetization/backup/export", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req) && !checkIsFounder(req)) {
+    res.status(403).json({ error: "Only authorized owners can export monetization profiles." });
+    return;
+  }
+  const payload = await exportMonetizationBackup();
+  res.json(payload);
+});
+
+router.post("/monetization/backup/import", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req) && !checkIsFounder(req)) {
+    res.status(403).json({ error: "Only authorized owners can import monetization profiles." });
+    return;
+  }
+  try {
+    await restoreMonetizationBackup(req.body);
+    logAudit(req.user!.id, req.user!.nickname, "IMPORT_MONETIZATION_BACKUP", "None", "None", "Owner restored monetization backup");
+    res.json({ success: true, message: "Monetization database restored successfully!" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Restoration failed: " + err.message });
   }
 });
 

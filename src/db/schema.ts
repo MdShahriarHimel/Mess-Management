@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { pgTable, text, boolean, doublePrecision, index } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, doublePrecision, index, integer } from "drizzle-orm/pg-core";
 
 export const members = pgTable("members", {
   id: text("id").primaryKey(), // Firebase Auth uid (or generated ID)
   name: text("name").notNull(),
   nickname: text("nickname").notNull(),
-  email: text("email").notNull().unique(),
+  email: text("email").notNull(),
   phone: text("phone").notNull(),
   whatsapp: text("whatsapp").notNull(),
   bloodGroup: text("blood_group").notNull(),
@@ -174,5 +174,148 @@ export const persistentFiles = pgTable("persistent_files", {
   filename: text("filename").primaryKey(),
   content: text("content").notNull(),
 });
+
+export const foodKnowledgeBase = pgTable("food_knowledge_base", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  category: text("category").notNull(),
+  aliases: text("aliases").notNull(), // JSON string representing array of string aliases
+  confidence: doublePrecision("confidence").notNull().default(1.0),
+  timestamp: text("timestamp").notNull(),
+  frequency: integer("frequency").notNull().default(0),
+});
+
+export const foodAliases = pgTable("food_aliases", {
+  id: text("id").primaryKey(),
+  alias: text("alias").notNull().unique(),
+  foodId: text("food_id").notNull(),
+});
+
+export const foodReviewQueue = pgTable("food_review_queue", {
+  id: text("id").primaryKey(),
+  phrase: text("phrase").notNull().unique(),
+  detectedFood: text("detected_food"),
+  confidence: doublePrecision("confidence").notNull().default(0.0),
+  timestamp: text("timestamp").notNull(),
+  status: text("status").notNull().default("PENDING"), // "PENDING", "APPROVED", "REJECTED"
+});
+
+// =========================================================================
+// ISOLATED MONETIZATION TABLES
+// =========================================================================
+
+export const monetizationProfiles = pgTable("monetization_profiles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  modules: text("modules").notNull(), // JSON string representing enabled modules (ads, rewards, subscriptions, premiumStore)
+  limits: text("limits").notNull(), // JSON string representing subscription limits, member limits, storage limits, etc.
+  type: text("type").notNull(), // "BUILTIN" | "CUSTOM"
+});
+
+export const messMonetizationSettings = pgTable("mess_monetization_settings", {
+  messId: text("mess_id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(false), // Master switch
+  profileId: text("profile_id").notNull(), // references monetizationProfiles.id
+  showSubscription: boolean("show_subscription").notNull().default(false),
+  rewardCenterEnabled: boolean("reward_center_enabled").notNull().default(false),
+  customSettings: text("custom_settings"), // JSON string of custom configs
+});
+
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  priceBase: doublePrecision("price_base").notNull().default(0),
+  pricePerMess: doublePrecision("price_per_mess").notNull().default(0),
+  features: text("features").notNull(), // JSON string array of features
+  
+  // Polish Extensions:
+  description: text("description").notNull().default(""),
+  priceMonthly: doublePrecision("price_monthly").notNull().default(0),
+  priceYearly: doublePrecision("price_yearly").notNull().default(0),
+  priceLifetime: doublePrecision("price_lifetime").notNull().default(0),
+  enabled: boolean("enabled").notNull().default(true),
+  visible: boolean("visible").notNull().default(true),
+  priority: integer("priority").notNull().default(0),
+  badge: text("badge").notNull().default(""),
+  color: text("color").notNull().default(""),
+  icon: text("icon").notNull().default(""),
+  maxMesses: integer("max_messes").notNull().default(1),
+  maxMembers: integer("max_members").notNull().default(15),
+  storageLimitGb: integer("storage_limit_gb").notNull().default(2),
+  aiCredits: integer("ai_credits").notNull().default(0),
+  licenseType: text("license_type").notNull().default("Premium"), // Free, Reward User, Premium, Enterprise, Lifetime
+  multiMessPricing: text("multi_mess_pricing").notNull().default("{}"), // JSON dict of messes -> price
+});
+
+export const subscriptions = pgTable("subscriptions", {
+  id: text("id").primaryKey(),
+  messId: text("mess_id").notNull(),
+  planId: text("plan_id").notNull(), // references subscriptionPlans.id
+  status: text("status").notNull(), // "ACTIVE", "EXPIRED", "CANCELLED", "SUSPENDED", "PENDING", "TRIAL"
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  
+  // Polish Extensions:
+  licenseType: text("license_type").notNull().default("Premium"),
+  billingCycle: text("billing_cycle").notNull().default("monthly"), // "monthly" | "yearly" | "lifetime"
+  pricePaid: doublePrecision("price_paid").notNull().default(0),
+});
+
+export const rewardPoints = pgTable("reward_points", {
+  memberId: text("member_id").primaryKey(), // Firebase Auth uid
+  points: integer("points").notNull().default(0),
+});
+
+export const rewardHistory = pgTable("reward_history", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull(),
+  pointsChanged: integer("points_changed").notNull(),
+  action: text("action").notNull(), // e.g. "WATCH_AD", "CLAIM_COSMETIC"
+  timestamp: text("timestamp").notNull(),
+});
+
+export const advertisementSettings = pgTable("advertisement_settings", {
+  messId: text("mess_id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(false),
+  rewardedVideoEnabled: boolean("rewarded_video_enabled").notNull().default(false),
+  bannerEnabled: boolean("banner_enabled").notNull().default(false),
+  bannerPosition: text("banner_position").notNull().default("bottom"), // top, bottom, sidebar, dashboard, etc.
+  frequency: integer("frequency").notNull().default(5), // cooldown minutes
+  dailyLimits: integer("daily_limits").notNull().default(3), // daily ad cap
+  cooldown: integer("cooldown").notNull().default(60), // seconds
+  pointsPerAd: integer("points_per_ad").notNull().default(10),
+  provider: text("provider").notNull().default("Unity Ads"), // AdSense, AdMob, Unity, AppLovin, etc.
+  timezone: text("timezone").notNull().default("Asia/Dhaka"),
+  resetTime: text("reset_time").notNull().default("00:00"),
+  policy: text("policy").notNull().default("Hybrid"), // No Ads, Banner Only, Rewarded Only, Hybrid, Premium Only
+  allowedPositions: text("allowed_positions").notNull().default("['top', 'bottom', 'dashboard', 'reports', 'meal-planner', 'statistics']"),
+  bannerSize: text("banner_size").notNull().default("standard"),
+  bannerFrequency: integer("banner_frequency").notNull().default(30),
+  requiredWatchPercentage: integer("required_watch_percentage").notNull().default(100),
+  performanceMode: text("performance_mode").notNull().default("balanced"), // eco, balanced, live
+  userExceptions: text("user_exceptions").notNull().default("[]"), // JSON string
+});
+
+export const advertisementViews = pgTable("advertisement_views", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull(),
+  messId: text("mess_id").notNull(),
+  adType: text("ad_type").notNull(), // "REWARDED", "BANNER"
+  timestamp: text("timestamp").notNull(),
+  provider: text("provider").notNull().default("Unity Ads"),
+  reward: integer("reward").notNull().default(0),
+  status: text("status").notNull().default("COMPLETED"),
+  ip: text("ip"),
+  deviceId: text("device_id"),
+});
+
+export const premiumUnlocks = pgTable("premium_unlocks", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull(),
+  itemType: text("item_type").notNull(), // theme, glow, avatarFrame, animation, icon, layout, nameEffect, profileEffect
+  itemId: text("item_id").notNull(), // e.g. "galaxy-theme"
+  unlockedAt: text("unlocked_at").notNull(),
+});
+
 
 
