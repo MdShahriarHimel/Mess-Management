@@ -14,7 +14,7 @@ import { pool } from "./src/db/index.js";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Increase payload size limit to allow base64 images for member profiles and receipts
 app.use(express.json({ limit: "50mb" }));
