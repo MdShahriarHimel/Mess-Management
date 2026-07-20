@@ -88,6 +88,311 @@ function ensureDBDir() {
   }
 }
 
+// Write every table into PostgreSQL using ACID transactions
+export async function importBackupToPostgres(backupData: DatabaseSchema) {
+  console.log("[Backup] Database import started via transaction...");
+  await db.transaction(async (tx) => {
+    // Delete all records from all primary tables in the correct order
+    await tx.delete(membersTable);
+    await tx.delete(monthsTable);
+    await tx.delete(mealsTable);
+    await tx.delete(foodMenusTable);
+    await tx.delete(marketEntriesTable);
+    await tx.delete(depositsTable);
+    await tx.delete(billsTable);
+    await tx.delete(dutiesTable);
+    await tx.delete(managerHoldingsTable);
+    await tx.delete(managerRatingsTable);
+    await tx.delete(noticesTable);
+    await tx.delete(auditLogsTable);
+    try {
+      await tx.delete(mealRequestsTable);
+    } catch (e) {
+      console.warn("[Backup] mealRequestsTable delete bypassed/failed:", e);
+    }
+
+    // Insert records from the backup payload
+    if (backupData.members && backupData.members.length > 0) {
+      const membersToInsert = backupData.members.map(item => ({
+        id: item.id,
+        name: item.name,
+        nickname: item.nickname,
+        email: item.email,
+        phone: item.phone,
+        whatsapp: item.whatsapp,
+        bloodGroup: item.bloodGroup,
+        occupation: item.occupation,
+        joiningDate: item.joiningDate,
+        leavingDate: item.leavingDate || null,
+        role: item.role,
+        status: item.status,
+        notes: item.notes,
+        photo: item.photo || null,
+        assignedTask: item.assignedTask || null,
+        glow: item.glow ?? false,
+        glowStyle: item.glowStyle || null,
+        animation: item.animation || null,
+        splitProfile: item.splitProfile ?? false,
+        memberGlow: item.memberGlow ?? false,
+        memberGlowStyle: item.memberGlowStyle || null,
+        memberAnimation: item.memberAnimation || null,
+        gifEnabledByAdmin: item.gifEnabledByAdmin ?? true,
+      }));
+      for (let i = 0; i < membersToInsert.length; i += 500) {
+        await tx.insert(membersTable).values(membersToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.months && backupData.months.length > 0) {
+      const monthsToInsert = backupData.months.map(item => ({
+        id: item.id,
+        name: item.name,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        isLocked: item.isLocked ?? false,
+        gracePeriodEnabled: item.gracePeriodEnabled ?? true,
+      }));
+      for (let i = 0; i < monthsToInsert.length; i += 500) {
+        await tx.insert(monthsTable).values(monthsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.meals && backupData.meals.length > 0) {
+      const mealsToInsert = backupData.meals.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        memberId: item.memberId,
+        date: item.date,
+        lunch: item.lunch ?? 0,
+        dinner: item.dinner ?? 0,
+        breakfast: item.breakfast ?? 0,
+      }));
+      for (let i = 0; i < mealsToInsert.length; i += 500) {
+        await tx.insert(mealsTable).values(mealsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.foodMenus && backupData.foodMenus.length > 0) {
+      const foodMenusToInsert = backupData.foodMenus.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        date: item.date,
+        lunchVegetable: item.lunchVegetable,
+        lunchMain: item.lunchMain,
+        dinnerVegetable: item.dinnerVegetable,
+        dinnerMain: item.dinnerMain,
+      }));
+      for (let i = 0; i < foodMenusToInsert.length; i += 500) {
+        await tx.insert(foodMenusTable).values(foodMenusToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.marketEntries && backupData.marketEntries.length > 0) {
+      const marketEntriesToInsert = backupData.marketEntries.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        memberId: item.memberId,
+        date: item.date,
+        amount: item.amount,
+        receiptUrl: item.receiptUrl || null,
+        description: item.description,
+        isExtra: item.isExtra ?? false,
+        quantity: item.quantity || null,
+      }));
+      for (let i = 0; i < marketEntriesToInsert.length; i += 500) {
+        await tx.insert(marketEntriesTable).values(marketEntriesToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.deposits && backupData.deposits.length > 0) {
+      const depositsToInsert = backupData.deposits.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        memberId: item.memberId,
+        amount: item.amount,
+        date: item.date,
+        enteredBy: item.enteredBy,
+      }));
+      for (let i = 0; i < depositsToInsert.length; i += 500) {
+        await tx.insert(depositsTable).values(depositsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.bills && backupData.bills.length > 0) {
+      const billsToInsert = backupData.bills.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        name: item.name,
+        amount: item.amount,
+        collectorId: item.collectorId,
+        status: item.status,
+      }));
+      for (let i = 0; i < billsToInsert.length; i += 500) {
+        await tx.insert(billsTable).values(billsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.duties && backupData.duties.length > 0) {
+      const dutiesToInsert = backupData.duties.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        memberId: item.memberId,
+        name: item.name,
+        task: item.task,
+      }));
+      for (let i = 0; i < dutiesToInsert.length; i += 500) {
+        await tx.insert(dutiesTable).values(dutiesToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.managerHoldings && backupData.managerHoldings.length > 0) {
+      const managerHoldingsToInsert = backupData.managerHoldings.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        memberId: item.memberId,
+        amount: item.amount,
+        marketSpent: item.marketSpent ?? 0,
+        description: item.description || null,
+      }));
+      for (let i = 0; i < managerHoldingsToInsert.length; i += 500) {
+        await tx.insert(managerHoldingsTable).values(managerHoldingsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.managerRatings && backupData.managerRatings.length > 0) {
+      const managerRatingsToInsert = backupData.managerRatings.map(item => ({
+        id: item.id,
+        monthId: item.monthId,
+        rating: item.rating,
+        raterId: item.raterId,
+        date: item.date,
+      }));
+      for (let i = 0; i < managerRatingsToInsert.length; i += 500) {
+        await tx.insert(managerRatingsTable).values(managerRatingsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.notices && backupData.notices.length > 0) {
+      const noticesToInsert = backupData.notices.map(item => ({
+        id: item.id,
+        title: item.title,
+        content: item.content,
+        pinned: item.pinned ?? false,
+        archived: item.archived ?? false,
+        authorId: item.authorId,
+        authorName: item.authorName,
+        date: item.date,
+      }));
+      for (let i = 0; i < noticesToInsert.length; i += 500) {
+        await tx.insert(noticesTable).values(noticesToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.auditLogs && backupData.auditLogs.length > 0) {
+      const auditLogsToInsert = backupData.auditLogs.map(item => ({
+        id: item.id,
+        userId: item.userId,
+        userName: item.userName,
+        action: item.action,
+        oldValue: item.oldValue,
+        newValue: item.newValue,
+        timestamp: item.timestamp,
+        reason: item.reason,
+        date: item.date || null,
+        time: item.time || null,
+        userRole: item.userRole || null,
+        superUserId: item.superUserId || null,
+        messId: item.messId || null,
+        module: item.module || null,
+        actionType: item.actionType || null,
+        description: item.description || null,
+        browser: item.browser || null,
+        ipAddress: item.ipAddress || null,
+      }));
+      for (let i = 0; i < auditLogsToInsert.length; i += 500) {
+        await tx.insert(auditLogsTable).values(auditLogsToInsert.slice(i, i + 500));
+      }
+    }
+
+    if (backupData.mealRequests && backupData.mealRequests.length > 0) {
+      try {
+        const mealRequestsToInsert = backupData.mealRequests.map(item => ({
+          id: item.id,
+          monthId: item.monthId,
+          date: item.date,
+          requesterId: item.requesterId,
+          requesterName: item.requesterName,
+          mealsData: item.mealsData,
+          status: item.status,
+          timestamp: item.timestamp,
+        }));
+        for (let i = 0; i < mealRequestsToInsert.length; i += 500) {
+          await tx.insert(mealRequestsTable).values(mealRequestsToInsert.slice(i, i + 500));
+        }
+      } catch (err) {
+        console.warn("[Backup] mealRequestsTable insert bypassed/failed:", err);
+      }
+    }
+  });
+  console.log("[Backup] Database import completed successfully!");
+}
+
+// Refresh the in-memory cache directly from the PostgreSQL single source of truth
+export async function refreshDbCache() {
+  console.log("[Backup] Cache refresh started...");
+  const [
+    membersList,
+    monthsList,
+    mealsList,
+    foodMenusList,
+    marketEntriesList,
+    depositsList,
+    billsList,
+    dutiesList,
+    managerHoldingsList,
+    managerRatingsList,
+    noticesList,
+    auditLogsList
+  ] = await Promise.all([
+    db.select().from(membersTable),
+    db.select().from(monthsTable),
+    db.select().from(mealsTable),
+    db.select().from(foodMenusTable),
+    db.select().from(marketEntriesTable),
+    db.select().from(depositsTable),
+    db.select().from(billsTable),
+    db.select().from(dutiesTable),
+    db.select().from(managerHoldingsTable),
+    db.select().from(managerRatingsTable),
+    db.select().from(noticesTable),
+    db.select().from(auditLogsTable)
+  ]);
+
+  let mealRequestsList: any[] = [];
+  try {
+    mealRequestsList = await db.select().from(mealRequestsTable);
+  } catch (err) {
+    mealRequestsList = [];
+  }
+
+  dbCache = {
+    members: membersList as any[],
+    months: monthsList as any[],
+    meals: mealsList as any[],
+    foodMenus: foodMenusList as any[],
+    marketEntries: marketEntriesList as any[],
+    deposits: depositsList as any[],
+    bills: billsList as any[],
+    duties: dutiesList as any[],
+    managerHoldings: managerHoldingsList as any[],
+    managerRatings: managerRatingsList as any[],
+    notices: noticesList as any[],
+    auditLogs: auditLogsList as any[],
+    mealRequests: mealRequestsList as any[],
+  };
+  console.log("[Backup] Cache refreshed successfully from PostgreSQL single source of truth!");
+}
+
 // Asynchronous Cache Initialization from PostgreSQL with robust retry mechanism
 export async function initializeDbCache() {
   ensureDBDir();
@@ -186,7 +491,7 @@ export async function initializeDbCache() {
           dbCache = JSON.parse(data);
           if (dbCache) {
             console.log("Local backup parsed. Syncing to PostgreSQL...");
-            await syncCacheToPostgresDirectly(dbCache);
+            await importBackupToPostgres(dbCache);
             console.log("Sync completed.");
           } else {
             throw new Error("Parsed backup is empty/invalid");
@@ -194,12 +499,12 @@ export async function initializeDbCache() {
         } catch (e) {
           console.error("Failed to parse/restore local backup JSON:", e);
           dbCache = getInitialSeedData();
-          await syncCacheToPostgresDirectly(dbCache);
+          await importBackupToPostgres(dbCache);
         }
       } else {
         console.log("Database empty and no local backup found. Seeding default records...");
         dbCache = getInitialSeedData();
-        await syncCacheToPostgresDirectly(dbCache);
+        await importBackupToPostgres(dbCache);
       }
     } else {
       dbCache = {
@@ -218,43 +523,6 @@ export async function initializeDbCache() {
         mealRequests: (mealRequestsList || []) as any[],
       };
       console.log("Cache loaded successfully from PostgreSQL.");
-    }
-
-    // Auto-migrate any existing admin account or old email to the new secure administrator credentials
-    if (dbCache && dbCache.members) {
-      let needsSync = false;
-      const oldAdmin = dbCache.members.find(m => m.email.toLowerCase() === "admin@mess.erp");
-      if (oldAdmin) {
-        oldAdmin.email = "mdshahriarhimel@gmail.com";
-        oldAdmin.name = "Mess Administrator";
-        oldAdmin.nickname = "Admin";
-        oldAdmin.role = UserRole.ADMIN;
-        oldAdmin.status = MemberStatus.ACTIVE;
-        
-        // Force the custom password for this member id
-        const creds = loadCredentials();
-        creds[oldAdmin.id] = "Astagfirullah_Mess2026#!!";
-        saveCredentials();
-        needsSync = true;
-      }
-
-      const newAdmin = dbCache.members.find(m => m.email.toLowerCase() === "mdshahriarhimel@gmail.com");
-      if (newAdmin) {
-        if (newAdmin.role !== UserRole.ADMIN) {
-          newAdmin.role = UserRole.ADMIN;
-          needsSync = true;
-        }
-        const creds = loadCredentials();
-        if (creds[newAdmin.id] !== "Astagfirullah_Mess2026#!!") {
-          creds[newAdmin.id] = "Astagfirullah_Mess2026#!!";
-          saveCredentials();
-        }
-      }
-
-      if (needsSync) {
-        console.log("Syncing secure administrator account updates back to DB...");
-        await syncCacheToPostgresDirectly(dbCache);
-      }
     }
   } catch (error) {
     console.error("Failed to parse database records:", error);
@@ -706,10 +974,6 @@ export function loadCredentials(): CredentialsSchema {
     try {
       const data = fs.readFileSync(CREDENTIALS_FILE, "utf-8");
       credentialsCache = JSON.parse(data);
-      if (credentialsCache && credentialsCache["admin-uuid-0000"]) {
-        credentialsCache["admin-uuid-0000"] = "Astagfirullah_Mess2026#!!";
-        writeAndPersistFile("credentials.json", JSON.stringify(credentialsCache, null, 2));
-      }
       return credentialsCache!;
     } catch (e) {
       console.error("Error parsing credentials file:", e);

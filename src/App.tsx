@@ -8,7 +8,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
-  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award, Save
+  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award, Save, Lock
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 
@@ -28,6 +28,8 @@ import { AdminControlsPanel } from "./components/AdminControlsPanel.tsx";
 import RgbColorPicker from "./components/RgbColorPicker.tsx";
 import { ThemeEnginePanel } from "./components/ThemeEnginePanel.tsx";
 import { THEME_TEMPLATES } from "./themeTemplates.ts";
+import SecuritySettings from "./components/SecuritySettings.tsx";
+import { CreditAndPermissions } from "./components/CreditAndPermissions.tsx";
 
 // Types
 import { Member, MessMonth, UserRole } from "./types.js";
@@ -1746,6 +1748,22 @@ export default function App() {
     accessibilityPreset: "normal"
   });
 
+  // Credit & Branding management
+  const [creditConfig, setCreditConfig] = useState({
+    showCreditPanel: false,
+    text: "Crafted with 💖 by our mess community",
+    isBold: false,
+    isItalic: false,
+    isUnderline: false,
+    alignment: "center" as "left" | "center" | "right",
+    color: "#22d3ee",
+    font: "sans",
+    background: "#0f172a",
+    emojis: "💖,✨,🚀,🌟",
+    link: ""
+  });
+  const [appearancePermissions, setAppearancePermissions] = useState<Record<string, string[]>>({});
+
   // Elections/Ballot voting states
   const [elections, setElections] = useState<{
     enabled: boolean;
@@ -1868,6 +1886,8 @@ export default function App() {
         if (data.roleAnimations !== undefined) setRoleAnimations(data.roleAnimations);
         if (data.adminVisibility !== undefined) setAdminVisibility(data.adminVisibility);
         if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
+        if (data.creditConfig) setCreditConfig(prev => ({ ...prev, ...data.creditConfig }));
+        if (data.appearancePermissions) setAppearancePermissions(data.appearancePermissions);
       }
     } catch (e) {
       console.error("Failed to fetch settings:", e);
@@ -1911,6 +1931,8 @@ export default function App() {
           if (s.roleAnimations !== undefined) setRoleAnimations(s.roleAnimations);
           if (s.adminVisibility !== undefined) setAdminVisibility(s.adminVisibility);
           if (s.typographySettings) setTypographySettings(s.typographySettings);
+          if (s.creditConfig) setCreditConfig(s.creditConfig);
+          if (s.appearancePermissions) setAppearancePermissions(s.appearancePermissions);
         }
         return true;
       } else {
@@ -2595,6 +2617,7 @@ export default function App() {
     { id: "democracy", label: t("Democracy Ballot"), icon: <Vote size={16} /> },
     { id: "notices", label: t("Notices"), icon: <Bell size={16} /> },
     { id: "audit", label: t("Audit Log"), icon: <Shield size={16} /> },
+    { id: "security", label: t("Security Settings"), icon: <Lock size={16} /> },
     { id: "settings", label: t("ERP Control Panel"), icon: <Settings size={16} /> }
   ];
 
@@ -3770,6 +3793,28 @@ export default function App() {
               }}
               currencySymbol={currencySymbol}
             />
+          )}
+
+          {activeTab === "security" && (
+            <div className="space-y-6" id="security-view-wrapper">
+              <div>
+                <h2 className="text-xl font-bold font-display flex items-center gap-2">
+                  <Lock className="text-cyan-400" />
+                  Account Security
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Update your local login passwords or configure secure Google credentials.
+                </p>
+              </div>
+
+              <div className="max-w-2xl">
+                <SecuritySettings 
+                  currentUser={currentUser}
+                  isDarkMode={isDarkMode}
+                  sessionToken={sessionToken}
+                />
+              </div>
+            </div>
           )}
 
           {/* ---------------------------------------------------------
@@ -6509,6 +6554,16 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                <div className="lg:col-span-2">
+                  <CreditAndPermissions
+                    currentUser={currentUser}
+                    settings={{ creditConfig, appearancePermissions }}
+                    membersList={membersList}
+                    isDarkMode={isDarkMode}
+                    handleUpdateSettings={handleUpdateSettings}
+                  />
+                </div>
 
                 {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
                   <AdminControlsPanel

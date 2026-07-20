@@ -17,6 +17,8 @@ import {
   setActiveMessId,
   writeAndPersistFile,
   deletePersistentFile,
+  importBackupToPostgres,
+  refreshDbCache,
   DB_DIR
 } from "./db.js";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
@@ -571,6 +573,28 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     auditMsg
   );
 
+  res.json({ success: true });
+});
+
+// Create audit log for a self-initiated secure password change
+router.post("/auth/change-password-audit", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const browser = req.headers["user-agent"] || "Unknown";
+  const ipAddress = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unknown") as string;
+  
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "CHANGE_PASSWORD",
+    "None",
+    "None",
+    "User changed account password",
+    {
+      userRole: req.user!.role,
+      browser,
+      ipAddress
+    }
+  );
+  
   res.json({ success: true });
 });
 
@@ -2330,7 +2354,21 @@ function loadSettings() {
       showAdminPhone: false,
       showAdminEmail: false,
       showAdminRole: false
-    }
+    },
+    creditConfig: {
+      showCreditPanel: false,
+      text: "Crafted with 💖 by our mess community",
+      isBold: false,
+      isItalic: false,
+      isUnderline: false,
+      alignment: "center",
+      color: "#22d3ee",
+      font: "sans",
+      background: "#0f172a",
+      emojis: "💖,✨,🚀,🌟",
+      link: ""
+    },
+    appearancePermissions: {}
   };
   try {
     if (fs.existsSync(file)) {
@@ -2344,7 +2382,9 @@ function loadSettings() {
         dashboardVisibility: { ...defaultSettings.dashboardVisibility, ...(parsed.dashboardVisibility || {}) },
         loginCustomization: { ...defaultSettings.loginCustomization, ...(parsed.loginCustomization || {}) },
         homeCustomization: { ...defaultSettings.homeCustomization, ...(parsed.homeCustomization || {}) },
-        adminVisibility: { ...defaultSettings.adminVisibility, ...(parsed.adminVisibility || {}) }
+        adminVisibility: { ...defaultSettings.adminVisibility, ...(parsed.adminVisibility || {}) },
+        creditConfig: { ...defaultSettings.creditConfig, ...(parsed.creditConfig || {}) },
+        appearancePermissions: parsed.appearancePermissions || {}
       };
     }
   } catch (e) {
@@ -2398,22 +2438,110 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     return;
   }
 
-  // Admin-only customizer fields check
-  const adminOnlyFields = [
-    'siteColor', 'fontSize', 'fontStyle', 'logoText',
-    'customColors', 'messAnimations',
-    'dateRestrictions', 'loginCustomization', 'homeCustomization',
-    'balanceSheetGlow', 'roleAnimations', 'adminVisibility', 'typographySettings'
-  ];
-  const hasAdminOnlyField = adminOnlyFields.some(field => req.body[field] !== undefined);
-  if (hasAdminOnlyField && role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can modify visual layout, themes, customizers, and animation settings" });
-    return;
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const currentSettings = loadSettings();
+
+  // If NOT Ultimate Admin, check explicit appearance/branding permissions:
+  if (!isUltimateAdmin) {
+    const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
+
+    // Check Credit panel updates
+    if (req.body.creditConfig !== undefined) {
+      const hasCreditEdit = userPermissions.includes("Can Edit Credit") || userPermissions.includes("Credit");
+      let isAllowed = hasCreditEdit;
+
+      if (!isAllowed) {
+        // Check granular credit sub-permissions
+        const updates = req.body.creditConfig;
+        let needsText = updates.text !== undefined;
+        let needsFont = updates.font !== undefined;
+        let needsColor = updates.color !== undefined;
+        let needsBackground = updates.background !== undefined;
+        let needsEmoji = updates.emojis !== undefined;
+        let needsShow = updates.showCreditPanel !== undefined;
+
+        let ok = true;
+        if (needsText && !userPermissions.includes("Can Change Text")) ok = false;
+        if (needsFont && !userPermissions.includes("Can Change Font")) ok = false;
+        if (needsColor && !userPermissions.includes("Can Change Color")) ok = false;
+        if (needsBackground && !userPermissions.includes("Can Change Background")) ok = false;
+        if (needsEmoji && !userPermissions.includes("Can Add Emoji")) ok = false;
+        if (needsShow && !userPermissions.includes("Can Enable/Disable Credit Panel")) ok = false;
+
+        if (ok && (needsText || needsFont || needsColor || needsBackground || needsEmoji || needsShow)) {
+          isAllowed = true;
+        }
+      }
+
+      if (!isAllowed) {
+        res.status(403).json({ error: "You do not have explicit permission to modify Credit & Branding settings" });
+        return;
+      }
+    }
+
+    // Check general appearance & branding updates
+    const adminOnlyFields = [
+      'siteColor', 'fontSize', 'fontStyle', 'logoText',
+      'customColors', 'messAnimations', 'typographySettings',
+      'loginCustomization', 'homeCustomization', 'balanceSheetGlow', 'roleAnimations', 'adminVisibility'
+    ];
+    const modifiesGeneralAppearance = adminOnlyFields.some(field => req.body[field] !== undefined);
+
+    if (modifiesGeneralAppearance) {
+      // Check feature permissions
+      const modifiedTheme = req.body.siteColor !== undefined || (req.body.messAnimations && req.body.messAnimations.themeTemplate !== undefined);
+      const modifiedAccent = req.body.siteColor !== undefined || (req.body.customColors && req.body.customColors.accentColor !== undefined);
+      const modifiedBg = req.body.customColors && (req.body.customColors.sidebarBg !== undefined || req.body.customColors.headerBg !== undefined || req.body.customColors.cardBg !== undefined);
+      const modifiedGlow = req.body.messAnimations && (req.body.messAnimations.glowingLabels !== undefined || req.body.messAnimations.glowingButtons !== undefined || req.body.messAnimations.glowingIcons !== undefined || req.body.messAnimations.glowingCards !== undefined || req.body.messAnimations.accentGlow !== undefined || req.body.messAnimations.neonBorders !== undefined);
+      const modifiedShadow = req.body.messAnimations && req.body.messAnimations.animatedShadows !== undefined;
+      const modifiedGlass = req.body.messAnimations && req.body.messAnimations.glassCards !== undefined;
+      const modifiedAnimations = req.body.messAnimations !== undefined;
+      const modifiedTypography = req.body.fontStyle !== undefined || req.body.fontSize !== undefined || req.body.typographySettings !== undefined;
+      const modifiedBranding = req.body.logoText !== undefined || req.body.loginCustomization !== undefined || req.body.homeCustomization !== undefined;
+      const modifiedWelcome = req.body.homeCustomization && (req.body.homeCustomization.welcomeTitle !== undefined || req.body.homeCustomization.welcomeSubtitle !== undefined);
+
+      let hasRequiredFeature = true;
+
+      if (modifiedTheme && !userPermissions.includes("Theme")) hasRequiredFeature = false;
+      if (modifiedAccent && !userPermissions.includes("Accent Color")) hasRequiredFeature = false;
+      if (modifiedBg && !userPermissions.includes("Background Color")) hasRequiredFeature = false;
+      if (modifiedGlow && !userPermissions.includes("Glow Effect")) hasRequiredFeature = false;
+      if (modifiedShadow && !userPermissions.includes("Shadow")) hasRequiredFeature = false;
+      if (modifiedGlass && !userPermissions.includes("Glass Effect")) hasRequiredFeature = false;
+      if (modifiedAnimations && !userPermissions.includes("Animations")) hasRequiredFeature = false;
+      if (modifiedTypography && !userPermissions.includes("Typography")) hasRequiredFeature = false;
+      if (modifiedBranding && !userPermissions.includes("Branding") && !userPermissions.includes("Logo")) hasRequiredFeature = false;
+      if (modifiedWelcome && !userPermissions.includes("Welcome Message")) hasRequiredFeature = false;
+
+      // Allow the default of Role check if no custom permissions configured yet or explicitly bypass if they have no permissions at all
+      const hasAnyAppearancePermission = userPermissions.some(p => [
+        "Theme", "Accent Color", "Background Color", "Card Style", "Glass Effect", 
+        "Glow Effect", "Gradient", "Rounded Corners", "Shadow", "Animations", 
+        "Icons", "Typography", "Sidebar", "Dashboard", "Charts", "Widgets", 
+        "Tables", "Buttons", "Branding", "Credit", "Logo", "Banner", "Welcome Message"
+      ].includes(p));
+
+      // If they have NO appearance permissions defined and they are the main ADMIN, let them use original ADMIN role permissions.
+      // But if they have ANY appearance permissions defined, or they are not ADMIN, enforce the explicit permission checks!
+      if (hasAnyAppearancePermission || role !== UserRole.ADMIN) {
+        if (!hasRequiredFeature) {
+          res.status(403).json({ error: "You do not have explicit permissions granted by the Ultimate Admin to perform this appearance action" });
+          return;
+        }
+      }
+    }
+  }
+
+  // Check appearancePermissions modification - only Ultimate Admin
+  if (req.body.appearancePermissions !== undefined) {
+    if (!isUltimateAdmin) {
+      res.status(403).json({ error: "Only the Ultimate Admin can grant, revoke, or modify appearance permissions" });
+      return;
+    }
   }
 
   // Dashboard visibility setting check (restricted to Higher Authorities: Admin, Super User, Ultimate Admin)
   if (req.body.dashboardVisibility !== undefined) {
-    const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
     const isHigherAuthority = role === UserRole.ADMIN || role === UserRole.SUPERUSER || isUltimateAdmin;
     if (!isHigherAuthority) {
       res.status(403).json({ error: "Only Higher Authorities (Admin, Super User, Ultimate Admin) can modify dashboard visibility rules" });
@@ -2421,7 +2549,6 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     }
   }
 
-  const currentSettings = loadSettings();
   const { 
     messName, 
     siteColor, 
@@ -2446,11 +2573,13 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     balanceSheetGlow,
     adminVisibility,
     typographySettings,
-    auditRetentionDays
+    auditRetentionDays,
+    creditConfig,
+    appearancePermissions
   } = req.body;
 
   if (auditRetentionDays !== undefined) {
-    if (role !== UserRole.ADMIN) {
+    if (role !== UserRole.ADMIN && !isUltimateAdmin) {
       res.status(403).json({ error: "Only the main Admin can configure audit log retention period" });
       return;
     }
@@ -2479,8 +2608,58 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (adminVisibility !== undefined) currentSettings.adminVisibility = { ...currentSettings.adminVisibility, ...adminVisibility };
   if (typographySettings !== undefined) currentSettings.typographySettings = { ...currentSettings.typographySettings, ...typographySettings };
 
+  // Write Credit & Branding
+  if (creditConfig !== undefined) {
+    const oldCredit = JSON.stringify(currentSettings.creditConfig);
+    // Sanitize link to prevent javascript: URL injections
+    const sanitizedLink = creditConfig.link ? creditConfig.link.trim() : "";
+    const isSafeLink = !sanitizedLink.toLowerCase().startsWith("javascript:");
+    
+    currentSettings.creditConfig = {
+      ...currentSettings.creditConfig,
+      ...creditConfig,
+      link: isSafeLink ? sanitizedLink : ""
+    };
+    const newCredit = JSON.stringify(currentSettings.creditConfig);
+
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "UPDATE_CREDIT_CONFIG",
+      oldCredit,
+      newCredit,
+      "Modified Credit & Branding content configuration.",
+      {
+        userRole: role,
+        browser: req.headers["user-agent"] as string,
+        ipAddress: req.ip as string
+      }
+    );
+  }
+
+  // Write Appearance Permissions
+  if (appearancePermissions !== undefined) {
+    const oldPerms = JSON.stringify(currentSettings.appearancePermissions);
+    currentSettings.appearancePermissions = appearancePermissions;
+    const newPerms = JSON.stringify(currentSettings.appearancePermissions);
+
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "UPDATE_APPEARANCE_PERMISSIONS",
+      oldPerms,
+      newPerms,
+      "Modified granular appearance and credit permissions.",
+      {
+        userRole: role,
+        browser: req.headers["user-agent"] as string,
+        ipAddress: req.ip as string
+      }
+    );
+  }
+
   if (messName !== undefined) {
-    if (role !== UserRole.ADMIN) {
+    if (role !== UserRole.ADMIN && !isUltimateAdmin) {
       res.status(403).json({ error: "Only the main Admin can modify the mess name" });
       return;
     }
@@ -2488,7 +2667,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   if (translations !== undefined) {
-    if (role !== UserRole.ADMIN) {
+    if (role !== UserRole.ADMIN && !isUltimateAdmin) {
       res.status(403).json({ error: "Only the main Admin can translate or customize sentences" });
       return;
     }
@@ -3121,11 +3300,13 @@ router.get("/admin/backup/export", authMiddleware, (req: AuthenticatedRequest, r
   res.send(JSON.stringify({ db, settings }, null, 2));
 });
 
-router.post("/admin/backup/import", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the main Admin can import backups" });
     return;
   }
+  
+  console.log("[Backup] Backup started");
   const importedData = req.body;
   if (!importedData) {
     res.status(400).json({ error: "Invalid backup. No content received." });
@@ -3146,29 +3327,36 @@ router.post("/admin/backup/import", authMiddleware, (req: AuthenticatedRequest, 
     return;
   }
 
-  const db = loadDB();
-  // Deep copy / replace the dbCache keys
-  db.members = dbPayload.members || [];
-  db.months = dbPayload.months || [];
-  db.meals = dbPayload.meals || [];
-  db.foodMenus = dbPayload.foodMenus || [];
-  db.marketEntries = dbPayload.marketEntries || [];
-  db.deposits = dbPayload.deposits || [];
-  db.bills = dbPayload.bills || [];
-  db.duties = dbPayload.duties || [];
-  db.managerHoldings = dbPayload.managerHoldings || [];
-  db.managerRatings = dbPayload.managerRatings || [];
-  db.notices = dbPayload.notices || [];
-  db.auditLogs = dbPayload.auditLogs || [];
+  console.log("[Backup] Validation completed");
 
-  saveDB(); // This will save locally to file AND sync to Postgres!
+  try {
+    // Write every table into PostgreSQL with database transactions, preserving IDs and relationships
+    await importBackupToPostgres(dbPayload);
+    console.log("[Backup] Database import completed");
 
-  if (settingsPayload) {
-    saveSettings(settingsPayload);
+    // Wait until every database write succeeds, then refresh in-memory cache
+    await refreshDbCache();
+    console.log("[Backup] Cache refreshed");
+
+    if (settingsPayload) {
+      saveSettings(settingsPayload);
+    }
+
+    // Synchronously save local backup JSON for redundancy and instant local startup fallback
+    const messId = getActiveMessId();
+    const backupFilename = messId === "default"
+      ? "database_backup.json"
+      : `database_backup_${messId}.json`;
+    writeAndPersistFile(backupFilename, JSON.stringify(dbPayload, null, 2));
+
+    logAudit(req.user!.id, req.user!.nickname, "IMPORT_BACKUP", "None", "Imported full database and settings backup", "Admin restored database and settings from file");
+    
+    console.log("[Backup] Backup completed");
+    res.json({ success: true, message: "Backup data and UI settings imported and synchronized successfully." });
+  } catch (err: any) {
+    console.error("[Backup] Transaction failed and rolled back:", err);
+    res.status(500).json({ error: `Backup restore failed during database transaction: ${err.message || err}` });
   }
-
-  logAudit(req.user!.id, req.user!.nickname, "IMPORT_BACKUP", "None", "Imported full database and settings backup", "Admin restored database and settings from file");
-  res.json({ success: true, message: "Backup data and UI settings imported and synchronized successfully." });
 });
 
 export { router };
