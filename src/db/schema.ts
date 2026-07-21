@@ -29,6 +29,15 @@ export const members = pgTable("members", {
   memberGlowStyle: text("member_glow_style"),
   memberAnimation: text("member_animation"),
   gifEnabledByAdmin: boolean("gif_enabled_by_admin").default(true),
+  personalTheme: text("personal_theme"),
+  personalFont: text("personal_font"),
+  avatarFrame: text("avatar_frame"),
+  badge: text("badge"),
+  profileBackground: text("profile_background"),
+  dashboardLayout: text("dashboard_layout"),
+  profileDecoration: text("profile_decoration"),
+  dashboardStyle: text("dashboard_style"),
+  backgroundEffect: text("background_effect"),
 });
 
 export const months = pgTable("months", {
@@ -270,7 +279,51 @@ export const rewardHistory = pgTable("reward_history", {
   id: text("id").primaryKey(),
   memberId: text("member_id").notNull(),
   pointsChanged: integer("points_changed").notNull(),
-  action: text("action").notNull(), // e.g. "WATCH_AD", "CLAIM_COSMETIC"
+  action: text("action").notNull(), // e.g. "WATCH_AD", "CLAIM_COSMETIC", "MANUAL", "EXPIRATION"
+  timestamp: text("timestamp").notNull(),
+  pointsUsed: integer("points_used").notNull().default(0),
+  expirationDate: text("expiration_date"),
+  isExpired: boolean("is_expired").notNull().default(false),
+  reason: text("reason"),
+  adminId: text("admin_id"),
+  previousBalance: integer("previous_balance"),
+  newBalance: integer("new_balance"),
+  messId: text("mess_id"),
+});
+
+export const achievements = pgTable("achievements", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  icon: text("icon").notNull(),
+  badge: text("badge").notNull(),
+  rewardPoints: integer("reward_points").notNull(),
+  cosmeticUnlock: text("cosmetic_unlock"), // Optional item type + item ID to unlock (future-ready)
+  requiredProgress: integer("required_progress").notNull(),
+  activityType: text("activity_type").notNull(), // "MEALS", "DEPOSITS", "MARKET", "DUTY", "RATING", "ACTIVE_DAYS", "SPECIAL"
+  isActive: boolean("is_active").notNull().default(true),
+  isVisible: boolean("is_visible").notNull().default(true),
+});
+
+export const memberAchievements = pgTable("member_achievements", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull(),
+  achievementId: text("achievement_id").notNull(),
+  progress: integer("progress").notNull().default(0),
+  unlockedAt: text("unlocked_at"), // Timestamp if unlocked, null if in-progress
+});
+
+export const rewardAuditLogs = pgTable("reward_audit_logs", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull(),
+  memberName: text("member_name").notNull(),
+  messId: text("mess_id"),
+  adminId: text("admin_id"),
+  adminName: text("admin_name"),
+  action: text("action").notNull(), // "ADD", "REMOVE", "RESET", "EXPIRE", "CLAIM"
+  previousBalance: integer("previous_balance").notNull(),
+  newBalance: integer("new_balance").notNull(),
+  reason: text("reason").notNull(),
   timestamp: text("timestamp").notNull(),
 });
 

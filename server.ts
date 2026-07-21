@@ -8,6 +8,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { router as apiRouter } from "./server/routes.js";
+import { founderRouter, maintenanceMiddleware } from "./server/founder.js";
 import { initializeDbCache, pendingSyncPromises } from "./server/db.js";
 import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
@@ -67,8 +68,14 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Apply server protection middleware for maintenance modes and feature flags
+app.use("/api", maintenanceMiddleware);
+
 // Mount API router
 app.use("/api", apiRouter);
+
+// Mount founder administration router
+app.use("/api/founder", founderRouter);
 
 // Health check route
 app.get("/api/health", async (req, res) => {

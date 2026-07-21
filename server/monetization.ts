@@ -13,7 +13,16 @@ import {
   rewardHistory, 
   advertisementSettings, 
   advertisementViews, 
-  premiumUnlocks 
+  premiumUnlocks,
+  achievements,
+  memberAchievements,
+  rewardAuditLogs,
+  meals,
+  marketEntries,
+  deposits,
+  duties,
+  managerRatings,
+  members
 } from "../src/db/schema.ts";
 import { eq, and, sql } from "drizzle-orm";
 import fs from "fs";
@@ -40,6 +49,7 @@ let globalSettingsCache: any = {
     totalRewardPointsEarned: 8420,
   },
   advertisementsEnabled: false, // MASTER SWITCH (Default OFF)
+  premiumStoreEnabled: false, // MASTER SWITCH (Default OFF)
   advertisementsConfig: {
     provider: "Unity Ads",
     performanceMode: "balanced",
@@ -74,6 +84,48 @@ let globalSettingsCache: any = {
       rewardedAdCapHidesBanner: true
     },
     userExceptions: []
+  },
+  rewardCenterEnabled: false, // MASTER SWITCH (Default OFF)
+  rewardCenterConfig: {
+    pointRules: {
+      pointsPerAd: 10,
+      pointsPerDailyLogin: 5,
+      pointsPerProfileCompletion: 25,
+      pointsPerFestivalBonus: 50,
+      pointsPerFounderBonus: 100,
+      pointsPerBugReward: 150,
+      dailyMaxPoints: 100,
+      dailyMaxAds: 5,
+      cooldownSeconds: 30,
+      maxManualPointsPerDay: 1000,
+    },
+    pointExpiration: {
+      type: "never", // "never" | "30" | "90" | "180" | "365"
+    },
+    rewardSources: {
+      rewardedAd: true,
+      dailyLogin: true,
+      profileCompletion: true,
+      festivalBonus: true,
+      manualBonus: true,
+      founderBonus: true,
+      bugReward: true,
+      futureReferral: false,
+      futureAiEvents: false,
+    },
+    shopCosmetics: [
+      { id: "galaxy-theme", name: "Nebula Galaxy Theme", type: "theme", points: 150, desc: "A gorgeous cosmic space gradient theme for the whole application.", previewClass: "bg-gradient-to-r from-indigo-900 via-purple-900 to-pink-900", unlockMethod: "Reward Points" },
+      { id: "glass-theme", name: "Frosted Glass Morphic Theme", type: "theme", points: 200, desc: "Sleek frosted-glass components with ambient colored background blur.", previewClass: "bg-white/10 backdrop-blur-md border border-white/20", unlockMethod: "Reward OR Premium" },
+      { id: "cyber-theme", name: "Cyberpunk Grid Theme", type: "theme", points: 120, desc: "Neon cyberpunk styling with dark slate and high-contrast yellow accents.", previewClass: "bg-slate-950 border border-yellow-500/40 text-yellow-400 font-mono", unlockMethod: "Reward Points" },
+      { id: "rainbow-glow", name: "Rainbow Border Glow Effect", type: "glow", points: 100, desc: "Adds an animated rainbow glow perimeter around your profile card.", previewClass: "shadow-[0_0_15px_#ec4899]", unlockMethod: "Reward Points" },
+      { id: "gold-halo", name: "Royal Gold Aura Profile Frame", type: "avatarFrame", points: 80, desc: "Surrounds your profile avatar with an elegant pulsing golden halo.", previewClass: "border-4 border-yellow-500 shadow-amber-500 shadow-md", unlockMethod: "Reward Points" },
+      { id: "float-animation", name: "Interactive Anti-Gravity Float Animation", type: "animation", points: 90, desc: "Gives your card component a floating anti-gravity drift motion.", previewClass: "animate-bounce", unlockMethod: "Reward Points" },
+      { id: "dashboard-advanced", name: "Executive Bento Dashboard", type: "dashboard", points: 250, desc: "Brings advanced statistics, interactive graphs, and layout controls to your home.", previewClass: "border border-cyan-500/30", unlockMethod: "Reward AND Premium" },
+      { id: "premium-icons", name: "Neon Glow Lucide Icons", type: "icon", points: 75, desc: "Replaces standard system icons with animated glowing vectors.", previewClass: "font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-violet-500", unlockMethod: "Premium" },
+      { id: "founder-exclusive", name: "Founder Gold Premium Theme", type: "theme", points: 500, desc: "The ultimate gold-accented theme reserved exclusively for premium patrons and founders.", previewClass: "bg-amber-950 border border-amber-400 text-amber-200", unlockMethod: "Founder Only" },
+      { id: "enterprise-glow", name: "Enterprise Cyber Pulse", type: "glow", points: 300, desc: "A pulsing matrix glow reserved for enterprise clusters and developers.", previewClass: "shadow-[0_0_25px_#10b981]", unlockMethod: "Enterprise Only" },
+      { id: "standard-avatar", name: "Standard Classic Frame", type: "avatarFrame", points: 0, desc: "A clean standard slate frame available for all registered users.", previewClass: "border border-slate-300", unlockMethod: "Free" }
+    ]
   }
 };
 
@@ -338,6 +390,24 @@ export async function seedMonetizationModule() {
       }
     } else {
       writeAndPersistFile("global_monetization.json", JSON.stringify(globalSettingsCache, null, 2));
+    }
+
+    // Seed default achievements
+    const defaultAchievements = [
+      { id: "ach_meals_100", name: "100 Meals Recorded", description: "Log a cumulative total of 100 meals.", icon: "Award", badge: "Bronze Eater", rewardPoints: 50, requiredProgress: 100, activityType: "MEALS", isActive: true, isVisible: true },
+      { id: "ach_meals_500", name: "500 Meals Recorded", description: "Log a cumulative total of 500 meals.", icon: "Award", badge: "Silver Eater", rewardPoints: 150, requiredProgress: 500, activityType: "MEALS", isActive: true, isVisible: true },
+      { id: "ach_deposits_5", name: "Savings Accumulator", description: "Complete 5 separate deposit entries into your mess account.", icon: "DollarSign", badge: "Thrifty Saver", rewardPoints: 30, requiredProgress: 5, activityType: "DEPOSITS", isActive: true, isVisible: true },
+      { id: "ach_market_10", name: "Market Master", description: "Complete 10 separate market expense purchases for your mess.", icon: "ShoppingCart", badge: "Procurement Lead", rewardPoints: 40, requiredProgress: 10, activityType: "MARKET", isActive: true, isVisible: true },
+      { id: "ach_manager_1", name: "Manager Duty Complete", description: "Fulfill manager duty assignment for at least 1 month.", icon: "Shield", badge: "First Term Shield", rewardPoints: 50, requiredProgress: 1, activityType: "DUTY", isActive: true, isVisible: true },
+      { id: "ach_rating_5", name: "Top Rated Manager", description: "Achieve top tier recognition with stellar rating submissions.", icon: "Star", badge: "Golden Star", rewardPoints: 100, requiredProgress: 5, activityType: "RATING", isActive: true, isVisible: true },
+      { id: "ach_active_365", name: "365 Days Active Legend", description: "Remain registered in the system for one complete year.", icon: "Calendar", badge: "Year One Legend", rewardPoints: 200, requiredProgress: 365, activityType: "ACTIVE_DAYS", isActive: true, isVisible: true }
+    ];
+
+    for (const ach of defaultAchievements) {
+      const existing = await db.select().from(achievements).where(eq(achievements.id, ach.id));
+      if (existing.length === 0) {
+        await db.insert(achievements).values(ach);
+      }
     }
 
     console.log("[Monetization] Seeding complete.");
@@ -638,13 +708,119 @@ export async function getRewardPoints(memberId: string): Promise<number> {
   return points[0].points;
 }
 
-export async function awardRewardPoints(memberId: string, pointsToAward: number, action: string) {
+export async function checkAndProcessExpiration(memberId: string) {
+  // If Reward Center is globally disabled, skip database queries
+  if (!globalSettingsCache.rewardCenterEnabled) return;
+
+  const expirationDaysType = globalSettingsCache.rewardCenterConfig?.pointExpiration?.type || "never";
+  if (expirationDaysType === "never") return;
+
+  const expirationDays = parseInt(expirationDaysType, 10);
+  if (isNaN(expirationDays)) return;
+
+  // Find all active unexpired reward earnings
+  const earnings = await db.select()
+    .from(rewardHistory)
+    .where(
+      and(
+        eq(rewardHistory.memberId, memberId),
+        sql`points_changed > points_used`,
+        eq(rewardHistory.isExpired, false)
+      )
+    );
+
+  const now = new Date();
+  let pointsToExpire = 0;
+  const expiredTxIds: string[] = [];
+
+  for (const tx of earnings) {
+    const timestamp = new Date(tx.timestamp);
+    const expDate = new Date(timestamp.getTime() + expirationDays * 24 * 60 * 60 * 1000);
+    if (now > expDate) {
+      const remaining = tx.pointsChanged - tx.pointsUsed;
+      if (remaining > 0) {
+        pointsToExpire += remaining;
+        expiredTxIds.push(tx.id);
+      }
+    }
+  }
+
+  if (pointsToExpire > 0) {
+    // Deduct points from user balance directly
+    const pointsRows = await db.select().from(rewardPoints).where(eq(rewardPoints.memberId, memberId));
+    const currentPoints = pointsRows.length > 0 ? pointsRows[0].points : 0;
+    const newPoints = Math.max(0, currentPoints - pointsToExpire);
+
+    await db.update(rewardPoints)
+      .set({ points: newPoints })
+      .where(eq(rewardPoints.memberId, memberId));
+
+    // Update original transactions to fully used and expired
+    for (const id of expiredTxIds) {
+      const originalRows = await db.select().from(rewardHistory).where(eq(rewardHistory.id, id));
+      if (originalRows.length > 0) {
+        await db.update(rewardHistory)
+          .set({ 
+            pointsUsed: originalRows[0].pointsChanged,
+            isExpired: true 
+          })
+          .where(eq(rewardHistory.id, id));
+      }
+    }
+
+    // Insert expiration entry in history
+    const expTxId = "rh_exp_" + Math.random().toString(36).substring(2, 11);
+    await db.insert(rewardHistory).values({
+      id: expTxId,
+      memberId,
+      pointsChanged: -pointsToExpire,
+      action: "EXPIRATION",
+      timestamp: now.toISOString(),
+      pointsUsed: 0,
+      isExpired: true,
+      reason: `Points expired after ${expirationDays} days`,
+      previousBalance: currentPoints,
+      newBalance: newPoints
+    });
+
+    // Write to audit log
+    const auditId = "rlog_" + Math.random().toString(36).substring(2, 11);
+    await db.insert(rewardAuditLogs).values({
+      id: auditId,
+      memberId,
+      memberName: "System Expiration",
+      action: "EXPIRE",
+      previousBalance: currentPoints,
+      newBalance: newPoints,
+      reason: `System automatically expired ${pointsToExpire} inactive reward points`,
+      timestamp: now.toISOString()
+    });
+  }
+}
+
+export async function awardRewardPointsWithDetails(
+  memberId: string, 
+  pointsToAward: number, 
+  action: string, 
+  options?: { reason?: string; adminId?: string; messId?: string }
+) {
+  if (!globalSettingsCache.rewardCenterEnabled) return;
+
   const current = await getRewardPoints(memberId);
   const updatedPoints = current + pointsToAward;
-  
+
   await db.update(rewardPoints)
     .set({ points: updatedPoints })
     .where(eq(rewardPoints.memberId, memberId));
+
+  const expirationDaysType = globalSettingsCache.rewardCenterConfig?.pointExpiration?.type || "never";
+  let expirationDate: string | null = null;
+  if (expirationDaysType !== "never") {
+    const days = parseInt(expirationDaysType, 10);
+    if (!isNaN(days)) {
+      expirationDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    }
+  }
 
   const historyId = "rh_" + Math.random().toString(36).substring(2, 11);
   await db.insert(rewardHistory).values({
@@ -652,19 +828,63 @@ export async function awardRewardPoints(memberId: string, pointsToAward: number,
     memberId,
     pointsChanged: pointsToAward,
     action,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    pointsUsed: 0,
+    expirationDate,
+    isExpired: false,
+    reason: options?.reason || null,
+    adminId: options?.adminId || null,
+    previousBalance: current,
+    newBalance: updatedPoints,
+    messId: options?.messId || null
   });
 
   globalSettingsCache.revenueStats.totalRewardPointsEarned += pointsToAward;
   saveGlobalMonetizationSettings();
 }
 
-export async function spendRewardPoints(memberId: string, pointsToSpend: number, action: string): Promise<boolean> {
+export async function awardRewardPoints(memberId: string, pointsToAward: number, action: string) {
+  await awardRewardPointsWithDetails(memberId, pointsToAward, action);
+}
+
+export async function spendRewardPointsWithFIFO(
+  memberId: string,
+  pointsToSpend: number,
+  action: string,
+  options?: { messId?: string }
+): Promise<boolean> {
+  if (!globalSettingsCache.rewardCenterEnabled) return false;
+
   const current = await getRewardPoints(memberId);
   if (current < pointsToSpend) {
     return false;
   }
-  
+
+  let remainingToDeduct = pointsToSpend;
+  const earnings = await db.select()
+    .from(rewardHistory)
+    .where(
+      and(
+        eq(rewardHistory.memberId, memberId),
+        sql`points_changed > points_used`,
+        eq(rewardHistory.isExpired, false)
+      )
+    );
+
+  earnings.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  for (const tx of earnings) {
+    if (remainingToDeduct <= 0) break;
+    const available = tx.pointsChanged - tx.pointsUsed;
+    if (available > 0) {
+      const toDeduct = Math.min(available, remainingToDeduct);
+      await db.update(rewardHistory)
+        .set({ pointsUsed: tx.pointsUsed + toDeduct })
+        .where(eq(rewardHistory.id, tx.id));
+      remainingToDeduct -= toDeduct;
+    }
+  }
+
   const updatedPoints = current - pointsToSpend;
   await db.update(rewardPoints)
     .set({ points: updatedPoints })
@@ -676,13 +896,25 @@ export async function spendRewardPoints(memberId: string, pointsToSpend: number,
     memberId,
     pointsChanged: -pointsToSpend,
     action,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    pointsUsed: 0,
+    isExpired: false,
+    previousBalance: current,
+    newBalance: updatedPoints,
+    messId: options?.messId || null
   });
 
   return true;
 }
 
+export async function spendRewardPoints(memberId: string, pointsToSpend: number, action: string): Promise<boolean> {
+  return await spendRewardPointsWithFIFO(memberId, pointsToSpend, action);
+}
+
 export async function getRewardHistory(memberId: string) {
+  // Safe trigger expiration check on fetch
+  await checkAndProcessExpiration(memberId).catch(console.error);
+
   return await db.select()
     .from(rewardHistory)
     .where(eq(rewardHistory.memberId, memberId))
@@ -696,7 +928,7 @@ export async function getPremiumUnlocks(memberId: string) {
   return await db.select().from(premiumUnlocks).where(eq(premiumUnlocks.memberId, memberId));
 }
 
-export async function unlockPremiumItem(memberId: string, itemType: string, itemId: string, costPoints: number): Promise<boolean> {
+export async function unlockPremiumItem(memberId: string, itemType: string, itemId: string, costPoints: number, messId: string): Promise<boolean> {
   // Check if already unlocked
   const existing = await db.select().from(premiumUnlocks).where(
     and(
@@ -708,10 +940,48 @@ export async function unlockPremiumItem(memberId: string, itemType: string, item
     return true; // Already unlocked
   }
 
-  // Deduct points
-  if (costPoints > 0) {
-    const success = await spendRewardPoints(memberId, costPoints, `UNLOCK_${itemType.toUpperCase()}:${itemId}`);
-    if (!success) return false;
+  // Server-side cost lookup & validation to prevent client-side parameter tampering
+  const globalSettings = getGlobalMonetizationSettings();
+  const item = (globalSettings.rewardCenterConfig?.shopCosmetics || []).find((c: any) => c.id === itemId);
+  
+  if (!item) {
+    return false;
+  }
+
+  // 1. Release Status Validation
+  if (item.releaseStatus && item.releaseStatus !== "Active") {
+    throw new Error(`This cosmetic item is currently not available (Status: ${item.releaseStatus})`);
+  }
+
+  // 2. Unlock Method & Subscription/Role Validation
+  const unlockMethod = item.unlockMethod || "Reward Points";
+  
+  if (unlockMethod === "Founder Only") {
+    const membersList = await db.select().from(members).where(eq(members.id, memberId));
+    const member = membersList[0];
+    if (member?.email?.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+      throw new Error("This exclusive cosmetic is reserved for the platform Founder only.");
+    }
+  } else if (unlockMethod === "Enterprise Only") {
+    const license = await validateMessSubscription(messId);
+    if (!license.valid || license.licenseType !== "Enterprise") {
+      throw new Error("This cosmetic requires an active Enterprise subscription plan.");
+    }
+  } else if (unlockMethod === "Premium Membership" || unlockMethod === "Reward AND Premium") {
+    const license = await validateMessSubscription(messId);
+    if (!license.valid) {
+      throw new Error("An active premium subscription is required to unlock this cosmetic.");
+    }
+  }
+
+  let actualCost = item.points || 0;
+
+  // Deduct points using FIFO spend helper
+  if (actualCost > 0) {
+    const success = await spendRewardPoints(memberId, actualCost, `UNLOCK_${itemType.toUpperCase()}:${itemId}`);
+    if (!success) {
+      throw new Error("Insufficient Reward Points to claim this cosmetic.");
+    }
   }
 
   const id = "unl_" + Math.random().toString(36).substring(2, 11);
@@ -1177,4 +1447,168 @@ export async function restoreMonetizationBackup(payload: any) {
   // Refresh cache
   profilesCache = await db.select().from(monetizationProfiles);
   plansCache = await db.select().from(subscriptionPlans);
+}
+
+// ---------------------------------------------------------
+// DYNAMIC ACHIEVEMENTS ENGINE
+// ---------------------------------------------------------
+export async function calculateMemberProgress(memberId: string, activityType: string): Promise<number> {
+  try {
+    if (activityType === "MEALS") {
+      const result = await db.select({
+        sumBreakfast: sql<number>`COALESCE(SUM(breakfast), 0)`,
+        sumLunch: sql<number>`COALESCE(SUM(lunch), 0)`,
+        sumDinner: sql<number>`COALESCE(SUM(dinner), 0)`
+      }).from(meals).where(eq(meals.memberId, memberId));
+      if (result.length > 0) {
+        return Math.floor(Number(result[0].sumBreakfast) + Number(result[0].sumLunch) + Number(result[0].sumDinner));
+      }
+      return 0;
+    }
+
+    if (activityType === "DEPOSITS") {
+      const result = await db.select({
+        count: sql<number>`COUNT(*)`
+      }).from(deposits).where(eq(deposits.memberId, memberId));
+      return result.length > 0 ? Number(result[0].count) : 0;
+    }
+
+    if (activityType === "MARKET") {
+      const result = await db.select({
+        count: sql<number>`COUNT(*)`
+      }).from(marketEntries).where(eq(marketEntries.memberId, memberId));
+      return result.length > 0 ? Number(result[0].count) : 0;
+    }
+
+    if (activityType === "DUTY") {
+      const result = await db.select({
+        count: sql<number>`COUNT(*)`
+      }).from(duties).where(eq(duties.memberId, memberId));
+      return result.length > 0 ? Number(result[0].count) : 0;
+    }
+
+    if (activityType === "RATING") {
+      const result = await db.select({
+        count: sql<number>`COUNT(*)`
+      }).from(managerRatings).where(eq(managerRatings.raterId, memberId));
+      return result.length > 0 ? Number(result[0].count) : 0;
+    }
+
+    if (activityType === "ACTIVE_DAYS") {
+      const member = await db.select().from(members).where(eq(members.id, memberId));
+      if (member.length > 0 && member[0].joiningDate) {
+        const joinDate = new Date(member[0].joiningDate);
+        const diffTime = Math.abs(Date.now() - joinDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
+      }
+      return 1; // Default starting day
+    }
+
+    return 0;
+  } catch (err) {
+    console.error(`Error calculating progress for ${memberId}, activity: ${activityType}:`, err);
+    return 0;
+  }
+}
+
+export async function getMemberAchievementsList(memberId: string) {
+  // Retrieve all achievements
+  const allAchievements = await db.select().from(achievements).where(eq(achievements.isActive, true));
+  
+  // Retrieve claimed member progress
+  const claimedAchievements = await db.select().from(memberAchievements).where(eq(memberAchievements.memberId, memberId));
+  const claimedMap = new Map<string, any>();
+  for (const c of claimedAchievements) {
+    claimedMap.set(c.achievementId, c);
+  }
+
+  const resultList = [];
+  for (const ach of allAchievements) {
+    const currentProgress = await calculateMemberProgress(memberId, ach.activityType);
+    const claimData = claimedMap.get(ach.id);
+    
+    resultList.push({
+      id: ach.id,
+      name: ach.name,
+      description: ach.description,
+      icon: ach.icon,
+      badge: ach.badge,
+      rewardPoints: ach.rewardPoints,
+      requiredProgress: ach.requiredProgress,
+      activityType: ach.activityType,
+      currentProgress: Math.min(currentProgress, ach.requiredProgress),
+      isUnlocked: currentProgress >= ach.requiredProgress,
+      isClaimed: !!claimData?.unlockedAt,
+      unlockedAt: claimData?.unlockedAt || null
+    });
+  }
+
+  return resultList;
+}
+
+export async function claimMemberAchievement(memberId: string, achievementId: string, messId?: string): Promise<{ success: boolean; error?: string; rewardPoints?: number }> {
+  // Check if achievement exists
+  const achRows = await db.select().from(achievements).where(and(eq(achievements.id, achievementId), eq(achievements.isActive, true)));
+  if (achRows.length === 0) {
+    return { success: false, error: "Achievement not found or inactive" };
+  }
+  const ach = achRows[0];
+
+  // Check progress
+  const progress = await calculateMemberProgress(memberId, ach.activityType);
+  if (progress < ach.requiredProgress) {
+    return { success: false, error: "Required progress has not been achieved yet" };
+  }
+
+  // Check if already claimed
+  const existingRows = await db.select().from(memberAchievements).where(
+    and(
+      eq(memberAchievements.memberId, memberId),
+      eq(memberAchievements.achievementId, achievementId)
+    )
+  );
+
+  if (existingRows.length > 0 && existingRows[0].unlockedAt) {
+    return { success: false, error: "Achievement has already been claimed" };
+  }
+
+  const nowStr = new Date().toISOString();
+  if (existingRows.length === 0) {
+    const claimId = "mac_" + Math.random().toString(36).substring(2, 11);
+    await db.insert(memberAchievements).values({
+      id: claimId,
+      memberId,
+      achievementId,
+      progress,
+      unlockedAt: nowStr
+    });
+  } else {
+    await db.update(memberAchievements)
+      .set({ unlockedAt: nowStr, progress })
+      .where(and(eq(memberAchievements.memberId, memberId), eq(memberAchievements.achievementId, achievementId)));
+  }
+
+  // Award the points!
+  await awardRewardPointsWithDetails(memberId, ach.rewardPoints, `CLAIM_ACHIEVEMENT`, {
+    reason: `Claimed Achievement: ${ach.name}`,
+    messId
+  });
+
+  // Log to audit trail
+  const auditId = "rlog_" + Math.random().toString(36).substring(2, 11);
+  const memberRows = await db.select().from(members).where(eq(members.id, memberId));
+  const memberName = memberRows.length > 0 ? memberRows[0].name : "Member";
+  await db.insert(rewardAuditLogs).values({
+    id: auditId,
+    memberId,
+    memberName,
+    action: "ACHIEVEMENT",
+    previousBalance: 0,
+    newBalance: ach.rewardPoints,
+    reason: `Member claimed achievement: ${ach.name}`,
+    timestamp: nowStr
+  });
+
+  return { success: true, rewardPoints: ach.rewardPoints };
 }

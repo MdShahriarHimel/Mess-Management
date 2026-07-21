@@ -23,7 +23,7 @@ import {
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics } from "./foodKnowledge.js";
 import { db as drizzleDb } from "../src/db/index.js";
-import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews } from "../src/db/schema.js";
+import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks } from "../src/db/schema.js";
 import { eq, sql, and } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
@@ -4084,7 +4084,11 @@ import {
   duplicatePlan,
   reorderPlans,
   assignSubscriptionByAdmin,
-  checkUserAdEligibility
+  checkUserAdEligibility,
+  getMemberAchievementsList,
+  claimMemberAchievement,
+  awardRewardPointsWithDetails,
+  spendRewardPointsWithFIFO
 } from "./monetization.js";
 
 // Helper checks
@@ -4162,6 +4166,7 @@ router.get("/monetization/status", authMiddleware, async (req: AuthenticatedRequ
     res.json({
       enabled: true,
       globalMonetizationEnabled: true,
+      premiumStoreEnabled: globalSettings.premiumStoreEnabled || false,
       messSettings,
       adsSettings,
       currentSubscription,
@@ -4578,18 +4583,523 @@ router.get("/monetization/points", authMiddleware, async (req: AuthenticatedRequ
 
 // 9. Premium cosmetics unlock
 router.post("/monetization/unlock", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const { itemType, itemId, costPoints } = req.body;
-  if (!itemType || !itemId) {
-    res.status(400).json({ error: "Item type and ID are required" });
+  try {
+    const { itemType, itemId, costPoints } = req.body;
+    if (!itemType || !itemId) {
+      res.status(400).json({ error: "Item type and ID are required" });
+      return;
+    }
+
+    const globalSettings = getGlobalMonetizationSettings();
+    const messId = getActiveMessId();
+
+    // 1. Check global Premium Store master switch
+    if (!globalSettings.premiumStoreEnabled) {
+      res.status(403).json({ error: "Premium Store and Cosmetics are currently globally disabled." });
+      return;
+    }
+
+    // 2. Check per-mess Premium Store master switch
+    const messSettings = await getMessMonetizationSettings(messId);
+    let premiumStoreActiveForMess = false;
+    if (messSettings && messSettings.customSettings) {
+      try {
+        const custom = JSON.parse(messSettings.customSettings || "{}");
+        premiumStoreActiveForMess = !!custom.premiumStoreEnabled;
+      } catch (e) {}
+    }
+    if (!premiumStoreActiveForMess) {
+      res.status(403).json({ error: "Premium Store is currently disabled for this branch." });
+      return;
+    }
+
+    const success = await unlockPremiumItem(req.user!.id, itemType, itemId, costPoints || 0, messId);
+    if (!success) {
+      res.status(400).json({ error: "Insufficient Reward Points to unlock this premium cosmetic." });
+      return;
+    }
+
+    logAudit(req.user!.id, req.user!.nickname, "UNLOCK_PREMIUM_COSMETIC", "None", itemId, `Unlocked premium aesthetic customization: ${itemId}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Unlock transaction failed." });
+  }
+});
+
+// 9.1 Equip cosmetic item
+router.post("/monetization/cosmetics/equip", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { category, itemId } = req.body;
+    if (!category) {
+      res.status(400).json({ error: "Category is required" });
+      return;
+    }
+
+    const userId = req.user!.id;
+    const globalSettings = getGlobalMonetizationSettings();
+
+    // Verify if store is active
+    if (!globalSettings.premiumStoreEnabled) {
+      res.status(403).json({ error: "Premium Store and Cosmetics are currently disabled." });
+      return;
+    }
+
+    // If itemId is "none" or empty string, let the user unequip
+    if (itemId !== "none" && itemId !== "") {
+      // Check if unlocked
+      const unlocks = await drizzleDb.select().from(premiumUnlocks).where(
+        and(
+          eq(premiumUnlocks.memberId, userId),
+          eq(premiumUnlocks.itemId, itemId)
+        )
+      );
+      if (unlocks.length === 0) {
+        // Check if item is Free in the global shop config
+        const cosmetic = (globalSettings.rewardCenterConfig?.shopCosmetics || []).find((c: any) => c.id === itemId);
+        if (!cosmetic || (cosmetic.unlockMethod !== "Free" && (cosmetic.points || 0) > 0)) {
+          res.status(400).json({ error: "You have not unlocked this cosmetic item yet." });
+          return;
+        }
+      }
+    }
+
+    // Update active equipped item in members table
+    const updateObj: any = {};
+    const val = (itemId === "none" || itemId === "") ? null : itemId;
+
+    if (category === "theme") updateObj.personalTheme = val;
+    else if (category === "font") updateObj.personalFont = val;
+    else if (category === "glow") {
+      updateObj.glow = val !== null;
+      updateObj.glowStyle = val || "none";
+    }
+    else if (category === "avatarFrame") updateObj.avatarFrame = val;
+    else if (category === "badge") updateObj.badge = val;
+    else if (category === "profileBackground") updateObj.profileBackground = val;
+    else if (category === "dashboardLayout") updateObj.dashboardLayout = val;
+    else if (category === "profileDecoration") updateObj.profileDecoration = val;
+    else if (category === "dashboardStyle") updateObj.dashboardStyle = val;
+    else if (category === "backgroundEffect") updateObj.backgroundEffect = val;
+    else {
+      res.status(400).json({ error: "Invalid cosmetic category specified." });
+      return;
+    }
+
+    await drizzleDb.update(members).set(updateObj).where(eq(members.id, userId));
+    logAudit(userId, req.user!.nickname, "EQUIP_COSMETIC", "None", itemId || "none", `Equipped ${category}: ${itemId || "none"}`);
+    res.json({ success: true, message: `Successfully equipped ${category}` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9.2 Retrieve all ownership records for Ultimate Admin (with joins/search support)
+router.get("/monetization/unlocks/all", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin may view all ownership records." });
     return;
   }
-  const success = await unlockPremiumItem(req.user!.id, itemType, itemId, costPoints || 0);
-  if (!success) {
-    res.status(400).json({ error: "Insufficient Reward Points to unlock this premium cosmetic." });
+  try {
+    const unlocks = await drizzleDb.select().from(premiumUnlocks);
+    const allMembers = await drizzleDb.select().from(members);
+    const globalSettings = getGlobalMonetizationSettings();
+    const cosmetics = globalSettings.rewardCenterConfig?.shopCosmetics || [];
+
+    const records = unlocks.map((u: any) => {
+      const member = allMembers.find((m: any) => m.id === u.memberId);
+      const cosmetic = cosmetics.find((c: any) => c.id === u.itemId);
+      return {
+        id: u.id,
+        itemId: u.itemId,
+        itemName: cosmetic?.name || u.itemId,
+        itemType: cosmetic?.type || u.itemType,
+        ownerId: u.memberId,
+        ownerName: member?.name || "Unknown Member",
+        ownerEmail: member?.email || "Unknown",
+        unlockDate: u.unlockedAt,
+        unlockMethod: cosmetic?.unlockMethod || "Reward Points",
+        currentVersion: cosmetic?.version || "1.0",
+        status: cosmetic?.releaseStatus || "Active",
+        messId: getActiveMessId()
+      };
+    });
+
+    res.json(records);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9.5. Reward Center & Achievement Platform API Endpoints
+
+// GET /monetization/reward-config
+router.get("/monetization/reward-config", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const globalSettings = getGlobalMonetizationSettings();
+    res.json({
+      rewardCenterEnabled: globalSettings.rewardCenterEnabled || false,
+      rewardCenterConfig: globalSettings.rewardCenterConfig || {}
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /monetization/reward-config (Ultimate Admin only)
+router.put("/monetization/reward-config", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can edit Reward Center configurations." });
     return;
   }
-  logAudit(req.user!.id, req.user!.nickname, "UNLOCK_PREMIUM_COSMETIC", "None", itemId, `Unlocked premium aesthetic customization: ${itemId}`);
-  res.json({ success: true });
+  try {
+    const globalSettings = getGlobalMonetizationSettings();
+    const { rewardCenterEnabled, rewardCenterConfig } = req.body;
+    
+    if (rewardCenterEnabled !== undefined) {
+      globalSettings.rewardCenterEnabled = !!rewardCenterEnabled;
+    }
+    if (rewardCenterConfig !== undefined) {
+      globalSettings.rewardCenterConfig = rewardCenterConfig;
+    }
+    
+    saveGlobalMonetizationSettings();
+    logAudit(req.user!.id, req.user!.nickname, "UPDATE_REWARD_CONFIG", "None", "None", "Updated Reward Center configurations");
+    res.json({ success: true, rewardCenterEnabled: globalSettings.rewardCenterEnabled, rewardCenterConfig: globalSettings.rewardCenterConfig });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /monetization/achievements (Retrieves achievements with user dynamic progress)
+router.get("/monetization/achievements", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const list = await getMemberAchievementsList(req.user!.id);
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /monetization/claim-achievement
+router.post("/monetization/claim-achievement", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { achievementId } = req.body;
+    if (!achievementId) {
+      res.status(400).json({ error: "achievementId is required" });
+      return;
+    }
+    const messId = getActiveMessId();
+    const result = await claimMemberAchievement(req.user!.id, achievementId, messId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true, rewardPoints: result.rewardPoints });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /monetization/manual-reward (Ultimate Admin only)
+router.post("/monetization/manual-reward", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can assign manual rewards." });
+    return;
+  }
+  try {
+    const { targetType, targetId, points, reason } = req.body; // targetType: "member" | "members" | "mess"
+    if (!targetType || points === undefined || isNaN(points)) {
+      res.status(400).json({ error: "Invalid payload parameters" });
+      return;
+    }
+
+    const globalSettings = getGlobalMonetizationSettings();
+    const maxLimit = globalSettings.rewardCenterConfig?.pointRules?.maxManualPointsPerDay || 1000;
+    if (Math.abs(points) > maxLimit) {
+      res.status(400).json({ error: `Requested points change exceeds maximum allowed limit of ${maxLimit} per request.` });
+      return;
+    }
+
+    const currentMessId = getActiveMessId();
+    const nowStr = new Date().toISOString();
+
+    if (targetType === "member") {
+      if (!targetId) {
+        res.status(400).json({ error: "targetId (memberId) is required" });
+        return;
+      }
+      const prevPoints = await getRewardPoints(targetId);
+      const newPoints = Math.max(0, prevPoints + points);
+
+      if (points > 0) {
+        await awardRewardPointsWithDetails(targetId, points, "MANUAL_BONUS", {
+          reason: reason || "Manual Admin Reward",
+          adminId: req.user!.id,
+          messId: currentMessId
+        });
+      } else {
+        await spendRewardPointsWithFIFO(targetId, Math.abs(points), "MANUAL_DEDUCT", {
+          messId: currentMessId
+        });
+      }
+
+      const targetRows = await drizzleDb.select().from(members).where(eq(members.id, targetId));
+      const targetName = targetRows.length > 0 ? targetRows[0].name : "Member";
+
+      await drizzleDb.insert(rewardAuditLogs).values({
+        id: "rlog_" + Math.random().toString(36).substring(2, 11),
+        memberId: targetId,
+        memberName: targetName,
+        action: points > 0 ? "AWARD" : "DEDUCT",
+        previousBalance: prevPoints,
+        newBalance: newPoints,
+        reason: reason || "Manual Admin Adjustment",
+        adminId: req.user!.id,
+        timestamp: nowStr
+      });
+    } else if (targetType === "members") {
+      const memberIds = Array.isArray(targetId) ? targetId : [targetId];
+      for (const mId of memberIds) {
+        if (!mId) continue;
+        const prevPoints = await getRewardPoints(mId);
+        const newPoints = Math.max(0, prevPoints + points);
+
+        if (points > 0) {
+          await awardRewardPointsWithDetails(mId, points, "MANUAL_BONUS", {
+            reason: reason || "Group Admin Reward",
+            adminId: req.user!.id,
+            messId: currentMessId
+          });
+        } else {
+          await spendRewardPointsWithFIFO(mId, Math.abs(points), "MANUAL_DEDUCT", {
+            messId: currentMessId
+          });
+        }
+
+        const targetRows = await drizzleDb.select().from(members).where(eq(members.id, mId));
+        const targetName = targetRows.length > 0 ? targetRows[0].name : "Member";
+
+        await drizzleDb.insert(rewardAuditLogs).values({
+          id: "rlog_" + Math.random().toString(36).substring(2, 11),
+          memberId: mId,
+          memberName: targetName,
+          action: points > 0 ? "AWARD" : "DEDUCT",
+          previousBalance: prevPoints,
+          newBalance: newPoints,
+          reason: reason || "Group Manual Admin Adjustment",
+          adminId: req.user!.id,
+          timestamp: nowStr
+        });
+      }
+    } else if (targetType === "mess") {
+      const messId = targetId || currentMessId;
+      const allMembers = await drizzleDb.select().from(members);
+      for (const m of allMembers) {
+        const prevPoints = await getRewardPoints(m.id);
+        const newPoints = Math.max(0, prevPoints + points);
+
+        if (points > 0) {
+          await awardRewardPointsWithDetails(m.id, points, "MANUAL_BONUS", {
+            reason: reason || `Mess-wide Reward: ${reason}`,
+            adminId: req.user!.id,
+            messId: messId
+          });
+        } else {
+          await spendRewardPointsWithFIFO(m.id, Math.abs(points), "MANUAL_DEDUCT", {
+            messId: messId
+          });
+        }
+
+        await drizzleDb.insert(rewardAuditLogs).values({
+          id: "rlog_" + Math.random().toString(36).substring(2, 11),
+          memberId: m.id,
+          memberName: m.name,
+          action: points > 0 ? "AWARD" : "DEDUCT",
+          previousBalance: prevPoints,
+          newBalance: newPoints,
+          reason: reason || "Mess-wide Manual Adjustment",
+          adminId: req.user!.id,
+          timestamp: nowStr
+        });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /monetization/reward-history-all (Ultimate Admin only)
+router.get("/monetization/reward-history-all", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can view all reward history." });
+    return;
+  }
+  try {
+    const list = await drizzleDb.select().from(rewardHistory).orderBy(sql`timestamp DESC`);
+    const allMembers = await drizzleDb.select().from(members);
+    const memberMap = new Map(allMembers.map(m => [m.id, m]));
+    
+    const enrichedList = list.map(tx => {
+      const m = memberMap.get(tx.memberId);
+      return {
+        ...tx,
+        memberName: m ? m.name : "Unknown Member",
+        memberEmail: m ? m.email : "N/A"
+      };
+    });
+
+    res.json(enrichedList);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /monetization/reward-audit-logs (Ultimate Admin only)
+router.get("/monetization/reward-audit-logs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only the Ultimate Admin can view audit logs." });
+    return;
+  }
+  try {
+    const list = await drizzleDb.select().from(rewardAuditLogs).orderBy(sql`timestamp DESC`);
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /monetization/award-daily-login (claim daily login reward points)
+router.post("/monetization/award-daily-login", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const memberId = req.user!.id;
+    const globalSettings = getGlobalMonetizationSettings();
+    if (!globalSettings.rewardCenterEnabled || !globalSettings.rewardCenterConfig?.rewardSources?.dailyLogin) {
+      res.status(400).json({ error: "Daily login reward source is currently disabled." });
+      return;
+    }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const existing = await drizzleDb.select()
+      .from(rewardHistory)
+      .where(
+        and(
+          eq(rewardHistory.memberId, memberId),
+          eq(rewardHistory.action, "DAILY_LOGIN"),
+          sql`timestamp LIKE ${todayStr + "%"}`
+        )
+      );
+
+    if (existing.length > 0) {
+      res.status(400).json({ error: "Daily login reward already claimed for today." });
+      return;
+    }
+
+    const points = globalSettings.rewardCenterConfig.pointRules.pointsPerDailyLogin || 5;
+    const messId = getActiveMessId();
+    await awardRewardPointsWithDetails(memberId, points, "DAILY_LOGIN", {
+      reason: "Daily Login Reward Check-in",
+      messId
+    });
+
+    res.json({ success: true, pointsAwarded: points });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /monetization/achievements-admin (Ultimate Admin only)
+router.get("/monetization/achievements-admin", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only Ultimate Admin can manage achievements definitions." });
+    return;
+  }
+  try {
+    const list = await drizzleDb.select().from(achievements).orderBy(sql`id ASC`);
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /monetization/achievements-admin (Ultimate Admin only)
+router.post("/monetization/achievements-admin", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only Ultimate Admin can manage achievements definitions." });
+    return;
+  }
+  try {
+    const { name, description, icon, badge, rewardPoints, requiredProgress, activityType } = req.body;
+    if (!name || !activityType || !requiredProgress) {
+      res.status(400).json({ error: "Missing required achievement properties" });
+      return;
+    }
+    const id = "ach_" + Math.random().toString(36).substring(2, 11);
+    await drizzleDb.insert(achievements).values({
+      id,
+      name,
+      description: description || "",
+      icon: icon || "Award",
+      badge: badge || "",
+      rewardPoints: Number(rewardPoints || 0),
+      requiredProgress: Number(requiredProgress || 1),
+      activityType,
+      isActive: true,
+      isVisible: true
+    });
+    logAudit(req.user!.id, req.user!.nickname, "CREATE_ACHIEVEMENT", "None", id, `Created achievement definition: ${name}`);
+    res.json({ success: true, id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /monetization/achievements-admin/:id (Ultimate Admin only)
+router.put("/monetization/achievements-admin/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only Ultimate Admin can manage achievements definitions." });
+    return;
+  }
+  try {
+    const { id } = req.params;
+    const { name, description, icon, badge, rewardPoints, requiredProgress, activityType, isActive, isVisible } = req.body;
+    
+    await drizzleDb.update(achievements)
+      .set({
+        name,
+        description,
+        icon,
+        badge,
+        rewardPoints: rewardPoints !== undefined ? Number(rewardPoints) : undefined,
+        requiredProgress: requiredProgress !== undefined ? Number(requiredProgress) : undefined,
+        activityType,
+        isActive: isActive !== undefined ? !!isActive : undefined,
+        isVisible: isVisible !== undefined ? !!isVisible : undefined
+      })
+      .where(eq(achievements.id, id));
+
+    logAudit(req.user!.id, req.user!.nickname, "UPDATE_ACHIEVEMENT", "None", id, `Updated achievement definition: ${name}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /monetization/achievements-admin/:id (Ultimate Admin only)
+router.delete("/monetization/achievements-admin/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!checkIsUltimateAdmin(req)) {
+    res.status(403).json({ error: "Only Ultimate Admin can manage achievements definitions." });
+    return;
+  }
+  try {
+    const { id } = req.params;
+    await drizzleDb.delete(achievements).where(eq(achievements.id, id));
+    logAudit(req.user!.id, req.user!.nickname, "DELETE_ACHIEVEMENT", "None", id, `Deleted achievement definition: ${id}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 10. Founder Panel Statistics (Restricted to mdshahriarhimel@gmail.com only)
@@ -4621,13 +5131,14 @@ router.put("/monetization/founder/settings", authMiddleware, async (req: Authent
     return;
   }
 
-  const { globalMonetizationEnabled, globalMaintenance, globalFeatureFlags, globalTheme } = req.body;
+  const { globalMonetizationEnabled, globalMaintenance, globalFeatureFlags, globalTheme, premiumStoreEnabled } = req.body;
   const globalSettings = getGlobalMonetizationSettings();
 
   if (globalMonetizationEnabled !== undefined) globalSettings.globalMonetizationEnabled = globalMonetizationEnabled;
   if (globalMaintenance !== undefined) globalSettings.globalMaintenance = globalMaintenance;
   if (globalFeatureFlags !== undefined) globalSettings.globalFeatureFlags = globalFeatureFlags;
   if (globalTheme !== undefined) globalSettings.globalTheme = globalTheme;
+  if (premiumStoreEnabled !== undefined) globalSettings.premiumStoreEnabled = premiumStoreEnabled;
 
   saveGlobalMonetizationSettings();
   logAudit(req.user!.id, req.user!.nickname, "UPDATE_FOUNDER_SETTINGS", "None", "None", "Founder updated global monetization master switches");

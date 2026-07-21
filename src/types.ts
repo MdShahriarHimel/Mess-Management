@@ -56,6 +56,15 @@ export interface Member {
   hideCardFromDirectoryByAdmin?: boolean;
   glowEnabledByAdmin?: boolean;
   hideAdminRole?: boolean;
+  personalTheme?: string | null;
+  personalFont?: string | null;
+  avatarFrame?: string | null;
+  badge?: string | null;
+  profileBackground?: string | null;
+  dashboardLayout?: string | null;
+  profileDecoration?: string | null;
+  dashboardStyle?: string | null;
+  backgroundEffect?: string | null;
 }
 
 export interface MessMonth {

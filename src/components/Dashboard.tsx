@@ -943,11 +943,18 @@ export default function Dashboard({
                         )}
 
                         <div className="flex gap-2.5 items-center relative z-20">
-                          <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0">
+                          <div className={`w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0 ${
+                            currentUser.avatarFrame === "gold-halo" ? "ring-2 ring-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]" : 
+                            currentUser.avatarFrame === "standard-avatar" ? "ring-1 ring-slate-400" : ""
+                          }`}>
                             {currentUser.nickname?.[0]?.toUpperCase() || "A"}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-extrabold text-[11px] truncate">{currentUser.name}</h4>
+                            <h4 className="font-extrabold text-[11px] truncate flex items-center gap-1">
+                              {currentUser.name}
+                              {currentUser.badge === "founder-badge" && <span className="text-xs" title="Founder">🎖️</span>}
+                              {currentUser.badge === "premium-badge" && <span className="text-xs" title="Premium">💎</span>}
+                            </h4>
                             <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
                             <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
                               {localPrevTab === "admin" ? "ADMIN" : "MEMBER"}
@@ -961,7 +968,11 @@ export default function Dashboard({
               ) : (
                 <div className="w-full space-y-3 flex flex-col items-center">
                   <div 
-                    className={`relative overflow-hidden w-60 p-3 rounded-xl border bg-slate-900 text-white ${
+                    className={`relative overflow-hidden w-60 p-3 rounded-xl border text-white ${
+                      currentUser.profileBackground === "matrix-bg" ? "bg-gradient-to-br from-emerald-950 via-slate-950 to-black border-emerald-500/30" :
+                      currentUser.profileBackground === "galaxy-bg" ? "bg-gradient-to-br from-indigo-950 via-purple-950 to-slate-950 border-purple-500/20" :
+                      "bg-slate-900 border-slate-800"
+                    } ${
                       profileGlow && !profileGlowStyle.startsWith("#") ? `glow-${profileGlowStyle}` : ""
                     }`}
                     style={{
@@ -996,11 +1007,18 @@ export default function Dashboard({
                     )}
 
                     <div className="flex gap-2.5 items-center relative z-20">
-                      <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0">
+                      <div className={`w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-500/20 flex items-center justify-center text-xs font-bold text-cyan-400 shrink-0 ${
+                        currentUser.avatarFrame === "gold-halo" ? "ring-2 ring-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]" : 
+                        currentUser.avatarFrame === "standard-avatar" ? "ring-1 ring-slate-400" : ""
+                      }`}>
                         {currentUser.nickname?.[0]?.toUpperCase() || "A"}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-extrabold text-[11px] truncate">{currentUser.name}</h4>
+                        <h4 className="font-extrabold text-[11px] truncate flex items-center gap-1">
+                          {currentUser.name}
+                          {currentUser.badge === "founder-badge" && <span className="text-xs" title="Founder">🎖️</span>}
+                          {currentUser.badge === "premium-badge" && <span className="text-xs" title="Premium">💎</span>}
+                        </h4>
                         <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
                         <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
                           ADMIN

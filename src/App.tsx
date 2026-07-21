@@ -31,6 +31,7 @@ import { THEME_TEMPLATES } from "./themeTemplates.ts";
 import SecuritySettings from "./components/SecuritySettings.tsx";
 import { CreditAndPermissions } from "./components/CreditAndPermissions.tsx";
 import { UnifiedSettingsDashboard } from "./components/UnifiedSettingsDashboard.tsx";
+import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 
 // Types
@@ -1553,6 +1554,43 @@ export default function App() {
     showDashboardOverview: false
   });
 
+  // Platform Status & Announcement States
+  const [platformStatus, setPlatformStatus] = useState<string>("Operational");
+  const [maintenanceMode, setMaintenanceMode] = useState<string>("Normal");
+  const [maintenanceDetails, setMaintenanceDetails] = useState<any>(null);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [platformOwners, setPlatformOwners] = useState<{ email: string; role: string }[]>([]);
+  const [activeAnnouncements, setActiveAnnouncements] = useState<any[]>([]);
+  const [dismissedAnnIds, setDismissedAnnIds] = useState<string[]>([]);
+
+  const fetchPlatformStatus = async () => {
+    try {
+      const res = await fetch("/api/founder/status");
+      if (res.ok) {
+        const data = await res.json();
+        setPlatformStatus(data.platformStatus || "Operational");
+        setMaintenanceMode(data.maintenanceMode || "Normal");
+        setMaintenanceDetails(data.maintenanceDetails || null);
+        setAnnouncements(data.announcements || []);
+        setPlatformOwners(data.owners || []);
+        
+        const now = new Date();
+        const active = (data.announcements || []).filter((ann: any) => {
+          const start = new Date(ann.startDate);
+          const end = new Date(ann.endDate);
+          return now >= start && now <= end;
+        });
+        setActiveAnnouncements(active);
+      }
+    } catch (err) {
+      console.error("Failed to fetch platform status:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPlatformStatus();
+  }, [currentUser]);
+
   // Synchronise acting role for ultimate admin
   useEffect(() => {
     if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com") {
@@ -2305,7 +2343,7 @@ export default function App() {
     if (sessionToken) {
       if (sessionToken.startsWith("ey") && !firebaseAuthChecked) {
         // Skip initial check of Firebase token, wait for onAuthStateChanged to refresh/verify
-        return;
+        // return;
       }
       validateSession(sessionToken);
       fetchMonthsAndMembers(sessionToken);
@@ -2314,6 +2352,17 @@ export default function App() {
       fetchElections(sessionToken);
     }
   }, [sessionToken, firebaseAuthChecked]);
+
+  useEffect(() => {
+    const handleRefreshUser = () => {
+      const token = localStorage.getItem("mess_token") || sessionToken;
+      if (token) {
+        validateSession(token);
+      }
+    };
+    window.addEventListener("refresh-current-user", handleRefreshUser);
+    return () => window.removeEventListener("refresh-current-user", handleRefreshUser);
+  }, [sessionToken]);
 
   // Firebase Auth persistence listener to auto-refresh expired token and handle auto-login on startup
   useEffect(() => {
@@ -2344,9 +2393,16 @@ export default function App() {
               handleLogoutLocal();
             }
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error("Error on Firebase auth state change:", e);
-          if (isMounted) handleLogoutLocal();
+          const isNetworkError = e?.message?.includes("network-request-failed") || e?.code?.includes("network-request-failed");
+          if (isNetworkError) {
+            console.warn("Network request failed during Firebase token refresh. Preserving local session to support flaky network connectivity.");
+            // Mark firebaseAuthChecked as true so UI doesn't hang in loading state
+            if (isMounted) setFirebaseAuthChecked(true);
+          } else {
+            if (isMounted) handleLogoutLocal();
+          }
         }
       } else {
         // No Firebase user
@@ -2773,6 +2829,58 @@ export default function App() {
     );
   }
 
+  const isPlatformOwner = currentUser && platformOwners.some(
+    o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
+  );
+
+  // Full-Screen Emergency Maintenance Lock Screen blocker
+  if (maintenanceMode === "Full Lock" && !isPlatformOwner) {
+    const r = maintenanceDetails || {};
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100 font-sans relative overflow-hidden select-none">
+        <div className="absolute inset-0 pointer-events-none bg-slate-900 opacity-20 animate-pulse"></div>
+        
+        <div className="z-10 text-center max-w-lg space-y-6">
+          <div className="flex items-center justify-center">
+            <div className="p-5 bg-cyan-500/10 rounded-full border border-cyan-500/20 text-cyan-400 animate-pulse text-4xl">
+              {r.emoji || "⚙️"}
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <h1 className="text-3xl font-extrabold tracking-tight text-white uppercase font-sans">
+              System Maintenance
+            </h1>
+            <p className="text-sm text-cyan-400 font-mono font-bold tracking-widest uppercase">
+              PLATFORM STATUS: {platformStatus || "Under Maintenance"}
+            </p>
+          </div>
+          
+          <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl text-left space-y-4">
+            <p className="text-slate-300 text-sm leading-relaxed font-sans">
+              {r.reason || "We are currently performing essential database migrations, API optimisations, and core architecture updates to improve performance."}
+            </p>
+            
+            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-800/60 text-xs font-mono text-slate-400">
+              <div>
+                <span className="block text-slate-500 text-[10px] uppercase font-bold">ESTIMATED DURATION</span>
+                <span className="font-bold text-slate-200">{r.estimatedCompletion || "1 to 2 hours"}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500 text-[10px] uppercase font-bold">TIMEZONE</span>
+                <span className="font-bold text-slate-200">{r.timezone || "Asia/Dhaka (UTC+6)"}</span>
+              </div>
+            </div>
+          </div>
+          
+          <p className="text-[10px] font-mono text-slate-500 leading-normal">
+            Thank you for your patience. Real-time synchronisation will automatically resume once maintenance completes.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Sidebar navigation menu options
   const navItems = [
     { id: "dashboard", label: t("Dashboard Hub"), icon: <Home size={16} /> },
@@ -2788,6 +2896,10 @@ export default function App() {
     { id: "security", label: t("Security Settings"), icon: <Lock size={16} /> },
     { id: "settings", label: t("ERP Control Panel"), icon: <Settings size={16} /> }
   ];
+
+  if (isPlatformOwner) {
+    navItems.push({ id: "founder-console", label: "👑 Founder Console", icon: <Shield size={16} /> });
+  }
 
   const activeMembers = membersList.filter(m => m.status === "ACTIVE");
   
@@ -2821,6 +2933,32 @@ export default function App() {
   });
 
   const getThemeBgStyle = () => {
+    // Apply user equipped premium/cosmetic themes if set
+    if (currentUser?.personalTheme === "galaxy-theme") {
+      return {
+        backgroundImage: "linear-gradient(135deg, #1e0b36 0%, #0c041c 50%, #030008 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (currentUser?.personalTheme === "glass-theme") {
+      return {
+        backgroundImage: "linear-gradient(135deg, #151e2e 0%, #090e17 50%, #010306 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (currentUser?.personalTheme === "cyber-theme") {
+      return {
+        backgroundImage: "linear-gradient(135deg, #070a12 0%, #020306 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+    if (currentUser?.personalTheme === "founder-exclusive") {
+      return {
+        backgroundImage: "linear-gradient(135deg, #241802 0%, #0d0901 100%)",
+        backgroundAttachment: "fixed"
+      };
+    }
+
     const currentTemplateId = previewTemplateId || messAnimations?.themeTemplate || "default-erp";
     const currentTemplate = THEME_TEMPLATES.find(t => t.id === currentTemplateId) || THEME_TEMPLATES[0];
     const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
@@ -3244,8 +3382,8 @@ export default function App() {
           --color-cyan-400: ${colors.c400} !important;
           --color-cyan-500: ${colors.c500} !important;
           --color-cyan-600: ${colors.c600} !important;
-          --font-sans: ${fonts.sans} !important;
-          --font-display: ${fonts.display} !important;
+          --font-sans: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.sans} !important;
+          --font-display: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.display} !important;
           --custom-sidebar-bg: ${activeCustomColors?.sidebarBg || "#0f172a"};
           --custom-header-bg: ${activeCustomColors?.headerBg || "#0f172a"};
           --custom-card-bg: ${activeCustomColors?.cardBg || "#1e293b"};
@@ -3684,6 +3822,56 @@ export default function App() {
           --------------------------------------------------------- */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full space-y-6">
         
+        {/* Dynamic Platform Announcement Banners (Top Position) */}
+        {activeAnnouncements
+          .filter(ann => {
+            if (dismissedAnnIds.includes(ann.id)) return false;
+            if (ann.displayMethod !== "top-banner") return false;
+            if (ann.target === "premium" && !currentUser?.isPremium) return false;
+            if (ann.target === "mess" && ann.targetMessId && currentUser?.messId !== ann.targetMessId) return false;
+            if (ann.target === "users" && ann.targetUserIds) {
+              const emails = ann.targetUserIds.split(",").map((e: string) => e.trim().toLowerCase());
+              if (!emails.includes(currentUser?.email?.toLowerCase())) return false;
+            }
+            return true;
+          })
+          .map(ann => (
+            <div 
+              key={ann.id} 
+              id={`ann-banner-top-${ann.id}`}
+              className={`p-4 rounded-2xl border flex items-center justify-between gap-4 text-xs font-sans transition-all animate-fadeIn ${
+                ann.type === "danger" || ann.type === "emergency" 
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-300" 
+                  : ann.type === "warning" 
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-300" 
+                  : ann.type === "success" 
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" 
+                  : "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">
+                  {ann.type === "danger" || ann.type === "emergency" ? "🚨" : ann.type === "warning" ? "⚠️" : ann.type === "success" ? "✅" : "ℹ️"}
+                </span>
+                <div>
+                  <span className="font-extrabold uppercase tracking-widest text-[9px] block opacity-75">
+                    Broadcast Update: {ann.title}
+                  </span>
+                  <span className="opacity-95 leading-relaxed mt-0.5 block font-medium">{ann.content}</span>
+                </div>
+              </div>
+              {ann.dismissible && (
+                <button
+                  onClick={() => setDismissedAnnIds(prev => [...prev, ann.id])}
+                  className="p-1 hover:bg-white/10 rounded-lg cursor-pointer transition-all shrink-0"
+                  title="Dismiss notice"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        
         {currentUser.status === "ARCHIVED" && (
           <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-xs text-rose-400">
             <span className="text-base">⚠️</span>
@@ -4054,7 +4242,129 @@ export default function App() {
             </div>
           )}
 
+          {activeTab === "founder-console" && isPlatformOwner && (
+            <div className="space-y-6 animate-fadeIn" id="founder-console-view-wrapper">
+              <FounderConsole 
+                currentUser={currentUser!}
+                isDarkMode={isDarkMode}
+                t={t}
+                onRefreshPlatformStatus={fetchPlatformStatus}
+              />
+            </div>
+          )}
+
         </div>
+
+        {/* Dynamic Platform Announcement (Full-Screen Modal Overlay) */}
+        {activeAnnouncements
+          .filter(ann => {
+            if (dismissedAnnIds.includes(ann.id)) return false;
+            if (ann.displayMethod !== "full-screen") return false;
+            if (ann.target === "premium" && !currentUser?.isPremium) return false;
+            if (ann.target === "mess" && ann.targetMessId && currentUser?.messId !== ann.targetMessId) return false;
+            if (ann.target === "users" && ann.targetUserIds) {
+              const emails = ann.targetUserIds.split(",").map((e: string) => e.trim().toLowerCase());
+              if (!emails.includes(currentUser?.email?.toLowerCase())) return false;
+            }
+            return true;
+          })
+          .slice(0, 1)
+          .map(ann => (
+            <div 
+              key={ann.id} 
+              id={`ann-modal-full-${ann.id}`}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-6"
+            >
+              <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl max-w-lg w-full relative space-y-6 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">
+                      {ann.type === "danger" || ann.type === "emergency" ? "🚨" : ann.type === "warning" ? "⚠️" : ann.type === "success" ? "✅" : "📢"}
+                    </span>
+                    <span className="font-extrabold uppercase tracking-widest text-[10px] text-cyan-400 font-mono">
+                      SYSTEM ALERT
+                    </span>
+                  </div>
+                  {ann.dismissible && (
+                    <button
+                      onClick={() => setDismissedAnnIds(prev => [...prev, ann.id])}
+                      className="text-slate-400 hover:text-white transition-all p-1 hover:bg-slate-800 rounded-lg cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="text-xl font-extrabold tracking-tight text-white font-sans">
+                    {ann.title}
+                  </h2>
+                  <p className="text-sm text-slate-300 leading-relaxed font-sans">
+                    {ann.content}
+                  </p>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => setDismissedAnnIds(prev => [...prev, ann.id])}
+                    className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold text-xs rounded-xl font-mono transition-all cursor-pointer"
+                  >
+                    Acknowledge Notice
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+        {/* Dynamic Platform Announcement Banners (Bottom Position) */}
+        {activeAnnouncements
+          .filter(ann => {
+            if (dismissedAnnIds.includes(ann.id)) return false;
+            if (ann.displayMethod !== "bottom-banner") return false;
+            if (ann.target === "premium" && !currentUser?.isPremium) return false;
+            if (ann.target === "mess" && ann.targetMessId && currentUser?.messId !== ann.targetMessId) return false;
+            if (ann.target === "users" && ann.targetUserIds) {
+              const emails = ann.targetUserIds.split(",").map((e: string) => e.trim().toLowerCase());
+              if (!emails.includes(currentUser?.email?.toLowerCase())) return false;
+            }
+            return true;
+          })
+          .map(ann => (
+            <div 
+              key={ann.id} 
+              id={`ann-banner-bottom-${ann.id}`}
+              className={`p-4 rounded-2xl border flex items-center justify-between gap-4 text-xs font-sans transition-all animate-fadeIn ${
+                ann.type === "danger" || ann.type === "emergency" 
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-300" 
+                  : ann.type === "warning" 
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-300" 
+                  : ann.type === "success" 
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" 
+                  : "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">
+                  {ann.type === "danger" || ann.type === "emergency" ? "🚨" : ann.type === "warning" ? "⚠️" : ann.type === "success" ? "✅" : "ℹ️"}
+                </span>
+                <div>
+                  <span className="font-extrabold uppercase tracking-widest text-[9px] block opacity-75">
+                    Broadcast Update: {ann.title}
+                  </span>
+                  <span className="opacity-95 leading-relaxed mt-0.5 block font-medium">{ann.content}</span>
+                </div>
+              </div>
+              {ann.dismissible && (
+                <button
+                  onClick={() => setDismissedAnnIds(prev => [...prev, ann.id])}
+                  className="p-1 hover:bg-white/10 rounded-lg cursor-pointer transition-all shrink-0"
+                  title="Dismiss notice"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          ))}
 
       </main>
 
