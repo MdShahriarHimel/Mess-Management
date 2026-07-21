@@ -23,7 +23,7 @@ import {
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
 import { db as drizzleDb } from "../src/db/index.js";
-import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks } from "../src/db/schema.js";
+import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings } from "../src/db/schema.js";
 import { eq, sql, and } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
@@ -2695,6 +2695,212 @@ export function saveUserPreferences(userId: string, prefs: any) {
   }
 }
 
+// Global cache for tenant settings
+const settingsCache: Record<string, any> = {};
+
+function deepEqual(obj1: any, obj2: any): boolean {
+  if (obj1 === obj2) return true;
+  if (typeof obj1 !== "object" || obj1 === null || typeof obj2 !== "object" || obj2 === null) {
+    return false;
+  }
+  const keys1 = Object.keys(obj1);
+  const keys2 = Object.keys(obj2);
+  if (keys1.length !== keys2.length) return false;
+  for (const key of keys1) {
+    if (!keys2.includes(key)) return false;
+    if (!deepEqual(obj1[key], obj2[key])) return false;
+  }
+  return true;
+}
+
+function mapSettingsToRow(messId: string, settings: any) {
+  return {
+    messId,
+    messName: settings.messName || "",
+    siteColor: settings.siteColor || "",
+    fontSize: settings.fontSize || "",
+    fontStyle: settings.fontStyle || "",
+    logoText: settings.logoText || "",
+    dropdownOptions: JSON.stringify(settings.dropdownOptions || []),
+    translations: JSON.stringify(settings.translations || {}),
+    superUserCanEditBills: settings.superUserCanEditBills ?? true,
+    superUserCanInviteMembers: settings.superUserCanInviteMembers ?? true,
+    superUserCanArchiveMembers: settings.superUserCanArchiveMembers ?? true,
+    superUserCanEditMeals: settings.superUserCanEditMeals ?? true,
+    currencySymbol: settings.currencySymbol || "৳",
+    enableManagerRating: settings.enableManagerRating ?? true,
+    auditRetentionDays: Number(settings.auditRetentionDays ?? 30),
+    mealTypes: JSON.stringify(settings.mealTypes || []),
+    balanceSheetGlow: settings.balanceSheetGlow || "none",
+    customColors: JSON.stringify(settings.customColors || {}),
+    messAnimations: JSON.stringify(settings.messAnimations || {}),
+    dashboardVisibility: JSON.stringify(settings.dashboardVisibility || {}),
+    roleAnimations: JSON.stringify(settings.roleAnimations || {}),
+    dateRestrictions: JSON.stringify(settings.dateRestrictions || {}),
+    loginCustomization: JSON.stringify(settings.loginCustomization || {}),
+    homeCustomization: JSON.stringify(settings.homeCustomization || {}),
+    adminVisibility: JSON.stringify(settings.adminVisibility || {}),
+    creditConfig: JSON.stringify(settings.creditConfig || {}),
+    appearancePermissions: JSON.stringify(settings.appearancePermissions || {}),
+  };
+}
+
+function mapRowToSettings(row: any) {
+  const safeParse = (str: string, fallback: any) => {
+    try {
+      return str ? JSON.parse(str) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  return {
+    messName: row.messName,
+    siteColor: row.siteColor,
+    fontSize: row.fontSize,
+    fontStyle: row.fontStyle,
+    logoText: row.logoText,
+    dropdownOptions: safeParse(row.dropdownOptions, []),
+    translations: safeParse(row.translations, {}),
+    superUserCanEditBills: row.superUserCanEditBills,
+    superUserCanInviteMembers: row.superUserCanInviteMembers,
+    superUserCanArchiveMembers: row.superUserCanArchiveMembers,
+    superUserCanEditMeals: row.superUserCanEditMeals,
+    currencySymbol: row.currencySymbol,
+    enableManagerRating: row.enableManagerRating,
+    auditRetentionDays: Number(row.auditRetentionDays),
+    mealTypes: safeParse(row.mealTypes, []),
+    balanceSheetGlow: row.balanceSheetGlow,
+    customColors: safeParse(row.customColors, {}),
+    messAnimations: safeParse(row.messAnimations, {}),
+    dashboardVisibility: safeParse(row.dashboardVisibility, {}),
+    roleAnimations: safeParse(row.roleAnimations, {}),
+    dateRestrictions: safeParse(row.dateRestrictions, {}),
+    loginCustomization: safeParse(row.loginCustomization, {}),
+    homeCustomization: safeParse(row.homeCustomization, {}),
+    adminVisibility: safeParse(row.adminVisibility, {}),
+    creditConfig: safeParse(row.creditConfig, {}),
+    appearancePermissions: safeParse(row.appearancePermissions, {}),
+  };
+}
+
+async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings: any) {
+  try {
+    const rows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
+    
+    if (rows.length > 0) {
+      const pgSettings = {
+        ...localJsonSettings,
+        ...mapRowToSettings(rows[0])
+      };
+      settingsCache[messId] = pgSettings;
+      console.log(`[Settings] Successfully loaded settings from PostgreSQL for mess: ${messId}`);
+      return;
+    }
+
+    console.log(`[Settings] No settings found in PostgreSQL for mess ${messId}. Initiating migration...`);
+    const rowToInsert = mapSettingsToRow(messId, localJsonSettings);
+    await drizzleDb.insert(tenantSettings).values(rowToInsert);
+
+    const verifyRows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
+    if (verifyRows.length === 0) {
+      throw new Error("Verification failed: Inserted row could not be retrieved.");
+    }
+
+    const pgSettingsLoaded = mapRowToSettings(verifyRows[0]);
+    const validationKeys = Object.keys(localJsonSettings).filter(k => k !== 'erpName');
+    
+    let isMatch = true;
+    for (const key of validationKeys) {
+      const jsonVal = localJsonSettings[key];
+      const pgVal = pgSettingsLoaded[key as keyof typeof pgSettingsLoaded];
+      if (!deepEqual(jsonVal, pgVal)) {
+        console.warn(`[Settings] Validation mismatch on key "${key}". JSON:`, jsonVal, `PG:`, pgVal);
+        isMatch = false;
+        break;
+      }
+    }
+
+    if (isMatch) {
+      settingsCache[messId] = {
+        ...localJsonSettings,
+        ...pgSettingsLoaded
+      };
+      console.log(`[Settings] Migration verified and completed successfully for mess: ${messId}`);
+    } else {
+      console.error(`[Settings] Migration validation mismatch for mess ${messId}. Aborting migration and falling back to JSON.`);
+      settingsCache[messId] = localJsonSettings;
+    }
+  } catch (error) {
+    console.error(`[Settings] Error migrating settings for mess ${messId}:`, error);
+    settingsCache[messId] = localJsonSettings;
+  }
+}
+
+export async function preloadSettings(messId: string) {
+  try {
+    const file = messId === "default"
+      ? path.join(DB_DIR, "settings.json")
+      : path.join(DB_DIR, `settings_${messId}.json`);
+
+    let localJsonSettings: any = {};
+    if (fs.existsSync(file)) {
+      try {
+        const data = fs.readFileSync(file, "utf-8");
+        localJsonSettings = JSON.parse(data);
+      } catch (e) {
+        console.error(`Error loading file settings for preloading ${messId}:`, e);
+      }
+    }
+    
+    await syncSettingsToPostgresAndCache(messId, localJsonSettings);
+  } catch (error) {
+    console.error(`Error in preloadSettings for ${messId}:`, error);
+  }
+}
+
+async function saveSettingsToPostgres(messId: string, settings: any) {
+  try {
+    const rowToSave = mapSettingsToRow(messId, settings);
+    await drizzleDb
+      .insert(tenantSettings)
+      .values(rowToSave)
+      .onConflictDoUpdate({
+        target: tenantSettings.messId,
+        set: {
+          messName: rowToSave.messName,
+          siteColor: rowToSave.siteColor,
+          fontSize: rowToSave.fontSize,
+          fontStyle: rowToSave.fontStyle,
+          logoText: rowToSave.logoText,
+          dropdownOptions: rowToSave.dropdownOptions,
+          translations: rowToSave.translations,
+          superUserCanEditMeals: rowToSave.superUserCanEditMeals,
+          superUserCanInviteMembers: rowToSave.superUserCanInviteMembers,
+          superUserCanArchiveMembers: rowToSave.superUserCanArchiveMembers,
+          superUserCanEditBills: rowToSave.superUserCanEditBills,
+          currencySymbol: rowToSave.currencySymbol,
+          enableManagerRating: rowToSave.enableManagerRating,
+          auditRetentionDays: rowToSave.auditRetentionDays,
+          mealTypes: rowToSave.mealTypes,
+          balanceSheetGlow: rowToSave.balanceSheetGlow,
+          customColors: rowToSave.customColors,
+          messAnimations: rowToSave.messAnimations,
+          dashboardVisibility: rowToSave.dashboardVisibility,
+          roleAnimations: rowToSave.roleAnimations,
+          dateRestrictions: rowToSave.dateRestrictions,
+          loginCustomization: rowToSave.loginCustomization,
+          homeCustomization: rowToSave.homeCustomization,
+          adminVisibility: rowToSave.adminVisibility,
+          creditConfig: rowToSave.creditConfig,
+          appearancePermissions: rowToSave.appearancePermissions,
+        }
+      });
+    console.log(`[Settings] Successfully persisted settings to PostgreSQL for mess: ${messId}`);
+  } catch (error) {
+    console.error(`[Settings] Error persisting settings to PostgreSQL for mess ${messId}:`, error);
+  }
+}
+
 // ---------------------------------------------------------
 // CUSTOMIZABLE MESS NAME SETTINGS API
 // ---------------------------------------------------------
@@ -2820,9 +3026,15 @@ function loadSettings() {
 
   let legacySettings: any = {};
   try {
-    if (fs.existsSync(file)) {
-      const data = fs.readFileSync(file, "utf-8");
-      legacySettings = JSON.parse(data);
+    if (settingsCache[messId]) {
+      legacySettings = settingsCache[messId];
+    } else {
+      if (fs.existsSync(file)) {
+        const data = fs.readFileSync(file, "utf-8");
+        legacySettings = JSON.parse(data);
+        settingsCache[messId] = legacySettings;
+      }
+      preloadSettings(messId);
     }
   } catch (e) {
     console.error("Error loading settings:", e);
@@ -2873,6 +3085,9 @@ function saveSettings(settings: any) {
       ? "settings.json"
       : `settings_${messId}.json`;
     writeAndPersistFile(filename, JSON.stringify(settings, null, 2));
+
+    settingsCache[messId] = settings;
+    saveSettingsToPostgres(messId, settings);
   } catch (e) {
     console.error("Error saving settings:", e);
   }
@@ -3921,6 +4136,7 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   setActiveMessId(messId);
+  preloadSettings(messId);
   logAudit(req.user!.id, req.user!.nickname, "SWITCH_MESS_SCOPE", "Previous", messId, `Switched current ERP database scope to: ${found.name}`);
   res.json({ success: true, activeMessId: messId, name: found.name });
 });
@@ -5172,5 +5388,16 @@ router.post("/monetization/backup/import", authMiddleware, async (req: Authentic
     res.status(500).json({ error: "Restoration failed: " + err.message });
   }
 });
+
+// Startup preloading of tenant settings to populate cache
+try {
+  const currentActiveMess = getActiveMessId();
+  preloadSettings("default");
+  if (currentActiveMess !== "default") {
+    preloadSettings(currentActiveMess);
+  }
+} catch (startupErr) {
+  console.error("Error during startup settings preloading:", startupErr);
+}
 
 export { router };

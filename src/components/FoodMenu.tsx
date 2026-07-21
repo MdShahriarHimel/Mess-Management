@@ -493,31 +493,37 @@ export default function FoodMenu({
                 allMenus.map((menuItem) => (
                   <div 
                     key={menuItem.id} 
-                    className="flex flex-col gap-1 text-xs p-3 rounded-lg bg-slate-950/20 border border-slate-900"
+                    className={`flex flex-col gap-1 text-xs p-3 rounded-lg border ${
+                      isDarkMode 
+                        ? "bg-slate-950/20 border-slate-900" 
+                        : "bg-slate-50 border-slate-200"
+                    }`}
                   >
-                    <div className="font-mono text-cyan-300 font-bold border-b border-slate-900 pb-1 flex justify-between items-center">
+                    <div className={`font-mono font-bold border-b pb-1 flex justify-between items-center ${
+                      isDarkMode ? "text-cyan-300 border-slate-900" : "text-cyan-600 border-slate-200"
+                    }`}>
                       <span>{menuItem.date}</span>
                       <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-400 font-sans tracking-widest">PUBLISHED</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-1">
                       <div>
                         <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Lunch (দুপুর)</p>
-                        <p className="font-semibold text-slate-200 leading-tight">
+                        <p className={`font-semibold leading-tight ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
                           {menuItem.lunchMain || "N/A"}
                         </p>
                         {menuItem.lunchVegetable && (
-                          <p className="text-[10px] text-slate-400 font-mono italic mt-0.5">
+                          <p className={`text-[10px] font-mono italic mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
                             + {menuItem.lunchVegetable}
                           </p>
                         )}
                       </div>
                       <div>
                         <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Dinner (রাত)</p>
-                        <p className="font-semibold text-slate-200 leading-tight">
+                        <p className={`font-semibold leading-tight ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
                           {menuItem.dinnerMain || "N/A"}
                         </p>
                         {menuItem.dinnerVegetable && (
-                          <p className="text-[10px] text-slate-400 font-mono italic mt-0.5">
+                          <p className={`text-[10px] font-mono italic mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
                             + {menuItem.dinnerVegetable}
                           </p>
                         )}
@@ -557,7 +563,7 @@ export default function FoodMenu({
                         return (
                           <div key={idx} className="space-y-1.5 animate-fade-in">
                             <div className="flex justify-between text-xs">
-                              <span className="font-semibold text-slate-300 flex items-center gap-2">
+                              <span className={`font-semibold flex items-center gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
                                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0"></span>
                                 {dish.name}
                               </span>
@@ -581,8 +587,12 @@ export default function FoodMenu({
                     <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Detected Vegetable Items</span>
                     <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
                       {stats.vegetableDetails.map((veg: any, idx: number) => (
-                        <div key={idx} className="p-2.5 rounded-xl bg-slate-950/30 border border-slate-800/60 text-[11px] flex justify-between items-center animate-fade-in">
-                          <span className="truncate font-medium text-slate-300">{veg.name}</span>
+                        <div key={idx} className={`p-2.5 rounded-xl border text-[11px] flex justify-between items-center animate-fade-in ${
+                          isDarkMode 
+                            ? "bg-slate-950/30 border-slate-800/60" 
+                            : "bg-slate-50 border-slate-200"
+                        }`}>
+                          <span className={`truncate font-medium ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{veg.name}</span>
                           <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-bold font-mono text-[9px] shrink-0">x{veg.count}</span>
                         </div>
                       ))}

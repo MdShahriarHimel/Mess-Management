@@ -370,5 +370,35 @@ export const premiumUnlocks = pgTable("premium_unlocks", {
   unlockedAt: text("unlocked_at").notNull(),
 });
 
+export const tenantSettings = pgTable("tenant_settings", {
+  messId: text("mess_id").primaryKey(),
+  messName: text("mess_name").notNull(),
+  siteColor: text("site_color").notNull(),
+  fontSize: text("font_size").notNull(),
+  fontStyle: text("font_style").notNull(),
+  logoText: text("logo_text").notNull(),
+  dropdownOptions: text("dropdown_options").notNull(), // stringified array
+  translations: text("translations").notNull(), // stringified object
+  superUserCanEditBills: boolean("superuser_can_edit_bills").notNull().default(true),
+  superUserCanInviteMembers: boolean("superuser_can_invite_members").notNull().default(true),
+  superUserCanArchiveMembers: boolean("superuser_can_archive_members").notNull().default(true),
+  superUserCanEditMeals: boolean("superuser_can_edit_meals").notNull().default(true),
+  currencySymbol: text("currency_symbol").notNull(),
+  enableManagerRating: boolean("enable_manager_rating").notNull().default(true),
+  auditRetentionDays: integer("audit_retention_days").notNull().default(30),
+  mealTypes: text("meal_types").notNull(), // stringified array
+  balanceSheetGlow: text("balance_sheet_glow").notNull(),
+  customColors: text("custom_colors").notNull(), // stringified object
+  messAnimations: text("mess_animations").notNull(), // stringified object
+  dashboardVisibility: text("dashboard_visibility").notNull(), // stringified object
+  roleAnimations: text("role_animations").notNull(), // stringified object
+  dateRestrictions: text("date_restrictions").notNull(), // stringified object
+  loginCustomization: text("login_customization").notNull(), // stringified object
+  homeCustomization: text("home_customization").notNull(), // stringified object
+  adminVisibility: text("admin_visibility").notNull(), // stringified object
+  creditConfig: text("credit_config").notNull(), // stringified object
+  appearancePermissions: text("appearance_permissions").notNull(), // stringified object
+});
+
 
 

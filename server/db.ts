@@ -530,6 +530,10 @@ export async function initializeDbCache() {
   }
 }
 
+export let lastSyncTime: string | null = null;
+export let lastWriteTime: string | null = null;
+export let syncState: "Idle" | "Syncing" | "Pending" = "Idle";
+
 let isSyncing = false;
 let pendingSyncCache: DatabaseSchema | null = null;
 
@@ -537,15 +541,20 @@ let pendingSyncCache: DatabaseSchema | null = null;
 export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
   if (isSyncing) {
     pendingSyncCache = cache;
+    syncState = "Pending";
     return;
   }
   isSyncing = true;
+  syncState = "Syncing";
   
   const syncPromise = (async () => {
     try {
       await doActualSync(cache);
+      lastSyncTime = new Date().toISOString();
+      lastWriteTime = new Date().toISOString();
     } finally {
       isSyncing = false;
+      syncState = "Idle";
       if (pendingSyncCache) {
         const nextCache = pendingSyncCache;
         pendingSyncCache = null;

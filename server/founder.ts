@@ -13,7 +13,11 @@ import {
   writeAndPersistFile, 
   DB_DIR, 
   generateUUID,
-  loadCredentials
+  loadCredentials,
+  lastSyncTime,
+  lastWriteTime,
+  syncState,
+  pendingSyncPromises
 } from "./db.js";
 import { authMiddleware } from "./routes.js";
 import { 
@@ -374,17 +378,27 @@ router.post("/transfer-ownership", platformOwnerMiddleware, (req: AuthenticatedR
 // 4. STORAGE & DATABASE detailed metrics (Manual Refresh only)
 router.get("/db-status", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const startTime = Date.now();
     let dbStatus = "Connected";
     let dbSize = "Unknown";
     let connectionStatus = "Healthy";
+    let dbEngine = "PostgreSQL (Neon)";
+    let reachability = "Reachable";
     
     try {
+      const versionResult = await pool.query("SELECT version();");
+      if (versionResult.rows[0]?.version) {
+        dbEngine = versionResult.rows[0].version.split(" on ")[0] || "PostgreSQL (Neon)";
+      }
       const sizeResult = await pool.query("SELECT pg_size_pretty(pg_database_size(current_database()));");
       dbSize = sizeResult.rows[0]?.pg_size_pretty || "Unknown";
     } catch (e: any) {
       dbStatus = "Error";
       connectionStatus = "Unhealthy: " + (e.message || e);
+      reachability = "Unreachable";
     }
+
+    const apiResponseTime = (Date.now() - startTime) + " ms";
 
     // Calculate disk space consumed by dynamic backups and settings JSONs
     let storageBytes = 0;
@@ -412,6 +426,47 @@ router.get("/db-status", platformOwnerMiddleware, async (req: AuthenticatedReque
     const storageUsage = (storageBytes / 1024).toFixed(2) + " KB (" + (storageBytes / (1024 * 1024)).toFixed(4) + " MB)";
     const dbCacheLoaded = loadDB() ? "Active & Syncing" : "Not Initialized";
 
+    // Detailed Cache calculations
+    const cacheData = loadDB();
+    const loadedItemsCount = cacheData ? (
+      (cacheData.members?.length || 0) +
+      (cacheData.months?.length || 0) +
+      (cacheData.meals?.length || 0) +
+      (cacheData.foodMenus?.length || 0) +
+      (cacheData.marketEntries?.length || 0) +
+      (cacheData.deposits?.length || 0) +
+      (cacheData.bills?.length || 0) +
+      (cacheData.duties?.length || 0) +
+      (cacheData.managerHoldings?.length || 0) +
+      (cacheData.managerRatings?.length || 0) +
+      (cacheData.notices?.length || 0) +
+      (cacheData.auditLogs?.length || 0) +
+      (cacheData.mealRequests?.length || 0)
+    ) : 0;
+
+    const cacheSizeBytes = cacheData ? Buffer.byteLength(JSON.stringify(cacheData)) : 0;
+    const cacheSizeStr = cacheSizeBytes > 0 ? (cacheSizeBytes / 1024).toFixed(2) + " KB" : "0 KB";
+
+    // Synchronization & Write history
+    let lastWrite = lastWriteTime;
+    let lastSync = lastSyncTime;
+    if (cacheData && cacheData.auditLogs?.length > 0) {
+      const latestAuditTime = cacheData.auditLogs[0].timestamp;
+      if (!lastWrite) lastWrite = latestAuditTime;
+      if (!lastSync) lastSync = latestAuditTime;
+    }
+
+    // Format server uptime
+    const uptimeSeconds = Math.floor(process.uptime());
+    const days = Math.floor(uptimeSeconds / (3600 * 24));
+    const hours = Math.floor((uptimeSeconds % (3600 * 24)) / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeStr = days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+
+    // Memory usage
+    const mem = process.memoryUsage();
+    const memoryStr = `${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB / ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`;
+
     res.json({
       databaseStatus: dbStatus,
       databaseSize: dbSize,
@@ -419,7 +474,31 @@ router.get("/db-status", platformOwnerMiddleware, async (req: AuthenticatedReque
       connectionStatus: connectionStatus,
       backupStatus: backupFileExists ? `Backup OK (${backupFileSizeStr}, Last: ${backupFileTime})` : "Backup File Missing",
       cacheStatus: dbCacheLoaded,
-      healthStatus: dbStatus === "Connected" && backupFileExists ? "Excellent" : "Warning"
+      healthStatus: dbStatus === "Connected" && backupFileExists ? "Excellent" : "Warning",
+      
+      // Extended diagnostics objects
+      cacheDetails: {
+        status: dbCacheLoaded,
+        loadedItems: loadedItemsCount,
+        size: cacheSizeStr,
+        version: "v1.1.0-Prod"
+      },
+      databaseDetails: {
+        connectionStatus,
+        engine: dbEngine,
+        lastSuccessfulWrite: lastWrite ? new Date(lastWrite).toLocaleString() : "None in this session",
+        reachability
+      },
+      syncDetails: {
+        lastSuccessfulSync: lastSync ? new Date(lastSync).toLocaleString() : "None in this session",
+        pendingQueueSize: pendingSyncPromises?.length || 0,
+        syncState: syncState || "Idle"
+      },
+      serverDetails: {
+        uptime: uptimeStr,
+        memoryUsage: memoryStr,
+        apiResponseTime
+      }
     });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to load database storage metrics: " + err.message });
