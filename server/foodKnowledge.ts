@@ -35,6 +35,160 @@ const aliasCache = new Map<string, string>(); // alias (lowercase) -> foodId
 
 let isInitialized = false;
 
+export function invalidateFoodCache() {
+  isInitialized = false;
+}
+
+/**
+ * Phonetic similarity generator for transliterated Bengali/English food names.
+ * Reduces spelling variations into a canonical pronunciation key.
+ */
+function getPhoneticKey(str: string): string {
+  if (!str) return "";
+  let s = str.normalize("NFC").toLowerCase().trim();
+  
+  // Replace Bengali characters with phonetically similar characters
+  s = s.replace(/ড়/g, "র")
+       .replace(/ঢ়/g, "র")
+       .replace(/ষ/g, "শ")
+       .replace(/স/g, "শ")
+       .replace(/ী/g, "ি")
+       .replace(/ূ/g, "ু")
+       .replace(/ত/g, "ত")
+       .replace(/থ/g, "ত")
+       .replace(/দ/g, "দ")
+       .replace(/ধ/g, "দ");
+
+  // Keep letters, numbers, spaces, and Bengali characters
+  s = s.replace(/[^\w\s\u0980-\u09ff]/g, "");
+
+  // Convert typical English transliteration equivalents
+  s = s.replace(/ch/g, "s")
+       .replace(/sh/g, "s")
+       .replace(/c/g, "s")
+       .replace(/z/g, "s")
+       .replace(/kh/g, "k")
+       .replace(/gh/g, "g")
+       .replace(/th/g, "t")
+       .replace(/dh/g, "d")
+       .replace(/ph/g, "f")
+       .replace(/bh/g, "v")
+       .replace(/w/g, "o")
+       .replace(/y/g, "i")
+       .replace(/oo/g, "u")
+       .replace(/ee/g, "i");
+
+  // Collapse consecutive identical consonants
+  s = s.replace(/([bcdfghjklmnpqrstvwxyz])\1+/g, "$1");
+
+  // Collapse multiple spaces
+  s = s.replace(/\s+/g, " ").trim();
+
+  return s;
+}
+
+/**
+ * Standard Levenshtein distance calculation
+ */
+function getLevenshteinDistance(a: string, b: string): number {
+  const tmp: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    tmp[i] = [i];
+  }
+  for (let j = 0; j <= b.length; j++) {
+    tmp[0][j] = j;
+  }
+  for (let i = 1; i <= a.length; i++) {
+    for (const row of tmp) {
+      if (row.length <= 1) {
+        // Init row
+      }
+    }
+    for (let j = 1; j <= b.length; j++) {
+      tmp[i][j] = Math.min(
+        tmp[i - 1][j] + 1, // deletion
+        tmp[i][j - 1] + 1, // insertion
+        tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1) // substitution
+      );
+    }
+  }
+  return tmp[a.length][b.length];
+}
+
+/**
+ * Returns string similarity score from 0.0 to 1.0 using Levenshtein distance
+ */
+function getSimilarity(a: string, b: string): number {
+  const maxLength = Math.max(a.length, b.length);
+  if (maxLength === 0) return 1.0;
+  const distance = getLevenshteinDistance(a, b);
+  return 1.0 - distance / maxLength;
+}
+
+/**
+ * Programmatic fuzzy matching using spelling, phonetics, substrings and Levenshtein distance.
+ */
+export function findFuzzyMatch(normalizedQuery: string): FoodItem | null {
+  const qPhonetic = getPhoneticKey(normalizedQuery);
+  
+  let bestMatch: FoodItem | null = null;
+  let highestScore = 0;
+
+  for (const food of foodCache.values()) {
+    const labelsToCheck = [food.label.toLowerCase().trim(), ...food.aliases];
+    
+    for (const target of labelsToCheck) {
+      const targetNormalized = target.toLowerCase().trim();
+      if (!targetNormalized) continue;
+
+      const tPhonetic = getPhoneticKey(targetNormalized);
+
+      // 1. Exact phonetic key match (very high confidence)
+      if (qPhonetic === tPhonetic && qPhonetic.length > 1) {
+        return food;
+      }
+
+      // 2. Substring matching for incomplete names / abbreviations
+      if (normalizedQuery.length >= 4 && targetNormalized.length >= 4) {
+        if (targetNormalized.includes(normalizedQuery) || normalizedQuery.includes(targetNormalized)) {
+          const score = Math.min(normalizedQuery.length, targetNormalized.length) / Math.max(normalizedQuery.length, targetNormalized.length);
+          if (score > highestScore && score >= 0.7) {
+            highestScore = score;
+            bestMatch = food;
+          }
+        }
+      }
+
+      // 3. Phonetic substring match
+      if (qPhonetic.length >= 3 && tPhonetic.length >= 3) {
+        if (tPhonetic.includes(qPhonetic) || qPhonetic.includes(tPhonetic)) {
+          const score = Math.min(qPhonetic.length, tPhonetic.length) / Math.max(qPhonetic.length, tPhonetic.length);
+          if (score > highestScore && score >= 0.75) {
+            highestScore = score;
+            bestMatch = food;
+          }
+        }
+      }
+
+      // 4. Levenshtein similarity on string
+      const textSimilarity = getSimilarity(normalizedQuery, targetNormalized);
+      if (textSimilarity > highestScore && textSimilarity >= 0.82) {
+        highestScore = textSimilarity;
+        bestMatch = food;
+      }
+
+      // 5. Levenshtein similarity on phonetics
+      const phoneticSimilarity = getSimilarity(qPhonetic, tPhonetic);
+      if (phoneticSimilarity > highestScore && phoneticSimilarity >= 0.85) {
+        highestScore = phoneticSimilarity;
+        bestMatch = food;
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
 // Seed data for common foods to minimize initial Gemini worker calls
 const INITIAL_FOOD_SEED = [
   { label: "পুঁই শাক", category: "Vegetables", aliases: ["pui shak", "পুঁইশাক", "pui saag", "pui", "পুঁই"] },
@@ -372,6 +526,217 @@ Return a strict JSON array conforming to the schema.`;
 }
 
 /**
+ * 5-Step Semantic Recognition Pipeline:
+ * 1. Normalize Input (NFC normalize, lowercase, ignore punctuation)
+ * 2. Alias Database Lookup
+ * 3. Fuzzy Matching (phonetics, substrings, Levenshtein distance)
+ * 4. Gemini AI (Last Resort semantic match)
+ * 5. Self Learning (Save newly matched alias permanently)
+ */
+export async function resolveCanonicalFood(rawName: string): Promise<{ label: string; category: string; id: string }> {
+  await initializeFoodCache();
+
+  if (!rawName) {
+    return { label: "", category: "Other", id: "" };
+  }
+
+  const normalized = rawName.normalize("NFC").toLowerCase().trim();
+  if (!normalized) {
+    return { label: rawName, category: "Other", id: "" };
+  }
+
+  // Step 2: Alias Database and exact Cache Lookup
+  const exactAliasFoodId = aliasCache.get(normalized);
+  if (exactAliasFoodId) {
+    const food = foodCache.get(exactAliasFoodId);
+    if (food) {
+      return { label: food.label, category: food.category, id: food.id };
+    }
+  }
+
+  for (const food of foodCache.values()) {
+    if (food.label.toLowerCase().trim() === normalized) {
+      return { label: food.label, category: food.category, id: food.id };
+    }
+  }
+
+  // Step 3: Programmatic Fuzzy Matching (phonetics, substring, Levenshtein distance)
+  const fuzzyMatch = findFuzzyMatch(normalized);
+  if (fuzzyMatch) {
+    // Step 5: Self Learning - Automatically register this exact raw query as an alias so next time it is Step 2
+    try {
+      await db.insert(foodAliases).values({
+        id: "alias_" + generateUUID(),
+        alias: normalized,
+        foodId: fuzzyMatch.id
+      }).onConflictDoNothing();
+      
+      // Update local cache
+      aliasCache.set(normalized, fuzzyMatch.id);
+      
+      // Also update food's aliases array in DB & cache if not already in there
+      if (!fuzzyMatch.aliases.includes(normalized)) {
+        fuzzyMatch.aliases.push(normalized);
+        await db.update(foodKnowledgeBase)
+          .set({ aliases: JSON.stringify(fuzzyMatch.aliases) })
+          .where(eq(foodKnowledgeBase.id, fuzzyMatch.id));
+      }
+    } catch (e) {
+      console.error("[Food Knowledge] Error auto-saving fuzzy match alias:", e);
+    }
+    return { label: fuzzyMatch.label, category: fuzzyMatch.category, id: fuzzyMatch.id };
+  }
+
+  // Step 4: Gemini AI (Last Resort semantic reasoning)
+  try {
+    const existingFoods = Array.from(foodCache.values()).map(f => ({
+      id: f.id,
+      label: f.label,
+      category: f.category,
+      aliases: f.aliases
+    }));
+
+    const prompt = `You are a Bengali food intelligence expert.
+We have an unrecognized food name: "${rawName}".
+We want to map it semantically to an existing food from our database, or identify it as a completely new food.
+
+Here is the list of existing canonical foods:
+${JSON.stringify(existingFoods, null, 2)}
+
+Please analyze if "${rawName}" refers to one of the existing canonical foods (even with typos, dialect variations, phonetic spellings, different languages, or abbreviations).
+For example: "kosur loti", "kocur loti", "কছুর লতি" all refer to "কচুর লতি" or "kochur loti". "goru", "beef", "gorur mangsho" all refer to "গরুর মাংস" (Beef).
+
+Respond with a strict JSON object:
+{
+  "isMatch": true,
+  "matchedFoodId": "the ID of the matching food",
+  "matchedLabel": "the label of the matching food",
+  "newFoodLabel": null,
+  "newFoodCategory": null,
+  "aliasesToSave": ["list of strings that should be saved as aliases, e.g. the original unrecognized name and its variations"],
+  "reason": "why they are the same"
+}
+OR if it's a completely different food:
+{
+  "isMatch": false,
+  "matchedFoodId": null,
+  "matchedLabel": null,
+  "newFoodLabel": "standard canonical name for this new food in Bengali or English",
+  "newFoodCategory": "one of: 'Vegetables', 'Fish', 'Chicken', 'Beef', 'Mutton', 'Eggs', 'Lentils', 'Rice', 'Dessert', 'Drinks', 'Other'",
+  "aliasesToSave": ["list of strings to save as aliases for this new food"],
+  "reason": "why it is a new food"
+}`;
+
+    console.log(`[Food Knowledge] Calling Gemini AI for semantic recognition of: "${rawName}"`);
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isMatch: { type: Type.BOOLEAN },
+            matchedFoodId: { type: Type.STRING },
+            matchedLabel: { type: Type.STRING },
+            newFoodLabel: { type: Type.STRING },
+            newFoodCategory: { type: Type.STRING },
+            aliasesToSave: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            reason: { type: Type.STRING }
+          },
+          required: ["isMatch", "aliasesToSave"]
+        }
+      }
+    });
+
+    const result = JSON.parse(response.text.trim());
+    const timestamp = new Date().toISOString();
+
+    if (result.isMatch && result.matchedFoodId) {
+      const foodId = result.matchedFoodId;
+      const food = foodCache.get(foodId);
+      if (food) {
+        // Step 5: Self Learning - Automatically save aliases permanently
+        const newAliases = Array.from(new Set([
+          normalized,
+          ...result.aliasesToSave.map((a: string) => a.toLowerCase().trim())
+        ])).filter(Boolean);
+
+        for (const alias of newAliases) {
+          if (!food.aliases.includes(alias)) {
+            food.aliases.push(alias);
+          }
+          await db.insert(foodAliases).values({
+            id: "alias_" + generateUUID(),
+            alias,
+            foodId,
+          }).onConflictDoNothing();
+          aliasCache.set(alias, foodId);
+        }
+
+        await db.update(foodKnowledgeBase)
+          .set({ aliases: JSON.stringify(food.aliases) })
+          .where(eq(foodKnowledgeBase.id, foodId));
+
+        console.log(`[Food Knowledge] Self-learned alias: Saved ${newAliases.join(", ")} for canonical food: "${food.label}"`);
+        return { label: food.label, category: food.category, id: food.id };
+      }
+    }
+
+    // It's a completely new food or we didn't find the matched food ID in cache
+    const newLabel = result.newFoodLabel || rawName;
+    const newCategory = result.newFoodCategory || "Other";
+    const foodId = "food_" + generateUUID();
+
+    const newAliases = Array.from(new Set([
+      newLabel.toLowerCase().trim(),
+      normalized,
+      ...result.aliasesToSave.map((a: string) => a.toLowerCase().trim())
+    ])).filter(Boolean);
+
+    await db.insert(foodKnowledgeBase).values({
+      id: foodId,
+      label: newLabel,
+      category: newCategory,
+      aliases: JSON.stringify(newAliases),
+      confidence: 1.0,
+      timestamp,
+      frequency: 1,
+    });
+
+    for (const alias of newAliases) {
+      await db.insert(foodAliases).values({
+        id: "alias_" + generateUUID(),
+        alias,
+        foodId,
+      }).onConflictDoNothing();
+      aliasCache.set(alias, foodId);
+    }
+
+    foodCache.set(foodId, {
+      id: foodId,
+      label: newLabel,
+      category: newCategory,
+      aliases: newAliases,
+      confidence: 1.0,
+      timestamp,
+      frequency: 1,
+    });
+
+    console.log(`[Food Knowledge] Self-learned new food: Created "${newLabel}" under "${newCategory}"`);
+    return { label: newLabel, category: newCategory, id: foodId };
+
+  } catch (error) {
+    console.error("[Food Knowledge] Gemini semantic recognition failed:", error);
+    // Graceful fallback to raw input in case of Gemini errors
+    return { label: rawName, category: "Other", id: "" };
+  }
+}
+
+/**
  * Executed whenever a manager saves a meal/menu.
  * Increment frequency metrics for matching food labels.
  */
@@ -383,54 +748,21 @@ export async function processMenuFoods(
 ) {
   await initializeFoodCache();
 
-  const combinedTexts = [lunchVegetable, lunchMain, dinnerVegetable, dinnerMain]
+  const rawPhrases = [lunchVegetable, lunchMain, dinnerVegetable, dinnerMain]
     .filter(Boolean)
-    .join(", ");
+    .flatMap(text => splitMenuText(text));
 
-  if (!combinedTexts.trim()) return;
-
-  const { known, unknown } = extractFoodPhrases(combinedTexts);
-
-  // 1. Process and Increment frequencies of matching known food labels
-  const allMatchedFoodIds = new Set<string>();
-  for (const label of known) {
-    // Find food ID from our cache
-    for (const [foodId, food] of foodCache.entries()) {
-      if (food.label === label) {
-        allMatchedFoodIds.add(foodId);
-        break;
-      }
-    }
-  }
-
-  // Increment frequency counts in DB and Cache
-  for (const foodId of allMatchedFoodIds) {
-    const cachedItem = foodCache.get(foodId);
-    if (cachedItem) {
-      cachedItem.frequency += 1;
-      await db
-        .update(foodKnowledgeBase)
-        .set({ frequency: cachedItem.frequency })
-        .where(eq(foodKnowledgeBase.id, foodId));
-    }
-  }
-
-  // 2. Call Gemini for truly unknown residual phrases
-  if (unknown.length > 0) {
-    console.log(`[Food Knowledge] Found ${unknown.length} unknown phrases. Initiating Gemini teacher pipeline...`);
-    const { learned } = await learnUnknownFoods(unknown);
-
-    // Increment frequency for newly learned foods too
-    for (const item of learned) {
-      for (const [foodId, food] of foodCache.entries()) {
-        if (food.label === item.label) {
-          food.frequency += 1;
-          await db
-            .update(foodKnowledgeBase)
-            .set({ frequency: food.frequency })
-            .where(eq(foodKnowledgeBase.id, foodId));
-          break;
-        }
+  for (const phrase of rawPhrases) {
+    const canonical = await resolveCanonicalFood(phrase);
+    if (canonical.id) {
+      // Increment frequency in DB & cache
+      const cachedItem = foodCache.get(canonical.id);
+      if (cachedItem) {
+        cachedItem.frequency += 1;
+        await db
+          .update(foodKnowledgeBase)
+          .set({ frequency: cachedItem.frequency })
+          .where(eq(foodKnowledgeBase.id, canonical.id));
       }
     }
   }

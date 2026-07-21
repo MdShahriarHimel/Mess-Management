@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, onIdTokenChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
@@ -2343,7 +2343,7 @@ export default function App() {
     if (sessionToken) {
       if (sessionToken.startsWith("ey") && !firebaseAuthChecked) {
         // Skip initial check of Firebase token, wait for onAuthStateChanged to refresh/verify
-        // return;
+        return;
       }
       validateSession(sessionToken);
       fetchMonthsAndMembers(sessionToken);
@@ -2364,18 +2364,133 @@ export default function App() {
     return () => window.removeEventListener("refresh-current-user", handleRefreshUser);
   }, [sessionToken]);
 
+  // Setup global fetch interceptor to heal/refresh token on 401 token expired errors
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async function (input, init) {
+      let response = await originalFetch(input, init);
+      // If we receive a 401 Unauthorized or session expired from the backend
+      if (response.status === 401 && auth.currentUser) {
+        try {
+          const cloneRes = response.clone();
+          const errData = await cloneRes.json().catch(() => ({}));
+          const isExpired = errData.code === "auth/id-token-expired" || 
+                            errData.error?.includes("expired") || 
+                            errData.error?.includes("Firebase") ||
+                            errData.error?.toLowerCase().includes("session");
+          
+          if (isExpired) {
+            console.warn("Detected expired Firebase ID token during API call. Auto-refreshing...");
+            // Get a fresh token (non-force first)
+            let freshToken = await auth.currentUser.getIdToken(false);
+            
+            // If the cached token didn't change or was already expired, force refresh
+            const oldToken = localStorage.getItem("mess_token");
+            if (freshToken === oldToken) {
+              freshToken = await auth.currentUser.getIdToken(true);
+            }
+            
+            localStorage.setItem("mess_token", freshToken);
+            window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken }));
+
+            // Reconstruct options with new Authorization header
+            const newInit = { ...init } as any;
+            if (newInit.headers) {
+              if (typeof newInit.headers.set === "function") {
+                newInit.headers.set("Authorization", `Bearer ${freshToken}`);
+              } else if (Array.isArray(newInit.headers)) {
+                newInit.headers = newInit.headers.map(([k, v]: any) => 
+                  k.toLowerCase() === "authorization" ? [k, `Bearer ${freshToken}`] : [k, v]
+                );
+              } else {
+                const keys = Object.keys(newInit.headers);
+                const authKey = keys.find(k => k.toLowerCase() === "authorization") || "Authorization";
+                newInit.headers[authKey] = `Bearer ${freshToken}`;
+              }
+            } else {
+              newInit.headers = { "Authorization": `Bearer ${freshToken}` };
+            }
+
+            console.log("Retrying API request with fresh token:", input);
+            response = await originalFetch(input, newInit);
+          }
+        } catch (err) {
+          console.error("Failed to auto-recover/refresh token in fetch interceptor:", err);
+        }
+      }
+      return response;
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, []);
+
+  // Update session token state when custom refresh event fires
+  useEffect(() => {
+    const handleTokenRefreshed = (e: Event) => {
+      const freshToken = (e as CustomEvent).detail;
+      setSessionToken(freshToken);
+    };
+    window.addEventListener("firebase-token-refreshed", handleTokenRefreshed);
+    return () => {
+      window.removeEventListener("firebase-token-refreshed", handleTokenRefreshed);
+    };
+  }, []);
+
+  // Periodically refresh the token every 20 minutes if the user is active
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (auth.currentUser) {
+        try {
+          console.log("Periodically refreshing Firebase auth token...");
+          const freshToken = await auth.currentUser.getIdToken(true);
+          localStorage.setItem("mess_token", freshToken);
+          setSessionToken(freshToken);
+        } catch (e) {
+          console.warn("Failed periodic token refresh, will retry next interval:", e);
+        }
+      }
+    }, 20 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Firebase Auth persistence listener to auto-refresh expired token and handle auto-login on startup
   useEffect(() => {
     let isMounted = true;
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const freshToken = await firebaseUser.getIdToken(true); // forces token refresh if expired
+          let freshToken = await firebaseUser.getIdToken(false); // gets cached or refreshes if expired
+          
+          // Verify if the token is expired or close to it, and force-refresh if needed
+          try {
+            const parts = freshToken.split(".");
+            if (parts.length === 3) {
+              const base64Url = parts[1];
+              const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+              const jsonPayload = decodeURIComponent(
+                atob(base64)
+                  .split("")
+                  .map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                  .join("")
+              );
+              const payload = JSON.parse(jsonPayload);
+              const exp = payload.exp * 1000;
+              if (Date.now() >= exp - 10000) {
+                console.log("[Auth] Cached token is expired or expiring soon, forcing refresh...");
+                freshToken = await firebaseUser.getIdToken(true);
+              }
+            }
+          } catch (jwtErr) {
+            console.warn("[Auth] Failed client-side JWT expiration check:", jwtErr);
+          }
+
           if (!isMounted) return;
           localStorage.setItem("mess_token", freshToken);
           setSessionToken(freshToken);
           setFirebaseAuthChecked(true);
-
+ 
           // Validate against server database
           const response = await fetch("/api/auth/me", {
             headers: { "Authorization": `Bearer ${freshToken}` }
@@ -2394,13 +2509,13 @@ export default function App() {
             }
           }
         } catch (e: any) {
-          console.error("Error on Firebase auth state change:", e);
-          const isNetworkError = e?.message?.includes("network-request-failed") || e?.code?.includes("network-request-failed");
+          const isNetworkError = e?.message?.includes("network-request-failed") || e?.code?.includes("network-request-failed") || String(e).includes("network-request-failed");
           if (isNetworkError) {
-            console.warn("Network request failed during Firebase token refresh. Preserving local session to support flaky network connectivity.");
+            console.warn("Network request failed during Firebase token refresh. Preserving local session to support flaky network connectivity.", e);
             // Mark firebaseAuthChecked as true so UI doesn't hang in loading state
             if (isMounted) setFirebaseAuthChecked(true);
           } else {
+            console.error("Error on Firebase auth state change:", e);
             if (isMounted) handleLogoutLocal();
           }
         }
@@ -2894,7 +3009,11 @@ export default function App() {
     { id: "notices", label: t("Notices"), icon: <Bell size={16} /> },
     { id: "audit", label: t("Audit Log"), icon: <Shield size={16} /> },
     { id: "security", label: t("Security Settings"), icon: <Lock size={16} /> },
-    { id: "settings", label: t("ERP Control Panel"), icon: <Settings size={16} /> }
+    { 
+      id: "settings", 
+      label: currentUser?.role === UserRole.MEMBER ? t("Personal Preferences") : t("ERP Control Panel"), 
+      icon: currentUser?.role === UserRole.MEMBER ? <LucideIcons.User size={16} /> : <Settings size={16} /> 
+    }
   ];
 
   if (isPlatformOwner) {
@@ -2929,6 +3048,16 @@ export default function App() {
     if (item.id === "meals" && dashboardVisibility && !dashboardVisibility.showMealTracker) return false;
     if (item.id === "menu" && dashboardVisibility && !dashboardVisibility.showFoodMenu) return false;
     if (item.id === "notices" && dashboardVisibility && !dashboardVisibility.showNotices) return false;
+    
+    // Strict separation of settings access
+    if (item.id === "settings") {
+      if (isPlatformOwner) return true;
+      if (currentUser?.role === UserRole.ADMIN) return true;
+      if (currentUser?.role === UserRole.MEMBER) return true;
+      // Hide completely from Managers (SUPERUSER, ASSISTANT_SUPERUSER, MANAGER, PARTIAL_MANAGER)
+      return false;
+    }
+    
     return true;
   });
 
@@ -4195,6 +4324,7 @@ export default function App() {
                 setIsDarkMode={setIsDarkMode}
                 siteColor={siteColor}
                 setSiteColor={setSiteColor}
+                isPlatformOwner={isPlatformOwner}
                 fontSize={fontSize}
                 setFontSize={setFontSize}
                 fontStyle={fontStyle}

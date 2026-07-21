@@ -12,7 +12,8 @@ import {
   loadDB, 
   writeAndPersistFile, 
   DB_DIR, 
-  generateUUID 
+  generateUUID,
+  loadCredentials
 } from "./db.js";
 import { authMiddleware } from "./routes.js";
 import { 
@@ -323,13 +324,37 @@ router.post("/controls", platformOwnerMiddleware, (req: AuthenticatedRequest, re
 
 // 3. Platform Owners Architecture Management (Add / Transfer / Edit Owners)
 router.post("/transfer-ownership", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const { owners } = req.body;
+  const { owners, password, passcode } = req.body;
   if (!owners || !Array.isArray(owners) || owners.length === 0) {
     res.status(400).json({ error: "Invalid platform owners payload. Must provide at least one Platform Owner." });
     return;
   }
 
+  const validOwners = owners.filter((o: any) => o && o.email && typeof o.email === "string" && o.email.trim() !== "");
+  if (validOwners.length === 0) {
+    res.status(400).json({ error: "Cannot remove the final Platform Owner. Platform ownership must always exist." });
+    return;
+  }
+
   const currentControls = loadPlatformControls();
+  const dbPasscode = currentControls.founderSecurityPasscode || "FOUNDER_SECURE_2026";
+  const userCreds = loadCredentials();
+  const dbUserPassword = userCreds[req.user!.id];
+
+  // Validate verification (accept current password, founder security passcode, or both)
+  let verified = false;
+  if (password && password === dbUserPassword) {
+    verified = true;
+  }
+  if (passcode && passcode === dbPasscode) {
+    verified = true;
+  }
+
+  if (!verified) {
+    res.status(401).json({ error: "Verification failed: Incorrect account password or Founder Security Passcode." });
+    return;
+  }
+
   const previousOwners = JSON.stringify(currentControls.owners);
   currentControls.owners = owners;
   savePlatformControls(currentControls);

@@ -531,142 +531,58 @@ export default function FoodMenu({
 
         </div>
 
-        {/* RIGHT: Bangla protein statistics */}
+        {/* RIGHT: Semantic Dish Distribution Statistics */}
         <div className="space-y-6">
           <div className={`p-6 rounded-2xl border ${
             isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
           }`}>
             <h3 className="text-base font-bold font-display mb-3 flex items-center gap-1.5">
               <PieChart size={18} className="text-cyan-400" />
-              Main Protein Distribution
+              Dish Distribution
             </h3>
             <p className={`text-xs ${isDarkMode ? "text-slate-400" : "text-slate-600"} leading-relaxed mb-6`}>
-              Automatically tracks and categorizes main course selections to display dietary statistics of your mess.
+              Tracks and groups all planned meals semantically to display real-world frequency metrics of canonical food items, resolving dialect spellings, English/Bangla variations, and typos.
             </p>
 
             {stats ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 
-                {/* Horizontal Stat Bar: Fish */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-cyan-400"></span>
-                      Fish (মাছ)
-                    </span>
-                    <span className="font-bold text-cyan-400">{stats.fish}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/40 overflow-hidden">
-                    <div className="h-full bg-cyan-400 rounded-full transition-all duration-1000" style={{ width: `${stats.fish}%` }}></div>
-                  </div>
-                </div>
-
-                {/* Horizontal Stat Bar: Chicken */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-orange-400"></span>
-                      Chicken (মুরগি)
-                    </span>
-                    <span className="font-bold text-orange-400">{stats.chicken}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/40 overflow-hidden">
-                    <div className="h-full bg-orange-400 rounded-full transition-all duration-1000" style={{ width: `${stats.chicken}%` }}></div>
-                  </div>
-                </div>
-
-                {/* Horizontal Stat Bar: Beef */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-rose-500"></span>
-                      Beef / Meat (গরু/খাসি)
-                    </span>
-                    <span className="font-bold text-rose-500">{stats.beef}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/40 overflow-hidden">
-                    <div className="h-full bg-rose-500 rounded-full transition-all duration-1000" style={{ width: `${stats.beef}%` }}></div>
-                  </div>
-                </div>
-
-                {/* Horizontal Stat Bar: Egg */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-amber-400"></span>
-                      Egg (ডিম)
-                    </span>
-                    <span className="font-bold text-amber-400">{stats.egg}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/40 overflow-hidden">
-                    <div className="h-full bg-amber-400 rounded-full transition-all duration-1000" style={{ width: `${stats.egg}%` }}></div>
-                  </div>
-                </div>
-
-                {/* Horizontal Stat Bar: Vegetables */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-emerald-500"></span>
-                      Vegetables (সবজি/ভাজি)
-                    </span>
-                    <span className="font-bold text-emerald-400">{stats.vegetables}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/40 overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${stats.vegetables}%` }}></div>
-                  </div>
-                </div>
-
-                {/* Horizontal Stat Bar: Others */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-slate-400"></span>
-                      Others / Pulses (অন্যান্য)
-                    </span>
-                    <span className="font-bold text-slate-400">{stats.others}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/40 overflow-hidden">
-                    <div className="h-full bg-slate-400 rounded-full transition-all duration-1000" style={{ width: `${stats.others}%` }}></div>
-                  </div>
-                </div>
-
                 {/* Detailed All Dishes & Items Frequency Distribution */}
-                <div className="mt-6 pt-5 border-t border-cyan-500/10 space-y-3">
-                  <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Individual Dishes Distribution</span>
-                  <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-2" id="all-dishes-distribution-list">
+                <div className="space-y-3">
+                  <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Semantic Dishes Frequency</span>
+                  <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar" id="all-dishes-distribution-list">
                     {stats.allDishes && stats.allDishes.length > 0 ? (
                       stats.allDishes.map((dish: any, idx: number) => {
                         const dishPercentage = Math.round((dish.count / (stats.totalMealsLogged || 1)) * 100);
                         return (
-                          <div key={idx} className="space-y-1 animate-fade-in">
-                            <div className="flex justify-between text-[11px]">
-                              <span className="font-medium text-slate-300 flex items-center gap-1.5">
+                          <div key={idx} className="space-y-1.5 animate-fade-in">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-semibold text-slate-300 flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0"></span>
                                 {dish.name}
                               </span>
-                              <span className="font-bold text-cyan-400">{dish.count} servings ({dishPercentage}%)</span>
+                              <span className="font-bold text-cyan-400 font-mono text-[11px]">{dish.count} servings ({dishPercentage}%)</span>
                             </div>
-                            <div className="w-full h-1 rounded-full bg-slate-950/40 overflow-hidden">
+                            <div className="w-full h-1.5 rounded-full bg-slate-950/40 overflow-hidden">
                               <div className="h-full bg-cyan-400 rounded-full transition-all duration-500" style={{ width: `${dishPercentage}%` }}></div>
                             </div>
                           </div>
                         );
                       })
                     ) : (
-                      <p className="text-xs text-slate-500 italic text-center py-2">No individual dishes logged.</p>
+                      <p className="text-xs text-slate-500 italic text-center py-4">No individual dishes logged.</p>
                     )}
                   </div>
                 </div>
 
                 {/* Detailed Vegetables Display */}
                 {stats.vegetableDetails && stats.vegetableDetails.length > 0 && (
-                  <div className="mt-5 pt-4 border-t border-cyan-500/10 space-y-2">
-                    <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Detected Vegetable Dishes</span>
-                    <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+                  <div className="pt-5 border-t border-cyan-500/10 space-y-3">
+                    <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Detected Vegetable Items</span>
+                    <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
                       {stats.vegetableDetails.map((veg: any, idx: number) => (
-                        <div key={idx} className="p-2 rounded bg-slate-950/30 border border-slate-850 text-[11px] flex justify-between items-center animate-fade-in">
-                          <span className="truncate font-semibold text-slate-300">{veg.name}</span>
+                        <div key={idx} className="p-2.5 rounded-xl bg-slate-950/30 border border-slate-800/60 text-[11px] flex justify-between items-center animate-fade-in">
+                          <span className="truncate font-medium text-slate-300">{veg.name}</span>
                           <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-bold font-mono text-[9px] shrink-0">x{veg.count}</span>
                         </div>
                       ))}
@@ -674,14 +590,14 @@ export default function FoodMenu({
                   </div>
                 )}
 
-                <div className="pt-4 mt-6 border-t border-cyan-500/10 flex items-center gap-2 text-[10px] text-slate-500">
+                <div className="pt-4 border-t border-cyan-500/10 flex items-center gap-2 text-[10px] text-slate-500">
                   <Info size={14} className="text-cyan-400 shrink-0" />
                   <span>Calculated from {stats.totalMealsLogged} total menu items planned this month.</span>
                 </div>
 
               </div>
             ) : (
-              <p className="text-xs text-slate-500 italic text-center py-4">Loading menu data...</p>
+              <p className="text-xs text-slate-500 italic text-center py-4">Loading menu statistics...</p>
             )}
           </div>
         </div>

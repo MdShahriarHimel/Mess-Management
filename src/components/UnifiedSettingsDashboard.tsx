@@ -76,6 +76,7 @@ interface UnifiedSettingsDashboardProps {
   monthsList: any[];
   translations: any;
   setTranslations: React.Dispatch<React.SetStateAction<any>>;
+  isPlatformOwner?: boolean;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -88,6 +89,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   setFontSize,
   fontStyle,
   setFontStyle,
+  isPlatformOwner = false,
   customColors,
   setCustomColors,
   messAnimations,
@@ -122,7 +124,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   translations,
   setTranslations
 }) => {
-  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -177,10 +179,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   // Set default tab on load based on role
   useEffect(() => {
-    if (isUltimateAdmin) {
+    if (isUltimateAdmin || currentUser.role === "ADMIN") {
       setActiveSubTab("branding");
-    } else if (currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER") {
-      setActiveSubTab("mess-appearance");
     } else {
       setActiveSubTab("user-appearance");
     }
@@ -404,6 +404,46 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "performance", label: "Performance Control", role: "ultimate-admin", icon: "Cpu" }
   ];
 
+  // Filter tabs according to strict role-based separation rules
+  const filteredTabs = tabs.filter(tab => {
+    // 1. Platform Owner has unrestricted access to Everything
+    if (isPlatformOwner) {
+      return true;
+    }
+
+    // 2. Admin can access specific 9 modules
+    if (currentUser.role === "ADMIN") {
+      const allowedAdminTabs = [
+        "branding", // ERP Identity
+        "theme-library", // Theme Library
+        "appearance-templates", // Appearance Templates
+        "mess-appearance", // Mess Appearance
+        "user-appearance", // Personal Preferences
+        "permissions", // Permission Matrix
+        "cycles", // Cycle & System Rules
+        "translations", // Translation Matrix
+        "food-knowledge" // Food Dictionary & AI
+      ];
+      return allowedAdminTabs.includes(tab.id);
+    }
+
+    // 3. Members only access Personal Preferences
+    if (currentUser.role === "MEMBER") {
+      return tab.id === "user-appearance";
+    }
+
+    // 4. Managers have NO ERP configuration.
+    // If they somehow land here, they can only see Personal Preferences.
+    return tab.id === "user-appearance";
+  });
+
+  // Automatically redirect if activeSubTab is not in filteredTabs
+  useEffect(() => {
+    if (filteredTabs.length > 0 && !filteredTabs.some(t => t.id === activeSubTab)) {
+      setActiveSubTab(filteredTabs[0].id);
+    }
+  }, [filteredTabs, activeSubTab]);
+
   // Helper to render icon dynamically
   const renderIcon = (name: string, size = 15, className = "") => {
     const Component = (LucideIcons as any)[name];
@@ -433,7 +473,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             <span className="text-[9px] text-slate-500">Separated ERP Config Engine</span>
           </div>
 
-          {tabs.map(tab => {
+          {filteredTabs.map(tab => {
             const isUltimateOnly = tab.role === "ultimate-admin";
             const isTabAdminOnly = tab.role === "admin";
             const cannotAccess = (isUltimateOnly && !isUltimateAdmin) || (isTabAdminOnly && !isUltimateAdmin && currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER");
@@ -470,7 +510,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         <div className="flex-1 min-w-0">
           
           {/* 1. ERP BRANDING (Ultimate Admin only) */}
-          {activeSubTab === "branding" && (
+          {activeSubTab === "branding" && filteredTabs.some(t => t.id === "branding") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -652,7 +692,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 2. CREDIT PANEL (Ultimate Admin only) */}
-          {activeSubTab === "credit" && (
+          {activeSubTab === "credit" && filteredTabs.some(t => t.id === "credit") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -782,7 +822,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 3. THEME LIBRARY / PRESETS */}
-          {(activeSubTab === "theme-library" || activeSubTab === "appearance-templates") && (
+          {(activeSubTab === "theme-library" || activeSubTab === "appearance-templates") && 
+           (filteredTabs.some(t => t.id === "theme-library") || filteredTabs.some(t => t.id === "appearance-templates")) && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -838,7 +879,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 5. MESS APPEARANCE (Level 2) */}
-          {activeSubTab === "mess-appearance" && (
+          {activeSubTab === "mess-appearance" && filteredTabs.some(t => t.id === "mess-appearance") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -891,7 +932,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 6. PERSONAL USER PREFERENCES (Level 3) */}
-          {activeSubTab === "user-appearance" && (
+          {activeSubTab === "user-appearance" && filteredTabs.some(t => t.id === "user-appearance") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -1020,7 +1061,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 7. PERMISSION MATRIX */}
-          {activeSubTab === "permissions" && (
+          {activeSubTab === "permissions" && filteredTabs.some(t => t.id === "permissions") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -1089,7 +1130,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 8. CYCLE RULES */}
-          {activeSubTab === "cycles" && (
+          {activeSubTab === "cycles" && filteredTabs.some(t => t.id === "cycles") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -1189,7 +1230,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 9. TRANSLATIONS MATRIX */}
-          {activeSubTab === "translations" && (
+          {activeSubTab === "translations" && filteredTabs.some(t => t.id === "translations") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
@@ -1260,7 +1301,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 10. HYBRID AI FOOD DICTIONARY & AI KNOWLEDGE SYSTEM */}
-          {activeSubTab === "food-knowledge" && (
+          {activeSubTab === "food-knowledge" && filteredTabs.some(t => t.id === "food-knowledge") && (
             <div className={`p-6 rounded-2xl border text-left ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6`}>
@@ -1869,7 +1910,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             </div>
           )}
 
-          {activeSubTab === "monetization" && (
+          {activeSubTab === "monetization" && filteredTabs.some(t => t.id === "monetization") && (
             <MonetizationHub
               currentUser={currentUser}
               isDarkMode={isDarkMode}
@@ -1877,7 +1918,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             />
           )}
 
-          {activeSubTab === "performance" && (
+          {activeSubTab === "performance" && filteredTabs.some(t => t.id === "performance") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>

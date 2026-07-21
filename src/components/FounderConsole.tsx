@@ -87,6 +87,8 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
   const [newOwnerEmail, setNewOwnerEmail] = useState("");
   const [newOwnerRole, setNewOwnerRole] = useState("Future Co-Founder");
   const [transferConfirm, setTransferConfirm] = useState(false);
+  const [verifyPassword, setVerifyPassword] = useState("");
+  const [verifyPasscode, setVerifyPasscode] = useState("");
 
   // General Notification Banner within console
   const [banner, setBanner] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -315,6 +317,11 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       return;
     }
 
+    if (!verifyPassword && !verifyPasscode) {
+      showBanner("Please provide your account password or Founder passcode to verify identity.", "error");
+      return;
+    }
+
     const updatedOwners = [
       ...controls.owners,
       { email: newOwnerEmail.toLowerCase().trim(), role: newOwnerRole }
@@ -324,18 +331,24 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       const res = await fetch("/api/founder/transfer-ownership", {
         method: "POST",
         headers: getHeaders(),
-        body: JSON.stringify({ owners: updatedOwners })
+        body: JSON.stringify({ 
+          owners: updatedOwners,
+          password: verifyPassword,
+          passcode: verifyPasscode
+        })
       });
 
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         setControls({ ...controls, owners: data.owners });
         setNewOwnerEmail("");
         setNewOwnerRole("Future Co-Founder");
+        setVerifyPassword("");
+        setVerifyPasscode("");
         showBanner("Platform owner roster updated successfully!", "success");
         onRefreshPlatformStatus();
       } else {
-        showBanner("Failed to transfer platform ownership.", "error");
+        showBanner(data.error || "Failed to transfer platform ownership.", "error");
       }
     } catch (err) {
       showBanner("Error updating owners list.", "error");
@@ -349,22 +362,33 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       return;
     }
 
+    if (!verifyPassword && !verifyPasscode) {
+      showBanner("Please provide your account password or Founder passcode to verify identity for owner removal.", "error");
+      return;
+    }
+
     const updatedOwners = controls.owners.filter((o: any) => o.email.toLowerCase() !== email.toLowerCase());
 
     try {
       const res = await fetch("/api/founder/transfer-ownership", {
         method: "POST",
         headers: getHeaders(),
-        body: JSON.stringify({ owners: updatedOwners })
+        body: JSON.stringify({ 
+          owners: updatedOwners,
+          password: verifyPassword,
+          passcode: verifyPasscode
+        })
       });
 
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         setControls({ ...controls, owners: data.owners });
+        setVerifyPassword("");
+        setVerifyPasscode("");
         showBanner("Owner removed from access list successfully.", "success");
         onRefreshPlatformStatus();
       } else {
-        showBanner("Failed to update access list.", "error");
+        showBanner(data.error || "Failed to update access list.", "error");
       }
     } catch (err) {
       showBanner("Error updating owners list.", "error");
@@ -1279,6 +1303,38 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
           <p className="text-xs font-mono text-slate-400 max-w-2xl leading-relaxed">
             Manage system administrators who are authorized to access this Founder Console. Platform ownership is transferable dynamically via database records. Do not hardcode any Gmail addresses.
           </p>
+
+          {/* Action Verification Block */}
+          <div className="bg-slate-950 border border-amber-500/10 p-4 rounded-lg space-y-3">
+            <span className="text-xs font-bold text-amber-400 font-sans flex items-center gap-1.5">
+              <Shield size={14} /> Security Credentials Verification Required
+            </span>
+            <p className="text-[11px] text-slate-400">
+              Platform Owner modifications are highly protected. Please enter your account password or the Founder Security Passcode before adding or removing platform owners.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+              <div className="space-y-1">
+                <label className="text-slate-400">Your Account Password</label>
+                <input
+                  type="password"
+                  value={verifyPassword}
+                  onChange={(e) => setVerifyPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-2 mt-1 focus:outline-none focus:border-cyan-400 text-slate-200"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-slate-400">Founder Security Passcode</label>
+                <input
+                  type="password"
+                  value={verifyPasscode}
+                  onChange={(e) => setVerifyPasscode(e.target.value)}
+                  placeholder="Passcode"
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-2 mt-1 focus:outline-none focus:border-cyan-400 text-slate-200"
+                />
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* New Owner Form */}

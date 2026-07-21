@@ -21,7 +21,7 @@ import {
   refreshDbCache,
   DB_DIR
 } from "./db.js";
-import { processMenuFoods, getFoodAnalytics } from "./foodKnowledge.js";
+import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
 import { db as drizzleDb } from "../src/db/index.js";
 import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks } from "../src/db/schema.js";
 import { eq, sql, and } from "drizzle-orm";
@@ -157,9 +157,13 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
 
         saveDB();
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Firebase auth verification failed:", e);
-      res.status(401).json({ error: "Unauthorized: Invalid Firebase session" });
+      const isExpired = e?.code === "auth/id-token-expired" || e?.message?.includes("expired") || String(e).includes("expired");
+      res.status(401).json({ 
+        error: "Unauthorized: Invalid Firebase session",
+        code: isExpired ? "auth/id-token-expired" : "auth/invalid-token"
+      });
       return;
     }
   } else {
@@ -1395,6 +1399,7 @@ router.post("/food-knowledge/add", authMiddleware, async (req: AuthenticatedRequ
       }).onConflictDoNothing();
     }
 
+    invalidateFoodCache();
     logAudit(req.user!.id, req.user!.nickname, "ADD_FOOD_KNOWLEDGE", "None", label, `Manually added ${label} to food knowledge base`);
     res.json({ success: true, foodId });
   } catch (err) {
@@ -1441,6 +1446,7 @@ router.put("/food-knowledge/edit/:id", authMiddleware, async (req: Authenticated
       }).onConflictDoNothing();
     }
 
+    invalidateFoodCache();
     logAudit(req.user!.id, req.user!.nickname, "EDIT_FOOD_KNOWLEDGE", id, label, `Manually updated ${label} in food knowledge base`);
     res.json({ success: true });
   } catch (err) {
@@ -1456,6 +1462,7 @@ router.delete("/food-knowledge/delete/:id", authMiddleware, async (req: Authenti
     await drizzleDb.delete(foodKnowledgeBase).where(eq(foodKnowledgeBase.id, id));
     await drizzleDb.delete(foodAliases).where(eq(foodAliases.foodId, id));
 
+    invalidateFoodCache();
     logAudit(req.user!.id, req.user!.nickname, "DELETE_FOOD_KNOWLEDGE", id, "Deleted", `Deleted food ID ${id} from knowledge base`);
     res.json({ success: true });
   } catch (err) {
@@ -1508,6 +1515,7 @@ router.post("/food-knowledge/merge", authMiddleware, async (req: AuthenticatedRe
     // Delete source food
     await drizzleDb.delete(foodKnowledgeBase).where(eq(foodKnowledgeBase.id, sourceId));
 
+    invalidateFoodCache();
     logAudit(req.user!.id, req.user!.nickname, "MERGE_FOOD_KNOWLEDGE", sourceId, targetId, `Merged food ${sourceFood[0].label} into ${targetFood[0].label}`);
     res.json({ success: true });
   } catch (err) {
@@ -1573,6 +1581,7 @@ router.post("/food-knowledge/review-action", authMiddleware, async (req: Authent
         .set({ status: "APPROVED" })
         .where(eq(foodReviewQueue.id, reviewId));
 
+      invalidateFoodCache();
       logAudit(req.user!.id, req.user!.nickname, "APPROVE_REVIEW_FOOD", reviewId, label, `Approved and cataloged unknown food phrase: "${phrase}" as "${label}"`);
     } else if (action === "REJECT") {
       // Mark as rejected
@@ -1581,6 +1590,7 @@ router.post("/food-knowledge/review-action", authMiddleware, async (req: Authent
         .set({ status: "REJECTED" })
         .where(eq(foodReviewQueue.id, reviewId));
 
+      invalidateFoodCache();
       logAudit(req.user!.id, req.user!.nickname, "REJECT_REVIEW_FOOD", reviewId, "REJECTED", `Rejected unknown food phrase: "${phrase}"`);
     }
 
@@ -1604,7 +1614,7 @@ router.get("/food-knowledge/export", authMiddleware, async (req: AuthenticatedRe
 });
 
 // Food Statistics helper
-router.get("/foodmenu/statistics/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
   const menu = db.foodMenus.filter(m => m.monthId === monthId);
@@ -1617,85 +1627,64 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, (req: AuthenticatedR
   let vegetables = 0;
   let others = 0;
   let total = 0;
+  
   const vegCounts: Record<string, number> = {};
-
-  const categorize = (text: string) => {
-    if (!text) return;
-    // Replace "and", "ও", "&" with comma to split cleanly
-    const normalizedText = text
-      .replace(/\s+(and|&|ও|এবং)\s+/gi, ",")
-      .replace(/\s*\+\s*/g, ",");
-    // Split by comma, slash, plus sign, or bullet to detect individual dishes/items
-    const items = normalizedText.split(/[,/+\u2022，、]/).map(i => i.trim()).filter(Boolean);
-    items.forEach(item => {
-      total++;
-      const lower = item.toLowerCase();
-      
-      // Vegetable / Vorta / Bhaji / Loti / Dal keywords in English or Bangla
-      const isVeg = 
-        lower.includes("ভাজি") || lower.includes("ভর্তা") || lower.includes("ভর্তা") || 
-        lower.includes("লতি") || lower.includes("কচুর") || lower.includes("কচু") || 
-        lower.includes("আলু") || lower.includes("বেগুন") || lower.includes("শাক") || 
-        lower.includes("লালশাক") || lower.includes("সবজি") || lower.includes("সবজী") || 
-        lower.includes("লাউ") || lower.includes("কুমড়") || lower.includes("ডাল") || 
-        lower.includes("dal") || lower.includes("potato") || lower.includes("vaji") || 
-        lower.includes("vorta") || lower.includes("vegetable") || lower.includes("spinach") || 
-        lower.includes("cabbage") || lower.includes("cauliflower") || lower.includes("brinjal") || 
-        lower.includes("eggplant") || lower.includes("poto") || lower.includes("loti") || 
-        lower.includes("lentil") || lower.includes("করলা") || lower.includes("করল্লা") ||
-        lower.includes("পালং") || lower.includes("পুই") || lower.includes("কলমি") ||
-        lower.includes("ঢেঁড়স") || lower.includes("ঢেড়স") || lower.includes("ভেন্ডি") ||
-        lower.includes("পটল") || lower.includes("ঝিঙে") || lower.includes("ঝিঙা") ||
-        lower.includes("চিচিঙ্গা") || lower.includes("কাকরোল") || lower.includes("গাজর") ||
-        lower.includes("পেঁপে") || lower.includes("পেপে") || lower.includes("টমেটো") ||
-        lower.includes("শসা") || lower.includes("শিম") || lower.includes("সাজনা") ||
-        lower.includes("aloo") || lower.includes("bhaji") || lower.includes("bhorta") ||
-        lower.includes("gourd") || lower.includes("pumpkin") || lower.includes("okra") ||
-        lower.includes("ladyfinger") || lower.includes("potol") || lower.includes("papaya") ||
-        lower.includes("carrot") || lower.includes("cucumber") || lower.includes("broccoli");
-
-      if (isVeg) {
-        vegetables++;
-        // Keep original casing/language of item
-        vegCounts[item] = (vegCounts[item] || 0) + 1;
-      } else if (lower.includes("মাছ") || lower.includes("fish") || lower.includes("ইলিশ") || lower.includes("রui") || lower.includes("রুই") || lower.includes("পাঙ্গাশ") || lower.includes("চিংড়ি") || lower.includes("বোয়াল") || lower.includes("কাতল")) {
-        fish++;
-      } else if (lower.includes("মুরগি") || lower.includes("chicken") || lower.includes("মুরগী") || lower.includes("চিকেন")) {
-        chicken++;
-      } else if (lower.includes("গরু") || lower.includes("beef") || lower.includes("খাসি") || lower.includes("mutton") || lower.includes("meat")) {
-        beef++;
-      } else if (lower.includes("ডিম") || lower.includes("egg")) {
-        egg++;
-      } else {
-        others++;
-      }
-    });
-  };
-
   const dishCounts: Record<string, number> = {};
 
-  const recordDishes = (text: string) => {
-    if (!text) return;
-    const normalizedText = text
-      .replace(/\s+(and|&|ও|এবং)\s+/gi, ",")
-      .replace(/\s*\+\s*/g, ",");
-    const items = normalizedText.split(/[,/+\u2022，、]/).map(i => i.trim()).filter(Boolean);
-    items.forEach(item => {
-      dishCounts[item] = (dishCounts[item] || 0) + 1;
-    });
-  };
+  // Process all planned menu texts asynchronously using our semantic recognition engine
+  for (const item of menu) {
+    const rawFields = [item.lunchVegetable, item.lunchMain, item.dinnerVegetable, item.dinnerMain].filter(Boolean);
+    
+    for (const field of rawFields) {
+      const parts = splitMenuText(field);
+      for (const part of parts) {
+        try {
+          const canonical = await resolveCanonicalFood(part);
+          if (canonical.label) {
+            total++;
+            // Aggregate dish distribution using the semantic Canonical Name
+            dishCounts[canonical.label] = (dishCounts[canonical.label] || 0) + 1;
 
-  menu.forEach(item => {
-    categorize(item.lunchVegetable);
-    categorize(item.lunchMain);
-    categorize(item.dinnerVegetable);
-    categorize(item.dinnerMain);
-
-    recordDishes(item.lunchVegetable);
-    recordDishes(item.lunchMain);
-    recordDishes(item.dinnerVegetable);
-    recordDishes(item.dinnerMain);
-  });
+            // Categorize using the canonical food category
+            if (canonical.category === "Fish") {
+              fish++;
+            } else if (canonical.category === "Chicken") {
+              chicken++;
+            } else if (canonical.category === "Beef" || canonical.category === "Mutton") {
+              beef++;
+            } else if (canonical.category === "Eggs") {
+              egg++;
+            } else if (canonical.category === "Vegetables") {
+              vegetables++;
+              vegCounts[canonical.label] = (vegCounts[canonical.label] || 0) + 1;
+            } else {
+              others++;
+            }
+          }
+        } catch (err) {
+          console.error(`[Food Menu Statistics] Error resolving phrase "${part}":`, err);
+          // Fallback to raw text logic on error to prevent total statistics failure
+          total++;
+          const lower = part.toLowerCase();
+          dishCounts[part] = (dishCounts[part] || 0) + 1;
+          if (lower.includes("মাছ") || lower.includes("fish") || lower.includes("rui")) {
+            fish++;
+          } else if (lower.includes("chicken") || lower.includes("murgi")) {
+            chicken++;
+          } else if (lower.includes("beef") || lower.includes("mutton")) {
+            beef++;
+          } else if (lower.includes("egg") || lower.includes("dim")) {
+            egg++;
+          } else if (lower.includes("alu") || lower.includes("vegetable") || lower.includes("sobji")) {
+            vegetables++;
+            vegCounts[part] = (vegCounts[part] || 0) + 1;
+          } else {
+            others++;
+          }
+        }
+      }
+    }
+  }
 
   const getPercentage = (count: number) => {
     if (total === 0) return 0;
@@ -4092,12 +4081,27 @@ import {
 } from "./monetization.js";
 
 // Helper checks
+const isPlatformOwnerEmail = (email: string | undefined): boolean => {
+  if (!email) return false;
+  try {
+    const filePath = path.join(DB_DIR, "platform_controls.json");
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, "utf-8");
+      const controls = JSON.parse(data);
+      return controls.owners.some((o: any) => o && o.email && o.email.toLowerCase() === email.toLowerCase());
+    }
+  } catch (e) {
+    console.error("Error reading platform controls in routes.ts:", e);
+  }
+  return email.toLowerCase() === "mdshahriarhimel@gmail.com";
+};
+
 const checkIsFounder = (req: AuthenticatedRequest): boolean => {
-  return req.user?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  return isPlatformOwnerEmail(req.user?.email);
 };
 
 const checkIsUltimateAdmin = (req: AuthenticatedRequest): boolean => {
-  return req.user?.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user?.role === UserRole.ADMIN;
+  return isPlatformOwnerEmail(req.user?.email);
 };
 
 const checkIsAdminOrSuper = (req: AuthenticatedRequest): boolean => {
