@@ -52,6 +52,93 @@ export default function FoodMenu({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Food Knowledge States
+  const [unknownPhrases, setUnknownPhrases] = useState<string[]>([]);
+  const [checkingFood, setCheckingFood] = useState(false);
+  const [askingGemini, setAskingGemini] = useState<string | null>(null);
+  const [geminiSuggestion, setGeminiSuggestion] = useState<{
+    phrase: string;
+    suggestion: {
+      isMatch: boolean;
+      matchedFoodId: string | null;
+      matchedLabel: string | null;
+      newFoodLabel: string | null;
+      newFoodCategory: string | null;
+      confidence: number;
+      confidencePercent: string;
+      reason: string;
+      aliasesToSave: string[];
+    };
+  } | null>(null);
+  const [showManualModal, setShowManualModal] = useState<string | null>(null);
+  const [manualLabel, setManualLabel] = useState("");
+  const [manualCategory, setManualCategory] = useState("Vegetables");
+
+  // Autocomplete search suggestions
+  const [dbSuggestions, setDbSuggestions] = useState<string[]>([]);
+
+  // Function to search food database for autocomplete
+  const handleFoodInputChange = async (value: string, setter: (val: string) => void) => {
+    setter(value);
+    if (!value || value.trim().length < 2) return;
+    try {
+      const res = await fetch(`/api/food-knowledge/search?q=${encodeURIComponent(value.trim())}`, {
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.matches) {
+          const suggestions = data.matches.map((m: any) => m.label);
+          setDbSuggestions(Array.from(new Set(suggestions)));
+        }
+      }
+    } catch (err) {}
+  };
+
+  // Function to check if entered food items are known in database
+  const checkUnknownFoods = async () => {
+    const phrases = [lunchVegetable, lunchMain, dinnerVegetable, dinnerMain]
+      .filter(Boolean)
+      .flatMap(text => text.split(/[,/+\u2022，、|]/).map(p => p.trim()).filter(Boolean));
+
+    if (phrases.length === 0) {
+      setUnknownPhrases([]);
+      return;
+    }
+
+    setCheckingFood(true);
+    const unknown: string[] = [];
+    for (const phrase of phrases) {
+      try {
+        const res = await fetch("/api/food-knowledge/check", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${currentUser.id}`
+          },
+          body: JSON.stringify({ phrase })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.isKnown) {
+            unknown.push(phrase);
+          }
+        }
+      } catch (err) {}
+    }
+    setUnknownPhrases(unknown);
+    setCheckingFood(false);
+  };
+
+  useEffect(() => {
+    if (editMode) {
+      const timer = setTimeout(() => {
+        checkUnknownFoods();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [lunchVegetable, lunchMain, dinnerVegetable, dinnerMain, editMode]);
+
   // Fetch menus
   const fetchMenuData = async () => {
     if (!currentMonthId) return;
@@ -403,7 +490,7 @@ export default function FoodMenu({
                         type="text"
                         list="dishes-datalist"
                         value={lunchVegetable}
-                        onChange={(e) => setLunchVegetable(e.target.value)}
+                        onChange={(e) => handleFoodInputChange(e.target.value, setLunchVegetable)}
                         placeholder="কচুর লতি / করলা ভাজি / Fried Potato"
                         className={`w-full px-3 py-1.5 rounded border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                           isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
@@ -416,7 +503,7 @@ export default function FoodMenu({
                         type="text"
                         list="dishes-datalist"
                         value={lunchMain}
-                        onChange={(e) => setLunchMain(e.target.value)}
+                        onChange={(e) => handleFoodInputChange(e.target.value, setLunchMain)}
                         placeholder="মুরগির মাংস / Rui Fish Curry / Beef Bhuna"
                         className={`w-full px-3 py-1.5 rounded border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                           isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
@@ -434,7 +521,7 @@ export default function FoodMenu({
                         type="text"
                         list="dishes-datalist"
                         value={dinnerVegetable}
-                        onChange={(e) => setDinnerVegetable(e.target.value)}
+                        onChange={(e) => handleFoodInputChange(e.target.value, setDinnerVegetable)}
                         placeholder="কচুর লতি / করলা ভাজি / Mashed Potato"
                         className={`w-full px-3 py-1.5 rounded border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                           isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
@@ -447,7 +534,7 @@ export default function FoodMenu({
                         type="text"
                         list="dishes-datalist"
                         value={dinnerMain}
-                        onChange={(e) => setDinnerMain(e.target.value)}
+                        onChange={(e) => handleFoodInputChange(e.target.value, setDinnerMain)}
                         placeholder="মুরগির মাংস / Chicken Roast / Egg Curry"
                         className={`w-full px-3 py-1.5 rounded border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                           isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
@@ -456,6 +543,63 @@ export default function FoodMenu({
                     </div>
                   </div>
                 </div>
+
+                {/* Unknown Foods Recognition & Gemini Integration Banner */}
+                {unknownPhrases.length > 0 && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                      <AlertCircle size={14} />
+                      <span>Unknown food items detected ({unknownPhrases.length}):</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {unknownPhrases.map((phrase, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-1.5 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs">
+                          <span className="font-semibold text-white">"{phrase}"</span>
+                          <button
+                            type="button"
+                            disabled={askingGemini === phrase}
+                            onClick={async () => {
+                              setAskingGemini(phrase);
+                              try {
+                                const res = await fetch("/api/food-knowledge/ask-gemini", {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    "Authorization": `Bearer ${currentUser.id}`
+                                  },
+                                  body: JSON.stringify({ phrase })
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setGeminiSuggestion({ phrase, suggestion: data.suggestion });
+                                }
+                              } catch (err) {
+                                setError("Failed to query Gemini AI");
+                              } finally {
+                                setAskingGemini(null);
+                              }
+                            }}
+                            className="px-2 py-0.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-300 font-bold rounded text-[10px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles size={11} />
+                            {askingGemini === phrase ? "Analyzing..." : "Ask Gemini"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowManualModal(phrase);
+                              setManualLabel(phrase);
+                              setManualCategory("Vegetables");
+                            }}
+                            className="px-2 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-bold rounded text-[10px] cursor-pointer"
+                          >
+                            Add Manually
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
                   <button
@@ -613,6 +757,192 @@ export default function FoodMenu({
         </div>
 
       </div>
+
+      {/* Gemini Suggestion Approval Overlay Modal */}
+      {geminiSuggestion && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-lg p-6 rounded-2xl bg-slate-900 border border-cyan-500/30 text-white shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-cyan-400">
+                <Sparkles size={18} />
+                <h3 className="text-sm font-extrabold uppercase font-sans tracking-wide">Gemini AI Food Classification</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGeminiSuggestion(null)}
+                className="text-slate-400 hover:text-white font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Input Phrase</p>
+                <p className="text-sm font-extrabold text-amber-400">"{geminiSuggestion.phrase}"</p>
+              </div>
+
+              <div className="p-3 bg-cyan-950/30 rounded-xl border border-cyan-500/30 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-cyan-300 uppercase tracking-wider font-bold">Gemini Classification</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">
+                    {geminiSuggestion.suggestion.confidencePercent} Confidence
+                  </span>
+                </div>
+
+                <p className="text-base font-black text-white">
+                  {geminiSuggestion.suggestion.isMatch 
+                    ? `Map to Existing Canonical Food: "${geminiSuggestion.suggestion.matchedLabel}"`
+                    : `Create New Canonical Food: "${geminiSuggestion.suggestion.newFoodLabel}" (${geminiSuggestion.suggestion.newFoodCategory})`}
+                </p>
+
+                {geminiSuggestion.suggestion.reason && (
+                  <p className="text-[11px] text-slate-300 italic">
+                    Reason: {geminiSuggestion.suggestion.reason}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setGeminiSuggestion(null)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 cursor-pointer"
+              >
+                Reject / Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const label = geminiSuggestion.suggestion.matchedLabel || geminiSuggestion.suggestion.newFoodLabel;
+                    const category = geminiSuggestion.suggestion.newFoodCategory || "Vegetables";
+                    const res = await fetch("/api/food-knowledge/approve-suggestion", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${currentUser.id}`
+                      },
+                      body: JSON.stringify({
+                        label,
+                        category,
+                        aliases: geminiSuggestion.suggestion.aliasesToSave,
+                        matchedFoodId: geminiSuggestion.suggestion.matchedFoodId
+                      })
+                    });
+                    if (res.ok) {
+                      setSuccess(`Approved "${label}"! Saved to canonical food database.`);
+                      setGeminiSuggestion(null);
+                      checkUnknownFoods();
+                      fetchStats();
+                    }
+                  } catch (err) {
+                    setError("Failed to approve food suggestion");
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer flex items-center gap-1"
+              >
+                <Check size={14} /> Accept & Save to Database
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Food Entry Overlay Modal */}
+      {showManualModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-700 text-white shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-extrabold uppercase font-sans tracking-wide text-cyan-400">Add Canonical Food Manually</h3>
+              <button
+                type="button"
+                onClick={() => setShowManualModal(null)}
+                className="text-slate-400 hover:text-white font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Original Phrase</label>
+                <p className="text-xs font-mono font-bold text-amber-400">"{showManualModal}"</p>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Official Canonical Food Name</label>
+                <input
+                  type="text"
+                  value={manualLabel}
+                  onChange={(e) => setManualLabel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold block mb-1">Category</label>
+                <select
+                  value={manualCategory}
+                  onChange={(e) => setManualCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                >
+                  <option value="Fish">Fish (মাছ)</option>
+                  <option value="Chicken">Chicken (মুরগি)</option>
+                  <option value="Beef">Beef (গরু)</option>
+                  <option value="Mutton">Mutton (খাসি)</option>
+                  <option value="Eggs">Eggs (ডিম)</option>
+                  <option value="Vegetables">Vegetables (শাক/সবজি/ভর্তা)</option>
+                  <option value="Lentils">Lentils / Dal (ডাল)</option>
+                  <option value="Rice/Bread">Rice / Bread (ভাত/রুটি)</option>
+                  <option value="Others">Others (অন্যান্য)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowManualModal(null)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/food-knowledge/add", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${currentUser.id}`
+                      },
+                      body: JSON.stringify({
+                        label: manualLabel,
+                        category: manualCategory,
+                        aliases: [showManualModal]
+                      })
+                    });
+                    if (res.ok) {
+                      setSuccess(`Successfully added "${manualLabel}" to canonical database.`);
+                      setShowManualModal(null);
+                      checkUnknownFoods();
+                      fetchStats();
+                    }
+                  } catch (err) {
+                    setError("Failed to add canonical food item");
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer flex items-center gap-1"
+              >
+                <Check size={14} /> Save to Database
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

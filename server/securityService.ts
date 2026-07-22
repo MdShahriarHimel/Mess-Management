@@ -86,7 +86,27 @@ export function validatePasswordPolicy(password: string): string | null {
 // LOGIN RATE LIMITING (5 consecutive failed attempts = 5 min lock)
 // ============================================================================
 
+function cleanupSecurityTrackerMaps() {
+  const now = Date.now();
+  for (const [key, entry] of failedLoginsMap.entries()) {
+    if (entry.lockUntil && now > entry.lockUntil) {
+      failedLoginsMap.delete(key);
+    } else if (now - entry.lastAttempt > 15 * 60 * 1000) {
+      failedLoginsMap.delete(key);
+    }
+  }
+  for (const [key, timestamps] of forgotPasswordRequestsMap.entries()) {
+    const valid = timestamps.filter(t => now - t < 15 * 60 * 1000);
+    if (valid.length === 0) {
+      forgotPasswordRequestsMap.delete(key);
+    } else {
+      forgotPasswordRequestsMap.set(key, valid);
+    }
+  }
+}
+
 export function checkLoginRateLimit(email: string, ip: string): { locked: boolean; message?: string } {
+  cleanupSecurityTrackerMaps();
   const normalizedEmail = email.toLowerCase().trim();
   const entry = failedLoginsMap.get(normalizedEmail);
 
@@ -364,9 +384,9 @@ export function recordSecurityEvent(params: {
 
   events.unshift(newEvent);
 
-  // Keep last 1000 logs
-  if (events.length > 1000) {
-    securityEventsCache = events.slice(0, 1000);
+  // Keep last 100 logs in RAM
+  if (events.length > 100) {
+    securityEventsCache = events.slice(0, 100);
   } else {
     securityEventsCache = events;
   }
