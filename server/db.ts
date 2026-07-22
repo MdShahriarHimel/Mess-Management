@@ -79,6 +79,7 @@ interface CredentialsSchema {
 
 // Memory cache
 let dbCache: DatabaseSchema | null = null;
+let postgresSnapshot: DatabaseSchema | null = null;
 let credentialsCache: CredentialsSchema | null = null;
 
 export const loadedMonthIds = new Set<string>();
@@ -146,9 +147,10 @@ export async function ensureMonthDataLoaded(monthId: string) {
     dbCache.mealRequests.push(...(reqList as any[]));
 
     loadedMonthIds.add(monthId);
+    postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
 
-    // Bound memory cache: Keep max 3 loaded months in RAM
-    if (loadedMonthIds.size > 3) {
+    // Bound memory cache: Keep max 2 loaded months in RAM
+    if (loadedMonthIds.size > 2) {
       const activeIds = new Set(
         dbCache.months.filter(m => (m as any).status === "ACTIVE" || !m.isLocked).map(m => m.id)
       );
@@ -167,6 +169,7 @@ export async function ensureMonthDataLoaded(monthId: string) {
             dbCache.mealRequests = dbCache.mealRequests.filter(m => m.monthId !== loadedId);
           }
           loadedMonthIds.delete(loadedId);
+          postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
           break;
         }
       }
@@ -498,6 +501,7 @@ export async function refreshDbCache() {
     auditLogs: auditLogsList as any[],
     mealRequests: mealRequestsList as any[],
   };
+  postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
   console.log("[Backup] Cache refreshed successfully from PostgreSQL single source of truth!");
 }
 
@@ -608,6 +612,7 @@ export async function initializeDbCache() {
           if (dbCache) {
             console.log("Local backup parsed. Syncing to PostgreSQL...");
             await importBackupToPostgres(dbCache);
+        postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
             console.log("Sync completed.");
           } else {
             throw new Error("Parsed backup is empty/invalid");
@@ -616,11 +621,13 @@ export async function initializeDbCache() {
           console.error("Failed to parse/restore local backup JSON:", e);
           dbCache = getInitialSeedData();
           await importBackupToPostgres(dbCache);
+        postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
         }
       } else {
         console.log("Database empty and no local backup found. Seeding default records...");
         dbCache = getInitialSeedData();
         await importBackupToPostgres(dbCache);
+        postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
       }
     } else {
       dbCache = {
@@ -638,6 +645,7 @@ export async function initializeDbCache() {
         auditLogs: auditLogsList as any[],
         mealRequests: (mealRequestsList || []) as any[],
       };
+      postgresSnapshot = JSON.parse(JSON.stringify(dbCache));
       console.log("[TRACE E - initializeDbCache()] Loaded members from PostgreSQL. Total:", membersList.length);
       console.log("Cache initialized with active month data successfully.");
     }
@@ -688,285 +696,92 @@ export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
 
 async function doActualSync(cache: DatabaseSchema) {
   try {
-    if (cache.members.length > 0) {
-      console.log("[TRACE D - doActualSync()] Writing members cache to Postgres. First 3 members:", cache.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
-      const activeMemberIds = cache.members.map(m => m.id);
-      if (activeMemberIds.length > 0) {
-        await db.delete(membersTable).where(notInArray(membersTable.id, activeMemberIds));
-      }
-
-      for (const item of cache.members) {
-        await db.insert(membersTable).values({
-          id: item.id,
-          name: item.name,
-          nickname: item.nickname,
-          email: item.email,
-          phone: item.phone,
-          whatsapp: item.whatsapp,
-          bloodGroup: item.bloodGroup,
-          occupation: item.occupation,
-          joiningDate: item.joiningDate,
-          leavingDate: item.leavingDate || null,
-          role: item.role,
-          status: item.status,
-          notes: item.notes,
-          photo: item.photo || null,
-          assignedTask: item.assignedTask || null,
-          glow: item.glow || false,
-          glowStyle: item.glowStyle || null,
-          animation: item.animation || null,
-          splitProfile: item.splitProfile || false,
-          memberGlow: item.memberGlow || false,
-          memberGlowStyle: item.memberGlowStyle || null,
-          memberAnimation: item.memberAnimation || null,
-          gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
-          hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
-          glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
-          hideAdminRole: item.hideAdminRole ?? false,
-          hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
-          personalTheme: item.personalTheme || null,
-          personalFont: item.personalFont || null,
-          avatarFrame: item.avatarFrame || null,
-          badge: item.badge || null,
-          profileBackground: item.profileBackground || null,
-          dashboardLayout: item.dashboardLayout || null,
-          profileDecoration: item.profileDecoration || null,
-          dashboardStyle: item.dashboardStyle || null,
-          backgroundEffect: item.backgroundEffect || null,
-        }).onConflictDoUpdate({
-          target: membersTable.id,
-          set: {
-            name: item.name,
-            nickname: item.nickname,
-            email: item.email,
-            phone: item.phone,
-            whatsapp: item.whatsapp,
-            bloodGroup: item.bloodGroup,
-            occupation: item.occupation,
-            joiningDate: item.joiningDate,
-            leavingDate: item.leavingDate || null,
-            role: item.role,
-            status: item.status,
-            notes: item.notes,
-            photo: item.photo || null,
-            assignedTask: item.assignedTask || null,
-            glow: item.glow || false,
-            glowStyle: item.glowStyle || null,
-            animation: item.animation || null,
-            splitProfile: item.splitProfile || false,
-            memberGlow: item.memberGlow || false,
-            memberGlowStyle: item.memberGlowStyle || null,
-            memberAnimation: item.memberAnimation || null,
-            gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
-            hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
-            glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
-            hideAdminRole: item.hideAdminRole ?? false,
-            hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
-            personalTheme: item.personalTheme || null,
-            personalFont: item.personalFont || null,
-            avatarFrame: item.avatarFrame || null,
-            badge: item.badge || null,
-            profileBackground: item.profileBackground || null,
-            dashboardLayout: item.dashboardLayout || null,
-            profileDecoration: item.profileDecoration || null,
-            dashboardStyle: item.dashboardStyle || null,
-            backgroundEffect: item.backgroundEffect || null,
-          }
-        });
-      }
+    if (!postgresSnapshot) {
+      postgresSnapshot = JSON.parse(JSON.stringify(cache));
+      // First run: fallback to UPSERT or ignore if we want to avoid full rewrite
+      // But actually, if postgresSnapshot is null, we shouldn't diff.
+      // Wait, initializeDbCache already populates postgresSnapshot.
     }
 
-    if (cache.months.length > 0) {
-      for (const item of cache.months) {
-        await db.insert(monthsTable).values({
-          id: item.id,
-          name: item.name,
-          startDate: item.startDate,
-          endDate: item.endDate,
-          isLocked: item.isLocked,
-          gracePeriodEnabled: item.gracePeriodEnabled,
-        }).onConflictDoUpdate({
-          target: monthsTable.id,
-          set: {
-            name: item.name,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            isLocked: item.isLocked,
-            gracePeriodEnabled: item.gracePeriodEnabled,
+    const diffAndApply = async (tableName, tableObj, cacheArray, pgArray) => {
+      if (!cacheArray || !pgArray) return;
+      const cacheMap = new Map(cacheArray.map(item => [item.id, item]));
+      const pgMap = new Map(pgArray.map(item => [item.id, item]));
+
+      const toInsert = [];
+      const toUpdate = [];
+      const toDelete = [];
+
+      for (const [id, item] of cacheMap) {
+        if (!pgMap.has(id)) {
+          toInsert.push(item);
+        } else {
+          if (JSON.stringify(item) !== JSON.stringify(pgMap.get(id))) {
+            toUpdate.push(item);
           }
-        });
+        }
+      }
+
+      for (const [id] of pgMap) {
+        if (!cacheMap.has(id)) {
+          toDelete.push(id);
+        }
+      }
+
+      // Execute SQL operations incrementally
+      if (toDelete.length > 0) {
+        // Chunk deletes
+        for (let i = 0; i < toDelete.length; i += 500) {
+          await db.delete(tableObj).where(inArray(tableObj.id, toDelete.slice(i, i + 500)));
+        }
       }
       
-      const activeMonthIds = cache.months.map(m => m.id);
-      if (activeMonthIds.length > 0) {
-        await db.delete(monthsTable).where(notInArray(monthsTable.id, activeMonthIds));
+      if (toInsert.length > 0) {
+        for (let i = 0; i < toInsert.length; i += 500) {
+          try {
+            await db.insert(tableObj).values(toInsert.slice(i, i + 500)).onConflictDoNothing();
+          } catch(e) {
+            console.error("Incremental insert error:", e);
+          }
+        }
       }
-    }
+      
+      if (toUpdate.length > 0) {
+        for (const item of toUpdate) {
+          try {
+            await db.update(tableObj).set(item).where(eq(tableObj.id, item.id));
+          } catch(e) {
+            console.error("Incremental update error:", e);
+          }
+        }
+      }
+    };
 
-    // Clean up dynamic tables for loaded months and re-insert
-    const monthsToSync = Array.from(loadedMonthIds);
-    if (monthsToSync.length > 0) {
-      await db.delete(mealsTable).where(inArray(mealsTable.monthId, monthsToSync));
-      await db.delete(foodMenusTable).where(inArray(foodMenusTable.monthId, monthsToSync));
-      await db.delete(marketEntriesTable).where(inArray(marketEntriesTable.monthId, monthsToSync));
-      await db.delete(depositsTable).where(inArray(depositsTable.monthId, monthsToSync));
-      await db.delete(billsTable).where(inArray(billsTable.monthId, monthsToSync));
-      await db.delete(dutiesTable).where(inArray(dutiesTable.monthId, monthsToSync));
-      await db.delete(managerHoldingsTable).where(inArray(managerHoldingsTable.monthId, monthsToSync));
-      await db.delete(managerRatingsTable).where(inArray(managerRatingsTable.monthId, monthsToSync));
-      try {
-        await db.delete(mealRequestsTable).where(inArray(mealRequestsTable.monthId, monthsToSync));
-      } catch (e) {}
-    }
+    await diffAndApply("members", membersTable, cache.members, postgresSnapshot.members);
+    await diffAndApply("months", monthsTable, cache.months, postgresSnapshot.months);
+    await diffAndApply("meals", mealsTable, cache.meals, postgresSnapshot.meals);
+    await diffAndApply("foodMenus", foodMenusTable, cache.foodMenus, postgresSnapshot.foodMenus);
+    await diffAndApply("marketEntries", marketEntriesTable, cache.marketEntries, postgresSnapshot.marketEntries);
+    await diffAndApply("deposits", depositsTable, cache.deposits, postgresSnapshot.deposits);
+    await diffAndApply("bills", billsTable, cache.bills, postgresSnapshot.bills);
+    await diffAndApply("duties", dutiesTable, cache.duties, postgresSnapshot.duties);
+    await diffAndApply("managerHoldings", managerHoldingsTable, cache.managerHoldings, postgresSnapshot.managerHoldings);
+    await diffAndApply("managerRatings", managerRatingsTable, cache.managerRatings, postgresSnapshot.managerRatings);
+    await diffAndApply("mealRequests", mealRequestsTable, cache.mealRequests, postgresSnapshot.mealRequests);
 
-    if (cache.meals.length > 0) {
-       await db.insert(mealsTable).values(cache.meals.map(item => ({
-         id: item.id,
-         monthId: item.monthId,
-         memberId: item.memberId,
-         date: item.date,
-         lunch: item.lunch,
-         dinner: item.dinner,
-         breakfast: item.breakfast || 0,
-       })));
-     }
-
-    if (cache.foodMenus.length > 0) {
-      await db.insert(foodMenusTable).values(cache.foodMenus.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        date: item.date,
-        lunchVegetable: item.lunchVegetable,
-        lunchMain: item.lunchMain,
-        dinnerVegetable: item.dinnerVegetable,
-        dinnerMain: item.dinnerMain,
-      })));
-    }
-
-    if (cache.marketEntries.length > 0) {
-      await db.insert(marketEntriesTable).values(cache.marketEntries.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        date: item.date,
-        amount: item.amount,
-        receiptUrl: item.receiptUrl,
-        description: item.description,
-        isExtra: item.isExtra,
-        quantity: item.quantity || ""
-      })));
-    }
-
-    if (cache.deposits.length > 0) {
-      await db.insert(depositsTable).values(cache.deposits.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        amount: item.amount,
-        date: item.date,
-        enteredBy: item.enteredBy,
-      })));
-    }
-
-    if (cache.bills.length > 0) {
-      await db.insert(billsTable).values(cache.bills.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        name: item.name,
-        amount: item.amount,
-        collectorId: item.collectorId,
-        status: item.status,
-      })));
-    }
-
-    if (cache.duties.length > 0) {
-      await db.insert(dutiesTable).values(cache.duties.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        name: item.name,
-        task: item.task,
-      })));
-    }
-
-    if (cache.managerHoldings.length > 0) {
-      await db.insert(managerHoldingsTable).values(cache.managerHoldings.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        amount: item.amount,
-        marketSpent: item.marketSpent || 0,
-        description: item.description || "",
-      })));
-    }
-
-    if (cache.managerRatings.length > 0) {
-      await db.insert(managerRatingsTable).values(cache.managerRatings.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        rating: item.rating,
-        raterId: item.raterId,
-        date: item.date,
-      })));
-    }
-
-    if (cache.notices.length > 0) {
-      await db.execute(sql`DELETE FROM notices;`);
-      await db.insert(noticesTable).values(cache.notices.map(item => ({
-        id: item.id,
-        title: item.title,
-        content: item.content,
-        pinned: item.pinned,
-        archived: item.archived,
-        authorId: item.authorId,
-        authorName: item.authorName,
-        date: item.date,
-      })));
-    }
+    // Notices and audit logs are special
+    await diffAndApply("notices", noticesTable, cache.notices, postgresSnapshot.notices);
 
     if (cache.auditLogs && cache.auditLogs.length > 0) {
-      await db.insert(auditLogsTable).values(cache.auditLogs.map(item => ({
-        id: item.id,
-        userId: item.userId,
-        userName: item.userName,
-        action: item.action,
-        oldValue: item.oldValue,
-        newValue: item.newValue,
-        timestamp: item.timestamp,
-        reason: item.reason,
-        date: item.date || null,
-        time: item.time || null,
-        userRole: item.userRole || null,
-        superUserId: item.superUserId || null,
-        messId: item.messId || null,
-        module: item.module || null,
-        actionType: item.actionType || null,
-        description: item.description || null,
-        browser: item.browser || null,
-        ipAddress: item.ipAddress || null,
-      }))).onConflictDoNothing();
-      // Clear in-memory audit logs after persisting to PostgreSQL to conserve RAM
+      await db.insert(auditLogsTable).values(cache.auditLogs).onConflictDoNothing();
       cache.auditLogs = [];
     }
 
-    if (cache.mealRequests && cache.mealRequests.length > 0) {
-      try {
-        await db.insert(mealRequestsTable).values(cache.mealRequests.map(item => ({
-          id: item.id,
-          monthId: item.monthId,
-          date: item.date,
-          requesterId: item.requesterId,
-          requesterName: item.requesterName,
-          mealsData: item.mealsData,
-          status: item.status,
-          timestamp: item.timestamp,
-        })));
-      } catch (err) {
-        console.warn("Could not insert into meal_requests table during sync:", err);
-      }
-    }
+    // Update snapshot
+    postgresSnapshot = JSON.parse(JSON.stringify(cache));
+
   } catch (error) {
-    console.error("Error in background PostgreSQL sync:", error);
+    console.error("Error in background PostgreSQL incremental sync:", error);
   }
 }
 
