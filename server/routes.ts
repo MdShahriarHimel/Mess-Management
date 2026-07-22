@@ -611,6 +611,7 @@ router.post("/auth/change-password-audit", authMiddleware, (req: AuthenticatedRe
 // ---------------------------------------------------------
 router.get("/members", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const db = loadDB();
+  console.log("[TRACE F - GET /api/members] Returning members from dbCache. First 3 members:", db.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
   res.json({ members: db.members });
 });
 
@@ -867,6 +868,10 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
       memberGlowStyle: updatedMember.memberGlowStyle || null,
       memberAnimation: updatedMember.memberAnimation || null,
       gifEnabledByAdmin: updatedMember.gifEnabledByAdmin !== false,
+      hideContactInfoByAdmin: updatedMember.hideContactInfoByAdmin ?? false,
+      glowEnabledByAdmin: updatedMember.glowEnabledByAdmin ?? false,
+      hideAdminRole: updatedMember.hideAdminRole ?? false,
+      hideCardFromDirectoryByAdmin: updatedMember.hideCardFromDirectoryByAdmin ?? false,
       personalTheme: updatedMember.personalTheme || null,
       personalFont: updatedMember.personalFont || null,
       avatarFrame: updatedMember.avatarFrame || null,
@@ -877,7 +882,20 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
       dashboardStyle: updatedMember.dashboardStyle || null,
       backgroundEffect: updatedMember.backgroundEffect || null,
     };
+    
+    console.log("[TRACE A - Immediately before Postgres UPDATE]", {
+      memberId: id,
+      previousMember: { nickname: original.nickname, glow: original.glow, personalTheme: original.personalTheme, profileBackground: original.profileBackground },
+      newMemberPayload: { nickname: updatedMember.nickname, glow: updatedMember.glow, personalTheme: updatedMember.personalTheme, profileBackground: updatedMember.profileBackground }
+    });
+
     await drizzleDb.update(members).set(dbUpdateObj).where(eq(members.id, id));
+
+    const [readBack] = await drizzleDb.select().from(members).where(eq(members.id, id));
+    console.log("[TRACE B - Immediately after Postgres UPDATE (read back row)]", {
+      memberId: id,
+      readBackRow: readBack ? { nickname: readBack.nickname, glow: readBack.glow, personalTheme: readBack.personalTheme, profileBackground: readBack.profileBackground } : null
+    });
   } catch (err) {
     console.warn("Direct Drizzle sync fallback in PUT /members/:id:", err);
   }

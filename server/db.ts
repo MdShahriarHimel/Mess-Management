@@ -137,6 +137,10 @@ export async function importBackupToPostgres(backupData: DatabaseSchema) {
         memberGlowStyle: item.memberGlowStyle || null,
         memberAnimation: item.memberAnimation || null,
         gifEnabledByAdmin: item.gifEnabledByAdmin ?? true,
+        hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
+        glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
+        hideAdminRole: item.hideAdminRole ?? false,
+        hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
         personalTheme: item.personalTheme || null,
         personalFont: item.personalFont || null,
         avatarFrame: item.avatarFrame || null,
@@ -531,6 +535,7 @@ export async function initializeDbCache() {
         auditLogs: auditLogsList as any[],
         mealRequests: (mealRequestsList || []) as any[],
       };
+      console.log("[TRACE E - initializeDbCache()] Loaded members from PostgreSQL. Total:", membersList.length, "Sample members:", membersList.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
       console.log("Cache loaded successfully from PostgreSQL.");
     }
   } catch (error) {
@@ -581,6 +586,7 @@ export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
 async function doActualSync(cache: DatabaseSchema) {
   try {
     if (cache.members.length > 0) {
+      console.log("[TRACE D - doActualSync()] Writing members cache to Postgres. First 3 members:", cache.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
       const activeMemberIds = cache.members.map(m => m.id);
       if (activeMemberIds.length > 0) {
         await db.delete(membersTable).where(notInArray(membersTable.id, activeMemberIds));
@@ -611,6 +617,10 @@ async function doActualSync(cache: DatabaseSchema) {
           memberGlowStyle: item.memberGlowStyle || null,
           memberAnimation: item.memberAnimation || null,
           gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
+          hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
+          glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
+          hideAdminRole: item.hideAdminRole ?? false,
+          hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
           personalTheme: item.personalTheme || null,
           personalFont: item.personalFont || null,
           avatarFrame: item.avatarFrame || null,
@@ -645,6 +655,10 @@ async function doActualSync(cache: DatabaseSchema) {
             memberGlowStyle: item.memberGlowStyle || null,
             memberAnimation: item.memberAnimation || null,
             gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
+            hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
+            glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
+            hideAdminRole: item.hideAdminRole ?? false,
+            hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
             personalTheme: item.personalTheme || null,
             personalFont: item.personalFont || null,
             avatarFrame: item.avatarFrame || null,
@@ -876,6 +890,7 @@ export function setActiveMessId(messId: string) {
 // Load database from file/memory
 export function loadDB(): DatabaseSchema {
   if (!dbCache) {
+    console.warn("[TRACE G - loadDB()] dbCache is NULL or uninitialized! Triggering fallback file/seed load. Call stack:", new Error().stack?.split("\n").slice(1, 4).join(" | "));
     ensureDBDir();
     const messId = getActiveMessId();
     const BACKUP_FILE = messId === "default"
@@ -986,6 +1001,7 @@ export function loadDB(): DatabaseSchema {
 // Save database and trigger async background sync to Postgres
 export function saveDB() {
   if (!dbCache) return;
+  console.log("[TRACE C - saveDB()] Called. dbCache first 3 members:", dbCache.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
   // Trigger non-blocking async synchronization in the background
   syncCacheToPostgresDirectly(dbCache);
 
