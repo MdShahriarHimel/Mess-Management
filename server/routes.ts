@@ -685,7 +685,7 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
 });
 
 // Update Member (Self, Admin, Super User, Assistant Super User, Manager)
-router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const updates: Partial<Member> = req.body;
   const db = loadDB();
@@ -697,84 +697,73 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   }
 
   const original = db.members[index];
+  const isActorUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isSelf = req.user!.id === id;
+  const isMessAdmin = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
+  const isManager = req.user!.role === UserRole.MANAGER;
+
+  // Ultimate admin account protection
+  if (isTargetUltimateAdmin && !isActorUltimateAdmin) {
+    res.status(403).json({ error: "Only the Ultimate Admin can modify their own account." });
+    return;
+  }
 
   // Ultimate admin can demote other admins. Other admins cannot demote themselves or other admins.
-  // The ultimate admin cannot demote themselves from the Admin Role.
-  if (original.role === UserRole.ADMIN) {
-    if (updates.role && updates.role !== UserRole.ADMIN) {
-      const isUltimateAdminActor = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-      const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-      
-      if (isTargetUltimateAdmin) {
-        res.status(403).json({ error: "The ultimate Admin's role is Eternal and cannot be demoted." });
-        return;
-      }
-      if (!isUltimateAdminActor) {
-        res.status(403).json({ error: "Only the ultimate Admin can demote other Admins." });
-        return;
-      }
+  if (original.role === UserRole.ADMIN && updates.role && updates.role !== UserRole.ADMIN) {
+    if (isTargetUltimateAdmin) {
+      res.status(403).json({ error: "The Ultimate Admin's role is Eternal and cannot be demoted." });
+      return;
+    }
+    if (!isActorUltimateAdmin) {
+      res.status(403).json({ error: "Only the Ultimate Admin can demote other Admins." });
+      return;
     }
   }
 
-  // Only the ultimate Admin can promote standard members to the Admin role.
+  // Only the Ultimate Admin can promote standard members to the Admin role.
   if (updates.role === UserRole.ADMIN && original.role !== UserRole.ADMIN) {
-    const isUltimateAdminActor = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-    if (!isUltimateAdminActor) {
-      res.status(403).json({ error: "Only the ultimate Admin can promote members to the Admin role." });
+    if (!isActorUltimateAdmin) {
+      res.status(403).json({ error: "Only the Ultimate Admin can promote members to the Admin role." });
       return;
     }
   }
 
-  // Permissions validation
-  const isSelf = req.user!.id === id;
-  const isManager = req.user!.role === UserRole.MANAGER;
-  const isAsstSuper = req.user!.role === UserRole.ASSISTANT_SUPERUSER;
-  const isSuperUser = req.user!.role === UserRole.SUPERUSER;
-  const isAdminOrSuperOrAsst = req.user!.role === UserRole.ADMIN || isSuperUser || isAsstSuper;
-
-  if (!isSelf && !isAdminOrSuperOrAsst && !isManager) {
-    res.status(403).json({ error: "Permission denied" });
-    return;
-  }
-
-  // Standard Admin or anyone else cannot modify the ultimate Admin account, except the ultimate Admin themselves
-  const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isActorUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-
-  if (isTargetUltimateAdmin && !isActorUltimateAdmin) {
-    res.status(403).json({ error: "Only the ultimate Admin can modify their own account." });
-    return;
-  }
-
-  // Superuser / Assistant Superuser / Manager cannot modify Admin accounts
-  if (original.role === UserRole.ADMIN && !isActorUltimateAdmin) {
-    // Standard admins can edit themselves, but not other Admins
-    if (!isSelf) {
-      res.status(403).json({ error: "Only the ultimate Admin can modify other Admin accounts" });
+  // Permission Hierarchy Check
+  if (!isActorUltimateAdmin) {
+    // Normal member editing someone else
+    if (!isSelf && !isMessAdmin && !isManager) {
+      res.status(403).json({ error: "Permission denied: You can only edit your own profile." });
       return;
     }
-  }
 
-  // If the updater is a MANAGER, they can only edit standard MEMBERs (or other MANAGERs) and can only change their role, notes, or assignedTask.
-  if (isManager && !isSelf) {
-    if ([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(original.role)) {
-      res.status(403).json({ error: "Managers cannot modify Admin or Super User accounts" });
+    // Standard Mess Admin editing other Admin accounts
+    if (original.role === UserRole.ADMIN && !isSelf) {
+      res.status(403).json({ error: "Only the Ultimate Admin can modify other Admin accounts." });
       return;
     }
-    // Only check if forbidden keys are actually changed from their original values
-    const changedForbiddenKeys = Object.keys(updates).filter(key => {
-      if (!["role", "notes", "assignedTask", "id", "email"].includes(key)) {
-        return updates[key as keyof Member] !== original[key as keyof Member];
+
+    // Manager editing non-self
+    if (isManager && !isSelf) {
+      if ([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(original.role)) {
+        res.status(403).json({ error: "Managers cannot modify Admin or Super User accounts." });
+        return;
       }
-      return false;
-    });
-    if (changedForbiddenKeys.length > 0) {
-      res.status(403).json({ error: `Managers are only allowed to modify role assignments, notes, and assigned tasks. Disallowed edits to: ${changedForbiddenKeys.join(", ")}` });
-      return;
-    }
-    if (updates.role && ![UserRole.MEMBER, UserRole.MANAGER].includes(updates.role)) {
-      res.status(403).json({ error: "Managers cannot grant administrative roles" });
-      return;
+      const allowedManagerKeys = ["role", "notes", "assignedTask", "id", "email"];
+      const changedForbiddenKeys = Object.keys(updates).filter(key => {
+        if (!allowedManagerKeys.includes(key)) {
+          return updates[key as keyof Member] !== original[key as keyof Member];
+        }
+        return false;
+      });
+      if (changedForbiddenKeys.length > 0) {
+        res.status(403).json({ error: `Managers are only allowed to modify role assignments, notes, and assigned tasks. Disallowed edits to: ${changedForbiddenKeys.join(", ")}` });
+        return;
+      }
+      if (updates.role && ![UserRole.MEMBER, UserRole.MANAGER].includes(updates.role)) {
+        res.status(403).json({ error: "Managers cannot grant administrative roles." });
+        return;
+      }
     }
   }
 
@@ -784,88 +773,48 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     return;
   }
 
-  // Check if they are trying to suspend, left, or archive, and require canSuspendMembers permission
+  // Require canSuspendMembers permission for status changes to SUSPENDED/ARCHIVED/LEFT
   const isSuspendedOrLeftOrArchived = updates.status && [MemberStatus.SUSPENDED, MemberStatus.ARCHIVED, MemberStatus.LEFT].includes(updates.status as any);
   if (isSuspendedOrLeftOrArchived && !checkAdminPermission(req, "canSuspendMembers")) {
     res.status(403).json({ error: "Access denied. You do not have permission to suspend or archive members." });
     return;
   }
 
-  // Only the ultimate Admin can customize these admin-override settings (except standard Admin/Superuser can hide themselves)
-  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+  // Strip administrative-only settings if actor is neither Ultimate Admin nor Mess Admin
+  if (!isActorUltimateAdmin && !isMessAdmin) {
+    delete updates.gifEnabledByAdmin;
     delete updates.hideContactInfoByAdmin;
     delete updates.glowEnabledByAdmin;
     delete updates.hideAdminRole;
-    // Allow self-hide (hide himself)
-    if (!isSelf || (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER)) {
+    if (!isSelf) {
       delete updates.hideCardFromDirectoryByAdmin;
     }
-  }
-
-  // Only Admin can customize individual glowing effects/animations (except if GIF background feature is enabled by admin)
-  if (req.user!.role !== UserRole.ADMIN) {
-    delete updates.gifEnabledByAdmin;
-    delete updates.glow;
-    delete updates.glowStyle;
-    delete updates.splitProfile;
-    delete updates.memberGlow;
-    delete updates.memberGlowStyle;
-    delete updates.animation;
-    delete updates.memberAnimation;
-  }
-
-  // Standard member cannot modify roles, status, permissions, joining/leaving dates
-  // Managers are only allowed to update the keys verified above
-  if (!isAdminOrSuperOrAsst) {
-    if (!isManager) {
-      const isStatusRestore = isSelf && (updates.status === MemberStatus.ACTIVE || updates.status === MemberStatus.PENDING);
-      if (!isStatusRestore) {
-        delete updates.role;
-        delete updates.status;
-        delete updates.joiningDate;
-        delete updates.leavingDate;
-        delete updates.permissions;
-      } else {
-        delete updates.role;
-        delete updates.joiningDate;
-        delete updates.leavingDate;
-        delete updates.permissions;
-      }
+    const isStatusRestore = isSelf && (updates.status === MemberStatus.ACTIVE || updates.status === MemberStatus.PENDING);
+    if (!isStatusRestore) {
+      delete updates.role;
+      delete updates.status;
+      delete updates.joiningDate;
+      delete updates.leavingDate;
+      delete updates.permissions;
     } else {
-      // If manager is self-updating, they also lose role/status editing rights
-      if (isSelf) {
-        const isStatusRestore = updates.status === MemberStatus.ACTIVE || updates.status === MemberStatus.PENDING;
-        if (!isStatusRestore) {
-          delete updates.role;
-          delete updates.status;
-          delete updates.joiningDate;
-          delete updates.leavingDate;
-          delete updates.permissions;
-        } else {
-          delete updates.role;
-          delete updates.joiningDate;
-          delete updates.leavingDate;
-          delete updates.permissions;
-        }
-      }
+      delete updates.role;
+      delete updates.joiningDate;
+      delete updates.leavingDate;
+      delete updates.permissions;
     }
   }
 
-  // Handle profile photo persistence and deletion of previous image
+  // Handle profile photo persistence
   if (updates.photo !== undefined) {
     if (updates.photo && updates.photo.startsWith("data:")) {
-      // 1. Delete previous file if it was a persistent file
       if (original.photo && original.photo.startsWith("/api/files/")) {
         const prevFilename = original.photo.replace("/api/files/", "");
         deletePersistentFile(prevFilename);
       }
-      
-      // 2. Write new photo as a persistent file
       const filename = `profile_pic_${id}_${Date.now()}.jpg`;
       writeAndPersistFile(filename, updates.photo);
       updates.photo = `/api/files/${filename}`;
     } else if (!updates.photo && original.photo) {
-      // User removed their photo
       if (original.photo.startsWith("/api/files/")) {
         const prevFilename = original.photo.replace("/api/files/", "");
         deletePersistentFile(prevFilename);
@@ -886,11 +835,92 @@ router.put("/members/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   if (isInactiveNow && !wasInactiveBefore) {
     updatedMember.leavingDate = new Date().toISOString().split("T")[0];
   } else if (!isInactiveNow && wasInactiveBefore) {
-    updatedMember.leavingDate = undefined;
+    updatedMember.leavingDate = null;
   }
 
+  // Update memory cache
   db.members[index] = updatedMember;
   saveDB();
+
+  // Directly update PostgreSQL table for instant DB synchronization
+  try {
+    const dbUpdateObj: any = {
+      name: updatedMember.name,
+      nickname: updatedMember.nickname,
+      email: updatedMember.email,
+      phone: updatedMember.phone,
+      whatsapp: updatedMember.whatsapp,
+      bloodGroup: updatedMember.bloodGroup,
+      occupation: updatedMember.occupation,
+      joiningDate: updatedMember.joiningDate,
+      leavingDate: updatedMember.leavingDate || null,
+      role: updatedMember.role,
+      status: updatedMember.status,
+      notes: updatedMember.notes,
+      photo: updatedMember.photo || null,
+      assignedTask: updatedMember.assignedTask || null,
+      glow: updatedMember.glow ?? false,
+      glowStyle: updatedMember.glowStyle || null,
+      animation: updatedMember.animation || null,
+      splitProfile: updatedMember.splitProfile ?? false,
+      memberGlow: updatedMember.memberGlow ?? false,
+      memberGlowStyle: updatedMember.memberGlowStyle || null,
+      memberAnimation: updatedMember.memberAnimation || null,
+      gifEnabledByAdmin: updatedMember.gifEnabledByAdmin !== false,
+      personalTheme: updatedMember.personalTheme || null,
+      personalFont: updatedMember.personalFont || null,
+      avatarFrame: updatedMember.avatarFrame || null,
+      badge: updatedMember.badge || null,
+      profileBackground: updatedMember.profileBackground || null,
+      dashboardLayout: updatedMember.dashboardLayout || null,
+      profileDecoration: updatedMember.profileDecoration || null,
+      dashboardStyle: updatedMember.dashboardStyle || null,
+      backgroundEffect: updatedMember.backgroundEffect || null,
+    };
+    await drizzleDb.update(members).set(dbUpdateObj).where(eq(members.id, id));
+  } catch (err) {
+    console.warn("Direct Drizzle sync fallback in PUT /members/:id:", err);
+  }
+
+  // Member Notification: Create a Dashboard notification if Admin or Ultimate Admin modifies another member's profile
+  if (!isSelf && (isActorUltimateAdmin || isMessAdmin)) {
+    let actorName = "Administrator";
+    if (isActorUltimateAdmin) {
+      actorName = "Ultimate Admin";
+    } else {
+      const nick = req.user!.nickname || req.user!.name || "Admin";
+      actorName = nick.toLowerCase().startsWith("admin") ? nick : `Administrator ${nick}`;
+    }
+
+    let categoryChanged = "profile appearance";
+    if (updates.hideContactInfoByAdmin !== undefined || updates.glowEnabledByAdmin !== undefined || updates.hideAdminRole !== undefined || updates.hideCardFromDirectoryByAdmin !== undefined) {
+      categoryChanged = "profile visibility settings";
+    } else if (updates.role !== undefined) {
+      categoryChanged = "user role";
+    } else if (updates.status !== undefined) {
+      categoryChanged = "membership status";
+    } else if (updates.notes !== undefined || updates.assignedTask !== undefined) {
+      categoryChanged = "profile assignments";
+    }
+
+    const activeMess = getActiveMessId();
+    const noticeContent = `${actorName} updated your ${categoryChanged}.`;
+
+    const notificationNotice: Notice = {
+      id: generateUUID(),
+      title: `Profile Updated by ${actorName}`,
+      content: `${noticeContent} (Mess: ${activeMess})`,
+      pinned: true,
+      archived: false,
+      authorId: req.user!.id,
+      authorName: actorName,
+      date: new Date().toISOString().split("T")[0],
+    };
+
+    if (!db.notices) db.notices = [];
+    db.notices.unshift(notificationNotice);
+    saveDB();
+  }
 
   logAudit(
     req.user!.id,
@@ -2698,6 +2728,112 @@ export function saveUserPreferences(userId: string, prefs: any) {
 // Global cache for tenant settings
 const settingsCache: Record<string, any> = {};
 
+// Single global constant for settings schema version
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 2;
+
+// Reusable migration framework
+type MigrationFn = (settings: any) => any;
+const migrations: Record<number, MigrationFn> = {
+  1: (settings: any) => {
+    console.log("[Migration] Running settings migration V1 to V2");
+    const migrated = { ...settings };
+    
+    // Ensure all standard collections are initialized to avoid undefined errors
+    if (!migrated.dropdownOptions) migrated.dropdownOptions = ["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"];
+    if (!migrated.translations) migrated.translations = {};
+    if (!migrated.mealTypes) {
+      migrated.mealTypes = [
+        { id: "lunch", name: "Lunch", enabled: true },
+        { id: "dinner", name: "Dinner", enabled: true },
+        { id: "breakfast", name: "Breakfast", enabled: false }
+      ];
+    }
+    if (!migrated.customColors) migrated.customColors = {};
+    if (!migrated.messAnimations) migrated.messAnimations = {};
+    if (!migrated.dashboardVisibility) migrated.dashboardVisibility = {};
+    if (!migrated.roleAnimations) migrated.roleAnimations = {};
+    if (!migrated.dateRestrictions) migrated.dateRestrictions = {};
+    if (!migrated.loginCustomization) migrated.loginCustomization = {};
+    if (!migrated.homeCustomization) migrated.homeCustomization = {};
+    if (!migrated.adminVisibility) migrated.adminVisibility = {};
+    if (!migrated.creditConfig) migrated.creditConfig = {};
+    if (!migrated.appearancePermissions) migrated.appearancePermissions = {};
+
+    return migrated;
+  }
+};
+
+async function runMigrationPipeline(messId: string, settings: any, isBrandNew: boolean): Promise<any> {
+  const nowStr = new Date().toISOString();
+  
+  if (isBrandNew) {
+    // New settings object: directly set metadata to current latest version
+    return {
+      ...settings,
+      schemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
+      createdAt: settings.createdAt || nowStr,
+      updatedAt: settings.updatedAt || nowStr,
+      lastMigratedAt: settings.lastMigratedAt || nowStr,
+    };
+  }
+
+  // Ensure initial timestamps exist if missing
+  const createdAt = settings.createdAt || nowStr;
+  const updatedAt = settings.updatedAt || nowStr;
+  
+  // Existing files or rows without schemaVersion are implicitly Version 1
+  const storedVersion = settings.schemaVersion ? Number(settings.schemaVersion) : 1;
+  
+  if (storedVersion === CURRENT_SETTINGS_SCHEMA_VERSION) {
+    return {
+      ...settings,
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  if (storedVersion > CURRENT_SETTINGS_SCHEMA_VERSION) {
+    console.warn(`[Settings] Stored schemaVersion (${storedVersion}) is newer than supported version (${CURRENT_SETTINGS_SCHEMA_VERSION}) for mess ${messId}.`);
+    return settings;
+  }
+
+  console.log(`[Settings] Migrating settings for mess ${messId} from version ${storedVersion} to ${CURRENT_SETTINGS_SCHEMA_VERSION}...`);
+  
+  // Clone current state to ensure non-destructive operations
+  let currentSettingsState = JSON.parse(JSON.stringify(settings));
+  let version = storedVersion;
+
+  try {
+    while (version < CURRENT_SETTINGS_SCHEMA_VERSION) {
+      const migrationFn = migrations[version];
+      if (!migrationFn) {
+        throw new Error(`Migration routine for version ${version} is missing.`);
+      }
+      currentSettingsState = migrationFn(currentSettingsState);
+      version++;
+    }
+
+    // Update migration metadata upon success
+    currentSettingsState.schemaVersion = CURRENT_SETTINGS_SCHEMA_VERSION;
+    currentSettingsState.createdAt = createdAt;
+    currentSettingsState.updatedAt = nowStr;
+    currentSettingsState.lastMigratedAt = nowStr;
+    currentSettingsState._hasMigrated = true;
+
+    console.log(`[Settings] Successfully migrated settings for mess ${messId} to version ${CURRENT_SETTINGS_SCHEMA_VERSION}`);
+    return currentSettingsState;
+  } catch (migrationErr) {
+    console.error(`[Settings] Migration failed for mess ${messId} at version ${version}:`, migrationErr);
+    console.warn(`[Settings] Migration aborted. Continuing using previous validated configuration.`);
+    return {
+      ...settings,
+      schemaVersion: storedVersion,
+      createdAt,
+      updatedAt,
+    };
+  }
+}
+
 function deepEqual(obj1: any, obj2: any): boolean {
   if (obj1 === obj2) return true;
   if (typeof obj1 !== "object" || obj1 === null || typeof obj2 !== "object" || obj2 === null) {
@@ -2714,6 +2850,16 @@ function deepEqual(obj1: any, obj2: any): boolean {
 }
 
 function mapSettingsToRow(messId: string, settings: any) {
+  // Package versioning metadata inside appearancePermissions column to avoid DB schema modifications
+  const appearancePerms = settings.appearancePermissions || {};
+  const metadataAppended = {
+    ...appearancePerms,
+    _schemaVersion: settings.schemaVersion,
+    _createdAt: settings.createdAt,
+    _updatedAt: settings.updatedAt,
+    _lastMigratedAt: settings.lastMigratedAt,
+  };
+
   return {
     messId,
     messName: settings.messName || "",
@@ -2741,7 +2887,7 @@ function mapSettingsToRow(messId: string, settings: any) {
     homeCustomization: JSON.stringify(settings.homeCustomization || {}),
     adminVisibility: JSON.stringify(settings.adminVisibility || {}),
     creditConfig: JSON.stringify(settings.creditConfig || {}),
-    appearancePermissions: JSON.stringify(settings.appearancePermissions || {}),
+    appearancePermissions: JSON.stringify(metadataAppended),
   };
 }
 
@@ -2753,6 +2899,19 @@ function mapRowToSettings(row: any) {
       return fallback;
     }
   };
+
+  const appearancePermissionsRaw = safeParse(row.appearancePermissions, {});
+  const schemaVersion = appearancePermissionsRaw._schemaVersion;
+  const createdAt = appearancePermissionsRaw._createdAt;
+  const updatedAt = appearancePermissionsRaw._updatedAt;
+  const lastMigratedAt = appearancePermissionsRaw._lastMigratedAt;
+
+  const appearancePermissionsClean = { ...appearancePermissionsRaw };
+  delete appearancePermissionsClean._schemaVersion;
+  delete appearancePermissionsClean._createdAt;
+  delete appearancePermissionsClean._updatedAt;
+  delete appearancePermissionsClean._lastMigratedAt;
+
   return {
     messName: row.messName,
     siteColor: row.siteColor,
@@ -2779,7 +2938,11 @@ function mapRowToSettings(row: any) {
     homeCustomization: safeParse(row.homeCustomization, {}),
     adminVisibility: safeParse(row.adminVisibility, {}),
     creditConfig: safeParse(row.creditConfig, {}),
-    appearancePermissions: safeParse(row.appearancePermissions, {}),
+    appearancePermissions: appearancePermissionsClean,
+    schemaVersion,
+    createdAt,
+    updatedAt,
+    lastMigratedAt,
   };
 }
 
@@ -2787,18 +2950,36 @@ async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings:
   try {
     const rows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
     
+    let combinedSettings: any = {};
+    const isBrandNew = (rows.length === 0 && (!localJsonSettings || Object.keys(localJsonSettings).length === 0));
+
     if (rows.length > 0) {
-      const pgSettings = {
+      combinedSettings = {
         ...localJsonSettings,
         ...mapRowToSettings(rows[0])
       };
-      settingsCache[messId] = pgSettings;
+    } else {
+      combinedSettings = { ...localJsonSettings };
+    }
+
+    // Run schema migration pipeline
+    const validatedSettings = await runMigrationPipeline(messId, combinedSettings, isBrandNew);
+    const filename = messId === "default" ? "settings.json" : `settings_${messId}.json`;
+
+    if (rows.length > 0) {
+      if (validatedSettings._hasMigrated) {
+        delete validatedSettings._hasMigrated;
+        writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
+        await saveSettingsToPostgres(messId, validatedSettings);
+        console.log(`[Settings] Successfully migrated and persisted settings for mess: ${messId}`);
+      }
+      settingsCache[messId] = validatedSettings;
       console.log(`[Settings] Successfully loaded settings from PostgreSQL for mess: ${messId}`);
       return;
     }
 
     console.log(`[Settings] No settings found in PostgreSQL for mess ${messId}. Initiating migration...`);
-    const rowToInsert = mapSettingsToRow(messId, localJsonSettings);
+    const rowToInsert = mapSettingsToRow(messId, validatedSettings);
     await drizzleDb.insert(tenantSettings).values(rowToInsert);
 
     const verifyRows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
@@ -2807,11 +2988,18 @@ async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings:
     }
 
     const pgSettingsLoaded = mapRowToSettings(verifyRows[0]);
-    const validationKeys = Object.keys(localJsonSettings).filter(k => k !== 'erpName');
+    const validationKeys = Object.keys(validatedSettings).filter(k => 
+      k !== 'erpName' && 
+      k !== 'schemaVersion' && 
+      k !== 'createdAt' && 
+      k !== 'updatedAt' && 
+      k !== 'lastMigratedAt' && 
+      k !== '_hasMigrated'
+    );
     
     let isMatch = true;
     for (const key of validationKeys) {
-      const jsonVal = localJsonSettings[key];
+      const jsonVal = validatedSettings[key];
       const pgVal = pgSettingsLoaded[key as keyof typeof pgSettingsLoaded];
       if (!deepEqual(jsonVal, pgVal)) {
         console.warn(`[Settings] Validation mismatch on key "${key}". JSON:`, jsonVal, `PG:`, pgVal);
@@ -2820,15 +3008,21 @@ async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings:
       }
     }
 
+    if (validatedSettings._hasMigrated) {
+      delete validatedSettings._hasMigrated;
+    }
+
+    writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
+
     if (isMatch) {
       settingsCache[messId] = {
-        ...localJsonSettings,
+        ...validatedSettings,
         ...pgSettingsLoaded
       };
       console.log(`[Settings] Migration verified and completed successfully for mess: ${messId}`);
     } else {
       console.error(`[Settings] Migration validation mismatch for mess ${messId}. Aborting migration and falling back to JSON.`);
-      settingsCache[messId] = localJsonSettings;
+      settingsCache[messId] = validatedSettings;
     }
   } catch (error) {
     console.error(`[Settings] Error migrating settings for mess ${messId}:`, error);
@@ -3081,13 +3275,22 @@ function loadSettings() {
 function saveSettings(settings: any) {
   try {
     const messId = getActiveMessId();
+    
+    // Refresh updatedAt and ensure version/createdAt metadata exist on save
+    const updatedSettings = {
+      ...settings,
+      schemaVersion: settings.schemaVersion || CURRENT_SETTINGS_SCHEMA_VERSION,
+      createdAt: settings.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
     const filename = messId === "default"
       ? "settings.json"
       : `settings_${messId}.json`;
-    writeAndPersistFile(filename, JSON.stringify(settings, null, 2));
+    writeAndPersistFile(filename, JSON.stringify(updatedSettings, null, 2));
 
-    settingsCache[messId] = settings;
-    saveSettingsToPostgres(messId, settings);
+    settingsCache[messId] = updatedSettings;
+    saveSettingsToPostgres(messId, updatedSettings);
   } catch (e) {
     console.error("Error saving settings:", e);
   }
@@ -4906,6 +5109,12 @@ router.post("/monetization/cosmetics/equip", authMiddleware, async (req: Authent
     }
 
     await drizzleDb.update(members).set(updateObj).where(eq(members.id, userId));
+    const memDb = loadDB();
+    const memIdx = memDb.members.findIndex(m => m.id === userId);
+    if (memIdx !== -1) {
+      Object.assign(memDb.members[memIdx], updateObj);
+      saveDB();
+    }
     logAudit(userId, req.user!.nickname, "EQUIP_COSMETIC", "None", itemId || "none", `Equipped ${category}: ${itemId || "none"}`);
     res.json({ success: true, message: `Successfully equipped ${category}` });
   } catch (err: any) {
