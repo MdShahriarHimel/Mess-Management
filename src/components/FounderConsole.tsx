@@ -43,13 +43,18 @@ interface FounderConsoleProps {
 
 export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPlatformStatus }: FounderConsoleProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    "dashboard" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "logs"
+    "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "logs"
   >("dashboard");
 
   // Core configuration states
   const [controls, setControls] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
+
+  // Security Dashboard state
+  const [securityData, setSecurityData] = useState<any>(null);
+  const [securityLoading, setSecurityLoading] = useState(false);
+  const [securitySearch, setSecuritySearch] = useState("");
 
   // Storage metrics
   const [dbStatus, setDbStatus] = useState<any>(null);
@@ -231,9 +236,28 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     }
   };
 
+  const fetchSecurityDashboard = async () => {
+    setSecurityLoading(true);
+    try {
+      const res = await fetch("/api/founder/security-dashboard", { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setSecurityData(data);
+      } else {
+        showBanner("Failed to load security dashboard metrics.", "error");
+      }
+    } catch (e) {
+      showBanner("Failed to fetch security dashboard.", "error");
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
   // Load contextual subtab data lazily (high performance)
   useEffect(() => {
-    if (activeSubTab === "storage" && !dbStatus) {
+    if (activeSubTab === "security") {
+      fetchSecurityDashboard();
+    } else if (activeSubTab === "storage" && !dbStatus) {
       fetchDbStatus();
     } else if (activeSubTab === "gemini" && !geminiStatus) {
       fetchGeminiStatus();
@@ -461,6 +485,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       <div className="flex items-center space-x-1 overflow-x-auto pb-2 border-b border-slate-800/40 scrollbar-none">
         {[
           { id: "dashboard", label: "Dashboard", icon: <Activity size={14} /> },
+          { id: "security", label: "Security & Locks", icon: <Shield size={14} /> },
           { id: "maintenance", label: "Maintenance", icon: <Lock size={14} /> },
           { id: "announcements", label: "Announcements", icon: <Bell size={14} /> },
           { id: "flags", label: "Feature Flags", icon: <Settings size={14} /> },
@@ -468,7 +493,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
           { id: "gemini", label: "AI & Gemini", icon: <Cpu size={14} /> },
           { id: "analytics", label: "Platform Analytics", icon: <TrendingUp size={14} /> },
           { id: "owners", label: "Platform Owners", icon: <Users size={14} /> },
-          { id: "logs", label: "Audit Log", icon: <Shield size={14} /> }
+          { id: "logs", label: "Audit Log", icon: <FileText size={14} /> }
         ].map((item) => (
           <button
             key={item.id}
@@ -656,6 +681,270 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB: SECURITY & LOGIN PROTECTION DASHBOARD (ULTIMATE ADMIN)
+          ========================================================================= */}
+      {activeSubTab === "security" && (
+        <div id="founder-tab-security" className="space-y-6">
+          {/* Header Bar */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <h2 className="text-base font-mono font-bold text-slate-200 flex items-center space-x-2">
+                <Shield className="text-cyan-400" size={18} />
+                <span>Security, Login Protection & Account Safety</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Real-time security monitoring, rate limits, locked accounts, and credential audit trails.
+              </p>
+            </div>
+            <button
+              onClick={fetchSecurityDashboard}
+              disabled={securityLoading}
+              className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-xs font-mono flex items-center space-x-1.5 transition-all"
+            >
+              <RefreshCw size={12} className={securityLoading ? "animate-spin" : ""} />
+              <span>Refresh Security Stream</span>
+            </button>
+          </div>
+
+          {/* KPI Summary Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Locked Accounts</span>
+              <div className="flex items-center justify-between">
+                <span className={`text-2xl font-bold font-mono ${securityData?.summary?.lockedAccountsCount > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                  {securityData?.summary?.lockedAccountsCount ?? 0}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${securityData?.summary?.lockedAccountsCount > 0 ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-400"}`}>
+                  {securityData?.summary?.lockedAccountsCount > 0 ? "ATTENTION REQUIRED" : "CLEAR"}
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500 block">5 consecutive failed logins threshold</span>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Failed Login Attempts</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold font-mono text-amber-400">
+                  {securityData?.summary?.failedLoginAttemptsCount ?? 0}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">Total Recorded</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500 block">Monitored per email & IP</span>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Password Reset Requests</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold font-mono text-cyan-400">
+                  {securityData?.summary?.passwordResetRequestsCount ?? 0}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">OTP Generation</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500 block">Rate limited to 3 per 15 min</span>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Recently Changed Passwords</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold font-mono text-purple-400">
+                  {securityData?.summary?.recentlyChangedPasswordsCount ?? 0}
+                </span>
+                <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded">Metadata Only</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500 block">Credentials/Hashes Never Stored</span>
+            </div>
+          </div>
+
+          {/* Suspicious Patterns Alert Banner */}
+          {securityData?.suspiciousPatterns && securityData.suspiciousPatterns.length > 0 && (
+            <div className="bg-rose-950/30 border border-rose-500/40 rounded-lg p-4 space-y-3">
+              <h3 className="text-xs font-mono font-bold text-rose-300 flex items-center space-x-2">
+                <AlertOctagon size={14} className="text-rose-400" />
+                <span>Suspicious Activity / Security Alerts ({securityData.suspiciousPatterns.length})</span>
+              </h3>
+              <div className="space-y-2">
+                {securityData.suspiciousPatterns.map((pattern: any, idx: number) => (
+                  <div key={idx} className="bg-slate-900/80 border border-rose-900/50 rounded p-2.5 text-xs font-mono flex items-center justify-between text-slate-300">
+                    <div className="space-y-0.5">
+                      <span className="text-rose-400 font-bold block">{pattern.type}: {pattern.description}</span>
+                      <span className="text-[10px] text-slate-500 block">Target: {pattern.email} | Origin IP: {pattern.ip}</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px]">
+                      {pattern.severity}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Locked Accounts Section */}
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
+            <h3 className="text-sm font-mono font-bold text-slate-300 flex items-center space-x-2">
+              <Lock size={14} className="text-rose-400" />
+              <span>Currently Locked Accounts ({securityData?.lockedAccounts?.length || 0})</span>
+            </h3>
+
+            {!securityData?.lockedAccounts || securityData.lockedAccounts.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-xs font-mono border border-dashed border-slate-800 rounded bg-slate-950/40">
+                ✅ No accounts are currently locked due to failed login attempts.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px] font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500 uppercase text-[9px]">
+                      <th className="pb-2">Account Email</th>
+                      <th className="pb-2">Failed Attempts</th>
+                      <th className="pb-2">Origin IP</th>
+                      <th className="pb-2">Last Failed Attempt</th>
+                      <th className="pb-2">Lock Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-slate-300">
+                    {securityData.lockedAccounts.map((account: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-800/30">
+                        <td className="py-2.5 text-rose-400 font-bold whitespace-nowrap">{account.email}</td>
+                        <td className="py-2.5 text-amber-400">{account.attempts} / 5</td>
+                        <td className="py-2.5 text-slate-400">{account.ip}</td>
+                        <td className="py-2.5 text-slate-500">{new Date(account.lastAttempt).toLocaleTimeString()}</td>
+                        <td className="py-2.5">
+                          <span className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px]">
+                            Locked ({account.remainingLockSeconds}s remaining)
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Recently Changed Passwords (Metadata Only) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-mono font-bold text-slate-300 flex items-center space-x-2">
+                  <Key size={14} className="text-purple-400" />
+                  <span>Recently Changed Passwords Audit Trail</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                  🛡️ Security Guarantee: Passwords and hashes are NEVER recorded or stored in audit logs.
+                </p>
+              </div>
+            </div>
+
+            {!securityData?.recentlyChangedPasswords || securityData.recentlyChangedPasswords.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-xs font-mono border border-dashed border-slate-800 rounded bg-slate-950/40">
+                No password change events recorded recently.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px] font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500 uppercase text-[9px]">
+                      <th className="pb-2">Date & Time</th>
+                      <th className="pb-2">Account Email</th>
+                      <th className="pb-2">Action</th>
+                      <th className="pb-2">Origin IP</th>
+                      <th className="pb-2">Device / User Agent</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-slate-300">
+                    {securityData.recentlyChangedPasswords.map((item: any) => (
+                      <tr key={item.id} className="hover:bg-slate-800/30">
+                        <td className="py-2.5 text-slate-500 whitespace-nowrap">{item.date} {item.time}</td>
+                        <td className="py-2.5 text-cyan-400 font-bold whitespace-nowrap">{item.email}</td>
+                        <td className="py-2.5">
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px]">
+                            {item.action}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-slate-400">{item.ip}</td>
+                        <td className="py-2.5 text-slate-500 max-w-xs truncate" title={item.userAgent}>
+                          {item.userAgent}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Comprehensive Security Event Log Stream */}
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-mono font-bold text-slate-300 flex items-center space-x-2">
+                <FileText size={14} className="text-cyan-400" />
+                <span>Security Events Audit Stream</span>
+              </h3>
+              <input
+                type="text"
+                placeholder="Filter by email, action, or IP..."
+                value={securitySearch}
+                onChange={(e) => setSecuritySearch(e.target.value)}
+                className="px-3 py-1 bg-slate-950 border border-slate-800 rounded text-xs font-mono text-slate-300 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+
+            {!securityData?.recentSecurityEvents || securityData.recentSecurityEvents.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-xs font-mono">
+                No security events recorded yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px] font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500 uppercase text-[9px]">
+                      <th className="pb-2">Timestamp</th>
+                      <th className="pb-2">Account Email</th>
+                      <th className="pb-2">Action</th>
+                      <th className="pb-2">Status</th>
+                      <th className="pb-2">Details / Reason</th>
+                      <th className="pb-2">IP Address</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-slate-300">
+                    {securityData.recentSecurityEvents
+                      .filter((e: any) => {
+                        if (!securitySearch) return true;
+                        const s = securitySearch.toLowerCase();
+                        return (
+                          (e.email || "").toLowerCase().includes(s) ||
+                          (e.action || "").toLowerCase().includes(s) ||
+                          (e.ip || "").toLowerCase().includes(s) ||
+                          (e.reason || "").toLowerCase().includes(s)
+                        );
+                      })
+                      .map((e: any) => (
+                        <tr key={e.id} className="hover:bg-slate-800/30">
+                          <td className="py-2.5 text-slate-500 whitespace-nowrap">{e.date} {e.time}</td>
+                          <td className="py-2.5 text-slate-300 whitespace-nowrap">{e.email}</td>
+                          <td className="py-2.5">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-cyan-300 text-[10px]">
+                              {e.action}
+                            </span>
+                          </td>
+                          <td className="py-2.5">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${e.success ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>
+                              {e.success ? "SUCCESS" : "FAILED"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-slate-400 max-w-xs truncate" title={e.reason}>{e.reason}</td>
+                          <td className="py-2.5 text-slate-500">{e.ip}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

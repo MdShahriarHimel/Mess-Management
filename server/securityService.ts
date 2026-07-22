@@ -1,0 +1,610 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import fs from "fs";
+import path from "path";
+import nodemailer from "nodemailer";
+import { DB_DIR, writeAndPersistFile, loadDB, saveDB, generateUUID } from "./db.js";
+import { logFounderAction } from "./founder.js";
+import { Notice } from "../src/types.js";
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface SecurityEvent {
+  id: string;
+  timestamp: string;
+  date: string;
+  time: string;
+  userId?: string;
+  email: string;
+  messId?: string;
+  action: 
+    | "LOGIN_SUCCESS"
+    | "LOGIN_FAILURE"
+    | "ACCOUNT_ACTIVATION"
+    | "PASSWORD_RESET_REQUEST"
+    | "PASSWORD_RESET_SUCCESS"
+    | "PASSWORD_CHANGE"
+    | "ACCOUNT_LOCKED";
+  success: boolean;
+  reason: string;
+  ip: string;
+  userAgent: string;
+}
+
+interface FailedLoginEntry {
+  email: string;
+  attempts: number;
+  lockUntil: number | null;
+  lastAttempt: number;
+  ip: string;
+}
+
+// ============================================================================
+// IN-MEMORY SECURITY TRACKERS
+// ============================================================================
+
+const failedLoginsMap = new Map<string, FailedLoginEntry>();
+const forgotPasswordRequestsMap = new Map<string, number[]>();
+const sessionVersionsMap = new Map<string, string>();
+
+const SECURITY_LOG_FILE = "security_events_log.json";
+const PASSWORD_HISTORY_FILE = "password_history.json";
+
+// Cached lists from disk
+let securityEventsCache: SecurityEvent[] | null = null;
+let passwordHistoryCache: Record<string, string[]> | null = null;
+
+// ============================================================================
+// PASSWORD POLICY
+// ============================================================================
+
+export function validatePasswordPolicy(password: string): string | null {
+  if (!password || password.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must contain at least one uppercase letter (A-Z).";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must contain at least one lowercase letter (a-z).";
+  }
+  if (!/[0-9]/.test(password)) {
+    return "Password must contain at least one number (0-9).";
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) && !/[^A-Za-z0-9]/.test(password)) {
+    return "Password must contain at least one special character (e.g. !@#$%^&*).";
+  }
+  return null;
+}
+
+// ============================================================================
+// LOGIN RATE LIMITING (5 consecutive failed attempts = 5 min lock)
+// ============================================================================
+
+export function checkLoginRateLimit(email: string, ip: string): { locked: boolean; message?: string } {
+  const normalizedEmail = email.toLowerCase().trim();
+  const entry = failedLoginsMap.get(normalizedEmail);
+
+  if (!entry) {
+    return { locked: false };
+  }
+
+  if (entry.lockUntil) {
+    if (Date.now() < entry.lockUntil) {
+      const remainingSec = Math.ceil((entry.lockUntil - Date.now()) / 1000);
+      const remainingMin = Math.ceil(remainingSec / 60);
+      return { 
+        locked: true, 
+        message: `Too many failed login attempts. Please try again in ${remainingMin} minute${remainingMin > 1 ? "s" : ""}.` 
+      };
+    } else {
+      // Lock expired - reset
+      failedLoginsMap.delete(normalizedEmail);
+      return { locked: false };
+    }
+  }
+
+  return { locked: false };
+}
+
+export function recordFailedLogin(email: string, ip: string, userAgent?: string): void {
+  const normalizedEmail = email.toLowerCase().trim();
+  let entry = failedLoginsMap.get(normalizedEmail);
+
+  if (!entry) {
+    entry = {
+      email: normalizedEmail,
+      attempts: 0,
+      lockUntil: null,
+      lastAttempt: Date.now(),
+      ip: ip || "Unknown"
+    };
+  }
+
+  entry.attempts += 1;
+  entry.lastAttempt = Date.now();
+  entry.ip = ip || "Unknown";
+
+  if (entry.attempts >= 5) {
+    entry.lockUntil = Date.now() + 5 * 60 * 1000; // 5 minutes lock
+    recordSecurityEvent({
+      email: normalizedEmail,
+      action: "ACCOUNT_LOCKED",
+      success: false,
+      reason: `Account locked for 5 minutes due to 5 consecutive failed login attempts from IP: ${ip}`,
+      ip,
+      userAgent: userAgent || "Unknown"
+    });
+  }
+
+  failedLoginsMap.set(normalizedEmail, entry);
+
+  recordSecurityEvent({
+    email: normalizedEmail,
+    action: "LOGIN_FAILURE",
+    success: false,
+    reason: `Failed login attempt (${entry.attempts}/5)`,
+    ip,
+    userAgent: userAgent || "Unknown"
+  });
+}
+
+export function recordSuccessfulLogin(email: string, userId?: string, ip?: string, userAgent?: string): void {
+  const normalizedEmail = email.toLowerCase().trim();
+  failedLoginsMap.delete(normalizedEmail);
+
+  recordSecurityEvent({
+    userId,
+    email: normalizedEmail,
+    action: "LOGIN_SUCCESS",
+    success: true,
+    reason: "User authenticated successfully",
+    ip: ip || "Unknown",
+    userAgent: userAgent || "Unknown"
+  });
+}
+
+// ============================================================================
+// FORGOT PASSWORD RATE LIMITING (3 requests per 15 mins)
+// ============================================================================
+
+export function checkForgotPasswordRateLimit(email: string): { limited: boolean; message?: string } {
+  const normalizedEmail = email.toLowerCase().trim();
+  const now = Date.now();
+  const FIFTEEN_MINS = 15 * 60 * 1000;
+
+  const requests = (forgotPasswordRequestsMap.get(normalizedEmail) || []).filter(ts => now - ts < FIFTEEN_MINS);
+  forgotPasswordRequestsMap.set(normalizedEmail, requests);
+
+  if (requests.length >= 3) {
+    return {
+      limited: true,
+      message: "Too many password reset requests. Please try again later."
+    };
+  }
+
+  return { limited: false };
+}
+
+export function recordForgotPasswordRequest(email: string, ip: string, userAgent?: string): void {
+  const normalizedEmail = email.toLowerCase().trim();
+  const now = Date.now();
+
+  const requests = forgotPasswordRequestsMap.get(normalizedEmail) || [];
+  requests.push(now);
+  forgotPasswordRequestsMap.set(normalizedEmail, requests);
+
+  recordSecurityEvent({
+    email: normalizedEmail,
+    action: "PASSWORD_RESET_REQUEST",
+    success: true,
+    reason: "OTP verification code requested for password reset",
+    ip: ip || "Unknown",
+    userAgent: userAgent || "Unknown"
+  });
+}
+
+// ============================================================================
+// PASSWORD HISTORY PROTECTION
+// ============================================================================
+
+function loadPasswordHistory(): Record<string, string[]> {
+  if (passwordHistoryCache) return passwordHistoryCache;
+
+  const filePath = path.join(DB_DIR, PASSWORD_HISTORY_FILE);
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = fs.readFileSync(filePath, "utf-8");
+      passwordHistoryCache = JSON.parse(data);
+      return passwordHistoryCache!;
+    } catch (e) {
+      console.error("Failed to parse password_history.json:", e);
+    }
+  }
+
+  passwordHistoryCache = {};
+  return passwordHistoryCache;
+}
+
+function savePasswordHistory(): void {
+  if (!passwordHistoryCache) return;
+  writeAndPersistFile(PASSWORD_HISTORY_FILE, JSON.stringify(passwordHistoryCache, null, 2));
+}
+
+export function isPasswordInHistory(memberId: string, currentPassword: string | undefined, newPassword: string): boolean {
+  if (currentPassword && newPassword === currentPassword) {
+    return true;
+  }
+
+  const history = loadPasswordHistory();
+  const memberHistory = history[memberId] || [];
+
+  return memberHistory.includes(newPassword);
+}
+
+export function addPasswordToHistory(memberId: string, password: string): void {
+  const history = loadPasswordHistory();
+  if (!history[memberId]) {
+    history[memberId] = [];
+  }
+
+  if (!history[memberId].includes(password)) {
+    history[memberId].unshift(password);
+  }
+
+  // Keep last 10 passwords
+  if (history[memberId].length > 10) {
+    history[memberId] = history[memberId].slice(0, 10);
+  }
+
+  savePasswordHistory();
+}
+
+// ============================================================================
+// SESSION MANAGEMENT & INVALIDATION
+// ============================================================================
+
+export function getSessionVersion(memberId: string): string {
+  if (!sessionVersionsMap.has(memberId)) {
+    sessionVersionsMap.set(memberId, "v1");
+  }
+  return sessionVersionsMap.get(memberId)!;
+}
+
+export function invalidateMemberSessions(memberId: string): string {
+  const newVer = "s_" + generateUUID();
+  sessionVersionsMap.set(memberId, newVer);
+  return newVer;
+}
+
+export function generateSessionToken(memberId: string): string {
+  const ver = getSessionVersion(memberId);
+  return `${memberId}:${ver}`;
+}
+
+export function isValidMemberSessionToken(token: string, memberId: string): boolean {
+  // If session versions tracker hasn't explicitly invalidated sessions for this member yet, accept token
+  if (!sessionVersionsMap.has(memberId)) {
+    return true;
+  }
+
+  const activeVer = sessionVersionsMap.get(memberId);
+  if (token === memberId) {
+    // If sessions were invalidated, legacy token without matching version must be rejected
+    return false;
+  }
+
+  const parts = token.split(":");
+  if (parts.length === 2 && parts[0] === memberId) {
+    return parts[1] === activeVer;
+  }
+
+  return false;
+}
+
+// ============================================================================
+// SECURITY EVENT LOGGING & NOTIFICATIONS
+// ============================================================================
+
+function loadSecurityEvents(): SecurityEvent[] {
+  if (securityEventsCache) return securityEventsCache;
+
+  const filePath = path.join(DB_DIR, SECURITY_LOG_FILE);
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = fs.readFileSync(filePath, "utf-8");
+      securityEventsCache = JSON.parse(data);
+      return securityEventsCache!;
+    } catch (e) {
+      console.error("Failed to parse security_events_log.json:", e);
+    }
+  }
+
+  securityEventsCache = [];
+  return securityEventsCache;
+}
+
+function saveSecurityEvents(): void {
+  if (!securityEventsCache) return;
+  writeAndPersistFile(SECURITY_LOG_FILE, JSON.stringify(securityEventsCache, null, 2));
+}
+
+export function recordSecurityEvent(params: {
+  userId?: string;
+  email: string;
+  messId?: string;
+  action: SecurityEvent["action"];
+  success: boolean;
+  reason: string;
+  ip?: string;
+  userAgent?: string;
+}): SecurityEvent {
+  const events = loadSecurityEvents();
+  const now = new Date();
+  
+  const newEvent: SecurityEvent = {
+    id: generateUUID(),
+    timestamp: now.toISOString(),
+    date: now.toISOString().split("T")[0],
+    time: now.toTimeString().split(" ")[0],
+    userId: params.userId,
+    email: params.email.toLowerCase().trim(),
+    messId: params.messId || "default",
+    action: params.action,
+    success: params.success,
+    reason: params.reason,
+    ip: params.ip || "Unknown",
+    userAgent: params.userAgent || "Unknown"
+  };
+
+  events.unshift(newEvent);
+
+  // Keep last 1000 logs
+  if (events.length > 1000) {
+    securityEventsCache = events.slice(0, 1000);
+  } else {
+    securityEventsCache = events;
+  }
+
+  saveSecurityEvents();
+
+  // Also log to Founder Audit Log
+  logFounderAction(
+    params.userId || "system",
+    params.email,
+    params.action,
+    "SECURITY",
+    params.reason,
+    params.ip
+  );
+
+  // Trigger Dashboard Notification for Security Events
+  if (["PASSWORD_CHANGE", "PASSWORD_RESET_SUCCESS", "ACCOUNT_ACTIVATION"].includes(params.action)) {
+    createSecurityDashboardNotice(newEvent);
+    sendSecurityEmailNotification(newEvent);
+  }
+
+  return newEvent;
+}
+
+// Create in-app Dashboard Notice for the user
+function createSecurityDashboardNotice(event: SecurityEvent): void {
+  try {
+    const db = loadDB();
+    if (!db.notices) db.notices = [];
+
+    const actionTitleMap: Record<string, string> = {
+      PASSWORD_CHANGE: "Security Alert: Password Changed",
+      PASSWORD_RESET_SUCCESS: "Security Alert: Password Reset Completed",
+      ACCOUNT_ACTIVATION: "Account Activated Successfully"
+    };
+
+    const title = actionTitleMap[event.action] || `Security Notice: ${event.action}`;
+    const noticeContent = `[SECURITY EVENT] ${title} for account ${event.email} at ${event.date} ${event.time}. Device/IP: ${event.ip} (${event.userAgent.substring(0, 50)}...). WARNING: If you did not perform this action, please contact the Mess Administrator or Ultimate Admin immediately.`;
+
+    const notice: Notice = {
+      id: generateUUID(),
+      title,
+      content: noticeContent,
+      pinned: true,
+      archived: false,
+      authorId: event.userId || "SECURITY_SYSTEM",
+      authorName: "Security System",
+      date: event.date
+    };
+
+    db.notices.unshift(notice);
+    saveDB();
+  } catch (err) {
+    console.error("Failed to create security dashboard notice:", err);
+  }
+}
+
+// Send email notification if SMTP is configured
+function sendSecurityEmailNotification(event: SecurityEvent): void {
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpUser || !smtpPass) {
+    return;
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+
+    const mailOptions = {
+      from: `"Mess ERP Security" <${smtpUser}>`,
+      to: event.email,
+      subject: `[Mess ERP Security] Action Notification: ${event.action}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; border: 1px solid #e2e8f0; rounded: 8px;">
+          <h2 style="color: #0284c7;">🔐 Mess ERP Security Notification</h2>
+          <p>A security event occurred on your Mess ERP account:</p>
+          <ul style="line-height: 1.8;">
+            <li><strong>Event:</strong> ${event.action}</li>
+            <li><strong>Email:</strong> ${event.email}</li>
+            <li><strong>Date & Time:</strong> ${event.date} at ${event.time} UTC</li>
+            <li><strong>IP Address:</strong> ${event.ip}</li>
+            <li><strong>Browser / Device:</strong> ${event.userAgent}</li>
+          </ul>
+          <div style="background-color: #fff7ed; border-left: 4px solid #f97316; padding: 12px; margin-top: 16px;">
+            <strong style="color: #c2410c;">⚠️ Warning:</strong> If you did not perform or authorize this action, please contact your Mess Administrator or Ultimate Admin immediately to secure your account.
+          </div>
+        </div>
+      `
+    };
+
+    transporter.sendMail(mailOptions, (err) => {
+      if (err) {
+        console.error("Failed to send security email notification:", err);
+      } else {
+        console.log(`Security email notification sent to ${event.email}`);
+      }
+    });
+  } catch (err) {
+    console.error("Error setting up SMTP transporter:", err);
+  }
+}
+
+// ============================================================================
+// ULTIMATE ADMIN SECURITY DASHBOARD AGGREGATOR
+// ============================================================================
+
+export function getSecurityDashboardData(): {
+  lockedAccounts: Array<{
+    email: string;
+    attempts: number;
+    ip: string;
+    lastAttempt: string;
+    remainingLockSeconds: number;
+  }>;
+  failedLoginAttemptsCount: number;
+  passwordResetRequestsCount: number;
+  recentlyChangedPasswords: Array<{
+    id: string;
+    email: string;
+    userId?: string;
+    action: string;
+    timestamp: string;
+    date: string;
+    time: string;
+    ip: string;
+    userAgent: string;
+  }>;
+  recentSecurityEvents: SecurityEvent[];
+  suspiciousPatterns: Array<{
+    type: string;
+    severity: "HIGH" | "MEDIUM" | "LOW";
+    description: string;
+    ip?: string;
+    email?: string;
+  }>;
+} {
+  const events = loadSecurityEvents();
+  const now = Date.now();
+
+  // 1. Currently locked accounts
+  const lockedAccounts: Array<{
+    email: string;
+    attempts: number;
+    ip: string;
+    lastAttempt: string;
+    remainingLockSeconds: number;
+  }> = [];
+
+  failedLoginsMap.forEach((entry) => {
+    if (entry.lockUntil && entry.lockUntil > now) {
+      lockedAccounts.push({
+        email: entry.email,
+        attempts: entry.attempts,
+        ip: entry.ip,
+        lastAttempt: new Date(entry.lastAttempt).toISOString(),
+        remainingLockSeconds: Math.ceil((entry.lockUntil - now) / 1000)
+      });
+    }
+  });
+
+  // 2. Failed login attempts count
+  const failedLoginAttemptsCount = events.filter(e => e.action === "LOGIN_FAILURE").length;
+
+  // 3. Password reset requests count
+  const passwordResetRequestsCount = events.filter(e => e.action === "PASSWORD_RESET_REQUEST").length;
+
+  // 4. Recently changed passwords (metadata only, NEVER plain passwords or hashes)
+  const recentlyChangedPasswords = events
+    .filter(e => ["PASSWORD_CHANGE", "PASSWORD_RESET_SUCCESS", "ACCOUNT_ACTIVATION"].includes(e.action))
+    .slice(0, 50)
+    .map(e => ({
+      id: e.id,
+      email: e.email,
+      userId: e.userId,
+      action: e.action,
+      timestamp: e.timestamp,
+      date: e.date,
+      time: e.time,
+      ip: e.ip,
+      userAgent: e.userAgent
+    }));
+
+  // 5. Suspicious patterns detection
+  const suspiciousPatterns: Array<{
+    type: string;
+    severity: "HIGH" | "MEDIUM" | "LOW";
+    description: string;
+    ip?: string;
+    email?: string;
+  }> = [];
+
+  // Detect IP with multiple failed attempts across accounts
+  const ipFailedCounts = new Map<string, number>();
+  events.filter(e => e.action === "LOGIN_FAILURE").slice(0, 200).forEach(e => {
+    ipFailedCounts.set(e.ip, (ipFailedCounts.get(e.ip) || 0) + 1);
+  });
+
+  ipFailedCounts.forEach((count, ip) => {
+    if (count >= 5) {
+      suspiciousPatterns.push({
+        type: "MULTIPLE_FAILED_LOGINS_FROM_IP",
+        severity: count >= 10 ? "HIGH" : "MEDIUM",
+        description: `IP address ${ip} generated ${count} failed login attempts recently.`,
+        ip
+      });
+    }
+  });
+
+  // Detect accounts locked
+  lockedAccounts.forEach(acc => {
+    suspiciousPatterns.push({
+      type: "ACCOUNT_LOCKED",
+      severity: "HIGH",
+      description: `Account ${acc.email} is currently locked due to 5 consecutive failed logins from IP ${acc.ip}.`,
+      email: acc.email,
+      ip: acc.ip
+    });
+  });
+
+  return {
+    lockedAccounts,
+    failedLoginAttemptsCount,
+    passwordResetRequestsCount,
+    recentlyChangedPasswords,
+    recentSecurityEvents: events.slice(0, 100),
+    suspiciousPatterns
+  };
+}

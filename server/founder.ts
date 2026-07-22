@@ -20,6 +20,7 @@ import {
   pendingSyncPromises
 } from "./db.js";
 import { authMiddleware } from "./routes.js";
+import { getSecurityDashboardData } from "./securityService.js";
 import { 
   members as membersTable,
   subscriptions as subscriptionsTable,
@@ -636,6 +637,16 @@ router.get("/audit-logs", platformOwnerMiddleware, (req: AuthenticatedRequest, r
   }
 
   res.json(logs);
+});
+
+// 8. SECURITY DASHBOARD (Ultimate Admin Only)
+router.get("/security-dashboard", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = getSecurityDashboardData();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to retrieve security dashboard: " + err.message });
+  }
 });
 
 export { router as founderRouter };

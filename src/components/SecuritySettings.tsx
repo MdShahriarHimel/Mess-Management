@@ -131,6 +131,11 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
       return;
     }
 
+    if (currentPassword && newPassword === currentPassword) {
+      setError("New password must be different from the current password.");
+      return;
+    }
+
     setLoading(true);
 
     let freshToken = sessionToken;

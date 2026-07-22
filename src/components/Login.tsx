@@ -112,8 +112,13 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           setLoading(false);
           return;
         }
-        if (newPassword.length < 6) {
-          setError("Password must be at least 6 characters long");
+        if (newPassword.length < 8) {
+          setError("Password must be at least 8 characters long");
+          setLoading(false);
+          return;
+        }
+        if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword) || (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword) && !/[^A-Za-z0-9]/.test(newPassword))) {
+          setError("Password must include at least one uppercase letter, one lowercase letter, one number, and one special character.");
           setLoading(false);
           return;
         }
@@ -140,6 +145,19 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         }
       }
       return;
+    }
+
+    if (activeTab === "activate") {
+      if (password.length < 8) {
+        setError("Password must be at least 8 characters long.");
+        setLoading(false);
+        return;
+      }
+      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) && !/[^A-Za-z0-9]/.test(password))) {
+        setError("Password must include at least one uppercase letter, one lowercase letter, one number, and one special character.");
+        setLoading(false);
+        return;
+      }
     }
 
     const url = activeTab === "login" ? "/api/auth/login" : "/api/auth/register";
@@ -575,11 +593,40 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               </div>
             )}
 
-            {/* Guidelines info for activate tab */}
+            {/* Guidelines & Password requirements for activate tab */}
             {activeTab === "activate" && (
-              <p className={`text-[11px] leading-relaxed italic ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
-                * Activation requires that your email has already been invited by the Administrator. If not invited, activation will fail.
-              </p>
+              <div className="space-y-2">
+                <div className={`p-2.5 rounded-lg border text-xs space-y-1 ${isDarkMode ? "bg-slate-900/40 border-cyan-500/20" : "bg-slate-50 border-slate-200"}`}>
+                  <span className="font-semibold uppercase tracking-wider text-[10px] text-orange-500 block mb-1">
+                    Password Requirements:
+                  </span>
+                  <div className="grid grid-cols-1 gap-1 text-[11px]">
+                    <div className={`flex items-center gap-1.5 ${password.length >= 8 ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      <span className="text-[10px]">{password.length >= 8 ? "✓" : "•"}</span>
+                      <span>At least 8 characters</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${/[A-Z]/.test(password) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      <span className="text-[10px]">{/[A-Z]/.test(password) ? "✓" : "•"}</span>
+                      <span>At least 1 uppercase letter (A-Z)</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${/[a-z]/.test(password) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      <span className="text-[10px]">{/[a-z]/.test(password) ? "✓" : "•"}</span>
+                      <span>At least 1 lowercase letter (a-z)</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${/[0-9]/.test(password) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      <span className="text-[10px]">{/[0-9]/.test(password) ? "✓" : "•"}</span>
+                      <span>At least 1 number (0-9)</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 ${(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) || /[^A-Za-z0-9]/.test(password)) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      <span className="text-[10px]">{(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) || /[^A-Za-z0-9]/.test(password)) ? "✓" : "•"}</span>
+                      <span>At least 1 special character (@, #, $, etc.)</span>
+                    </div>
+                  </div>
+                </div>
+                <p className={`text-[11px] leading-relaxed italic ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                  * Activation requires that your email has already been invited by the Administrator. If not invited, activation will fail.
+                </p>
+              </div>
             )}
 
             {/* Submit button */}

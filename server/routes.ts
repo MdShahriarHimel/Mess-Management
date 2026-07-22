@@ -27,6 +27,21 @@ import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings,
 import { eq, sql, and } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
+import {
+  validatePasswordPolicy,
+  checkLoginRateLimit,
+  recordFailedLogin,
+  recordSuccessfulLogin,
+  checkForgotPasswordRateLimit,
+  recordForgotPasswordRequest,
+  isPasswordInHistory,
+  addPasswordToHistory,
+  getSessionVersion,
+  invalidateMemberSessions,
+  generateSessionToken,
+  isValidMemberSessionToken,
+  recordSecurityEvent
+} from "./securityService.js";
 import { 
   UserRole, 
   MemberStatus, 
@@ -167,8 +182,14 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       return;
     }
   } else {
-    // Fallback for legacy local development token
-    member = db.members.find(m => m.id === token);
+    // Fallback for local development or session token (memberId:sess_version or memberId)
+    const memberIdFromToken = token.split(":")[0];
+    member = db.members.find(m => m.id === memberIdFromToken);
+
+    if (member && !isValidMemberSessionToken(token, member.id)) {
+      res.status(401).json({ error: "Unauthorized: Session invalidated due to password change or security reset. Please log in again." });
+      return;
+    }
   }
 
   if (!member) {
@@ -271,10 +292,21 @@ router.post("/auth/login", (req: Request, res: Response): void => {
     return;
   }
 
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+  const userAgent = (req.headers["user-agent"] as string) || "Unknown";
+
+  // Check brute force rate limit (5 consecutive failed attempts = 5 min lock)
+  const rateLimitCheck = checkLoginRateLimit(email, clientIp);
+  if (rateLimitCheck.locked) {
+    res.status(429).json({ error: rateLimitCheck.message });
+    return;
+  }
+
   const db = loadDB();
-  const member = db.members.find(m => m.email.toLowerCase() === email.toLowerCase());
+  const member = db.members.find(m => m.email.toLowerCase() === String(email).trim().toLowerCase());
 
   if (!member) {
+    recordFailedLogin(email, clientIp, userAgent);
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }
@@ -293,6 +325,7 @@ router.post("/auth/login", (req: Request, res: Response): void => {
   const storedPassword = creds[member.id];
 
   if (storedPassword === password) {
+    recordSuccessfulLogin(email, member.id, clientIp, userAgent);
     logAudit(
       member.id,
       member.nickname,
@@ -302,12 +335,14 @@ router.post("/auth/login", (req: Request, res: Response): void => {
       "User logged into system.",
       {
         userRole: member.role,
-        browser: req.headers["user-agent"] as string,
-        ipAddress: req.ip as string
+        browser: userAgent,
+        ipAddress: clientIp
       }
     );
-    res.json({ token: member.id, user: member });
+    const token = generateSessionToken(member.id);
+    res.json({ token, user: member });
   } else {
+    recordFailedLogin(email, clientIp, userAgent);
     logAudit(
       member.id,
       member.nickname,
@@ -317,13 +352,33 @@ router.post("/auth/login", (req: Request, res: Response): void => {
       "User supplied incorrect credentials during login.",
       {
         userRole: member.role,
-        browser: req.headers["user-agent"] as string,
-        ipAddress: req.ip as string
+        browser: userAgent,
+        ipAddress: clientIp
       }
     );
     res.status(401).json({ error: "Invalid email or password" });
   }
 });
+
+// Password policy validator
+export function validatePasswordPolicy(password: string): string | null {
+  if (!password || password.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must contain at least one uppercase letter (A-Z).";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must contain at least one lowercase letter (a-z).";
+  }
+  if (!/[0-9]/.test(password)) {
+    return "Password must contain at least one number (0-9).";
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) && !/[^A-Za-z0-9]/.test(password)) {
+    return "Password must contain at least one special character (e.g. !@#$%^&*).";
+  }
+  return null;
+}
 
 // Activation / Registration (Set password for invited email)
 router.post("/auth/register", (req: Request, res: Response): void => {
@@ -333,8 +388,15 @@ router.post("/auth/register", (req: Request, res: Response): void => {
     return;
   }
 
+  // Validate password strength policy
+  const passwordError = validatePasswordPolicy(password);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
+    return;
+  }
+
   const db = loadDB();
-  const memberIndex = db.members.findIndex(m => m.email.toLowerCase() === email.toLowerCase());
+  const memberIndex = db.members.findIndex(m => m.email.toLowerCase() === String(email).trim().toLowerCase());
 
   if (memberIndex === -1) {
     res.status(404).json({ error: "This email has not been invited to the Mess. Contact the Admin." });
@@ -343,23 +405,47 @@ router.post("/auth/register", (req: Request, res: Response): void => {
 
   const member = db.members[memberIndex];
   
-  if (member.status !== MemberStatus.PENDING && member.status !== MemberStatus.ACTIVE) {
-    res.status(400).json({ error: `Cannot activate account with status: ${member.status}` });
+  // Check if member is already activated or credentials already exist
+  const creds = loadCredentials();
+  const hasExistingCredentials = Boolean(creds[member.id] && String(creds[member.id]).trim() !== "");
+  const isAlreadyActivated = member.status !== MemberStatus.PENDING || hasExistingCredentials;
+
+  if (isAlreadyActivated) {
+    res.status(400).json({ error: "This account has already been activated. Please log in or use Forgot Password." });
     return;
   }
 
-  // Set password
-  const creds = loadCredentials();
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+  const userAgent = (req.headers["user-agent"] as string) || "Unknown";
+
+  // Set password & add to history
   creds[member.id] = password;
   saveCredentials();
+  addPasswordToHistory(member.id, password);
 
   // Activate member
   member.status = MemberStatus.ACTIVE;
   db.members[memberIndex] = member;
   saveDB();
 
+  // Invalidate old sessions and create fresh session token
+  invalidateMemberSessions(member.id);
+  const token = generateSessionToken(member.id);
+
   logAudit(member.id, member.nickname, "ACTIVATE_ACCOUNT", "PENDING", "ACTIVE", "User completed account activation.");
-  res.json({ success: true, token: member.id, user: member });
+
+  // Record security event & send security notifications
+  recordSecurityEvent({
+    userId: member.id,
+    email: member.email,
+    action: "ACCOUNT_ACTIVATION",
+    success: true,
+    reason: "User completed account activation.",
+    ip: clientIp,
+    userAgent
+  });
+
+  res.json({ success: true, token, user: member });
 });
 
 // In-memory store for password reset OTPs
@@ -373,13 +459,26 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
     return;
   }
 
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+  const userAgent = (req.headers["user-agent"] as string) || "Unknown";
+
+  // Enforce rate limit (max 3 OTP requests per 15 mins)
+  const rateLimitCheck = checkForgotPasswordRateLimit(email);
+  if (rateLimitCheck.limited) {
+    res.status(429).json({ error: rateLimitCheck.message });
+    return;
+  }
+
   const db = loadDB();
-  const member = db.members.find(m => m.email.toLowerCase() === email.toLowerCase());
+  const member = db.members.find(m => m.email.toLowerCase() === String(email).trim().toLowerCase());
 
   if (!member) {
     res.status(404).json({ error: "No registered member found with this email address" });
     return;
   }
+
+  // Record OTP request
+  recordForgotPasswordRequest(email, clientIp, userAgent);
 
   // Generate a 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -467,6 +566,13 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
     return;
   }
 
+  // Validate password strength policy
+  const passwordError = validatePasswordPolicy(newPassword);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
+    return;
+  }
+
   const storedData = otpStore.get(email.toLowerCase());
   if (!storedData) {
     res.status(400).json({ error: "No OTP request found for this email" });
@@ -484,6 +590,9 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
     return;
   }
 
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+  const userAgent = (req.headers["user-agent"] as string) || "Unknown";
+
   const db = loadDB();
   const member = db.members.find(m => m.email.toLowerCase() === email.toLowerCase());
 
@@ -492,15 +601,37 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
     return;
   }
 
-  // Update password in credentials
+  // Check password history
   const creds = loadCredentials();
+  const currentPassword = creds[member.id];
+  if (isPasswordInHistory(member.id, currentPassword, newPassword)) {
+    res.status(400).json({ error: "New password must be different from the current password." });
+    return;
+  }
+
+  // Update password in credentials and history
   creds[member.id] = newPassword;
   saveCredentials();
+  addPasswordToHistory(member.id, newPassword);
 
   // Clear OTP from store
   otpStore.delete(email.toLowerCase());
 
+  // Terminate all existing sessions for this member
+  invalidateMemberSessions(member.id);
+
   logAudit(member.id, member.nickname, "FORGOT_PASSWORD_RESET_SUCCESS", "None", "None", "Password reset successfully using email OTP.");
+
+  // Record security event & send notifications
+  recordSecurityEvent({
+    userId: member.id,
+    email: member.email,
+    action: "PASSWORD_RESET_SUCCESS",
+    success: true,
+    reason: "Password reset completed via email OTP verification.",
+    ip: clientIp,
+    userAgent
+  });
 
   res.json({ success: true, message: "Your password has been successfully reset! You can now log in." });
 });
@@ -510,6 +641,13 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
   const { memberId, newPassword, approvedBySuperUser, approvedByManager } = req.body;
   if (!memberId || !newPassword) {
     res.status(400).json({ error: "Member ID and new password are required" });
+    return;
+  }
+
+  // Validate password strength policy
+  const passwordError = validatePasswordPolicy(newPassword);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
     return;
   }
 
@@ -561,9 +699,24 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     }
   }
 
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+  const userAgent = (req.headers["user-agent"] as string) || "Unknown";
+
   const creds = loadCredentials();
+  const currentPassword = creds[memberId];
+
+  // Check password history
+  if (isPasswordInHistory(memberId, currentPassword, newPassword)) {
+    res.status(400).json({ error: "New password must be different from the current password." });
+    return;
+  }
+
   creds[memberId] = newPassword;
   saveCredentials();
+  addPasswordToHistory(memberId, newPassword);
+
+  // Terminate all existing sessions for this member
+  invalidateMemberSessions(memberId);
 
   let auditMsg = `Reset password for user: ${targetMember.nickname}`;
   if (isAdmin && !isSelf) {
@@ -581,13 +734,35 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     auditMsg
   );
 
-  res.json({ success: true });
+  // Record security event & send notifications
+  recordSecurityEvent({
+    userId: targetMember.id,
+    email: targetMember.email,
+    action: "PASSWORD_CHANGE",
+    success: true,
+    reason: auditMsg,
+    ip: clientIp,
+    userAgent
+  });
+
+  res.json({ success: true, message: "Password updated successfully." });
 });
 
 // Create audit log for a self-initiated secure password change
 router.post("/auth/change-password-audit", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const browser = req.headers["user-agent"] || "Unknown";
-  const ipAddress = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unknown") as string;
+  const browser = (req.headers["user-agent"] as string) || "Unknown";
+  const ipAddress = ((req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "Unknown") as string;
+
+  // Record security event & notifications
+  recordSecurityEvent({
+    userId: req.user!.id,
+    email: req.user!.email,
+    action: "PASSWORD_CHANGE",
+    success: true,
+    reason: "User changed account password via self-service Security panel.",
+    ip: ipAddress,
+    userAgent: browser
+  });
   
   logAudit(
     req.user!.id,
