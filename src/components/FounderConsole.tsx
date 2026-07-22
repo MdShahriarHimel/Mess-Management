@@ -483,7 +483,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       )}
 
       {/* HORIZONTAL CONSOLE MENU RAIL */}
-      <div className="flex items-center space-x-1 overflow-x-auto pb-2 border-b border-slate-800/40 scrollbar-none">
+      <div className="flex flex-wrap gap-1.5 pb-2 border-b border-slate-800/40">
         {[
           { id: "dashboard", label: "Dashboard", icon: <Activity size={14} /> },
           { id: "security", label: "Security & Locks", icon: <Shield size={14} /> },
