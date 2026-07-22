@@ -19,17 +19,16 @@ import {
   deletePersistentFile,
   importBackupToPostgres,
   refreshDbCache,
-  ensureMonthDataLoaded,
-  restorePersistentFileIfNeeded,
   DB_DIR
 } from "./db.js";
-import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, resolveCanonicalFoodSync, searchFoodDatabase, checkFoodRecognition, askGeminiForUnknownFood, approveFoodSuggestion, addAliasToFood, removeAliasFromFood, mergeFoodsInDb, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
+import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
 import { db as drizzleDb } from "../src/db/index.js";
-import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings, auditLogs as auditLogsTable } from "../src/db/schema.js";
-import { eq, sql, and, desc } from "drizzle-orm";
+import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings } from "../src/db/schema.js";
+import { eq, sql, and } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
 import {
+  validatePasswordPolicy,
   checkLoginRateLimit,
   recordFailedLogin,
   recordSuccessfulLogin,
@@ -1307,9 +1306,8 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (r
 // ---------------------------------------------------------
 // MEALS API
 // ---------------------------------------------------------
-router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/meals/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const meals = db.meals.filter(m => m.monthId === monthId);
   res.json({ meals });
@@ -1409,9 +1407,8 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
 });
 
 // Get all meal requests for a month
-router.get("/meal-requests/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/meal-requests/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   if (!db.mealRequests) db.mealRequests = [];
   const reqs = db.mealRequests.filter(r => r.monthId === monthId);
@@ -1512,9 +1509,8 @@ router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MAN
 // ---------------------------------------------------------
 // FOOD MENU API
 // ---------------------------------------------------------
-router.get("/foodmenu/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/foodmenu/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const menu = db.foodMenus.filter(m => m.monthId === monthId);
   res.json({ menu });
@@ -1840,99 +1836,9 @@ router.get("/food-knowledge/export", authMiddleware, async (req: AuthenticatedRe
   }
 });
 
-router.get("/food-knowledge/search", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const q = (req.query.q as string) || "";
-    const matches = await searchFoodDatabase(q);
-    res.json({ matches });
-  } catch (err) {
-    console.error("Food search failed:", err);
-    res.status(500).json({ error: "Failed to search food database" });
-  }
-});
-
-router.post("/food-knowledge/check", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const { phrase } = req.body;
-    if (!phrase) {
-      res.status(400).json({ error: "Phrase is required" });
-      return;
-    }
-    const result = await checkFoodRecognition(phrase);
-    res.json(result);
-  } catch (err) {
-    console.error("Check food recognition failed:", err);
-    res.status(500).json({ error: "Check failed" });
-  }
-});
-
-router.post("/food-knowledge/ask-gemini", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const { phrase } = req.body;
-    if (!phrase) {
-      res.status(400).json({ error: "Phrase is required" });
-      return;
-    }
-    const suggestion = await askGeminiForUnknownFood(phrase);
-    res.json(suggestion);
-  } catch (err) {
-    console.error("Ask Gemini failed:", err);
-    res.status(500).json({ error: "Ask Gemini failed" });
-  }
-});
-
-router.post("/food-knowledge/approve-suggestion", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const { label, category, aliases, matchedFoodId, reviewId } = req.body;
-    if (!label) {
-      res.status(400).json({ error: "Label is required" });
-      return;
-    }
-    const result = await approveFoodSuggestion({ label, category, aliases, matchedFoodId, reviewId });
-    logAudit(req.user!.id, req.user!.nickname, "APPROVE_FOOD_SUGGESTION", "Food", label, `Approved food suggestion: ${label}`);
-    res.json(result);
-  } catch (err) {
-    console.error("Approve suggestion failed:", err);
-    res.status(500).json({ error: "Approve suggestion failed" });
-  }
-});
-
-router.post("/food-knowledge/alias/add", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const { foodId, alias } = req.body;
-    if (!foodId || !alias) {
-      res.status(400).json({ error: "foodId and alias are required" });
-      return;
-    }
-    await addAliasToFood(foodId, alias);
-    logAudit(req.user!.id, req.user!.nickname, "ADD_FOOD_ALIAS", foodId, alias, `Added alias "${alias}" to food ${foodId}`);
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("Failed to add alias:", err);
-    res.status(500).json({ error: err.message || "Failed to add alias" });
-  }
-});
-
-router.post("/food-knowledge/alias/remove", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const { foodId, alias } = req.body;
-    if (!foodId || !alias) {
-      res.status(400).json({ error: "foodId and alias are required" });
-      return;
-    }
-    await removeAliasFromFood(foodId, alias);
-    logAudit(req.user!.id, req.user!.nickname, "REMOVE_FOOD_ALIAS", foodId, alias, `Removed alias "${alias}" from food ${foodId}`);
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("Failed to remove alias:", err);
-    res.status(500).json({ error: err.message || "Failed to remove alias" });
-  }
-});
-
 // Food Statistics helper
 router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const menu = db.foodMenus.filter(m => m.monthId === monthId);
 
@@ -1948,7 +1854,7 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
   const vegCounts: Record<string, number> = {};
   const dishCounts: Record<string, number> = {};
 
-  // Process all planned menu texts asynchronously using our fast synchronous semantic resolution
+  // Process all planned menu texts asynchronously using our semantic recognition engine
   for (const item of menu) {
     const rawFields = [item.lunchVegetable, item.lunchMain, item.dinnerVegetable, item.dinnerMain].filter(Boolean);
     
@@ -1956,7 +1862,7 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
       const parts = splitMenuText(field);
       for (const part of parts) {
         try {
-          const canonical = resolveCanonicalFoodSync(part);
+          const canonical = await resolveCanonicalFood(part);
           if (canonical.label) {
             total++;
             // Aggregate dish distribution using the semantic Canonical Name
@@ -2032,9 +1938,8 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
 // ---------------------------------------------------------
 // MARKET EXPENSES API
 // ---------------------------------------------------------
-router.get("/markets/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const markets = db.marketEntries.filter(m => m.monthId === monthId);
   res.json({ markets });
@@ -2132,9 +2037,8 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
 // ---------------------------------------------------------
 // DEPOSITS API
 // ---------------------------------------------------------
-router.get("/deposits/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/deposits/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const deposits = db.deposits.filter(d => d.monthId === monthId);
   res.json({ deposits });
@@ -2192,9 +2096,8 @@ router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Us
 // ---------------------------------------------------------
 // BILLS API
 // ---------------------------------------------------------
-router.get("/bills/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/bills/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const bills = db.bills.filter(b => b.monthId === monthId);
   res.json({ bills });
@@ -2310,9 +2213,8 @@ router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserR
 // ---------------------------------------------------------
 // DUTIES API
 // ---------------------------------------------------------
-router.get("/duties/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/duties/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const duties = db.duties.filter(d => d.monthId === monthId);
   res.json({ duties });
@@ -2380,9 +2282,8 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
 // ---------------------------------------------------------
 // MANAGER HOLDINGS API
 // ---------------------------------------------------------
-router.get("/holdings/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/holdings/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const holdings = db.managerHoldings.filter(h => h.monthId === monthId);
   res.json({ holdings });
@@ -2570,9 +2471,8 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
 // ---------------------------------------------------------
 // MANAGER RATING API
 // ---------------------------------------------------------
-router.get("/ratings/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/ratings/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
   const ratings = db.managerRatings.filter(r => r.monthId === monthId);
   res.json({ ratings });
@@ -2622,7 +2522,7 @@ router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 // ---------------------------------------------------------
 // AUDIT LOGS API
 // ---------------------------------------------------------
-router.get("/auditlogs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const role = user.role;
   
@@ -2634,13 +2534,49 @@ router.get("/auditlogs", authMiddleware, async (req: AuthenticatedRequest, res: 
     return;
   }
   
-  try {
-    const rawLogs = await drizzleDb.select().from(auditLogsTable).orderBy(desc(auditLogsTable.timestamp)).limit(500);
-    let logs = rawLogs as any[];
+  const db = loadDB();
+  let logs = db.auditLogs || [];
+  
+  // 1. Enforce Hierarchical Access Control
+  if (isSuperUser) {
+    // Determine Super User's allowed messes from admin controls, falling back to the active mess
+    const controls = loadAdminControls().controls;
+    const emailKey = user.email ? user.email.toLowerCase() : "";
+    const userControls = (emailKey && controls[emailKey]) || controls[user.id];
+    let allowedMesses: string[] = [];
+    if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
+      allowedMesses = userControls.allowedMesses;
+    } else {
+      allowedMesses = [getActiveMessId()];
+    }
     
-    // 1. Enforce Hierarchical Access Control
+    // Filter logs to only include those belonging to the Super User's own messes
+    logs = logs.filter(log => allowedMesses.includes(log.messId || "default"));
+  }
+  
+  // 2. Apply Filters from query params
+  const { startDate, endDate, userId, userRole, module, action, messId, superUserId } = req.query;
+  
+  if (startDate) {
+    logs = logs.filter(log => log.date && log.date >= (startDate as string));
+  }
+  if (endDate) {
+    logs = logs.filter(log => log.date && log.date <= (endDate as string));
+  }
+  if (userId) {
+    logs = logs.filter(log => log.userId === (userId as string));
+  }
+  if (userRole) {
+    logs = logs.filter(log => log.userRole === (userRole as string));
+  }
+  if (module) {
+    logs = logs.filter(log => log.module === (module as string));
+  }
+  if (action) {
+    logs = logs.filter(log => log.actionType === (action as string) || log.action === (action as string));
+  }
+  if (messId) {
     if (isSuperUser) {
-      // Determine Super User's allowed messes from admin controls, falling back to the active mess
       const controls = loadAdminControls().controls;
       const emailKey = user.email ? user.email.toLowerCase() : "";
       const userControls = (emailKey && controls[emailKey]) || controls[user.id];
@@ -2651,63 +2587,22 @@ router.get("/auditlogs", authMiddleware, async (req: AuthenticatedRequest, res: 
         allowedMesses = [getActiveMessId()];
       }
       
-      // Filter logs to only include those belonging to the Super User's own messes
-      logs = logs.filter(log => allowedMesses.includes(log.messId || "default"));
-    }
-    
-    // 2. Apply Filters from query params
-    const { startDate, endDate, userId, userRole, module, action, messId, superUserId } = req.query;
-    
-    if (startDate) {
-      logs = logs.filter(log => log.date && log.date >= (startDate as string));
-    }
-    if (endDate) {
-      logs = logs.filter(log => log.date && log.date <= (endDate as string));
-    }
-    if (userId) {
-      logs = logs.filter(log => log.userId === (userId as string));
-    }
-    if (userRole) {
-      logs = logs.filter(log => log.userRole === (userRole as string));
-    }
-    if (module) {
-      logs = logs.filter(log => log.module === (module as string));
-    }
-    if (action) {
-      logs = logs.filter(log => log.actionType === (action as string) || log.action === (action as string));
-    }
-    if (messId) {
-      if (isSuperUser) {
-        const controls = loadAdminControls().controls;
-        const emailKey = user.email ? user.email.toLowerCase() : "";
-        const userControls = (emailKey && controls[emailKey]) || controls[user.id];
-        let allowedMesses: string[] = [];
-        if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
-          allowedMesses = userControls.allowedMesses;
-        } else {
-          allowedMesses = [getActiveMessId()];
-        }
-        
-        if (allowedMesses.includes(messId as string)) {
-          logs = logs.filter(log => log.messId === (messId as string));
-        } else {
-          logs = []; // requested mess is outside allowed scope
-        }
-      } else {
+      if (allowedMesses.includes(messId as string)) {
         logs = logs.filter(log => log.messId === (messId as string));
+      } else {
+        logs = []; // requested mess is outside allowed scope
       }
+    } else {
+      logs = logs.filter(log => log.messId === (messId as string));
     }
-    if (superUserId) {
-      if (isAdmin) {
-        logs = logs.filter(log => log.superUserId === (superUserId as string));
-      }
-    }
-    
-    res.json({ auditLogs: logs });
-  } catch (err) {
-    console.error("Error fetching audit logs from PostgreSQL:", err);
-    res.status(500).json({ error: "Failed to retrieve audit logs" });
   }
+  if (superUserId) {
+    if (isAdmin) {
+      logs = logs.filter(log => log.superUserId === (superUserId as string));
+    }
+  }
+  
+  res.json({ auditLogs: logs });
 });
 
 router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
@@ -2734,9 +2629,8 @@ router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest,
 // ---------------------------------------------------------
 // FINANCIAL REPORTS & MATH SUMMARY API
 // ---------------------------------------------------------
-router.get("/reports/summary/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  await ensureMonthDataLoaded(monthId);
   const db = loadDB();
 
   // Filter lists

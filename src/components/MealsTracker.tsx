@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { RefreshCw, 
+import { 
   Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle 
 } from "lucide-react";
 import { Member, Meal, UserRole } from "../types.js";
@@ -41,8 +41,6 @@ export default function MealsTracker({
   const [mealsData, setMealsData] = useState<Record<string, Record<string, number>>>({});
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle'|'saving'|'saved'>('idle');
-  const [pendingSaveTimeout, setPendingSaveTimeout] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
@@ -149,11 +147,13 @@ export default function MealsTracker({
     }));
   };
 
-  // Execute Save
-  const executeSave = async (currentMealsData: any = mealsData) => {
-    setAutoSaveStatus('saving');
+  // Save changes
+  const handleSave = async () => {
+    setError(null);
+    setSuccess(null);
+    setLoading(true);
 
-    const mealsToSave = Object.entries(currentMealsData).map(([memberId, item]) => {
+    const mealsToSave = Object.entries(mealsData).map(([memberId, item]) => {
       const mealVal = item as Record<string, number>;
       const entry: any = {
         memberId,
@@ -188,14 +188,13 @@ export default function MealsTracker({
       } else {
         setSuccess(data.message || "Daily meal counts logged and updated successfully!");
       }
-      fetchPendingRequests();
       onRefresh();
-      setAutoSaveStatus('saved');
-      setTimeout(() => setAutoSaveStatus('idle'), 3000);
+      fetchPendingRequests();
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) {
-      console.error(err);
-      setAutoSaveStatus('idle');
       setError(err.message || "Failed to log meals");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -237,7 +236,6 @@ export default function MealsTracker({
       }
       setSuccess(data.message || "Meal request successfully rejected.");
       fetchPendingRequests();
-      onRefresh();
       setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) {
       setError(err.message || "Failed to reject request");

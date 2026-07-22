@@ -115,15 +115,10 @@ export default function Deposits({
       });
 
       if (response.ok) {
-        const result = await response.json();
-        if (result.deposit) {
-          setDeposits(prev => [...prev, result.deposit]);
-        } else {
-          fetchDeposits();
-        }
         setShowAddModal(false);
         setMemberId("");
         setAmount("");
+        fetchDeposits();
         onRefresh();
       } else {
         const data = await response.json();
@@ -138,23 +133,17 @@ export default function Deposits({
 
   const handleDelete = async (id: string) => {
     if (!confirm("Remove this deposit record?")) return;
-    const previousDeposits = [...deposits];
-    setDeposits(deposits.filter(d => d.id !== id)); // Optimistic UI update
-    onRefresh();
-    
     try {
       const response = await fetch(`/api/deposits/${id}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
-      if (!response.ok) {
-        setDeposits(previousDeposits); // Revert on failure
-        const err = await response.json();
-        alert(err.error || "Failed to delete");
+      if (response.ok) {
+        fetchDeposits();
+        onRefresh();
       }
     } catch (e) {
       console.error(e);
-      setDeposits(previousDeposits); // Revert on error
     }
   };
 
