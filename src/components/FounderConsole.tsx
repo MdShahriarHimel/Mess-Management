@@ -30,7 +30,8 @@ import {
   AlertOctagon,
   X,
   HelpCircle,
-  FileText
+  FileText,
+  Key
 } from "lucide-react";
 import { Member } from "../types.js";
 
