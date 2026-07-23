@@ -47,7 +47,7 @@ export default function MealsTracker({
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 
-  const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+  const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true }
   ];

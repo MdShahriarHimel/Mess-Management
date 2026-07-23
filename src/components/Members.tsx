@@ -2194,7 +2194,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wider block mb-0.5">Total Meals</span>
                       <span className="text-sm font-black font-mono text-orange-500">
                         {(() => {
-                          const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+                          const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
                             { id: "lunch", name: "Lunch" },
                             { id: "dinner", name: "Dinner" }
                           ];
@@ -2262,7 +2262,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   {/* Daily Meals Tracker Grid */}
                   <div className="p-4 rounded-xl bg-slate-950/30 border border-slate-850 space-y-2">
                     {(() => {
-                      const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
+                      const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
                         { id: "lunch", name: "Lunch" },
                         { id: "dinner", name: "Dinner" }
                       ];
