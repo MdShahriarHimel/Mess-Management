@@ -17,6 +17,24 @@
   "superUserCanEditMeals": true,
   "currencySymbol": "৳",
   "enableManagerRating": true,
+  "auditRetentionDays": 30,
+  "mealTypes": [
+    {
+      "id": "lunch",
+      "name": "Lunch",
+      "enabled": true
+    },
+    {
+      "id": "dinner",
+      "name": "Dinner",
+      "enabled": true
+    },
+    {
+      "id": "breakfast",
+      "name": "Breakfast",
+      "enabled": false
+    }
+  ],
   "balanceSheetGlow": "none",
   "customColors": {
     "cashDepositBg": "#f973161a",
@@ -32,7 +50,11 @@
     "enableEffect": false,
     "effectType": "none",
     "animationSpeed": "normal",
-    "accentGlow": true
+    "accentGlow": true,
+    "backgroundTheme": "default",
+    "customBackgroundUrl": "",
+    "backgroundOpacity": 20,
+    "themeTemplate": "default-erp"
   },
   "dashboardVisibility": {
     "showAuditLogs": true,
@@ -126,7 +148,22 @@
     "showAdminEmail": false,
     "showAdminRole": true
   },
+  "creditConfig": {
+    "showCreditPanel": false,
+    "text": "Crafted with 💖 by HIMEL",
+    "isBold": true,
+    "isItalic": false,
+    "isUnderline": false,
+    "alignment": "center",
+    "color": "#22d3ee",
+    "font": "sans",
+    "background": "#0f172a",
+    "emojis": "💖,✨,🚀,🌟",
+    "link": ""
+  },
+  "appearancePermissions": {},
   "schemaVersion": 2,
-  "createdAt": "2026-07-23T08:36:15.703Z",
-  "updatedAt": "2026-07-23T08:36:15.703Z"
+  "createdAt": "2026-07-21T15:28:25.027Z",
+  "updatedAt": "2026-07-21T15:28:25.027Z",
+  "lastMigratedAt": "2026-07-21T15:28:25.027Z"
 }

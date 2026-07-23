@@ -2002,8 +2002,9 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
                 onClick={async () => {
                   try {
                     setLoading(true);
+                    const token = localStorage.getItem("mess_session_token");
                     const res = await fetch("/api/admin/backup/export", {
-                      headers: getHeaders()
+                      headers: { "Authorization": "Bearer " + token }
                     });
                     if (!res.ok) {
                       const err = await res.json();
@@ -2057,9 +2058,13 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
                       const fileContent = await file.text();
                       const payload = JSON.parse(fileContent);
                       
+                      const token = localStorage.getItem("mess_session_token");
                       const res = await fetch("/api/admin/backup/import", {
                         method: "POST",
-                        headers: getHeaders(),
+                        headers: { 
+                          "Content-Type": "application/json",
+                          "Authorization": "Bearer " + token
+                        },
                         body: JSON.stringify(payload)
                       });
                       

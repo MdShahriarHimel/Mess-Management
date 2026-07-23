@@ -688,7 +688,7 @@ export default function FinanceSettlement({
           if (!map[meal.memberId]) {
             map[meal.memberId] = {};
           }
-          const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
+          const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
             { id: "lunch", name: "Lunch", enabled: true },
             { id: "dinner", name: "Dinner", enabled: true }
           ];
@@ -743,7 +743,7 @@ export default function FinanceSettlement({
     setSaveLoading(true);
     setSaveSuccess(false);
 
-    const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
+    const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
       { id: "lunch", name: "Lunch", enabled: true },
       { id: "dinner", name: "Dinner", enabled: true }
     ];
@@ -1255,7 +1255,7 @@ export default function FinanceSettlement({
     const mId = member.memberId || member.id;
     const settlement = reportSummary.memberSettlements.find((m) => m.memberId === mId) || {};
     const includeContact = !member.hideContactInfoByAdmin;
-    const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t) => t.enabled) : [
+    const activeMealTypes = mealTypes?.filter((t) => t.enabled) || [
       { id: "lunch", name: "Lunch", enabled: true },
       { id: "dinner", name: "Dinner", enabled: true }
     ];
@@ -1347,7 +1347,7 @@ export default function FinanceSettlement({
     const mId = member.memberId || member.id;
     const settlement = reportSummary.memberSettlements.find((m) => m.memberId === mId) || {};
     const includeContact = !member.hideContactInfoByAdmin;
-    const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t) => t.enabled) : [
+    const activeMealTypes = mealTypes?.filter((t) => t.enabled) || [
       { id: "lunch", name: "Lunch", enabled: true },
       { id: "dinner", name: "Dinner", enabled: true }
     ];

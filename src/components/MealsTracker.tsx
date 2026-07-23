@@ -37,16 +37,6 @@ export default function MealsTracker({
   dateRestrictions,
   mealTypes
 }: MealsTrackerProps) {
-  console.log("[LIFECYCLE] MealsTracker Render");
-
-  useEffect(() => {
-    console.log("[LIFECYCLE] MealsTracker Mounted");
-
-    return () => {
-      console.log("[LIFECYCLE] MealsTracker Unmounted");
-    };
-  }, []);
-
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [mealsData, setMealsData] = useState<Record<string, Record<string, number | string>>>({});
   const [isLocked, setIsLocked] = useState(false);
@@ -55,16 +45,36 @@ export default function MealsTracker({
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
+  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY" || m.status === "PENDING").length > 0
+    ? members.filter(m => m.status === "ACTIVE" || m.status === "AWAY" || m.status === "PENDING")
+    : members.filter(m => m.status !== "ARCHIVED" && m.status !== "LEFT");
 
-  const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
-    { id: "lunch", name: "Lunch", enabled: true },
-    { id: "dinner", name: "Dinner", enabled: true }
-  ];
+  const getActiveMealTypes = () => {
+    if (Array.isArray(mealTypes) && mealTypes.length > 0) {
+      const enabledOnly = mealTypes.filter((t: any) => t.enabled !== false);
+      if (enabledOnly.length > 0) return enabledOnly;
+      return mealTypes.map((t: any) => ({ ...t, enabled: true }));
+    }
+    return [
+      { id: "breakfast", name: "Breakfast", enabled: true },
+      { id: "lunch", name: "Lunch", enabled: true },
+      { id: "dinner", name: "Dinner", enabled: true }
+    ];
+  };
 
-  // Fetch pending meal requests (Manager only)
+  const activeMealTypes = getActiveMealTypes();
+
+  const isManagementRole = [
+    UserRole.ADMIN,
+    UserRole.SUPERUSER,
+    UserRole.ASSISTANT_SUPERUSER,
+    UserRole.MANAGER,
+    UserRole.PARTIAL_MANAGER
+  ].includes(currentUser.role as UserRole);
+
+  // Fetch pending meal requests (Manager and Admins)
   const fetchPendingRequests = async () => {
-    if (!currentMonthId || currentUser.role !== UserRole.MANAGER) return;
+    if (!currentMonthId || !isManagementRole) return;
     try {
       const response = await fetch(`/api/meal-requests/${currentMonthId}`, {
         headers: { "Authorization": `Bearer ${currentUser.id}` }
@@ -91,11 +101,11 @@ export default function MealsTracker({
         const rawMeals: Meal[] = data.meals || [];
         
         // Parse into map
-        const map: Record<string, Record<string, number>> = {};
+        const map: Record<string, Record<string, number | string>> = {};
         
         // Default entries for active members
         activeMembers.forEach(m => {
-          const entry: Record<string, number> = {};
+          const entry: Record<string, number | string> = {};
           activeMealTypes.forEach((type) => {
             entry[type.id] = 0;
           });
@@ -105,9 +115,10 @@ export default function MealsTracker({
         // Overlay actual saved meals
         rawMeals.forEach(meal => {
           if (meal.date === selectedDate) {
-            const entry: Record<string, number> = {};
+            const entry: Record<string, number | string> = {};
             activeMealTypes.forEach((type) => {
-              entry[type.id] = (meal as any)[type.id] || 0;
+              const num = Number((meal as any)[type.id]);
+              entry[type.id] = isNaN(num) ? 0 : num;
             });
             map[meal.memberId] = entry;
           }
@@ -143,7 +154,7 @@ export default function MealsTracker({
     fetchMealsForDate();
     checkMonthLock();
     fetchPendingRequests();
-  }, [currentMonthId, selectedDate, members]);
+  }, [currentMonthId, selectedDate, members, mealTypes]);
 
   // Handle meal count selection
   const updateMealCell = (memberId: string, type: string, val: number | string) => {
@@ -170,8 +181,9 @@ export default function MealsTracker({
         date: selectedDate
       };
       activeMealTypes.forEach((type) => {
-        const parsedVal = parseFloat(String(mealVal[type.id]));
-        entry[type.id] = isNaN(parsedVal) ? 0 : parsedVal;
+        const raw = mealVal[type.id];
+        const num = parseFloat(String(raw));
+        entry[type.id] = isNaN(num) ? 0 : num;
       });
       return entry;
     });
@@ -199,7 +211,9 @@ export default function MealsTracker({
       } else {
         setSuccess(data.message || "Daily meal counts logged and updated successfully!");
       }
+      
       await fetchMealsForDate();
+      onRefresh();
       fetchPendingRequests();
       setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) {
@@ -273,7 +287,6 @@ export default function MealsTracker({
     }
   };
 
-  const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
   const todayStr = new Date().toISOString().split("T")[0];
   const isFutureDate = selectedDate > todayStr;
   const isPastDate = selectedDate < todayStr;
@@ -282,7 +295,8 @@ export default function MealsTracker({
   const allowPast = dateRestrictions?.allowPreviousMeals ?? true;
 
   const isRestrictedByDate = (isFutureDate && !allowFuture) || (isPastDate && !allowPast);
-  const canEditMeals = isManagerOrAdmin && !isRestrictedByDate;
+  // Management roles can always edit future/past; other users subject to date restrictions & month lock
+  const canEditMeals = !isLocked && (isManagementRole || !isRestrictedByDate);
 
   return (
     <div className="space-y-6" id="meals-tracker-wrapper">
@@ -508,16 +522,18 @@ export default function MealsTracker({
                       </td>
 
                       {activeMealTypes.map((type) => {
-                        const mealVal = data[type.id] || 0;
+                        const currentVal = data[type.id];
+                        const numVal = typeof currentVal === "number" ? currentVal : (parseFloat(String(currentVal)) || 0);
+                        const displayVal = currentVal === undefined || currentVal === null ? "" : String(currentVal);
+
                         return (
                           <td key={type.id} className="py-4 px-5">
                             <div className="flex gap-1 justify-center items-center max-w-sm mx-auto">
                               <button
                                 type="button"
-                                disabled={isLocked || !canEditMeals || mealVal <= 0}
+                                disabled={isLocked || !canEditMeals || numVal <= 0}
                                 onClick={() => {
-                                  const current = mealVal;
-                                  const next = Math.max(0, current - 0.5);
+                                  const next = Math.max(0, numVal - 0.5);
                                   updateMealCell(member.id, type.id, next);
                                 }}
                                 className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${
@@ -534,20 +550,19 @@ export default function MealsTracker({
                                 step="any"
                                 min="0"
                                 max="50"
+                                placeholder="0"
                                 disabled={isLocked || !canEditMeals}
-                                value={mealVal === 0 ? "" : mealVal}
+                                value={displayVal === "0" ? "" : displayVal}
                                 onChange={(e) => {
-                                  const raw = e.target.value;
-                                  if (raw === "") {
-                                    updateMealCell(member.id, type.id, 0);
-                                    return;
-                                  }
-                                  updateMealCell(member.id, type.id, raw);
+                                  updateMealCell(member.id, type.id, e.target.value);
                                 }}
-                                onBlur={(e) => {
-                                  let val = parseFloat(e.target.value);
-                                  if (isNaN(val) || val < 0) val = 0;
-                                  updateMealCell(member.id, type.id, val);
+                                onBlur={() => {
+                                  if (displayVal === "" || displayVal === undefined) {
+                                    updateMealCell(member.id, type.id, 0);
+                                  } else {
+                                    const parsed = parseFloat(displayVal);
+                                    updateMealCell(member.id, type.id, isNaN(parsed) ? 0 : parsed);
+                                  }
                                 }}
                                 className={`w-16 h-8 text-center font-mono font-extrabold text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                                   isDarkMode 
@@ -560,8 +575,7 @@ export default function MealsTracker({
                                 type="button"
                                 disabled={isLocked || !canEditMeals}
                                 onClick={() => {
-                                  const current = mealVal;
-                                  const next = current + 0.5;
+                                  const next = numVal + 0.5;
                                   updateMealCell(member.id, type.id, next);
                                 }}
                                 className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black select-none border transition-all ${

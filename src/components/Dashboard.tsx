@@ -215,7 +215,7 @@ export default function Dashboard({
         const rawMeals = data.meals || [];
         const userMeals = rawMeals.filter((m: any) => m.memberId === currentUser.id);
         
-        const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
+        const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
           { id: "lunch", name: "Lunch", enabled: true },
           { id: "dinner", name: "Dinner", enabled: true }
         ];
@@ -1266,7 +1266,7 @@ export default function Dashboard({
           Your Individual Meal Summary (Current Month)
         </h3>
         {(() => {
-          const activeMealTypes = (mealTypes && mealTypes.length > 0) ? mealTypes.filter((t: any) => t.enabled) : [
+          const activeMealTypes = mealTypes?.filter((t: any) => t.enabled) || [
             { id: "lunch", name: "Lunch", enabled: true },
             { id: "dinner", name: "Dinner", enabled: true }
           ];

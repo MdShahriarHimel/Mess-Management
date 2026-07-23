@@ -184,7 +184,7 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     const memberIdFromToken = token.split(":")[0];
     member = db.members.find(m => m.id === memberIdFromToken);
 
-    if (false) {
+    if (member && !isValidMemberSessionToken(token, member.id)) {
       res.status(401).json({ error: "Unauthorized: Session invalidated due to password change or security reset. Please log in again." });
       return;
     }
@@ -363,7 +363,25 @@ router.post("/auth/login", (req: Request, res: Response): void => {
   }
 });
 
-
+// Password policy validator
+export function validatePasswordPolicy(password: string): string | null {
+  if (!password || password.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must contain at least one uppercase letter (A-Z).";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must contain at least one lowercase letter (a-z).";
+  }
+  if (!/[0-9]/.test(password)) {
+    return "Password must contain at least one number (0-9).";
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) && !/[^A-Za-z0-9]/.test(password)) {
+    return "Password must contain at least one special character (e.g. !@#$%^&*).";
+  }
+  return null;
+}
 
 // Activation / Registration (Set password for invited email)
 router.post("/auth/register", (req: Request, res: Response): void => {
@@ -1298,8 +1316,8 @@ router.get("/meals/:monthId", authMiddleware, (req: AuthenticatedRequest, res: R
   res.json({ meals });
 });
 
-// Bulk Enter/Edit meals for a month (Manager, Admin, Super User, Assistant Super User)
-router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+// Bulk Enter/Edit meals for a month (Manager, Admin, Super User, Assistant Super User, Member)
+router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.MEMBER, UserRole.PARTIAL_MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canManageMeals")) {
     res.status(403).json({ error: "Access denied. You do not have permission to manage meals." });
     return;
@@ -1330,7 +1348,38 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     return;
   }
 
-  // Upsert meal logs directly for authorized roles
+  // Intercept normal Member requests - managers and admins save directly
+  const isManagement = [
+    UserRole.ADMIN,
+    UserRole.SUPERUSER,
+    UserRole.ASSISTANT_SUPERUSER,
+    UserRole.MANAGER,
+    UserRole.PARTIAL_MANAGER
+  ].includes(req.user!.role);
+
+  if (!isManagement) {
+    if (!db.mealRequests) db.mealRequests = [];
+    const newRequest = {
+      id: generateUUID(),
+      monthId,
+      date: meals[0]?.date || todayStr,
+      requesterId: req.user!.id,
+      requesterName: req.user!.name,
+      mealsData: JSON.stringify(meals),
+      status: "PENDING",
+      timestamp: new Date().toISOString()
+    };
+    db.mealRequests.push(newRequest);
+    saveDB();
+    logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_REQUESTED", "None", `Requested meal logs for ${newRequest.date}`, `Meal changes submitted for manager approval`);
+    res.json({ 
+      pendingApproval: true, 
+      message: "Meals update requested! Your changes have been submitted to the Manager for confirmation." 
+    });
+    return;
+  }
+
+  // Upsert meal logs directly for Manager
   const settings = loadSettings();
   const mealTypes = settings.mealTypes || [
     { id: "lunch", name: "Lunch", enabled: true },
@@ -1376,8 +1425,8 @@ router.get("/meal-requests/:monthId", authMiddleware, (req: AuthenticatedRequest
   res.json({ requests: reqs });
 });
 
-// Approve a meal request (Manager only)
-router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+// Approve a meal request (Manager & Admins)
+router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER, UserRole.SUPERUSER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();
   if (!db.mealRequests) db.mealRequests = [];
