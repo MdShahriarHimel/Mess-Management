@@ -1,0 +1,169 @@
+{
+  "messName": "Ababil mess",
+  "siteColor": "cyan",
+  "fontSize": "normal",
+  "fontStyle": "sans",
+  "logoText": "Ababil mess",
+  "dropdownOptions": [
+    "Rent/ভাড়া",
+    "বুয়া বিল",
+    "WiFi",
+    "Electricity + Water"
+  ],
+  "translations": {},
+  "superUserCanEditBills": true,
+  "superUserCanInviteMembers": true,
+  "superUserCanArchiveMembers": true,
+  "superUserCanEditMeals": true,
+  "currencySymbol": "৳",
+  "enableManagerRating": true,
+  "auditRetentionDays": 30,
+  "mealTypes": [
+    {
+      "id": "lunch",
+      "name": "Lunch",
+      "enabled": true
+    },
+    {
+      "id": "dinner",
+      "name": "Dinner",
+      "enabled": true
+    },
+    {
+      "id": "breakfast",
+      "name": "Breakfast",
+      "enabled": false
+    }
+  ],
+  "balanceSheetGlow": "none",
+  "customColors": {
+    "cashDepositBg": "#f973161a",
+    "cashDepositBorder": "#f97316",
+    "settlementBg": "#22c55e1a",
+    "settlementBorder": "#22c55e",
+    "sidebarBg": "#0f172a",
+    "headerBg": "#0f172a",
+    "cardBg": "#1e293b",
+    "accentColor": "#22d3ee"
+  },
+  "messAnimations": {
+    "enableEffect": false,
+    "effectType": "none",
+    "animationSpeed": "normal",
+    "accentGlow": true,
+    "backgroundTheme": "default",
+    "customBackgroundUrl": "",
+    "backgroundOpacity": 20,
+    "themeTemplate": "default-erp"
+  },
+  "dashboardVisibility": {
+    "showAuditLogs": true,
+    "showCashDeposit": true,
+    "showMealTracker": true,
+    "showFoodMenu": true,
+    "showNotices": true,
+    "showAnalytics": true,
+    "showDashboardOverview": true
+  },
+  "roleAnimations": {
+    "ADMIN": {
+      "animation": "pulse",
+      "color": "text-red-500",
+      "glow": true,
+      "glowStyle": "golden-aura"
+    },
+    "SUPERUSER": {
+      "animation": "pulse",
+      "color": "text-orange-500",
+      "glow": true,
+      "glowStyle": "cosmic-nebula"
+    },
+    "ASSISTANT_SUPERUSER": {
+      "animation": "none",
+      "color": "text-cyan-400",
+      "glow": true,
+      "glowStyle": "deep-ocean"
+    },
+    "MANAGER": {
+      "animation": "bounce",
+      "color": "text-yellow-400",
+      "glow": true,
+      "glowStyle": "emerald-ripple"
+    },
+    "PARTIAL_MANAGER": {
+      "animation": "none",
+      "color": "text-emerald-400",
+      "glow": false,
+      "glowStyle": "none"
+    },
+    "MEMBER": {
+      "animation": "none",
+      "color": "text-slate-400",
+      "glow": false,
+      "glowStyle": "none"
+    }
+  },
+  "dateRestrictions": {
+    "allowFutureMeals": false,
+    "allowPreviousMeals": true,
+    "allowFutureDeposits": false,
+    "allowPreviousDeposits": true,
+    "allowFutureMarket": true,
+    "allowPreviousMarket": true,
+    "allowFutureMealPlanner": true,
+    "allowPreviousMealPlanner": true
+  },
+  "loginCustomization": {
+    "title": "Mess ERP",
+    "subtitle": "BENGAL BACHELOR ERP ENGINE",
+    "fontStyle": "sans",
+    "backgroundType": "theme",
+    "backgroundTheme": "neon-shallows",
+    "backgroundColor": "#020617",
+    "backgroundImageUrl": "",
+    "showBrandingIcon": true,
+    "showGoogleLogin": true,
+    "cardBg": "rgba(15, 23, 42, 0.6)",
+    "textColor": "#ffffff",
+    "accentColor": "#22d3ee",
+    "animationType": "pulse"
+  },
+  "homeCustomization": {
+    "welcomeTitle": "Dashboard Overview",
+    "welcomeSubtitle": "BENGAL BACHELOR COOPERATIVE ECOSYSTEM",
+    "fontStyle": "sans",
+    "backgroundType": "theme",
+    "backgroundTheme": "neon-shallows",
+    "backgroundColor": "#020617",
+    "backgroundImageUrl": "",
+    "cardBg": "rgba(30, 41, 59, 0.4)",
+    "textColor": "#ffffff",
+    "accentColor": "#22d3ee",
+    "showQuickActions": true,
+    "showBanner": true
+  },
+  "adminVisibility": {
+    "showAdminCard": true,
+    "showAdminPhone": false,
+    "showAdminEmail": false,
+    "showAdminRole": true
+  },
+  "creditConfig": {
+    "showCreditPanel": false,
+    "text": "Crafted with 💖 by HIMEL",
+    "isBold": true,
+    "isItalic": false,
+    "isUnderline": false,
+    "alignment": "center",
+    "color": "#22d3ee",
+    "font": "sans",
+    "background": "#0f172a",
+    "emojis": "💖,✨,🚀,🌟",
+    "link": ""
+  },
+  "appearancePermissions": {},
+  "schemaVersion": 2,
+  "createdAt": "2026-07-21T15:28:25.027Z",
+  "updatedAt": "2026-07-21T15:28:25.027Z",
+  "lastMigratedAt": "2026-07-21T15:28:25.027Z"
+}

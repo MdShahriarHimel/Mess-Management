@@ -6,9 +6,7 @@
 import express, { Router, Request, Response, NextFunction } from "express";
 import fs from "fs";
 import path from "path";
-import { 
-  loadDB, 
-  saveDB, 
+import { loadDB, saveDB, syncState, 
   loadCredentials, 
   saveCredentials, 
   generateUUID, 
@@ -285,6 +283,11 @@ router.get("/auth/me", authMiddleware, (req: AuthenticatedRequest, res: Response
 });
 
 // Login
+
+router.get("/sync-status", (req: Request, res: Response) => {
+  res.json({ status: syncState });
+});
+
 router.post("/auth/login", (req: Request, res: Response): void => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -4595,8 +4598,8 @@ router.get("/admin/backup/export", authMiddleware, (req: AuthenticatedRequest, r
 });
 
 router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can import backups" });
+  if (req.user!.role !== UserRole.ADMIN && !isPlatformOwnerEmail(req.user?.email)) {
+    res.status(403).json({ error: "Only the main Admin or Founder can import backups" });
     return;
   }
   
@@ -4632,10 +4635,26 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
     await refreshDbCache();
     console.log("[Backup] Cache refreshed");
 
-    if (settingsPayload) {
+    
+    
+    
+    
+    if (importedData.configs) {
+      for (const [filename, content] of Object.entries(importedData.configs)) {
+        if (typeof filename === 'string' && filename.endsWith('.json')) {
+           const filePath = path.join(DB_DIR, filename);
+           fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
+        }
+      }
+    } else if (settingsPayload) {
       saveSettings(settingsPayload);
     }
 
+    // Clear settings cache
+    Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
+    const { invalidateFounderCache } = require('./founder');
+    if (invalidateFounderCache) invalidateFounderCache();
+    
     // Synchronously save local backup JSON for redundancy and instant local startup fallback
     const messId = getActiveMessId();
     const backupFilename = messId === "default"

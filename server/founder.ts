@@ -41,6 +41,8 @@ interface AuthenticatedRequest extends Request {
 // Global cached platform controls to optimize database and memory lookups
 let cachedPlatformControls: any = null;
 
+export function invalidateFounderCache() { cachedPlatformControls = null; }
+
 export function loadPlatformControls() {
   if (cachedPlatformControls) return cachedPlatformControls;
 

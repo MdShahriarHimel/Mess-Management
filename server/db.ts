@@ -3,7 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import fs from "fs";
+import fs from 'fs';
+import crypto from 'crypto';
+
+const lastSyncHashes = new Map<string, string>();
+
+function isItemModified(tableName: string, id: string, mappedItem: any): boolean {
+  if (!id) return true;
+  const hashKey = `${tableName}:${id}`;
+  const hash = crypto.createHash('md5').update(JSON.stringify(mappedItem)).digest('hex');
+  if (lastSyncHashes.get(hashKey) !== hash) {
+    lastSyncHashes.set(hashKey, hash);
+    return true;
+  }
+  return false;
+}
+
 import path from "path";
 import { db } from "../src/db/index.ts";
 import { 
@@ -550,50 +565,56 @@ export let syncState: "Idle" | "Syncing" | "Pending" = "Idle";
 
 let isSyncing = false;
 let pendingSyncCache: DatabaseSchema | null = null;
+let syncTimer: NodeJS.Timeout | null = null;
 
 // Background sync function
 export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
-  if (isSyncing) {
-    pendingSyncCache = cache;
-    syncState = "Pending";
-    return;
-  }
-  isSyncing = true;
-  syncState = "Syncing";
+  pendingSyncCache = cache;
+  syncState = "Pending";
   
-  const syncPromise = (async () => {
-    try {
-      await doActualSync(cache);
-      lastSyncTime = new Date().toISOString();
-      lastWriteTime = new Date().toISOString();
-    } finally {
-      isSyncing = false;
-      syncState = "Idle";
-      if (pendingSyncCache) {
-        const nextCache = pendingSyncCache;
-        pendingSyncCache = null;
-        setTimeout(() => {
-          syncCacheToPostgresDirectly(nextCache);
-        }, 50);
+  if (syncTimer) return;
+  
+  syncTimer = setTimeout(async () => {
+    syncTimer = null;
+    if (isSyncing || !pendingSyncCache) return;
+    
+    isSyncing = true;
+    syncState = "Syncing";
+    const cacheToSync = pendingSyncCache;
+    pendingSyncCache = null;
+    
+    const syncPromise = (async () => {
+      try {
+        await doActualSync(cacheToSync);
+        lastSyncTime = new Date().toISOString();
+        lastWriteTime = new Date().toISOString();
+      } catch(err) {
+        console.error("Background sync failed:", err);
+      } finally {
+        isSyncing = false;
+        syncState = "Idle";
+        if (pendingSyncCache) {
+          syncCacheToPostgresDirectly(pendingSyncCache);
+        }
       }
-    }
-  })();
-
-  trackPromise(syncPromise);
-  return syncPromise;
+    })();
+    trackPromise(syncPromise);
+  }, 2000);
+  return Promise.resolve();
 }
 
 async function doActualSync(cache: DatabaseSchema) {
+  const startTime = Date.now();
+  console.log(`[TRACE D - doActualSync()] started`);
   try {
     if (cache.members.length > 0) {
-      console.log("[TRACE D - doActualSync()] Writing members cache to Postgres. First 3 members:", cache.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
       const activeMemberIds = cache.members.map(m => m.id);
       if (activeMemberIds.length > 0) {
         await db.delete(membersTable).where(notInArray(membersTable.id, activeMemberIds));
       }
 
       for (const item of cache.members) {
-        await db.insert(membersTable).values({
+        const mapped = {
           id: item.id,
           name: item.name,
           nickname: item.nickname,
@@ -630,67 +651,29 @@ async function doActualSync(cache: DatabaseSchema) {
           profileDecoration: item.profileDecoration || null,
           dashboardStyle: item.dashboardStyle || null,
           backgroundEffect: item.backgroundEffect || null,
-        }).onConflictDoUpdate({
+        };
+        if (!isItemModified('members', item.id, mapped)) continue;
+        await db.insert(membersTable).values(mapped).onConflictDoUpdate({
           target: membersTable.id,
-          set: {
-            name: item.name,
-            nickname: item.nickname,
-            email: item.email,
-            phone: item.phone,
-            whatsapp: item.whatsapp,
-            bloodGroup: item.bloodGroup,
-            occupation: item.occupation,
-            joiningDate: item.joiningDate,
-            leavingDate: item.leavingDate || null,
-            role: item.role,
-            status: item.status,
-            notes: item.notes,
-            photo: item.photo || null,
-            assignedTask: item.assignedTask || null,
-            glow: item.glow || false,
-            glowStyle: item.glowStyle || null,
-            animation: item.animation || null,
-            splitProfile: item.splitProfile || false,
-            memberGlow: item.memberGlow || false,
-            memberGlowStyle: item.memberGlowStyle || null,
-            memberAnimation: item.memberAnimation || null,
-            gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
-            hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
-            glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
-            hideAdminRole: item.hideAdminRole ?? false,
-            hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
-            personalTheme: item.personalTheme || null,
-            personalFont: item.personalFont || null,
-            avatarFrame: item.avatarFrame || null,
-            badge: item.badge || null,
-            profileBackground: item.profileBackground || null,
-            dashboardLayout: item.dashboardLayout || null,
-            profileDecoration: item.profileDecoration || null,
-            dashboardStyle: item.dashboardStyle || null,
-            backgroundEffect: item.backgroundEffect || null,
-          }
+          set: mapped
         });
       }
     }
 
     if (cache.months.length > 0) {
       for (const item of cache.months) {
-        await db.insert(monthsTable).values({
+        const mapped = {
           id: item.id,
           name: item.name,
           startDate: item.startDate,
           endDate: item.endDate,
           isLocked: item.isLocked,
           gracePeriodEnabled: item.gracePeriodEnabled,
-        }).onConflictDoUpdate({
+        };
+        if (!isItemModified('months', item.id, mapped)) continue;
+        await db.insert(monthsTable).values(mapped).onConflictDoUpdate({
           target: monthsTable.id,
-          set: {
-            name: item.name,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            isLocked: item.isLocked,
-            gracePeriodEnabled: item.gracePeriodEnabled,
-          }
+          set: mapped
         });
       }
       
@@ -701,24 +684,20 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     // Clean up dynamic tables and bulk insert
-    await db.execute(sql`DELETE FROM meals;`);
-    await db.execute(sql`DELETE FROM food_menus;`);
-    await db.execute(sql`DELETE FROM market_entries;`);
-    await db.execute(sql`DELETE FROM deposits;`);
-    await db.execute(sql`DELETE FROM bills;`);
-    await db.execute(sql`DELETE FROM duties;`);
-    await db.execute(sql`DELETE FROM manager_holdings;`);
-    await db.execute(sql`DELETE FROM manager_ratings;`);
-    await db.execute(sql`DELETE FROM notices;`);
-    await db.execute(sql`DELETE FROM audit_logs;`);
-    try {
-      await db.execute(sql`DELETE FROM meal_requests;`);
-    } catch (e) {
+                                            try {
+          } catch (e) {
       console.warn("Could not delete from meal_requests table:", e);
     }
 
     if (cache.meals.length > 0) {
-       await db.insert(mealsTable).values(cache.meals.map(item => ({
+       const activeIds = cache.meals.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(mealsTable).where(notInArray(mealsTable.id, activeIds as any));
+      } else {
+        await db.delete(mealsTable);
+      }
+      for (const item of cache.meals) {
+        const mapped = {
          id: item.id,
          monthId: item.monthId,
          memberId: item.memberId,
@@ -726,11 +705,21 @@ async function doActualSync(cache: DatabaseSchema) {
          lunch: item.lunch,
          dinner: item.dinner,
          breakfast: item.breakfast || 0,
-       })));
+       };
+        if (!isItemModified('meals', item.id, mapped)) continue;
+        await db.insert(mealsTable).values(mapped).onConflictDoUpdate({ target: mealsTable.id, set: mapped });
+      }
      }
 
     if (cache.foodMenus.length > 0) {
-      await db.insert(foodMenusTable).values(cache.foodMenus.map(item => ({
+      const activeIds = cache.foodMenus.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(foodMenusTable).where(notInArray(foodMenusTable.id, activeIds as any));
+      } else {
+        await db.delete(foodMenusTable);
+      }
+      for (const item of cache.foodMenus) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         date: item.date,
@@ -738,11 +727,21 @@ async function doActualSync(cache: DatabaseSchema) {
         lunchMain: item.lunchMain,
         dinnerVegetable: item.dinnerVegetable,
         dinnerMain: item.dinnerMain,
-      })));
+      };
+        if (!isItemModified('foodMenus', item.id, mapped)) continue;
+        await db.insert(foodMenusTable).values(mapped).onConflictDoUpdate({ target: foodMenusTable.id, set: mapped });
+      }
     }
 
     if (cache.marketEntries.length > 0) {
-      await db.insert(marketEntriesTable).values(cache.marketEntries.map(item => ({
+      const activeIds = cache.marketEntries.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(marketEntriesTable).where(notInArray(marketEntriesTable.id, activeIds as any));
+      } else {
+        await db.delete(marketEntriesTable);
+      }
+      for (const item of cache.marketEntries) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         memberId: item.memberId,
@@ -752,64 +751,124 @@ async function doActualSync(cache: DatabaseSchema) {
         description: item.description,
         isExtra: item.isExtra,
         quantity: item.quantity || ""
-      })));
+      };
+        if (!isItemModified('marketEntries', item.id, mapped)) continue;
+        await db.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({ target: marketEntriesTable.id, set: mapped });
+      }
     }
 
     if (cache.deposits.length > 0) {
-      await db.insert(depositsTable).values(cache.deposits.map(item => ({
+      const activeIds = cache.deposits.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(depositsTable).where(notInArray(depositsTable.id, activeIds as any));
+      } else {
+        await db.delete(depositsTable);
+      }
+      for (const item of cache.deposits) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         memberId: item.memberId,
         amount: item.amount,
         date: item.date,
         enteredBy: item.enteredBy,
-      })));
+      };
+        if (!isItemModified('deposits', item.id, mapped)) continue;
+        await db.insert(depositsTable).values(mapped).onConflictDoUpdate({ target: depositsTable.id, set: mapped });
+      }
     }
 
     if (cache.bills.length > 0) {
-      await db.insert(billsTable).values(cache.bills.map(item => ({
+      const activeIds = cache.bills.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(billsTable).where(notInArray(billsTable.id, activeIds as any));
+      } else {
+        await db.delete(billsTable);
+      }
+      for (const item of cache.bills) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         name: item.name,
         amount: item.amount,
         collectorId: item.collectorId,
         status: item.status,
-      })));
+      };
+        if (!isItemModified('bills', item.id, mapped)) continue;
+        await db.insert(billsTable).values(mapped).onConflictDoUpdate({ target: billsTable.id, set: mapped });
+      }
     }
 
     if (cache.duties.length > 0) {
-      await db.insert(dutiesTable).values(cache.duties.map(item => ({
+      const activeIds = cache.duties.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(dutiesTable).where(notInArray(dutiesTable.id, activeIds as any));
+      } else {
+        await db.delete(dutiesTable);
+      }
+      for (const item of cache.duties) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         memberId: item.memberId,
         name: item.name,
         task: item.task,
-      })));
+      };
+        if (!isItemModified('duties', item.id, mapped)) continue;
+        await db.insert(dutiesTable).values(mapped).onConflictDoUpdate({ target: dutiesTable.id, set: mapped });
+      }
     }
 
     if (cache.managerHoldings.length > 0) {
-      await db.insert(managerHoldingsTable).values(cache.managerHoldings.map(item => ({
+      const activeIds = cache.managerHoldings.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(managerHoldingsTable).where(notInArray(managerHoldingsTable.id, activeIds as any));
+      } else {
+        await db.delete(managerHoldingsTable);
+      }
+      for (const item of cache.managerHoldings) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         memberId: item.memberId,
         amount: item.amount,
         marketSpent: item.marketSpent || 0,
         description: item.description || "",
-      })));
+      };
+        if (!isItemModified('managerHoldings', item.id, mapped)) continue;
+        await db.insert(managerHoldingsTable).values(mapped).onConflictDoUpdate({ target: managerHoldingsTable.id, set: mapped });
+      }
     }
 
     if (cache.managerRatings.length > 0) {
-      await db.insert(managerRatingsTable).values(cache.managerRatings.map(item => ({
+      const activeIds = cache.managerRatings.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(managerRatingsTable).where(notInArray(managerRatingsTable.id, activeIds as any));
+      } else {
+        await db.delete(managerRatingsTable);
+      }
+      for (const item of cache.managerRatings) {
+        const mapped = {
         id: item.id,
         monthId: item.monthId,
         rating: item.rating,
         raterId: item.raterId,
         date: item.date,
-      })));
+      };
+        if (!isItemModified('managerRatings', item.id, mapped)) continue;
+        await db.insert(managerRatingsTable).values(mapped).onConflictDoUpdate({ target: managerRatingsTable.id, set: mapped });
+      }
     }
 
     if (cache.notices.length > 0) {
-      await db.insert(noticesTable).values(cache.notices.map(item => ({
+      const activeIds = cache.notices.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(noticesTable).where(notInArray(noticesTable.id, activeIds as any));
+      } else {
+        await db.delete(noticesTable);
+      }
+      for (const item of cache.notices) {
+        const mapped = {
         id: item.id,
         title: item.title,
         content: item.content,
@@ -818,11 +877,21 @@ async function doActualSync(cache: DatabaseSchema) {
         authorId: item.authorId,
         authorName: item.authorName,
         date: item.date,
-      })));
+      };
+        if (!isItemModified('notices', item.id, mapped)) continue;
+        await db.insert(noticesTable).values(mapped).onConflictDoUpdate({ target: noticesTable.id, set: mapped });
+      }
     }
 
     if (cache.auditLogs.length > 0) {
-      await db.insert(auditLogsTable).values(cache.auditLogs.map(item => ({
+      const activeIds = cache.auditLogs.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(auditLogsTable).where(notInArray(auditLogsTable.id, activeIds as any));
+      } else {
+        await db.delete(auditLogsTable);
+      }
+      for (const item of cache.auditLogs) {
+        const mapped = {
         id: item.id,
         userId: item.userId,
         userName: item.userName,
@@ -841,12 +910,22 @@ async function doActualSync(cache: DatabaseSchema) {
         description: item.description || null,
         browser: item.browser || null,
         ipAddress: item.ipAddress || null,
-      })));
+      };
+        if (!isItemModified('auditLogs', item.id, mapped)) continue;
+        await db.insert(auditLogsTable).values(mapped).onConflictDoUpdate({ target: auditLogsTable.id, set: mapped });
+      }
     }
 
     if (cache.mealRequests && cache.mealRequests.length > 0) {
       try {
-        await db.insert(mealRequestsTable).values(cache.mealRequests.map(item => ({
+        const activeIds = cache.mealRequests.map((i: any) => i.id).filter(Boolean);
+      if (activeIds.length > 0) {
+        await db.delete(mealRequestsTable).where(notInArray(mealRequestsTable.id, activeIds as any));
+      } else {
+        await db.delete(mealRequestsTable);
+      }
+      for (const item of cache.mealRequests) {
+        const mapped = {
           id: item.id,
           monthId: item.monthId,
           date: item.date,
@@ -855,7 +934,10 @@ async function doActualSync(cache: DatabaseSchema) {
           mealsData: item.mealsData,
           status: item.status,
           timestamp: item.timestamp,
-        })));
+        };
+        if (!isItemModified('mealRequests', item.id, mapped)) continue;
+        await db.insert(mealRequestsTable).values(mapped).onConflictDoUpdate({ target: mealRequestsTable.id, set: mapped });
+      }
       } catch (err) {
         console.warn("Could not insert into meal_requests table during sync:", err);
       }
@@ -863,6 +945,7 @@ async function doActualSync(cache: DatabaseSchema) {
   } catch (error) {
     console.error("Error in background PostgreSQL sync:", error);
   }
+  console.log(`[TRACE D - doActualSync()] finished (${Date.now() - startTime} ms)`);
 }
 
 export function getActiveMessId(): string {
@@ -999,22 +1082,34 @@ export function loadDB(): DatabaseSchema {
 }
 
 // Save database and trigger async background sync to Postgres
+let backupTimer: NodeJS.Timeout | null = null;
+let lastBackupCacheContent = "";
+
 export function saveDB() {
   if (!dbCache) return;
-  console.log("[TRACE C - saveDB()] Called. dbCache first 3 members:", dbCache.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
+  const startTime = Date.now();
   // Trigger non-blocking async synchronization in the background
   syncCacheToPostgresDirectly(dbCache);
 
-  // Synchronously and safely save local backup copy in the data folder
-  try {
-    const messId = getActiveMessId();
-    const backupFilename = messId === "default"
-      ? "database_backup.json"
-      : `database_backup_${messId}.json`;
-    writeAndPersistFile(backupFilename, JSON.stringify(dbCache, null, 2));
-  } catch (e) {
-    console.error("Error writing dynamic backup file:", e);
-  }
+  if (backupTimer) return;
+  backupTimer = setTimeout(() => {
+    backupTimer = null;
+    if (!dbCache) return;
+    try {
+      const messId = getActiveMessId();
+      const backupFilename = messId === "default"
+        ? "database_backup.json"
+        : `database_backup_${messId}.json`;
+        
+      const content = JSON.stringify(dbCache, null, 2);
+      if (content !== lastBackupCacheContent) {
+        writeAndPersistFile(backupFilename, content);
+        lastBackupCacheContent = content;
+      }
+    } catch (e) {
+      console.error("Error writing dynamic backup file:", e);
+    }
+  }, 2000);
 }
 
 // Load credentials (legacy fallback)
@@ -1260,22 +1355,26 @@ export function writeAndPersistFile(filename: string, content: string) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(localPath, content, "utf-8");
     
-    // Save to Postgres asynchronously in the background
-    const dbPromise = db.insert(persistentFilesTable).values({
-      filename,
-      content
-    }).onConflictDoUpdate({
-      target: persistentFilesTable.filename,
-      set: { content }
-    }).then(() => {
-      console.log(`[Persistent Files] Async backup of ${filename} to PostgreSQL successful.`);
-    }).catch((err) => {
-      console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
+    // Async file write so we don't block the Node event loop!
+    fs.promises.writeFile(localPath, content, "utf-8").then(() => {
+      // Save to Postgres asynchronously in the background
+      const dbPromise = db.insert(persistentFilesTable).values({
+        filename,
+        content
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content }
+      }).then(() => {
+        // success
+      }).catch((err) => {
+        console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
+      });
+      trackPromise(dbPromise);
+    }).catch(err => {
+      console.error(`[Persistent Files] Local write failed for ${filename}:`, err);
     });
 
-    trackPromise(dbPromise);
   } catch (e) {
     console.error(`[Persistent Files] Error writing local and persistent file ${filename}:`, e);
   }

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { SyncIndicator } from "./components/SyncIndicator";
 import React, { useState, useEffect } from "react";
 import { onAuthStateChanged, onIdTokenChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
@@ -3910,6 +3911,12 @@ export default function App() {
 
         {/* Footer info & Logout */}
         <div className="p-6 border-t border-cyan-500/5 space-y-4">
+          <div className="flex justify-between items-center text-xs">
+            <div className="flex justify-between items-center text-xs">
+            <span className="text-[10px] text-slate-500">Cloud Sync</span>
+            <SyncIndicator />
+          </div>
+          </div>
           <div className="flex justify-between items-center text-xs">
             <span className="text-[10px] text-slate-500">Theme</span>
             <button

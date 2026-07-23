@@ -1,0 +1,189 @@
+{
+  "globalMonetizationEnabled": true,
+  "globalMaintenance": false,
+  "globalFeatureFlags": {
+    "aiSuggestions": true,
+    "aiAnalysis": true
+  },
+  "globalTheme": "default",
+  "revenueStats": {
+    "totalRevenue": 3450,
+    "totalSubscriptionsCount": 12,
+    "totalAdsWatched": 412,
+    "totalRewardPointsEarned": 8420
+  },
+  "advertisementsEnabled": false,
+  "premiumStoreEnabled": false,
+  "advertisementsConfig": {
+    "provider": "Unity Ads",
+    "performanceMode": "balanced",
+    "banner": {
+      "enabled": true,
+      "positions": [
+        "top",
+        "bottom",
+        "dashboard",
+        "reports",
+        "meal-planner",
+        "statistics"
+      ],
+      "size": "standard",
+      "frequencySeconds": 30,
+      "visibilityRules": {
+        "alwaysVisible": false,
+        "afterLogin": true,
+        "afterXMinutes": 0,
+        "afterSpecificPages": true,
+        "hideAfterRewardLimit": true,
+        "hideForPremium": true,
+        "hideForEnterprise": true,
+        "hideForLifetime": true
+      }
+    },
+    "rewarded": {
+      "enabled": true,
+      "rewardPoints": 10,
+      "maxAdsPerDay": 3,
+      "cooldownSeconds": 60,
+      "requiredWatchPercentage": 100,
+      "verificationMethod": "server-side"
+    },
+    "rules": {
+      "premiumHideAds": true,
+      "enterpriseHideAds": true,
+      "lifetimeHideAds": true,
+      "rewardedAdCapHidesBanner": true
+    },
+    "userExceptions": []
+  },
+  "rewardCenterEnabled": false,
+  "rewardCenterConfig": {
+    "pointRules": {
+      "pointsPerAd": 10,
+      "pointsPerDailyLogin": 5,
+      "pointsPerProfileCompletion": 25,
+      "pointsPerFestivalBonus": 50,
+      "pointsPerFounderBonus": 100,
+      "pointsPerBugReward": 150,
+      "dailyMaxPoints": 100,
+      "dailyMaxAds": 5,
+      "cooldownSeconds": 30,
+      "maxManualPointsPerDay": 1000
+    },
+    "pointExpiration": {
+      "type": "never"
+    },
+    "rewardSources": {
+      "rewardedAd": true,
+      "dailyLogin": true,
+      "profileCompletion": true,
+      "festivalBonus": true,
+      "manualBonus": true,
+      "founderBonus": true,
+      "bugReward": true,
+      "futureReferral": false,
+      "futureAiEvents": false
+    },
+    "shopCosmetics": [
+      {
+        "id": "galaxy-theme",
+        "name": "Nebula Galaxy Theme",
+        "type": "theme",
+        "points": 150,
+        "desc": "A gorgeous cosmic space gradient theme for the whole application.",
+        "previewClass": "bg-gradient-to-r from-indigo-900 via-purple-900 to-pink-900",
+        "unlockMethod": "Reward Points"
+      },
+      {
+        "id": "glass-theme",
+        "name": "Frosted Glass Morphic Theme",
+        "type": "theme",
+        "points": 200,
+        "desc": "Sleek frosted-glass components with ambient colored background blur.",
+        "previewClass": "bg-white/10 backdrop-blur-md border border-white/20",
+        "unlockMethod": "Reward OR Premium"
+      },
+      {
+        "id": "cyber-theme",
+        "name": "Cyberpunk Grid Theme",
+        "type": "theme",
+        "points": 120,
+        "desc": "Neon cyberpunk styling with dark slate and high-contrast yellow accents.",
+        "previewClass": "bg-slate-950 border border-yellow-500/40 text-yellow-400 font-mono",
+        "unlockMethod": "Reward Points"
+      },
+      {
+        "id": "rainbow-glow",
+        "name": "Rainbow Border Glow Effect",
+        "type": "glow",
+        "points": 100,
+        "desc": "Adds an animated rainbow glow perimeter around your profile card.",
+        "previewClass": "shadow-[0_0_15px_#ec4899]",
+        "unlockMethod": "Reward Points"
+      },
+      {
+        "id": "gold-halo",
+        "name": "Royal Gold Aura Profile Frame",
+        "type": "avatarFrame",
+        "points": 80,
+        "desc": "Surrounds your profile avatar with an elegant pulsing golden halo.",
+        "previewClass": "border-4 border-yellow-500 shadow-amber-500 shadow-md",
+        "unlockMethod": "Reward Points"
+      },
+      {
+        "id": "float-animation",
+        "name": "Interactive Anti-Gravity Float Animation",
+        "type": "animation",
+        "points": 90,
+        "desc": "Gives your card component a floating anti-gravity drift motion.",
+        "previewClass": "animate-bounce",
+        "unlockMethod": "Reward Points"
+      },
+      {
+        "id": "dashboard-advanced",
+        "name": "Executive Bento Dashboard",
+        "type": "dashboard",
+        "points": 250,
+        "desc": "Brings advanced statistics, interactive graphs, and layout controls to your home.",
+        "previewClass": "border border-cyan-500/30",
+        "unlockMethod": "Reward AND Premium"
+      },
+      {
+        "id": "premium-icons",
+        "name": "Neon Glow Lucide Icons",
+        "type": "icon",
+        "points": 75,
+        "desc": "Replaces standard system icons with animated glowing vectors.",
+        "previewClass": "font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-violet-500",
+        "unlockMethod": "Premium"
+      },
+      {
+        "id": "founder-exclusive",
+        "name": "Founder Gold Premium Theme",
+        "type": "theme",
+        "points": 500,
+        "desc": "The ultimate gold-accented theme reserved exclusively for premium patrons and founders.",
+        "previewClass": "bg-amber-950 border border-amber-400 text-amber-200",
+        "unlockMethod": "Founder Only"
+      },
+      {
+        "id": "enterprise-glow",
+        "name": "Enterprise Cyber Pulse",
+        "type": "glow",
+        "points": 300,
+        "desc": "A pulsing matrix glow reserved for enterprise clusters and developers.",
+        "previewClass": "shadow-[0_0_25px_#10b981]",
+        "unlockMethod": "Enterprise Only"
+      },
+      {
+        "id": "standard-avatar",
+        "name": "Standard Classic Frame",
+        "type": "avatarFrame",
+        "points": 0,
+        "desc": "A clean standard slate frame available for all registered users.",
+        "previewClass": "border border-slate-300",
+        "unlockMethod": "Free"
+      }
+    ]
+  }
+}

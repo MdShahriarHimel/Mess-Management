@@ -1,0 +1,26 @@
+{
+  "idx_pm3uhdl02mt3qz9v87l9s": {
+    "isDarkMode": true,
+    "accentColor": "#22d3ee",
+    "fontSize": "normal",
+    "compactMode": false,
+    "animationOn": true,
+    "highContrast": false,
+    "notificationPreferences": {},
+    "language": "en",
+    "dashboardDensity": "normal",
+    "sidebarCollapse": false
+  },
+  "GeJtwIFPHnP8REi7tDxrx8rKFHL2": {
+    "isDarkMode": false,
+    "accentColor": "#22d3ee",
+    "fontSize": "small",
+    "compactMode": false,
+    "animationOn": false,
+    "highContrast": true,
+    "notificationPreferences": {},
+    "language": "en",
+    "dashboardDensity": "normal",
+    "sidebarCollapse": false
+  }
+}

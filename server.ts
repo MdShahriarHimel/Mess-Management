@@ -25,15 +25,25 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 // Vercel Serverless background database synchronization flusher middleware
 app.use((req, res, next) => {
   const originalSend = res.send;
+  const startTime = Date.now();
+  console.log(`[API] Request started: ${req.method} ${req.url}`);
   (res as any).send = async function (body: any) {
-    if (pendingSyncPromises && pendingSyncPromises.length > 0) {
+    console.log(`[API] Flusher entered for ${req.method} ${req.url}`);
+    console.log(`[API] pendingSyncPromises.length: ${pendingSyncPromises?.length || 0}`);
+
+    if (process.env.VERCEL && pendingSyncPromises && pendingSyncPromises.length > 0) {
       console.log(`[Vercel Sync] Waiting for ${pendingSyncPromises.length} background DB sync promises...`);
       try {
+        const syncStart = Date.now();
         await Promise.all(pendingSyncPromises);
+        console.log(`[Vercel Sync] Time spent waiting: ${Date.now() - syncStart} ms`);
       } catch (err) {
         console.error("[Vercel Sync] Error flushing background database sync:", err);
       }
     }
+
+    console.log(`[API] Flusher exited for ${req.method} ${req.url}`);
+    console.log(`[API] Response sent for ${req.method} ${req.url} (${Date.now() - startTime} ms)`);
     return originalSend.call(this, body);
   };
   next();

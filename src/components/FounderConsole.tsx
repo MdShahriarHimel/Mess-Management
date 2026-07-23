@@ -32,7 +32,7 @@ import {
   HelpCircle,
   FileText,
   Key
-} from "lucide-react";
+, Download, Upload} from "lucide-react";
 import { Member } from "../types.js";
 
 interface FounderConsoleProps {
@@ -44,7 +44,7 @@ interface FounderConsoleProps {
 
 export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPlatformStatus }: FounderConsoleProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "logs"
+    "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "logs" | "backup"
   >("dashboard");
 
   // Core configuration states
@@ -494,7 +494,8 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
           { id: "gemini", label: "AI & Gemini", icon: <Cpu size={14} /> },
           { id: "analytics", label: "Platform Analytics", icon: <TrendingUp size={14} /> },
           { id: "owners", label: "Platform Owners", icon: <Users size={14} /> },
-          { id: "logs", label: "Audit Log", icon: <FileText size={14} /> }
+          { id: "logs", label: "Audit Log", icon: <FileText size={14} /> },
+          { id: "backup", label: "Backup & Restore", icon: <Download size={14} /> }
         ].map((item) => (
           <button
             key={item.id}
@@ -1977,6 +1978,119 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       {/* =========================================================================
           TAB 9: SEARCHABLE FOUNDER AUDIT LOG
           ========================================================================= */}
+      
+      {/* =========================================================================
+          TAB 10: BACKUP & RESTORE
+          ========================================================================= */}
+      {activeSubTab === "backup" && (
+        <div id="founder-tab-backup" className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-6">
+          <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+            <Download className="text-emerald-400" size={18} />
+            <h2 className="text-base font-bold font-sans">Database Backup & Restore</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-4 rounded-lg bg-slate-950/40 border border-slate-800 flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 bg-cyan-500/20 text-cyan-400 rounded-full flex items-center justify-center">
+                <Download size={24} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white mb-1">Export Database Backup</h3>
+                <p className="text-xs text-slate-400">Download a complete .json snapshot of the entire ERP database, all settings, and configurations.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    setLoading(true);
+                    const token = localStorage.getItem("mess_session_token");
+                    const res = await fetch("/api/admin/backup/export", {
+                      headers: { "Authorization": "Bearer " + token }
+                    });
+                    if (!res.ok) {
+                      const err = await res.json();
+                      alert(err.error || "Export failed");
+                      return;
+                    }
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "mess_erp_full_backup.json";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                  } catch (e) {
+                    console.error("Export failed", e);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded text-xs transition-colors"
+              >
+                EXPORT BACKUP (.JSON)
+              </button>
+            </div>
+
+            <div className="p-4 rounded-lg bg-slate-950/40 border border-slate-800 flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 bg-rose-500/20 text-rose-400 rounded-full flex items-center justify-center">
+                <Upload size={24} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white mb-1">Import Database Backup</h3>
+                <p className="text-xs text-slate-400">Restore the ERP to a previous state using a valid database_backup.json file.</p>
+              </div>
+              <label className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded text-xs transition-colors cursor-pointer text-center block">
+                IMPORT BACKUP (.JSON)
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    const confirm = window.confirm("WARNING: Importing a backup will completely overwrite the existing database and all current data will be lost. Are you absolutely sure?");
+                    if (!confirm) return;
+                    
+                    try {
+                      setLoading(true);
+                      const fileContent = await file.text();
+                      const payload = JSON.parse(fileContent);
+                      
+                      const token = localStorage.getItem("mess_session_token");
+                      const res = await fetch("/api/admin/backup/import", {
+                        method: "POST",
+                        headers: { 
+                          "Content-Type": "application/json",
+                          "Authorization": "Bearer " + token
+                        },
+                        body: JSON.stringify(payload)
+                      });
+                      
+                      if (res.ok) {
+                        alert("Database successfully restored! Refreshing system...");
+                        setTimeout(() => window.location.reload(), 1500);
+                      } else {
+                        const err = await res.json();
+                        alert(err.error || "Failed to import backup");
+                      }
+                    } catch (error) {
+                      console.error(error);
+                      alert("Invalid JSON format or corrupted backup file.");
+                    } finally {
+                      setLoading(false);
+                      if (e.target) e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       {activeSubTab === "logs" && (
         <div id="founder-tab-logs" className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-3">

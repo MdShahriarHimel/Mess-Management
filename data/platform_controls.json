@@ -1,0 +1,39 @@
+{
+  "owners": [
+    {
+      "email": "mdshahriarhimel@gmail.com",
+      "role": "Primary Founder"
+    }
+  ],
+  "platformStatus": "Operational",
+  "maintenanceMode": "Normal",
+  "maintenanceReason": "Regular scheduled system upgrade and cloud optimization.",
+  "maintenanceStartTime": "",
+  "maintenanceEndTime": "",
+  "maintenanceTimezone": "Asia/Dhaka",
+  "maintenanceEstimatedCompletion": "1 hour",
+  "maintenanceThemeColor": "cyan",
+  "maintenanceEmoji": "⚙️",
+  "maintenanceWarningIcon": "AlertTriangle",
+  "maintenanceBannerImage": "",
+  "featureFlags": {
+    "monetization": true,
+    "advertisements": true,
+    "rewardCenter": true,
+    "premiumStore": true,
+    "aiFeatures": true,
+    "themeEngine": true,
+    "statistics": true,
+    "experimentalFeatures": false,
+    "futureModules": false
+  },
+  "announcements": [],
+  "geminiStats": {
+    "totalRequests": 15,
+    "successRequests": 15,
+    "failedRequests": 0,
+    "todayRequests": 3,
+    "monthlyRequests": 15,
+    "lastResetDate": "2026-07-22"
+  }
+}

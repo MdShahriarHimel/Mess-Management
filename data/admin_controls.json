@@ -1,0 +1,22 @@
+{
+  "controls": {
+    "idx_pm3uhdl02mt3qz9v87l9s": {
+      "allowedMesses": [
+        "default"
+      ],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false
+    },
+    "freefire1100030@gmail.com": {
+      "allowedMesses": [
+        "default"
+      ],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false
+    }
+  }
+}
