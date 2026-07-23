@@ -37,6 +37,16 @@ export default function MealsTracker({
   dateRestrictions,
   mealTypes
 }: MealsTrackerProps) {
+  console.log("[LIFECYCLE] MealsTracker Render");
+
+  useEffect(() => {
+    console.log("[LIFECYCLE] MealsTracker Mounted");
+
+    return () => {
+      console.log("[LIFECYCLE] MealsTracker Unmounted");
+    };
+  }, []);
+
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [mealsData, setMealsData] = useState<Record<string, Record<string, number | string>>>({});
   const [isLocked, setIsLocked] = useState(false);
@@ -189,7 +199,7 @@ export default function MealsTracker({
       } else {
         setSuccess(data.message || "Daily meal counts logged and updated successfully!");
       }
-      onRefresh();
+      await fetchMealsForDate();
       fetchPendingRequests();
       setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) {
