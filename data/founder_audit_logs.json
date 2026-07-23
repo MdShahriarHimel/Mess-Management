@@ -1,5 +1,71 @@
 [
   {
+    "id": "fa_nioz31r3t",
+    "date": "2026-07-23",
+    "time": "08:50:18",
+    "userId": "system",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "42.0.7.77",
+    "result": "Failed login attempt (1/5)"
+  },
+  {
+    "id": "fa_2ee1lq0fd",
+    "date": "2026-07-23",
+    "time": "08:25:09",
+    "userId": "system",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "ACCOUNT_LOCKED",
+    "module": "SECURITY",
+    "ip": "2404:1c40:54:bed:dc51:fcfe:4d76:90d1",
+    "result": "Account locked for 5 minutes due to 5 consecutive failed login attempts from IP: 2404:1c40:54:bed:dc51:fcfe:4d76:90d1"
+  },
+  {
+    "id": "fa_np879cxcd",
+    "date": "2026-07-23",
+    "time": "08:25:06",
+    "userId": "system",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "2404:1c40:54:bed:dc51:fcfe:4d76:90d1",
+    "result": "Failed login attempt (4/5)"
+  },
+  {
+    "id": "fa_htnbf5ac9",
+    "date": "2026-07-23",
+    "time": "08:24:54",
+    "userId": "system",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "2404:1c40:54:bed:dc51:fcfe:4d76:90d1",
+    "result": "Failed login attempt (3/5)"
+  },
+  {
+    "id": "fa_a3kivh7ks",
+    "date": "2026-07-23",
+    "time": "08:24:46",
+    "userId": "system",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "2404:1c40:54:bed:dc51:fcfe:4d76:90d1",
+    "result": "Failed login attempt (2/5)"
+  },
+  {
+    "id": "fa_qq4m3vvap",
+    "date": "2026-07-23",
+    "time": "08:24:44",
+    "userId": "system",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "2404:1c40:54:bed:dc51:fcfe:4d76:90d1",
+    "result": "Failed login attempt (1/5)"
+  },
+  {
     "id": "fa_ag9xi32fm",
     "date": "2026-07-22",
     "time": "21:32:31",

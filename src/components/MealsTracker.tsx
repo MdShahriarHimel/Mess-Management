@@ -38,7 +38,7 @@ export default function MealsTracker({
   mealTypes
 }: MealsTrackerProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
-  const [mealsData, setMealsData] = useState<Record<string, Record<string, number>>>({});
+  const [mealsData, setMealsData] = useState<Record<string, Record<string, number | string>>>({});
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +136,7 @@ export default function MealsTracker({
   }, [currentMonthId, selectedDate, members]);
 
   // Handle meal count selection
-  const updateMealCell = (memberId: string, type: string, val: number) => {
+  const updateMealCell = (memberId: string, type: string, val: number | string) => {
     if (isLocked) return;
     setMealsData(prev => ({
       ...prev,
@@ -154,13 +154,14 @@ export default function MealsTracker({
     setLoading(true);
 
     const mealsToSave = Object.entries(mealsData).map(([memberId, item]) => {
-      const mealVal = item as Record<string, number>;
+      const mealVal = item as Record<string, number | string>;
       const entry: any = {
         memberId,
         date: selectedDate
       };
       activeMealTypes.forEach((type) => {
-        entry[type.id] = mealVal[type.id] || 0;
+        const parsedVal = parseFloat(String(mealVal[type.id]));
+        entry[type.id] = isNaN(parsedVal) ? 0 : parsedVal;
       });
       return entry;
     });
@@ -531,8 +532,12 @@ export default function MealsTracker({
                                     updateMealCell(member.id, type.id, 0);
                                     return;
                                   }
-                                  const val = parseFloat(raw);
-                                  updateMealCell(member.id, type.id, isNaN(val) ? 0 : val);
+                                  updateMealCell(member.id, type.id, raw);
+                                }}
+                                onBlur={(e) => {
+                                  let val = parseFloat(e.target.value);
+                                  if (isNaN(val) || val < 0) val = 0;
+                                  updateMealCell(member.id, type.id, val);
                                 }}
                                 className={`w-16 h-8 text-center font-mono font-extrabold text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                                   isDarkMode 
