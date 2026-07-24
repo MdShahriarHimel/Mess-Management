@@ -1977,6 +1977,12 @@ export default function App() {
       if (resPrefs.ok) {
         const data = await resPrefs.json();
         setUserPreferencesState(data);
+        if (data.isDarkMode !== undefined) {
+          setIsDarkMode(data.isDarkMode);
+        }
+        if (data.fontSize !== undefined) {
+          setFontSize(data.fontSize);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch three-level settings:", e);
@@ -2061,6 +2067,9 @@ export default function App() {
         setUserPreferencesState(data.preferences);
         if (data.preferences.isDarkMode !== undefined) {
           setIsDarkMode(data.preferences.isDarkMode);
+        }
+        if (data.preferences.fontSize !== undefined) {
+          setFontSize(data.preferences.fontSize);
         }
         return true;
       } else {
@@ -2841,6 +2850,51 @@ export default function App() {
 
   // Translation helper function
   const t = (text: string) => {
+    // If user's language preference is Bangla, use the built-in dictionary
+    if (userPreferencesState?.language === "bn") {
+      const bnTranslations: Record<string, string> = {
+        "Dashboard Hub": "ড্যাশবোর্ড হাব",
+        "Mess Members": "মেস মেম্বারস",
+        "Meals Intake": "মিল ট্র্যাকার",
+        "Meal Planner": "মিল প্ল্যানার",
+        "Market Logs": "বাজার খরচ",
+        "Cash Deposits": "টাকা ডিপোজিট",
+        "Settlement Sheet": "ফাইনাল হিসাব",
+        "Democracy Ballot": "গণতান্ত্রিক ব্যালট",
+        "Notices": "নোটিশ বোর্ড",
+        "Audit Log": "অডিট লগ",
+        "Security Settings": "সিকিউরিটি সেটিংস",
+        "Personal Preferences": "ব্যক্তিগত সেটিংস",
+        "ERP Control Panel": "ইআরপি প্যানেল",
+        "Save Preferences": "সেটিংস সংরক্ষণ করুন",
+        "Language Pref": "ভাষা পছন্দ",
+        "Application Layout Scale": "অ্যাপ্লিকেশন লেআউট স্কেল",
+        "Save": "সংরক্ষণ করুন",
+        "Cancel": "বাতিল",
+        "Logout": "লগআউট",
+        "Theme": "থিম",
+        "Animations": "অ্যানিমেশন",
+        "Theme Library": "থিম লাইব্রেরি",
+        "Member Options": "সদস্য অপশন",
+        "ERP Identity": "ইআরপি পরিচিতি",
+        "Credit Panel": "ক্রেডিট প্যানেল",
+        "Translation Matrix": "অনুবাদ ম্যাট্রিক্স",
+        "Role Permissions": "রোল পারমিশন",
+        "UI Features": "ইউআই ফিচারস",
+        "Status Alert": "স্ট্যাটাস অ্যালার্ট",
+        "Dashboard": "ড্যাশবোর্ড",
+        "Dark Mode": "ডার্ক মোড",
+        "Compact Mode": "কম্প্যাক্ট মোড",
+        "High Contrast": "উচ্চ বৈপরীত্য",
+        "Enable Animations": "অ্যানিমেশন চালু করুন",
+        "English (US)": "ইংরেজি",
+        "Bangla (BD)": "বাংলা",
+      };
+      if (bnTranslations[text]) {
+        return bnTranslations[text];
+      }
+    }
+
     if (translations && translations[text]) {
       return translations[text];
     }
@@ -3496,6 +3550,13 @@ export default function App() {
 
   const activeTypography = getActiveTypographySettings(activeIsDarkMode);
 
+  const getScaleFactor = () => {
+    const prefSize = userPreferencesState?.fontSize || fontSize || "normal";
+    if (prefSize === "small") return 0.85;
+    if (prefSize === "large") return 1.15;
+    return 1.0;
+  };
+
   return (
     <AutoRefreshProvider erpBrandingState={erpBrandingState}>
       <div 
@@ -3537,14 +3598,14 @@ export default function App() {
           --typo-error-color: ${activeTypography.errorTextColor};
 
           /* Typography Sizes */
-          --typo-global-size: ${activeTypography.globalFontSize}px;
-          --typo-heading-size: ${activeTypography.headingSize}px;
-          --typo-sidebar-size: ${activeTypography.sidebarFontSize}px;
-          --typo-navigation-size: ${activeTypography.navigationFontSize}px;
-          --typo-card-title-size: ${activeTypography.cardTitleSize}px;
-          --typo-card-body-size: ${activeTypography.cardBodySize}px;
-          --typo-table-size: ${activeTypography.tableFontSize}px;
-          --typo-button-size: ${activeTypography.buttonFontSize}px;
+          --typo-global-size: ${activeTypography.globalFontSize * getScaleFactor()}px;
+          --typo-heading-size: ${activeTypography.headingSize * getScaleFactor()}px;
+          --typo-sidebar-size: ${activeTypography.sidebarFontSize * getScaleFactor()}px;
+          --typo-navigation-size: ${activeTypography.navigationFontSize * getScaleFactor()}px;
+          --typo-card-title-size: ${activeTypography.cardTitleSize * getScaleFactor()}px;
+          --typo-card-body-size: ${activeTypography.cardBodySize * getScaleFactor()}px;
+          --typo-table-size: ${activeTypography.tableFontSize * getScaleFactor()}px;
+          --typo-button-size: ${activeTypography.buttonFontSize * getScaleFactor()}px;
 
           /* Typography Font Family */
           --typo-font-family: ${getFontFamilyStack(activeTypography.fontFamily)};

@@ -212,8 +212,36 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       const data = await response.json();
       onLoginSuccess(idToken, data.user, rememberMe);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Google Authentication failed.");
+      console.error("[Auth] Google Sign-In Error:", err);
+      const errCode = err?.code || "";
+      const errMessage = err?.message || "";
+
+      // Gracefully handle user closing or cancelling the popup without showing red error alert
+      if (
+        errCode === "auth/popup-closed-by-user" ||
+        errCode === "auth/cancelled-popup-request" ||
+        errMessage.includes("popup-closed-by-user") ||
+        errMessage.includes("cancelled-popup-request")
+      ) {
+        // User closed or cancelled popup - quietly cancel loading state
+        return;
+      }
+
+      if (errCode === "auth/popup-blocked" || errMessage.includes("popup-blocked")) {
+        setError("Sign-in popup was blocked by your browser. Please allow popups for this site.");
+        return;
+      }
+
+      if (errCode === "auth/account-exists-with-different-credential") {
+        setError("An account already exists with the same email address using a different sign-in method.");
+        return;
+      }
+
+      let displayMsg = errMessage || "Google Authentication failed.";
+      if (displayMsg.startsWith("Firebase: Error (") && displayMsg.endsWith(").")) {
+        displayMsg = displayMsg.slice(17, -2);
+      }
+      setError(displayMsg);
     } finally {
       setLoading(false);
     }
