@@ -371,7 +371,6 @@ export async function refreshDbCache() {
   const [
     membersList,
     monthsList,
-    mealsList,
     foodMenusList,
     marketEntriesList,
     depositsList,
@@ -384,7 +383,6 @@ export async function refreshDbCache() {
   ] = await Promise.all([
     db.select().from(membersTable),
     db.select().from(monthsTable),
-    db.select().from(mealsTable),
     db.select().from(foodMenusTable),
     db.select().from(marketEntriesTable),
     db.select().from(depositsTable),
@@ -406,7 +404,7 @@ export async function refreshDbCache() {
   dbCache = {
     members: membersList as any[],
     months: monthsList as any[],
-    meals: mealsList as any[],
+    meals: [],
     foodMenus: foodMenusList as any[],
     marketEntries: marketEntriesList as any[],
     deposits: depositsList as any[],
@@ -538,7 +536,7 @@ export async function initializeDbCache() {
       dbCache = {
         members: membersList as any[],
         months: monthsList as any[],
-        meals: mealsList as any[],
+        meals: [],
         foodMenus: foodMenusList as any[],
         marketEntries: marketEntriesList as any[],
         deposits: depositsList as any[],
@@ -688,29 +686,6 @@ async function doActualSync(cache: DatabaseSchema) {
           } catch (e) {
       console.warn("Could not delete from meal_requests table:", e);
     }
-
-    if (cache.meals.length > 0) {
-       const activeIds = cache.meals.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(mealsTable).where(notInArray(mealsTable.id, activeIds as any));
-      } else {
-        await db.delete(mealsTable);
-      }
-      for (const item of cache.meals) {
-        const mapped = {
-         id: item.id,
-         monthId: item.monthId,
-         memberId: item.memberId,
-         date: item.date,
-         lunch: item.lunch,
-         dinner: item.dinner,
-         breakfast: item.breakfast || 0,
-       };
-        if (!isItemModified('meals', item.id, mapped)) continue;
-        await db.insert(mealsTable).values(mapped).onConflictDoUpdate({ target: mealsTable.id, set: mapped });
-      }
-     }
-
     if (cache.foodMenus.length > 0) {
       const activeIds = cache.foodMenus.map((i: any) => i.id).filter(Boolean);
       if (activeIds.length > 0) {

@@ -28,6 +28,8 @@ interface MealsTrackerProps {
   mealTypes?: any[];
 }
 
+let fetchCounter = 0;
+
 export default function MealsTracker({ 
   currentUser, 
   currentMonthId, 
@@ -92,6 +94,8 @@ export default function MealsTracker({
   // Fetch meals for the current month
   const fetchMealsForDate = async () => {
     if (!currentMonthId) return;
+    fetchCounter++;
+    const currentCount = fetchCounter;
     try {
       const response = await fetch(`/api/meals/${currentMonthId}`, {
         headers: { "Authorization": `Bearer ${currentUser.id}` }
@@ -100,6 +104,13 @@ export default function MealsTracker({
         const data = await response.json();
         const rawMeals: Meal[] = data.meals || [];
         
+        console.log(
+          "[FETCH #" + currentCount + "]",
+          "selectedDate=",
+          selectedDate,
+          rawMeals
+        );
+
         // Parse into map
         const map: Record<string, Record<string, number | string>> = {};
         
@@ -124,12 +135,30 @@ export default function MealsTracker({
           }
         });
 
+        console.log("=====================");
+        console.log("FETCH #" + currentCount);
+        console.log("selectedDate =", selectedDate);
+        console.log("activeMealTypes =", activeMealTypes);
+        console.log("activeMembers.length =", activeMembers.length);
+        console.log("map =", JSON.stringify(map, null, 2));
+        console.log("=====================");
+
+        console.log(
+          "[SETMEALSDATA]",
+          new Error().stack,
+          map
+        );
+
         setMealsData(map);
       }
     } catch (e) {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    console.log("[DEBUG 8] mealsData changed", mealsData);
+  }, [mealsData]);
 
   // Fetch month info to check if locked
   const checkMonthLock = async () => {
@@ -159,6 +188,11 @@ export default function MealsTracker({
   // Handle meal count selection
   const updateMealCell = (memberId: string, type: string, val: number | string) => {
     if (isLocked) return;
+    console.log(
+      "[SETMEALSDATA]",
+      new Error().stack,
+      { memberId, type, val }
+    );
     setMealsData(prev => ({
       ...prev,
       [memberId]: {
@@ -188,7 +222,15 @@ export default function MealsTracker({
       return entry;
     });
 
+    console.log("[DEBUG 1] Before POST /api/meals - mealsToSave payload:", {
+      monthId: currentMonthId,
+      selectedDate,
+      mealsToSave
+    });
+
     try {
+      console.log("Current mealsData =", mealsData);
+      console.log("Payload =", mealsToSave);
       const response = await fetch("/api/meals", {
         method: "POST",
         headers: {
@@ -556,13 +598,21 @@ export default function MealsTracker({
                                 onChange={(e) => {
                                   updateMealCell(member.id, type.id, e.target.value);
                                 }}
-                                onBlur={() => {
-                                  if (displayVal === "" || displayVal === undefined) {
+                                onBlur={(e) => {
+                                  const raw = e.target.value.trim();
+
+                                  if (raw === "") {
                                     updateMealCell(member.id, type.id, 0);
-                                  } else {
-                                    const parsed = parseFloat(displayVal);
-                                    updateMealCell(member.id, type.id, isNaN(parsed) ? 0 : parsed);
+                                    return;
                                   }
+
+                                  const parsed = parseFloat(raw);
+
+                                  updateMealCell(
+                                    member.id,
+                                    type.id,
+                                    isNaN(parsed) ? 0 : parsed
+                                  );
                                 }}
                                 className={`w-16 h-8 text-center font-mono font-extrabold text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                                   isDarkMode 

@@ -21,7 +21,7 @@ import { loadDB, saveDB, syncState,
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
 import { db as drizzleDb } from "../src/db/index.js";
-import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings } from "../src/db/schema.js";
+import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings, meals as mealsTable } from "../src/db/schema.js";
 import { eq, sql, and } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
@@ -156,8 +156,10 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         member.id = decodedToken.uid;
         if (decodedToken.picture) member.photo = decodedToken.picture;
 
+        // Update references in PostgreSQL for meals directly
+        await drizzleDb.update(mealsTable).set({ memberId: decodedToken.uid }).where(eq(mealsTable.memberId, oldId));
+
         // Update references in other tables
-        db.meals.forEach(m => { if (m.memberId === oldId) m.memberId = decodedToken.uid; });
         db.marketEntries.forEach(m => { if (m.memberId === oldId) m.memberId = decodedToken.uid; });
         db.deposits.forEach(d => { 
           if (d.memberId === oldId) d.memberId = decodedToken.uid;
@@ -171,8 +173,12 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         saveDB();
       }
     } catch (e: any) {
-      console.error("Firebase auth verification failed:", e);
       const isExpired = e?.code === "auth/id-token-expired" || e?.message?.includes("expired") || String(e).includes("expired");
+      if (isExpired) {
+        console.warn("Firebase ID token expired (client will auto-refresh):", e.message || e);
+      } else {
+        console.error("Firebase auth verification failed:", e);
+      }
       res.status(401).json({ 
         error: "Unauthorized: Invalid Firebase session",
         code: isExpired ? "auth/id-token-expired" : "auth/invalid-token"
@@ -1309,20 +1315,72 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (r
 // ---------------------------------------------------------
 // MEALS API
 // ---------------------------------------------------------
-router.get("/meals/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+export const mealDebugLogs: string[] = [];
+
+async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: any[]) {
+  mealDebugLogs.push(`[upsertMealsTx] Starting upsert with ${meals.length} meals, types: ${mealTypes.map(t => t.id).join(",")}`);
+  for (const m of meals) {
+    if (!m.memberId || !m.date) {
+      mealDebugLogs.push(`[upsertMealsTx] Skipping item due to missing memberId/date: ${JSON.stringify(m)}`);
+      continue;
+    }
+
+    const existing = await tx.select().from(mealsTable).where(
+      and(
+        eq(mealsTable.monthId, monthId),
+        eq(mealsTable.memberId, m.memberId),
+        eq(mealsTable.date, m.date)
+      )
+    ).limit(1);
+
+    mealDebugLogs.push(`[upsertMealsTx] Member ${m.memberId} date ${m.date}: found ${existing.length} existing rows`);
+
+    if (existing.length > 0) {
+      const updatedMeal: any = { ...existing[0] };
+      mealTypes.forEach((t: any) => {
+        const inputVal = (m as any)[t.id];
+        const parsed = Number(inputVal);
+        updatedMeal[t.id] = isNaN(parsed) ? 0 : parsed;
+      });
+      mealDebugLogs.push(`[upsertMealsTx] Updating row ${existing[0].id} to ${JSON.stringify(updatedMeal)}`);
+      await tx.update(mealsTable)
+        .set(updatedMeal)
+        .where(eq(mealsTable.id, existing[0].id));
+    } else {
+      const newMeal: any = {
+        id: generateUUID(),
+        monthId,
+        memberId: m.memberId,
+        date: m.date
+      };
+      mealTypes.forEach((t: any) => {
+        const inputVal = (m as any)[t.id];
+        const parsed = Number(inputVal);
+        newMeal[t.id] = isNaN(parsed) ? 0 : parsed;
+      });
+      mealDebugLogs.push(`[upsertMealsTx] Inserting row ${JSON.stringify(newMeal)}`);
+      await tx.insert(mealsTable).values(newMeal);
+    }
+  }
+  mealDebugLogs.push(`[upsertMealsTx] Finished bulk upsert`);
+}
+
+router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
-  const meals = db.meals.filter(m => m.monthId === monthId);
+  const dbConfig = loadDB(); // keep for side effects if any, or just load
+  const meals = await drizzleDb.select().from(mealsTable).where(eq(mealsTable.monthId, monthId));
+  
   res.json({ meals });
 });
 
 // Bulk Enter/Edit meals for a month (Manager, Admin, Super User, Assistant Super User, Member)
-router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.MEMBER, UserRole.PARTIAL_MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.MEMBER, UserRole.PARTIAL_MANAGER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canManageMeals")) {
     res.status(403).json({ error: "Access denied. You do not have permission to manage meals." });
     return;
   }
   const { monthId, meals } = req.body; // meals: Array of meals to save/upsert
+
   if (!monthId || !Array.isArray(meals)) {
     res.status(400).json({ error: "Month ID and meals array are required" });
     return;
@@ -1336,8 +1394,8 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     return;
   }
 
-  const db = loadDB();
-  const targetMonth = db.months.find(m => m.id === monthId);
+  const dbConfig = loadDB();
+  const targetMonth = dbConfig.months.find(m => m.id === monthId);
   if (!targetMonth) {
     res.status(404).json({ error: "Month not found" });
     return;
@@ -1358,7 +1416,7 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
   ].includes(req.user!.role);
 
   if (!isManagement) {
-    if (!db.mealRequests) db.mealRequests = [];
+    if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
     const newRequest = {
       id: generateUUID(),
       monthId,
@@ -1369,7 +1427,7 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
       status: "PENDING",
       timestamp: new Date().toISOString()
     };
-    db.mealRequests.push(newRequest);
+    dbConfig.mealRequests.push(newRequest);
     saveDB();
     logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_REQUESTED", "None", `Requested meal logs for ${newRequest.date}`, `Meal changes submitted for manager approval`);
     res.json({ 
@@ -1381,39 +1439,23 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
 
   // Upsert meal logs directly for Manager
   const settings = loadSettings();
-  const mealTypes = settings.mealTypes || [
+  const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true },
     { id: "breakfast", name: "Breakfast", enabled: false }
   ];
 
-  for (const m of meals) {
-    if (!m.memberId || !m.date) continue;
-    const existingIndex = db.meals.findIndex(
-      meal => meal.monthId === monthId && meal.memberId === m.memberId && meal.date === m.date
-    );
+  mealDebugLogs.length = 0; // clear previous
+  await drizzleDb.transaction(async (tx) => {
+    await upsertMealsTx(tx, monthId, meals, mealTypes);
+  });
 
-    if (existingIndex !== -1) {
-      mealTypes.forEach((t: any) => {
-        (db.meals[existingIndex] as any)[t.id] = Number((m as any)[t.id]) || 0;
-      });
-    } else {
-      const newMeal: any = {
-        id: generateUUID(),
-        monthId,
-        memberId: m.memberId,
-        date: m.date
-      };
-      mealTypes.forEach((t: any) => {
-        newMeal[t.id] = Number((m as any)[t.id]) || 0;
-      });
-      db.meals.push(newMeal);
-    }
-  }
-
-  saveDB();
   logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_BULK", "Multiple", "Updated", `Logged meals for current cycle`);
-  res.json({ success: true, message: "Daily meal counts logged and updated successfully!" });
+  res.json({ 
+    success: true, 
+    message: "Daily meal counts logged and updated successfully!",
+    debugLogs: [...mealDebugLogs]
+  });
 });
 
 // Get all meal requests for a month
@@ -1426,17 +1468,17 @@ router.get("/meal-requests/:monthId", authMiddleware, (req: AuthenticatedRequest
 });
 
 // Approve a meal request (Manager & Admins)
-router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER, UserRole.SUPERUSER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER, UserRole.SUPERUSER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
-  if (!db.mealRequests) db.mealRequests = [];
-  const requestIndex = db.mealRequests.findIndex(r => r.id === id);
+  const dbConfig = loadDB();
+  if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
+  const requestIndex = dbConfig.mealRequests.findIndex(r => r.id === id);
   if (requestIndex === -1) {
     res.status(404).json({ error: "Meal request not found" });
     return;
   }
 
-  const request = db.mealRequests[requestIndex];
+  const request = dbConfig.mealRequests[requestIndex];
   if (request.status !== "PENDING") {
     res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}` });
     return;
@@ -1450,45 +1492,25 @@ router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MA
     return;
   }
 
-  const targetMonth = db.months.find(m => m.id === request.monthId);
+  const targetMonth = dbConfig.months.find(m => m.id === request.monthId);
   if (targetMonth?.isLocked) {
     res.status(403).json({ error: "Cannot approve: This month is locked." });
     return;
   }
 
   const settings = loadSettings();
-  const mealTypes = settings.mealTypes || [
+  const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true },
     { id: "breakfast", name: "Breakfast", enabled: false }
   ];
 
-  for (const m of mealsToSave) {
-    if (!m.memberId || !m.date) continue;
-    const existingIndex = db.meals.findIndex(
-      meal => meal.monthId === request.monthId && meal.memberId === m.memberId && meal.date === m.date
-    );
-
-    if (existingIndex !== -1) {
-      mealTypes.forEach((t: any) => {
-        (db.meals[existingIndex] as any)[t.id] = Number((m as any)[t.id]) || 0;
-      });
-    } else {
-      const newMeal: any = {
-        id: generateUUID(),
-        monthId: request.monthId,
-        memberId: m.memberId,
-        date: m.date
-      };
-      mealTypes.forEach((t: any) => {
-        newMeal[t.id] = Number((m as any)[t.id]) || 0;
-      });
-      db.meals.push(newMeal);
-    }
-  }
+  await drizzleDb.transaction(async (tx) => {
+    await upsertMealsTx(tx, request.monthId, mealsToSave, mealTypes);
+  });
 
   request.status = "APPROVED";
-  saveDB();
+  saveDB(); // save the approved status
   logAudit(req.user!.id, req.user!.nickname, "MEAL_REQUEST_APPROVE", request.requesterName, "APPROVED", `Approved meal log changes from ${request.requesterName} for date ${request.date}`);
   res.json({ success: true, message: "Meal request approved and changes successfully applied!" });
 });
@@ -2639,7 +2661,7 @@ router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest,
 // ---------------------------------------------------------
 // FINANCIAL REPORTS & MATH SUMMARY API
 // ---------------------------------------------------------
-router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/reports/summary/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
 
@@ -2647,7 +2669,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
   const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY);
   const monthDeposits = db.deposits.filter(d => d.monthId === monthId);
   const monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
-  const monthMeals = db.meals.filter(m => m.monthId === monthId);
+  const monthMeals = await drizzleDb.select().from(mealsTable).where(eq(mealsTable.monthId, monthId));
   const monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
   const monthBills = db.bills.filter(b => b.monthId === monthId);
 
@@ -2669,7 +2691,7 @@ router.get("/reports/summary/:monthId", authMiddleware, (req: AuthenticatedReque
 
   // Sum total meals in the month dynamically based on configured meal types
   const settings = loadSettings();
-  const mealTypes = settings.mealTypes || [
+  const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true },
     { id: "breakfast", name: "Breakfast", enabled: false }
@@ -3449,6 +3471,14 @@ function loadSettings() {
     creditConfig: { ...defaultSettings.creditConfig, ...(legacySettings.creditConfig || {}) },
     appearancePermissions: legacySettings.appearancePermissions || {}
   };
+
+  if (!merged.mealTypes || !Array.isArray(merged.mealTypes) || merged.mealTypes.length === 0) {
+    merged.mealTypes = [
+      { id: "lunch", name: "Lunch", enabled: true },
+      { id: "dinner", name: "Dinner", enabled: true },
+      { id: "breakfast", name: "Breakfast", enabled: false }
+    ];
+  }
 
   // Merge Level 1 ERP Branding
   const branding = loadErpBranding();
