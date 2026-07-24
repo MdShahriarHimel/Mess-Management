@@ -91,6 +91,19 @@ export default function Dashboard({
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [localPrevTab, setLocalPrevTab] = useState<"admin" | "member">("admin");
 
+  // "DO MARKET" Login Banner Popup state
+  const [showDoMarketPopup, setShowDoMarketPopup] = useState(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const dismissedDate = localStorage.getItem(`lastSeenMarketDutyDate_${currentUser.id}`);
+    return dismissedDate !== todayStr;
+  });
+
+  const dismissDoMarketPopup = () => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    localStorage.setItem(`lastSeenMarketDutyDate_${currentUser.id}`, todayStr);
+    setShowDoMarketPopup(false);
+  };
+
   useEffect(() => {
     if (currentUser) {
       setProfileGlow(!!currentUser.glow);
@@ -314,6 +327,45 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6" id="dashboard-wrapper">
+
+      {/* "DO MARKET" High Contrast Pop-up Modal */}
+      {hasMarketDutyToday && showDoMarketPopup && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in" id="do-market-popup">
+          <div className={`w-full max-w-md p-8 rounded-3xl border text-center shadow-2xl relative overflow-hidden ${
+            isDarkMode 
+              ? "bg-slate-900/95 border-rose-500/30 text-white" 
+              : "bg-white border-rose-250 text-slate-850"
+          }`}>
+            <div className="absolute inset-0 bg-gradient-to-b from-rose-500/10 to-transparent pointer-events-none"></div>
+
+            <div className="w-20 h-20 bg-rose-500/20 text-rose-500 border border-rose-500/30 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse shadow-lg shadow-rose-500/10">
+              <ShieldAlert size={44} className="animate-bounce" />
+            </div>
+
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-500 bg-rose-500/10 px-3 py-1 rounded-full border border-rose-500/20">
+              Critical Notice
+            </span>
+
+            <h2 className="text-2xl font-black font-display uppercase tracking-wider text-rose-500 mt-4 leading-tight">
+              🚨 DO MARKET TODAY
+            </h2>
+
+            <p className={`text-xs mt-3 leading-relaxed max-w-xs mx-auto ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+              Today is your scheduled Market Date! Please arrange the bazar shopping list, buy fresh ingredients, and log the expenditures today.
+            </p>
+
+            <div className="mt-8 flex flex-col gap-2 relative z-10">
+              <button
+                onClick={dismissDoMarketPopup}
+                className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-600 active:scale-[0.98] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-rose-600/20 cursor-pointer"
+                id="do-market-dismiss-btn"
+              >
+                I am on it (Dismiss)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Today's Market Duty Warning Banner */}
       {hasMarketDutyToday && (

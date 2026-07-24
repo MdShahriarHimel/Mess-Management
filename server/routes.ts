@@ -1977,12 +1977,50 @@ router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res:
   res.json({ markets });
 });
 
+// Helper functions for market authorization and validation
+function getAssignedMarketDatesForUser(db: any, monthId: string, memberId: string): string[] {
+  const userDuties = db.duties.filter((d: any) => 
+    d.monthId === monthId && 
+    d.memberId === memberId && 
+    (d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar"))
+  );
+  
+  const dates: string[] = [];
+  for (const d of userDuties) {
+    const parts = d.name.split(": ");
+    if (parts[1]) {
+      dates.push(parts[1].trim());
+    } else {
+      const match = d.name.match(/(\d{4}-\d{2}-\d{2})/);
+      if (match) {
+        dates.push(match[1]);
+      }
+    }
+  }
+  return dates;
+}
+
+function areDatesConsecutive(dates: string[]): boolean {
+  if (dates.length <= 1) return true;
+  const days = dates.map(d => {
+    const parts = d.split("-").map(Number);
+    return Date.UTC(parts[0], parts[1] - 1, parts[2]) / (1000 * 60 * 60 * 24);
+  }).sort((a, b) => a - b);
+
+  for (let i = 0; i < days.length - 1; i++) {
+    if (days[i + 1] - days[i] !== 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
 router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canAddMarkets")) {
     res.status(403).json({ error: "Access denied. You do not have permission to manage market logs." });
     return;
   }
-  const { id, monthId, memberId, date, amount, receiptUrl, description, isExtra, quantity } = req.body;
+  const { id, monthId, memberId, date, amount, receiptUrl, description, isExtra, quantity, coveredDates } = req.body;
   if (!monthId || !memberId || !date || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, Date, and Amount are required" });
     return;
@@ -1995,20 +2033,40 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
     return;
   }
 
-  // Authorization: Only assigned member, manager or admins can write
+  // Determine role permissions
   const isSelf = req.user!.id === memberId;
   const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER;
   const isManager = req.user!.role === UserRole.MANAGER;
 
-  // Let's check if the member is assigned to market duties on this day
-  const isAssigned = db.duties.some(
-    d => d.monthId === monthId && d.memberId === req.user!.id && d.name.toLowerCase().includes("market")
-  );
+  // Normal members (UserRole.MEMBER) must be strictly checked
+  if (req.user!.role === UserRole.MEMBER) {
+    if (!isSelf) {
+      res.status(403).json({ error: "Forbidden: You can only submit market entries for yourself." });
+      return;
+    }
 
-  const authorized = isSelf || isAssigned || isManager || isAdminOrSuper;
-  if (!authorized) {
-    res.status(403).json({ error: "You can only submit market entries for assigned dates or extra market expenses." });
-    return;
+    if (isExtra) {
+      res.status(403).json({ error: "Forbidden: You are not permitted to submit extra market logs." });
+      return;
+    }
+
+    const assignedDates = getAssignedMarketDatesForUser(db, monthId, req.user!.id);
+    const selectedDates: string[] = coveredDates && Array.isArray(coveredDates) && coveredDates.length > 0 
+      ? coveredDates 
+      : [date];
+
+    // Check selectedDate ∈ assignedDates
+    const allAssigned = selectedDates.every(d => assignedDates.includes(d));
+    if (!allAssigned) {
+      res.status(403).json({ error: "Forbidden: You are only permitted to submit market logs for your assigned market dates." });
+      return;
+    }
+
+    // Check consecutive calendar days
+    if (!areDatesConsecutive(selectedDates)) {
+      res.status(403).json({ error: "Forbidden: Covered dates must be consecutive calendar days." });
+      return;
+    }
   }
 
   const newEntry: MarketEntry = {
@@ -2020,11 +2078,23 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
     receiptUrl: receiptUrl || null,
     description: description || "",
     isExtra: !!isExtra,
-    quantity: quantity || ""
+    quantity: quantity || "",
+    coveredDates: coveredDates && Array.isArray(coveredDates) ? coveredDates : [date]
   };
 
   const existingIndex = db.marketEntries.findIndex(e => e.id === newEntry.id);
   if (existingIndex !== -1) {
+    // If editing, check permissions for the OLD entry to prevent hijacking
+    const oldEntry = db.marketEntries[existingIndex];
+    if (req.user!.role === UserRole.MEMBER) {
+      const assignedDates = getAssignedMarketDatesForUser(db, oldEntry.monthId, req.user!.id);
+      const oldDates = oldEntry.coveredDates && Array.isArray(oldEntry.coveredDates) ? oldEntry.coveredDates : [oldEntry.date];
+      const oldAllAssigned = oldDates.every(d => assignedDates.includes(d));
+      if (!oldAllAssigned || oldEntry.memberId !== req.user!.id) {
+        res.status(403).json({ error: "Forbidden: You cannot modify a market entry outside your assigned dates." });
+        return;
+      }
+    }
     db.marketEntries[existingIndex] = newEntry;
   } else {
     db.marketEntries.push(newEntry);
@@ -2036,7 +2106,7 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
     req.user!.nickname,
     "MARKET_EXPENSE",
     "None",
-    JSON.stringify({ amount: newEntry.amount, date: newEntry.date }),
+    JSON.stringify({ amount: newEntry.amount, date: newEntry.date, coveredDates: newEntry.coveredDates }),
     `Logged market entry of Taka ${newEntry.amount}`
   );
 
@@ -2044,7 +2114,7 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
 });
 
 // Delete Market Entry
-router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.MEMBER]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canAddMarkets")) {
     res.status(403).json({ error: "Access denied. You do not have permission to manage market logs." });
     return;
@@ -2059,6 +2129,18 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
   }
 
   const original = db.marketEntries[index];
+
+  // If a normal member attempts to delete, verify they own the entry and it's on their assigned date
+  if (req.user!.role === UserRole.MEMBER) {
+    const assignedDates = getAssignedMarketDatesForUser(db, original.monthId, req.user!.id);
+    const originalDates = original.coveredDates && Array.isArray(original.coveredDates) ? original.coveredDates : [original.date];
+    const isAuthorized = originalDates.every(d => assignedDates.includes(d)) && original.memberId === req.user!.id;
+    if (!isAuthorized) {
+      res.status(403).json({ error: "Forbidden: You cannot delete a market entry outside your assigned dates." });
+      return;
+    }
+  }
+
   db.marketEntries.splice(index, 1);
   saveDB();
 

@@ -54,12 +54,81 @@ export default function MarketLogs({
   const [quantity, setQuantity] = useState("");
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [isExtra, setIsExtra] = useState(false);
+  const [coveredDates, setCoveredDates] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
 
-  // Lunch & Dinner arrangements for the selected Shopping Date
-  const [lunchVegetable, setLunchVegetable] = useState("");
-  const [lunchMain, setLunchMain] = useState("");
-  const [dinnerVegetable, setDinnerVegetable] = useState("");
-  const [dinnerMain, setDinnerMain] = useState("");
+  // Helper to extract assigned market dates for the selected member
+  const memberDuties = duties.filter(d => 
+    d.memberId === memberId && 
+    (d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar"))
+  );
+
+  const assignedDates = memberDuties.map(d => {
+    const parts = d.name.split(": ");
+    if (parts[1]) return parts[1].trim();
+    const match = d.name.match(/(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : "";
+  }).filter(Boolean).sort();
+
+  // Helper to check if an array of selected dates are consecutive
+  const areDatesConsecutive = (datesList: string[]): boolean => {
+    if (datesList.length <= 1) return true;
+    const days = datesList.map(d => {
+      const parts = d.split("-").map(Number);
+      return Date.UTC(parts[0], parts[1] - 1, parts[2]) / (1000 * 60 * 60 * 24);
+    }).sort((a, b) => a - b);
+
+    for (let i = 0; i < days.length - 1; i++) {
+      if (days[i + 1] - days[i] !== 1) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Auto-select first assigned date on mount/member change
+  useEffect(() => {
+    if (assignedDates.length > 0) {
+      setCoveredDates([assignedDates[0]]);
+      setDate(assignedDates[0]);
+    } else {
+      setCoveredDates([date]);
+    }
+  }, [memberId, assignedDates.length]);
+
+  // Handle start and end date updates for extra/manager custom dates range mapping
+  useEffect(() => {
+    if (isExtra || assignedDates.length === 0) {
+      if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (end >= start) {
+          const dList: string[] = [];
+          const current = new Date(start);
+          while (current <= end) {
+            dList.push(current.toISOString().split("T")[0]);
+            current.setDate(current.getDate() + 1);
+          }
+          setCoveredDates(dList);
+          if (dList.length > 0) {
+            setDate(dList[0]);
+          }
+        } else {
+          setCoveredDates([startDate]);
+          setDate(startDate);
+        }
+      }
+    }
+  }, [startDate, endDate, isExtra, assignedDates.length]);
+
+  // Lunch & Dinner arrangements for the selected Shopping Date(s)
+  const [mealsPlanning, setMealsPlanning] = useState<Record<string, {
+    lunchVegetable: string;
+    lunchMain: string;
+    dinnerVegetable: string;
+    dinnerMain: string;
+  }>>({});
   
   // Duty Schedule form states
   const [scheduleMemberId, setScheduleMemberId] = useState("");
@@ -117,35 +186,47 @@ export default function MarketLogs({
     fetchMarketsAndSchedules();
   }, [currentMonthId]);
 
-  // Load existing food menu for the selected shopping date
+  // Load existing food menus for the selected covered dates
   useEffect(() => {
-    const fetchMenuForDate = async () => {
-      if (!currentMonthId || !date) return;
+    const fetchMenusForCoveredDates = async () => {
+      if (!currentMonthId || coveredDates.length === 0) return;
       try {
         const response = await fetch(`/api/foodmenu/${currentMonthId}`, {
           headers: { "Authorization": `Bearer ${currentUser.id}` }
         });
         if (response.ok) {
           const data = await response.json();
-          const todayMenu = data.menu?.find((item: any) => item.date === date);
-          if (todayMenu) {
-            setLunchVegetable(todayMenu.lunchVegetable || "");
-            setLunchMain(todayMenu.lunchMain || "");
-            setDinnerVegetable(todayMenu.dinnerVegetable || "");
-            setDinnerMain(todayMenu.dinnerMain || "");
-          } else {
-            setLunchVegetable("");
-            setLunchMain("");
-            setDinnerVegetable("");
-            setDinnerMain("");
-          }
+          const menusList = data.menu || [];
+          
+          setMealsPlanning(prev => {
+            const updated = { ...prev };
+            coveredDates.forEach(d => {
+              const hasLocal = updated[d] && (
+                updated[d].lunchVegetable ||
+                updated[d].lunchMain ||
+                updated[d].dinnerVegetable ||
+                updated[d].dinnerMain
+              );
+
+              if (!hasLocal) {
+                const existing = menusList.find((item: any) => item.date === d);
+                updated[d] = {
+                  lunchVegetable: existing?.lunchVegetable || "",
+                  lunchMain: existing?.lunchMain || "",
+                  dinnerVegetable: existing?.dinnerVegetable || "",
+                  dinnerMain: existing?.dinnerMain || "",
+                };
+              }
+            });
+            return updated;
+          });
         }
       } catch (e) {
-        console.error("Failed to load food menu for date:", e);
+        console.error("Failed to load food menus for covered dates:", e);
       }
     };
-    fetchMenuForDate();
-  }, [date, currentMonthId, currentUser.id]);
+    fetchMenusForCoveredDates();
+  }, [coveredDates, currentMonthId, currentUser.id]);
 
   // Handle Photo selection and base64 resizing
   const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -180,11 +261,11 @@ export default function MarketLogs({
     setQuantity("");
     setReceiptUrl(null);
     setIsExtra(false);
-    setLunchVegetable("");
-    setLunchMain("");
-    setDinnerVegetable("");
-    setDinnerMain("");
+    setMealsPlanning({});
     setError(null);
+    setCoveredDates([]);
+    setStartDate(new Date().toISOString().split("T")[0]);
+    setEndDate(new Date().toISOString().split("T")[0]);
   };
 
   // Submit expense log
@@ -193,63 +274,90 @@ export default function MarketLogs({
     setLoading(true);
     setError(null);
 
-    // 1. Validate date restrictions
-    const todayStr = new Date().toISOString().split("T")[0];
-    const isFutureDate = date > todayStr;
-    const isPastDate = date < todayStr;
-
-    const allowFuture = dateRestrictions?.allowFutureMarket ?? true;
-    const allowPast = dateRestrictions?.allowPreviousMarket ?? true;
-
-    if (isFutureDate && !allowFuture) {
-      setError("Action Blocked: Future date entries are locked by administrators for market logs.");
+    // Validate completeness of selection
+    if (coveredDates.length === 0) {
+      setError("Forbidden: You must select at least one market date.");
       setLoading(false);
       return;
     }
-    if (isPastDate && !allowPast) {
-      setError("Action Blocked: Past date entries are locked by administrators for market logs.");
+
+    if (!areDatesConsecutive(coveredDates)) {
+      setError("Forbidden: Covered dates must be consecutive calendar days (e.g. 25 & 26 July).");
       setLoading(false);
       return;
+    }
+
+    // 1. Validate date restrictions for all covered dates
+    const todayStr = new Date().toISOString().split("T")[0];
+    const allowFuture = dateRestrictions?.allowFutureMarket ?? true;
+    const allowPast = dateRestrictions?.allowPreviousMarket ?? true;
+
+    for (const d of coveredDates) {
+      const isFutureDate = d > todayStr;
+      const isPastDate = d < todayStr;
+      if (isFutureDate && !allowFuture) {
+        setError(`Action Blocked: Future date entries are locked by administrators. Date ${d} cannot be saved.`);
+        setLoading(false);
+        return;
+      }
+      if (isPastDate && !allowPast) {
+        setError(`Action Blocked: Past date entries are locked by administrators. Date ${d} cannot be saved.`);
+        setLoading(false);
+        return;
+      }
     }
 
     // 2. Validate user assignment rules
     const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
-    const isAssignedDay = duties.some(d => d.memberId === currentUser.id && d.name.toLowerCase().includes("market"));
-    const allowed = isManagerOrAdmin || isAssignedDay || isExtra;
-
-    if (!allowed) {
-      setError("Forbidden: Members are only permitted to submit market logs for their assigned market dates or as Extra Market Expenses.");
-      setLoading(false);
-      return;
+    
+    // Normal members are strictly validated against their assigned schedule dates
+    if (!isManagerOrAdmin && !isExtra) {
+      const allAssigned = coveredDates.every(d => assignedDates.includes(d));
+      if (!allAssigned) {
+        setError("Forbidden: You are only permitted to submit market logs for your assigned market dates.");
+        setLoading(false);
+        return;
+      }
     }
 
-    // 3. Enforce Lunch & Dinner arrangements for that shopping date
-    if (!lunchVegetable.trim() || !lunchMain.trim() || !dinnerVegetable.trim() || !dinnerMain.trim()) {
-      setError("Forbidden: You must fill out both Lunch and Dinner arrangements (vegetable + main course) for this shopping date before you can submit your bazar expenditure.");
-      setLoading(false);
-      return;
+    // 3. Enforce Lunch & Dinner arrangements for all covered dates
+    for (const d of coveredDates) {
+      const plan = mealsPlanning[d];
+      if (!plan || !plan.lunchVegetable?.trim() || !plan.lunchMain?.trim() || !plan.dinnerVegetable?.trim() || !plan.dinnerMain?.trim()) {
+        const formattedDateLabel = new Date(d).toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
+        setError(`Forbidden: You must fill out both Lunch and Dinner arrangements (vegetable + main course) for all selected dates. Please complete the setup for ${formattedDateLabel}.`);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
-      // 4. Save food menu arrangements first
-      const menuResponse = await fetch("/api/foodmenu", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
-        },
-        body: JSON.stringify({
-          monthId: currentMonthId,
-          date,
-          lunchVegetable,
-          lunchMain,
-          dinnerVegetable,
-          dinnerMain
-        })
-      });
-      if (!menuResponse.ok) {
-        const errData = await menuResponse.json();
-        throw new Error(errData.error || "Failed to update food menu arrangements first.");
+      // 4. Save food menu arrangements first for each of the selected/covered dates
+      for (const d of coveredDates) {
+        const plan = mealsPlanning[d];
+        const menuResponse = await fetch("/api/foodmenu", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${currentUser.id}`
+          },
+          body: JSON.stringify({
+            monthId: currentMonthId,
+            date: d,
+            lunchVegetable: plan.lunchVegetable,
+            lunchMain: plan.lunchMain,
+            dinnerVegetable: plan.dinnerVegetable,
+            dinnerMain: plan.dinnerMain
+          })
+        });
+        if (!menuResponse.ok) {
+          const errData = await menuResponse.json();
+          throw new Error(errData.error || `Failed to update food menu arrangements for ${d}.`);
+        }
       }
 
       // 5. Save market expense entry
@@ -267,7 +375,8 @@ export default function MarketLogs({
           receiptUrl,
           description,
           isExtra,
-          quantity
+          quantity,
+          coveredDates
         })
       });
 
@@ -749,7 +858,22 @@ export default function MarketLogs({
                             </div>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 font-mono">{m.date}</td>
+                        <td className="py-3.5 px-4 font-mono text-xs">
+                          {m.coveredDates && Array.isArray(m.coveredDates) && m.coveredDates.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-w-[120px]">
+                              {m.coveredDates.map((d: string) => {
+                                const dayOnly = d.split("-")[2] || d;
+                                return (
+                                  <span key={d} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-150 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700" title={d}>
+                                    {dayOnly}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            m.date
+                          )}
+                        </td>
                         <td className="py-3.5 px-4 truncate max-w-[150px]" title={m.description}>
                           <div className="font-semibold">{m.description || "Daily mess grocery"}</div>
                           {m.quantity && (
@@ -819,10 +943,10 @@ export default function MarketLogs({
       {/* SUBMIT VOUCHER MODAL */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`w-full max-w-md p-6 rounded-2xl border ${
+          <div className={`w-full max-w-md max-h-[92vh] sm:max-h-[90vh] flex flex-col p-5 sm:p-6 rounded-2xl border ${
             isDarkMode ? "glass-panel text-white" : "bg-white text-slate-800 border-slate-200 shadow-2xl"
           }`}>
-            <div className="flex justify-between items-center mb-5 border-b border-cyan-500/10 pb-3">
+            <div className="flex justify-between items-center mb-4 border-b border-cyan-500/10 pb-3 shrink-0">
               <h3 className="text-lg font-bold font-display flex items-center gap-1.5">
                 <ShoppingCart size={18} className="text-cyan-400 animate-pulse" />
                 Submit Market Voucher
@@ -833,12 +957,13 @@ export default function MarketLogs({
             </div>
 
             {error && (
-              <div className="mb-4 p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">
+              <div className="mb-4 p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center shrink-0">
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleAddExpense} className="space-y-4">
+            <form onSubmit={handleAddExpense} className="flex-1 flex flex-col min-h-0 space-y-4">
+              <div className="flex-1 overflow-y-auto pr-1.5 space-y-4 min-h-0">
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -856,17 +981,90 @@ export default function MarketLogs({
                   </select>
                 </div>
                 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Shopping Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                      isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
-                    }`}
-                  />
+                <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">
+                    Covered Market Date(s)
+                  </label>
+                  {isExtra || assignedDates.length === 0 ? (
+                    <div className="space-y-1">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div>
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Start</label>
+                          <input
+                            type="date"
+                            required
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className={`w-full px-2 py-1 rounded-lg border text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                              isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">End</label>
+                          <input
+                            type="date"
+                            required
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className={`w-full px-2 py-1 rounded-lg border text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                              isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200"
+                            }`}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 italic">
+                        All days from {startDate} to {endDate} covered ({coveredDates.length} days).
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto p-1.5 rounded-lg border border-cyan-500/10 bg-cyan-500/5">
+                        {assignedDates.map(d => {
+                          const isSelected = coveredDates.includes(d);
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => {
+                                let newSelection = [...coveredDates];
+                                if (isSelected) {
+                                  newSelection = newSelection.filter(x => x !== d);
+                                } else {
+                                  newSelection.push(d);
+                                }
+                                newSelection.sort();
+                                setCoveredDates(newSelection);
+                                if (newSelection.length > 0) {
+                                  setDate(newSelection[0]);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                isSelected 
+                                  ? "bg-cyan-500/20 border-cyan-500 text-cyan-400" 
+                                  : isDarkMode 
+                                    ? "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700" 
+                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                              }`}
+                            >
+                              <span>{d.split("-")[2] || d}</span>
+                              <span className={`w-3 h-3 rounded-full border flex items-center justify-center ${
+                                isSelected ? "border-cyan-500 bg-cyan-500 text-white" : "border-slate-600"
+                              }`}>
+                                {isSelected && <Check size={7} />}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {coveredDates.length === 0 && (
+                        <p className="text-[9px] text-rose-500 font-bold">⚠️ Please select at least one assigned date.</p>
+                      )}
+                      {coveredDates.length > 0 && !areDatesConsecutive(coveredDates) && (
+                        <p className="text-[9px] text-rose-500 font-bold">⚠️ Selected dates must be consecutive.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -933,70 +1131,123 @@ export default function MarketLogs({
               </div>
 
               {/* Daily Meal Arrangement - Required to log bazar expenditure */}
-              <div className="p-3 rounded-lg border border-cyan-500/10 bg-cyan-500/5 space-y-2.5">
-                <div className="flex items-center gap-1.5 border-b border-cyan-500/10 pb-1.5">
+              <div className="p-3.5 rounded-xl border border-cyan-500/10 bg-cyan-500/5 space-y-3">
+                <div className="flex items-center gap-1.5 border-b border-cyan-500/10 pb-2">
                   <Sparkles size={14} className="text-cyan-400" />
                   <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-                    Required: Lunch & Dinner Arrangement
+                    Required: Meal Arrangements ({coveredDates.length} {coveredDates.length === 1 ? "Day" : "Days"})
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight">
-                  You must enter the meal items planned/arranged for this market date before you can log your expense.
+                  Please specify the planned/arranged lunch & dinner menu items for each selected shopping date.
                 </p>
 
-                {/* Lunch arrangement */}
-                <div className="space-y-1">
-                  <span className="text-[9px] font-extrabold text-orange-400 uppercase tracking-wider block">Lunch (দুপুর)</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="শাক-সবজি / ভাজি"
-                      value={lunchVegetable}
-                      onChange={(e) => setLunchVegetable(e.target.value)}
-                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
-                      }`}
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="মাছ / মাংস (Main)"
-                      value={lunchMain}
-                      onChange={(e) => setLunchMain(e.target.value)}
-                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
-                      }`}
-                    />
+                {coveredDates.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-rose-400 font-medium">
+                    ⚠️ Please select at least one market date to configure meals.
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                    {coveredDates.map((d) => {
+                      const plan = mealsPlanning[d] || {
+                        lunchVegetable: "",
+                        lunchMain: "",
+                        dinnerVegetable: "",
+                        dinnerMain: "",
+                      };
 
-                {/* Dinner arrangement */}
-                <div className="space-y-1">
-                  <span className="text-[9px] font-extrabold text-orange-400 uppercase tracking-wider block">Dinner (রাত)</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="শাক-সবজি / ভাজি"
-                      value={dinnerVegetable}
-                      onChange={(e) => setDinnerVegetable(e.target.value)}
-                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
-                      }`}
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="মাছ / মাংস (Main)"
-                      value={dinnerMain}
-                      onChange={(e) => setDinnerMain(e.target.value)}
-                      className={`px-2.5 py-1.5 rounded bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode ? "border-slate-800 text-white" : "border-slate-200"
-                      }`}
-                    />
+                      const updatePlanField = (field: string, val: string) => {
+                        setMealsPlanning(prev => ({
+                          ...prev,
+                          [d]: {
+                            ...plan,
+                            [field]: val
+                          }
+                        }));
+                      };
+
+                      const formattedDateLabel = new Date(d).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      });
+
+                      return (
+                        <div 
+                          key={d} 
+                          className={`p-3 rounded-xl border space-y-2.5 transition-all ${
+                            isDarkMode 
+                              ? "bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/20" 
+                              : "bg-white border-slate-200 hover:border-cyan-500/30"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center border-b border-dashed border-slate-700/20 dark:border-slate-800/50 pb-1.5">
+                            <span className="text-[11px] font-bold text-orange-400 font-mono flex items-center gap-1">
+                              📅 {formattedDateLabel}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/10">
+                              Meals Config
+                            </span>
+                          </div>
+
+                          {/* Lunch arrangement */}
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Lunch (দুপুর)</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                required
+                                placeholder="শাক-সবজি / ভাজি"
+                                value={plan.lunchVegetable}
+                                onChange={(e) => updatePlanField("lunchVegetable", e.target.value)}
+                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                }`}
+                              />
+                              <input
+                                type="text"
+                                required
+                                placeholder="মাছ / মাংস (Main)"
+                                value={plan.lunchMain}
+                                onChange={(e) => updatePlanField("lunchMain", e.target.value)}
+                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                }`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Dinner arrangement */}
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Dinner (রাত)</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                required
+                                placeholder="শাক-সবজি / ভাজি"
+                                value={plan.dinnerVegetable}
+                                onChange={(e) => updatePlanField("dinnerVegetable", e.target.value)}
+                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                }`}
+                              />
+                              <input
+                                type="text"
+                                required
+                                placeholder="মাছ / মাংস (Main)"
+                                value={plan.dinnerMain}
+                                onChange={(e) => updatePlanField("dinnerMain", e.target.value)}
+                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
+                )}
               </div>
 
               {/* isExtra checkbox */}
@@ -1013,18 +1264,20 @@ export default function MarketLogs({
                 </label>
               </div>
 
-              <div className="flex gap-3 pt-3 border-t border-cyan-500/10">
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t border-cyan-500/10 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 cursor-pointer active:scale-95 transition-all"
                 >
                   CANCEL
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs cursor-pointer active:scale-95 transition-all"
                 >
                   {loading ? "SAVING VOUCHER..." : "SUBMIT EXPENSE"}
                 </button>

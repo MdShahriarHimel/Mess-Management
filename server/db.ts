@@ -19,6 +19,17 @@ function isItemModified(tableName: string, id: string, mappedItem: any): boolean
   return false;
 }
 
+function parseCoveredDates(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 import path from "path";
 import { db } from "../src/db/index.ts";
 import { 
@@ -226,6 +237,7 @@ export async function importBackupToPostgres(backupData: DatabaseSchema) {
         description: item.description,
         isExtra: item.isExtra ?? false,
         quantity: item.quantity || null,
+        coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
       }));
       for (let i = 0; i < marketEntriesToInsert.length; i += 500) {
         await tx.insert(marketEntriesTable).values(marketEntriesToInsert.slice(i, i + 500));
@@ -406,7 +418,10 @@ export async function refreshDbCache() {
     months: monthsList as any[],
     meals: [],
     foodMenus: foodMenusList as any[],
-    marketEntries: marketEntriesList as any[],
+    marketEntries: marketEntriesList.map(item => ({
+      ...item,
+      coveredDates: parseCoveredDates(item.coveredDates)
+    })) as any[],
     deposits: depositsList as any[],
     bills: billsList as any[],
     duties: dutiesList as any[],
@@ -538,7 +553,10 @@ export async function initializeDbCache() {
         months: monthsList as any[],
         meals: [],
         foodMenus: foodMenusList as any[],
-        marketEntries: marketEntriesList as any[],
+        marketEntries: marketEntriesList.map(item => ({
+          ...item,
+          coveredDates: parseCoveredDates(item.coveredDates)
+        })) as any[],
         deposits: depositsList as any[],
         bills: billsList as any[],
         duties: dutiesList as any[],
@@ -725,7 +743,8 @@ async function doActualSync(cache: DatabaseSchema) {
         receiptUrl: item.receiptUrl,
         description: item.description,
         isExtra: item.isExtra,
-        quantity: item.quantity || ""
+        quantity: item.quantity || "",
+        coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
       };
         if (!isItemModified('marketEntries', item.id, mapped)) continue;
         await db.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({ target: marketEntriesTable.id, set: mapped });

@@ -2759,7 +2759,11 @@ export default function FinanceSettlement({
                               )}
                             </div>
                             <p className="text-[10px] text-slate-400 leading-relaxed font-sans">{mar.description || "General groceries list"}</p>
-                            <p className="text-[9px] text-slate-500 font-mono">Date: {mar.date}</p>
+                            <p className="text-[9px] text-slate-500 font-mono">
+                              Date: {mar.coveredDates && Array.isArray(mar.coveredDates) && mar.coveredDates.length > 0 
+                                ? mar.coveredDates.map((d: string) => d.split("-")[2] || d).join(", ") 
+                                : mar.date}
+                            </p>
                           </div>
                         ))
                       )}

@@ -107,6 +107,7 @@ export interface MarketEntry {
   description: string;
   isExtra: boolean;
   quantity?: string;
+  coveredDates?: string[];
 }
 
 export interface Deposit {
