@@ -296,7 +296,10 @@ export function isValidMemberSessionToken(token: string, memberId: string): bool
   const activeVer = sessionVersionsMap.get(memberId);
   if (token === memberId) {
     // If sessions were invalidated, legacy token without matching version must be rejected
-    return false;
+    if (activeVer !== "v1") {
+      return false;
+    }
+    return true;
   }
 
   const parts = token.split(":");

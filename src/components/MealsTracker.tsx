@@ -39,6 +39,7 @@ export default function MealsTracker({
   dateRestrictions,
   mealTypes
 }: MealsTrackerProps) {
+  const authToken = sessionStorage.getItem("mess_token") || localStorage.getItem("mess_token") || currentUser.id;
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [mealsData, setMealsData] = useState<Record<string, Record<string, number | string>>>({});
   const [isLocked, setIsLocked] = useState(false);
@@ -79,7 +80,7 @@ export default function MealsTracker({
     if (!currentMonthId || !isManagementRole) return;
     try {
       const response = await fetch(`/api/meal-requests/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -98,7 +99,7 @@ export default function MealsTracker({
     const currentCount = fetchCounter;
     try {
       const response = await fetch(`/api/meals/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -165,7 +166,7 @@ export default function MealsTracker({
     if (!currentMonthId) return;
     try {
       const response = await fetch("/api/months", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -235,7 +236,7 @@ export default function MealsTracker({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -272,7 +273,7 @@ export default function MealsTracker({
     try {
       const response = await fetch(`/api/meal-requests/${id}/approve`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       const data = await response.json();
       if (!response.ok) {
@@ -295,7 +296,7 @@ export default function MealsTracker({
     try {
       const response = await fetch(`/api/meal-requests/${id}/reject`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       const data = await response.json();
       if (!response.ok) {
