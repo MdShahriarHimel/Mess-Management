@@ -4523,6 +4523,7 @@ export default function App() {
               onSetSubTab={setMarketSubTab}
               marketForcedFlowStep={marketForcedFlowStep}
               onSetMarketForcedFlowStep={setMarketForcedFlowStep}
+              months={months}
             />
           )}
 

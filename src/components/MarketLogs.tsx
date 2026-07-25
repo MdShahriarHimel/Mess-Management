@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { 
   ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus 
 } from "lucide-react";
-import { Member, MarketEntry, Duty, UserRole } from "../types.js";
+import { Member, MarketEntry, Duty, UserRole, MessMonth } from "../types.js";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -30,6 +30,7 @@ interface MarketLogsProps {
   onSetSubTab?: (tab: "standard" | "managerial") => void;
   marketForcedFlowStep?: string | null;
   onSetMarketForcedFlowStep?: (step: string | null) => void;
+  months?: MessMonth[];
 }
 
 export default function MarketLogs({ 
@@ -43,7 +44,8 @@ export default function MarketLogs({
   subTab = "standard",
   onSetSubTab,
   marketForcedFlowStep,
-  onSetMarketForcedFlowStep
+  onSetMarketForcedFlowStep,
+  months = []
 }: MarketLogsProps) {
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -89,6 +91,29 @@ export default function MarketLogs({
       }
     }
     return true;
+  };
+
+  const getCycleDates = () => {
+    const activeMonth = months.find(m => m.id === currentMonthId);
+    if (activeMonth?.startDate && activeMonth?.endDate) {
+      return {
+        startDate: activeMonth.startDate.split("T")[0],
+        endDate: activeMonth.endDate.split("T")[0],
+        name: activeMonth.name
+      };
+    }
+    // Fallback to current calendar month
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const firstDay = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const lastDayVal = new Date(y, m + 1, 0).getDate();
+    const lastDay = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDayVal).padStart(2, "0")}`;
+    return {
+      startDate: firstDay,
+      endDate: lastDay,
+      name: now.toLocaleString("en-US", { month: "long" })
+    };
   };
 
   // Auto-select first assigned date on mount/member change
@@ -469,6 +494,14 @@ export default function MarketLogs({
     }
   };
 
+  const handleDayCellClick = (dateStr: string) => {
+    if (!canEditMarketDuty) return;
+    setScheduleDate(dateStr);
+    setScheduleMemberId("");
+    setScheduleTask("বাজারের দায়িত্ব (Market Schedule)");
+    setShowScheduleModal(true);
+  };
+
   // Remove duty/schedule
   const handleRemoveDuty = async (id: string) => {
     const message = safeMode 
@@ -767,54 +800,194 @@ export default function MarketLogs({
         <div className={`p-5 rounded-2xl border ${
           isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
         }`} id="market-schedule-panel">
-          <h3 className="text-sm font-bold font-display mb-4 flex items-center gap-1.5">
+          <h3 className="text-sm font-bold font-display mb-4 flex items-center gap-1.5 border-b border-slate-800/40 pb-2.5">
             <Calendar size={16} className="text-cyan-400" />
-            Market Duty Assignments
+            Market Duty Calendar
           </h3>
 
-          <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-            {duties.filter(d => d.name.toLowerCase().includes("market")).length === 0 ? (
-              <p className="text-xs text-slate-500 italic py-4 text-center">No market dates scheduled yet.</p>
-            ) : (
-              duties.filter(d => d.name.toLowerCase().includes("market")).map((duty) => {
-                const assignedMember = members.find(m => m.id === duty.memberId);
-                return (
-                  <div 
-                    key={duty.id} 
-                    className="flex justify-between items-center text-xs p-3 rounded-lg bg-slate-950/20 border border-slate-900"
-                  >
-                    <div className="flex items-center gap-2">
-                      {assignedMember?.photo ? (
-                        <img 
-                          src={assignedMember.photo} 
-                          alt={assignedMember.nickname} 
-                          className="w-8 h-8 rounded-full object-cover border border-cyan-500/20 shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-xs uppercase shrink-0 font-display">
-                          {(assignedMember?.nickname || "??").slice(0, 2)}
-                        </div>
-                      )}
-                      <div>
-                        <p className="font-extrabold text-cyan-400">{assignedMember?.nickname || "Unknown"}</p>
-                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">{duty.name.split(": ")[1] || duty.name}</p>
-                      </div>
-                    </div>
-                    {canEditMarketDuty && (
-                      <button
-                        onClick={() => handleRemoveDuty(duty.id)}
-                        className="p-1 rounded text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
-                        title="Remove scheduled duty"
-                      >
-                        <X size={12} />
-                      </button>
-                    )}
+          {(() => {
+            const { startDate: startStr, endDate: endStr, name: cycleName } = getCycleDates();
+            const start = new Date(startStr);
+            const end = new Date(endStr);
+            const calendarMonths: { year: number; month: number; name: string }[] = [];
+            
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              let current = new Date(start.getFullYear(), start.getMonth(), 1);
+              const finalMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+              let limit = 0;
+              while (current <= finalMonth && limit < 12) {
+                calendarMonths.push({
+                  year: current.getFullYear(),
+                  month: current.getMonth(),
+                  name: current.toLocaleString("en-US", { month: "long" }).toUpperCase()
+                });
+                current.setMonth(current.getMonth() + 1);
+                limit++;
+              }
+            }
+
+            return (
+              <div className="space-y-6">
+                {/* Cycle info sub-header */}
+                <div className={`p-3 rounded-xl border text-xs space-y-1 ${
+                  isDarkMode ? "bg-slate-950/40 border-slate-900/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-600"
+                }`}>
+                  <div className="flex justify-between font-bold">
+                    <span>📆 Month Cycle:</span>
+                    <span className="text-cyan-500 dark:text-cyan-400">{cycleName}</span>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  <div className="text-[10px] font-mono text-slate-500">
+                    Active: {new Date(startStr).toLocaleDateString()} to {new Date(endStr).toLocaleDateString()}
+                  </div>
+                </div>
+
+                {/* Staged Calendars */}
+                <div className="space-y-6">
+                  {calendarMonths.map(cal => {
+                    const firstDayIndex = new Date(cal.year, cal.month, 1).getDay();
+                    const daysInMonth = new Date(cal.year, cal.month + 1, 0).getDate();
+                    
+                    const cells = [];
+                    for (let i = 0; i < firstDayIndex; i++) {
+                      cells.push({ key: `blank-${i}`, isBlank: true, dayNum: 0, dateStr: "", inCycle: false });
+                    }
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const dateStr = `${cal.year}-${String(cal.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                      const inCycle = dateStr >= startStr && dateStr <= endStr;
+                      cells.push({ key: `day-${d}`, isBlank: false, dayNum: d, dateStr, inCycle });
+                    }
+
+                    return (
+                      <div key={`${cal.year}-${cal.month}`} className="relative pt-5">
+                        {/* Hanging rings effect matching the reference picture */}
+                        <div className="absolute top-0 left-1/4 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+                          <div className={`w-3.5 h-7 rounded-full shadow-md border ${
+                            isDarkMode ? "bg-gradient-to-b from-slate-700 to-slate-900 border-slate-950" : "bg-gradient-to-b from-slate-300 to-slate-500 border-slate-400"
+                          }`}></div>
+                          <div className="w-2 h-2 bg-slate-950 rounded-full border border-slate-850 -mt-2.5 shadow-inner"></div>
+                        </div>
+                        <div className="absolute top-0 left-3/4 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+                          <div className={`w-3.5 h-7 rounded-full shadow-md border ${
+                            isDarkMode ? "bg-gradient-to-b from-slate-700 to-slate-900 border-slate-950" : "bg-gradient-to-b from-slate-300 to-slate-500 border-slate-400"
+                          }`}></div>
+                          <div className="w-2 h-2 bg-slate-950 rounded-full border border-slate-850 -mt-2.5 shadow-inner"></div>
+                        </div>
+
+                        <div className={`rounded-2xl border overflow-hidden shadow-md ${
+                          isDarkMode ? "bg-slate-950 border-slate-850" : "bg-white border-slate-200"
+                        }`}>
+                          {/* Bold Red top block for the month/year */}
+                          <div className="bg-red-650 dark:bg-rose-700 py-3 px-4 text-center relative border-b border-rose-700/30">
+                            <h4 className="font-extrabold tracking-widest text-white text-sm font-display uppercase">
+                              {cal.name} {cal.year}
+                            </h4>
+                          </div>
+
+                          {/* Weekday headers */}
+                          <div className={`grid grid-cols-7 text-center text-[10px] font-black py-1.5 border-b uppercase tracking-wider ${
+                            isDarkMode ? "bg-slate-900/60 border-slate-850 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
+                          }`}>
+                            <div className="text-red-500">SUN</div>
+                            <div>MON</div>
+                            <div>TUE</div>
+                            <div>WED</div>
+                            <div>THU</div>
+                            <div>FRI</div>
+                            <div className="text-red-500">SAT</div>
+                          </div>
+
+                          {/* Days Grid */}
+                          <div className={`grid grid-cols-7 gap-[1px] p-[1px] ${
+                            isDarkMode ? "bg-slate-850" : "bg-slate-200"
+                          }`}>
+                            {cells.map(cell => {
+                              if (cell.isBlank) {
+                                  return (
+                                    <div 
+                                      key={cell.key} 
+                                      className={`aspect-square ${isDarkMode ? "bg-slate-950/25" : "bg-slate-50/50"}`} 
+                                    />
+                                  );
+                              }
+
+                              const dayDuties = duties.filter(d => {
+                                const isMarket = d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar");
+                                return isMarket && d.name.includes(cell.dateStr);
+                              });
+
+                              const isToday = new Date().toISOString().split("T")[0] === cell.dateStr;
+
+                              return (
+                                <div
+                                  key={cell.key}
+                                  onClick={() => {
+                                    if (cell.inCycle) {
+                                      handleDayCellClick(cell.dateStr);
+                                    }
+                                  }}
+                                  className={`aspect-square flex flex-col justify-between p-1 relative transition-all group ${
+                                    cell.inCycle 
+                                      ? `cursor-pointer ${
+                                          isDarkMode 
+                                            ? "bg-slate-900 hover:bg-slate-800 text-white" 
+                                            : "bg-white hover:bg-slate-100 text-slate-800"
+                                        }`
+                                      : `opacity-30 select-none ${
+                                          isDarkMode ? "bg-slate-950 text-slate-600" : "bg-slate-100 text-slate-400"
+                                        }`
+                                  } ${isToday ? "ring-2 ring-cyan-500 ring-inset" : ""}`}
+                                >
+                                  <span className={`text-[11px] font-bold ${
+                                    cell.inCycle 
+                                      ? isToday 
+                                        ? "text-cyan-400 font-extrabold" 
+                                        : (new Date(cell.dateStr).getDay() === 0 || new Date(cell.dateStr).getDay() === 6)
+                                          ? "text-red-500 dark:text-red-400"
+                                          : "text-slate-500 dark:text-slate-400"
+                                      : "text-slate-600 dark:text-slate-700"
+                                  }`}>
+                                    {cell.dayNum}
+                                  </span>
+
+                                  {/* Assigned badges */}
+                                  {cell.inCycle && (
+                                    <div className="space-y-0.5 mt-auto w-full overflow-hidden">
+                                      {dayDuties.map(d => {
+                                        const assignedMember = members.find(m => m.id === d.memberId);
+                                        return (
+                                          <div 
+                                            key={d.id}
+                                            className="text-[8px] leading-tight px-1 py-0.5 rounded bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-extrabold border border-cyan-500/10 truncate"
+                                            title={`${assignedMember?.nickname || "Unknown"}: ${d.task || "Market Duty"}`}
+                                          >
+                                            {assignedMember?.nickname || "Unknown"}
+                                          </div>
+                                        );
+                                      })}
+                                      {canEditMarketDuty && dayDuties.length === 0 && (
+                                        <div className="opacity-0 group-hover:opacity-100 transition-all text-[8px] text-cyan-500 font-extrabold text-center py-0.5 border border-dashed border-cyan-500/20 rounded">
+                                          + ASSIGN
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Guide text */}
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 text-center italic leading-relaxed">
+                  💡 Click on any active date to assign, view, or remove market duties.
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Expense logs list */}
@@ -1318,6 +1491,54 @@ export default function MarketLogs({
 
             <form onSubmit={handleAddSchedule} className="space-y-4">
               
+              {scheduleDate && (
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                    Current Duty for: {new Date(scheduleDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </span>
+                  {(() => {
+                    const dateDuties = duties.filter(d => {
+                      const isMarket = d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar");
+                      return isMarket && d.name.includes(scheduleDate);
+                    });
+                    
+                    if (dateDuties.length === 0) {
+                      return <p className="text-xs text-slate-500 italic">No one assigned yet.</p>;
+                    }
+                    
+                    return (
+                      <div className="space-y-1.5">
+                        {dateDuties.map(duty => {
+                          const m = members.find(mem => mem.id === duty.memberId);
+                          return (
+                            <div key={duty.id} className="flex justify-between items-center bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
+                              <span className="font-bold text-cyan-400">{m?.nickname || "Unknown"}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-500 truncate max-w-[100px]">{duty.task}</span>
+                                {canEditMarketDuty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`Remove assignment for ${m?.nickname}?`)) {
+                                        handleRemoveDuty(duty.id);
+                                      }
+                                    }}
+                                    className="p-1 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded cursor-pointer transition-all"
+                                    title="Remove"
+                                  >
+                                    <X size={10} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Select Member</label>
                 <select
