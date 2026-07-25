@@ -2595,6 +2595,93 @@ export default function App() {
     }
   }, [currentUser, activeTab]);
 
+  const getIsPreviousMonth = () => {
+    if (!currentMonthId || months.length === 0) return false;
+    const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    
+    const now = new Date();
+    let currentIdx = sorted.findIndex(m => {
+      const start = new Date(m.startDate);
+      const end = new Date(m.endDate);
+      return now >= start && now <= end;
+    });
+    if (currentIdx === -1) {
+      currentIdx = sorted.length - 1;
+    }
+
+    const selectedIdx = sorted.findIndex(m => m.id === currentMonthId);
+    if (selectedIdx === -1) return false;
+
+    return selectedIdx < currentIdx;
+  };
+
+  const getSelectableMonths = () => {
+    if (months.length === 0) return [];
+    
+    const isAdminOrSuper = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.SUPERUSER || currentUser?.role === UserRole.ASSISTANT_SUPERUSER;
+    if (isAdminOrSuper) {
+      return months;
+    }
+
+    const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    
+    const now = new Date();
+    let currentIdx = sorted.findIndex(m => {
+      const start = new Date(m.startDate);
+      const end = new Date(m.endDate);
+      return now >= start && now <= end;
+    });
+    if (currentIdx === -1) {
+      currentIdx = sorted.length - 1;
+    }
+
+    const allowedIds = new Set<string>();
+    if (currentIdx >= 0 && currentIdx < sorted.length) {
+      allowedIds.add(sorted[currentIdx].id);
+    }
+    if (currentIdx > 0) {
+      allowedIds.add(sorted[currentIdx - 1].id);
+    }
+
+    return months.filter(m => allowedIds.has(m.id));
+  };
+
+  useEffect(() => {
+    if (getIsPreviousMonth()) {
+      const allowed = ["finance", "market", "menu"];
+      if (!allowed.includes(activeTab)) {
+        setActiveTab("finance");
+      }
+    }
+  }, [currentMonthId, months, activeTab]);
+
+  useEffect(() => {
+    if (!currentUser || months.length === 0 || !currentMonthId) return;
+    const isAdminOrSuper = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER;
+    if (isAdminOrSuper) return;
+
+    const selectable = getSelectableMonths();
+    const isAllowed = selectable.some(m => m.id === currentMonthId);
+    if (!isAllowed && selectable.length > 0) {
+      const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      const now = new Date();
+      let currentIdx = sorted.findIndex(m => {
+        const start = new Date(m.startDate);
+        const end = new Date(m.endDate);
+        return now >= start && now <= end;
+      });
+      if (currentIdx === -1) {
+        currentIdx = sorted.length - 1;
+      }
+      const currentActive = sorted[currentIdx];
+      if (currentActive && selectable.some(m => m.id === currentActive.id)) {
+        setCurrentMonthId(currentActive.id);
+      } else {
+        setCurrentMonthId(selectable[selectable.length - 1].id);
+      }
+    }
+  }, [currentUser, currentMonthId, months]);
+
   const handleLoginSuccess = (token: string, user: Member, rememberMe?: boolean) => {
     try {
       if (rememberMe) {
@@ -3050,7 +3137,6 @@ export default function App() {
       </div>
     );
   }
-
   // Sidebar navigation menu options
   const navItems = [
     { id: "dashboard", label: t("Dashboard Hub"), icon: <Home size={16} /> },
@@ -3096,6 +3182,10 @@ export default function App() {
   const showResultsInDashboard = !!(elections?.isFinal || allVoted);
 
   const visibleNavItems = navItems.filter(item => {
+    if (getIsPreviousMonth()) {
+      return ["finance", "market", "menu"].includes(item.id);
+    }
+
     if (item.id === "democracy" && showResultsInDashboard) return false;
     if (item.id === "audit" && dashboardVisibility && !dashboardVisibility.showAuditLogs) return false;
     if (item.id === "deposits" && dashboardVisibility && !dashboardVisibility.showCashDeposit) return false;
@@ -4098,7 +4188,7 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
-            {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER) && (
+            {currentUser && (
               <select
                 value={currentMonthId}
                 onChange={(e) => setCurrentMonthId(e.target.value)}
@@ -4106,7 +4196,7 @@ export default function App() {
                   isDarkMode ? "bg-slate-950 border-slate-800 text-cyan-300" : "bg-white border-slate-200 text-slate-800"
                 }`}
               >
-                {months.map(m => (
+                {getSelectableMonths().map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
