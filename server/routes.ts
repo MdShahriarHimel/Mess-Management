@@ -3917,6 +3917,28 @@ function loadSettings() {
     // Keep compatible with any custom animations or cards styles
   }
 
+  // Background Audio Integration
+  const bgAudio = (branding as any).backgroundAudio || { globalUrl: "", globalEnabled: false, messOverrides: {} };
+  let activeAudioUrl = bgAudio.globalUrl || "";
+  let activeAudioEnabled = bgAudio.globalEnabled || false;
+
+  if (bgAudio.messOverrides && bgAudio.messOverrides[messId]) {
+    const override = bgAudio.messOverrides[messId];
+    if (override.url !== undefined) activeAudioUrl = override.url;
+    if (override.enabled !== undefined) activeAudioEnabled = override.enabled;
+  }
+
+  const disableAudio = merged.disableBackgroundAudio === true || (merged.messAnimations as any)?.disableBackgroundAudio === true;
+  if (disableAudio) {
+    activeAudioEnabled = false;
+  }
+
+  (merged as any).disableBackgroundAudio = disableAudio;
+  (merged as any).activeAudioSettings = {
+    url: activeAudioUrl,
+    enabled: activeAudioEnabled
+  };
+
   return merged;
 }
 
@@ -4169,7 +4191,9 @@ router.get("/settings/public", (req: Request, res: Response) => {
     logoText: s.logoText,
     customColors: s.customColors,
     messAnimations: s.messAnimations,
-    loginCustomization: s.loginCustomization
+    loginCustomization: s.loginCustomization,
+    disableBackgroundAudio: s.disableBackgroundAudio,
+    activeAudioSettings: s.activeAudioSettings
   });
 });
 
@@ -4323,8 +4347,17 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     typographySettings,
     auditRetentionDays,
     creditConfig,
-    appearancePermissions
+    appearancePermissions,
+    disableBackgroundAudio
   } = req.body;
+
+  if (disableBackgroundAudio !== undefined) {
+    currentSettings.disableBackgroundAudio = disableBackgroundAudio;
+    if (!currentSettings.messAnimations) {
+      currentSettings.messAnimations = {};
+    }
+    currentSettings.messAnimations.disableBackgroundAudio = disableBackgroundAudio;
+  }
 
   if (auditRetentionDays !== undefined) {
     if (role !== UserRole.ADMIN && !isUltimateAdmin) {
@@ -4423,7 +4456,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   saveSettings(currentSettings);
-  res.json({ success: true, settings: currentSettings });
+  res.json({ success: true, settings: loadSettings() });
 });
 
 // ---------------------------------------------------------

@@ -32,6 +32,7 @@ import { THEME_TEMPLATES } from "./themeTemplates.ts";
 import SecuritySettings from "./components/SecuritySettings.tsx";
 import { CreditAndPermissions } from "./components/CreditAndPermissions.tsx";
 import { UnifiedSettingsDashboard } from "./components/UnifiedSettingsDashboard.tsx";
+import { BackgroundAudioPlayer } from "./components/BackgroundAudioPlayer.tsx";
 import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 
@@ -1556,6 +1557,10 @@ export default function App() {
     showDashboardOverview: false
   });
 
+  // Background Audio States
+  const [activeAudioSettings, setActiveAudioSettings] = useState<{ url: string; enabled: boolean } | null>(null);
+  const [disableBackgroundAudio, setDisableBackgroundAudio] = useState(false);
+
   // Platform Status & Announcement States
   const [platformStatus, setPlatformStatus] = useState<string>("Operational");
   const [maintenanceMode, setMaintenanceMode] = useState<string>("Normal");
@@ -1947,6 +1952,8 @@ export default function App() {
         if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
         if (data.creditConfig) setCreditConfig(prev => ({ ...prev, ...data.creditConfig }));
         if (data.appearancePermissions) setAppearancePermissions(data.appearancePermissions);
+        if (data.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(data.disableBackgroundAudio);
+        if (data.activeAudioSettings) setActiveAudioSettings(data.activeAudioSettings);
         // Load independent level-specific settings
         await fetchThreeLevelSettings(token);
       }
@@ -2005,6 +2012,9 @@ export default function App() {
         setErpBrandingState(data.branding);
         if (data.branding.logoText) setLogoText(data.branding.logoText);
         if (data.branding.creditConfig) setCreditConfig(data.branding.creditConfig);
+        if (sessionToken) {
+          fetchSettings(sessionToken);
+        }
         return true;
       } else {
         const data = await response.json();
@@ -2150,6 +2160,8 @@ export default function App() {
           if (s.typographySettings) setTypographySettings(s.typographySettings);
           if (s.creditConfig) setCreditConfig(s.creditConfig);
           if (s.appearancePermissions) setAppearancePermissions(s.appearancePermissions);
+          if (s.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(s.disableBackgroundAudio);
+          if (s.activeAudioSettings) setActiveAudioSettings(s.activeAudioSettings);
         }
         return true;
       } else {
@@ -4815,6 +4827,10 @@ export default function App() {
 
       </main>
 
+      <BackgroundAudioPlayer
+        activeAudioSettings={activeAudioSettings}
+        isDarkMode={isDarkMode}
+      />
     </div>
     </AutoRefreshProvider>
   );

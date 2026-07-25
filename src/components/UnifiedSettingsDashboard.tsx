@@ -222,6 +222,13 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const [localWelcomeMessage, setLocalWelcomeMessage] = useState(erpBrandingState?.welcomeMessage || "Welcome to Bengal Bachelor Cooperative Ecosystem");
   const [localGlobalAnnouncement, setLocalGlobalAnnouncement] = useState(erpBrandingState?.globalAnnouncement || "Welcome to the central Mess ERP ecosystem!");
 
+  // Background Audio Local States (Level 1)
+  const [localGlobalAudioUrl, setLocalGlobalAudioUrl] = useState(erpBrandingState?.backgroundAudio?.globalUrl || "");
+  const [localGlobalAudioEnabled, setLocalGlobalAudioEnabled] = useState(erpBrandingState?.backgroundAudio?.globalEnabled || false);
+  const [localMessAudioOverrides, setLocalMessAudioOverrides] = useState<Record<string, { url: string; enabled: boolean }>>(
+    erpBrandingState?.backgroundAudio?.messOverrides || {}
+  );
+
   useEffect(() => {
     if (erpBrandingState) {
       setLocalErpName(erpBrandingState.erpName || "Mess ERP");
@@ -233,6 +240,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       setLocalErpVersion(erpBrandingState.erpVersion || "v2.5.4");
       setLocalWelcomeMessage(erpBrandingState.welcomeMessage || "Welcome to Bengal Bachelor Cooperative Ecosystem");
       setLocalGlobalAnnouncement(erpBrandingState.globalAnnouncement || "Welcome to the central Mess ERP ecosystem!");
+      
+      const bg = erpBrandingState.backgroundAudio || { globalUrl: "", globalEnabled: false, messOverrides: {} };
+      setLocalGlobalAudioUrl(bg.globalUrl || "");
+      setLocalGlobalAudioEnabled(bg.globalEnabled || false);
+      setLocalMessAudioOverrides(bg.messOverrides || {});
     }
   }, [erpBrandingState]);
 
@@ -359,10 +371,15 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       developerInfo: localDeveloperInfo,
       erpVersion: localErpVersion,
       welcomeMessage: localWelcomeMessage,
-      globalAnnouncement: localGlobalAnnouncement
+      globalAnnouncement: localGlobalAnnouncement,
+      backgroundAudio: {
+        globalUrl: localGlobalAudioUrl,
+        globalEnabled: localGlobalAudioEnabled,
+        messOverrides: localMessAudioOverrides
+      }
     });
     if (success) {
-      showStatus("success", "Central ERP branding custom identity saved successfully!");
+      showStatus("success", "Central ERP branding custom identity & background audio saved successfully!");
     }
   };
 
@@ -660,6 +677,102 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 </div>
               </div>
 
+              {/* Background Audio Settings Dashboard (Ultimate Admin Only) */}
+              {isUltimateAdmin && (
+                <div className="mt-6 p-4 rounded-xl border border-dashed border-slate-800 bg-slate-950/20 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-cyan-400 uppercase flex items-center gap-1.5">
+                      <LucideIcons.Music size={12} />
+                      Global & Multi-Tenant Background Audio Control Panel
+                    </h4>
+                    <p className="text-[10px] text-slate-500 leading-normal mt-1">
+                      Configure background music for the entire ERP system. Supports local audio files, direct stream links, and YouTube video URLs.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Global Default Audio URL</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. https://example.com/audio.mp3 or youtube link"
+                        value={localGlobalAudioUrl}
+                        onChange={(e) => setLocalGlobalAudioUrl(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/40 border border-slate-900">
+                      <div className="space-y-0.5">
+                        <span className="text-[11px] font-bold text-slate-200 block">Default Global Audio Enabled</span>
+                        <span className="text-[9px] text-slate-500">Enable audio by default when users enter the platform.</span>
+                      </div>
+                      <button
+                        onClick={() => setLocalGlobalAudioEnabled(!localGlobalAudioEnabled)}
+                        className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                          localGlobalAudioEnabled ? "bg-cyan-500" : "bg-slate-700"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                            localGlobalAudioEnabled ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-900 pt-3">
+                    <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider block mb-2">Individual Mess Audio Overrides</span>
+                    <div className="divide-y divide-slate-900 bg-slate-950/40 border border-slate-900 rounded-lg p-2 max-h-48 overflow-y-auto">
+                      {messes.map(mess => {
+                        const override = localMessAudioOverrides[mess.id] || { url: "", enabled: true };
+                        return (
+                          <div key={mess.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center py-2 border-b border-slate-900 last:border-0 px-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-300">{mess.name}</span>
+                              <span className="text-[9px] text-slate-500 uppercase font-mono">({mess.id})</span>
+                            </div>
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Specific audio URL override..."
+                                value={override.url}
+                                onChange={(e) => {
+                                  setLocalMessAudioOverrides(prev => ({
+                                    ...prev,
+                                    [mess.id]: { ...override, url: e.target.value }
+                                  }));
+                                }}
+                                className="w-full px-2 py-1 text-[11px] rounded bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-cyan-500 placeholder-slate-700"
+                              />
+                            </div>
+                            <div className="flex justify-end items-center gap-2">
+                              <span className="text-[10px] text-slate-500">Audio Overlay:</span>
+                              <button
+                                onClick={() => {
+                                  setLocalMessAudioOverrides(prev => ({
+                                    ...prev,
+                                    [mess.id]: { ...override, enabled: !override.enabled }
+                                  }));
+                                }}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                                  override.enabled 
+                                    ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                    : "bg-rose-950 border border-rose-500/20 text-rose-300"
+                                }`}
+                              >
+                                {override.enabled ? "🔈 On" : "🔇 Off"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Mess Locking Access Management Dashboard (Ultimate Admin Only) */}
               {isUltimateAdmin && (
                 <div className="mt-6 p-4 rounded-xl border border-dashed border-slate-800 bg-slate-950/20 space-y-3">
@@ -948,6 +1061,47 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 typographySettings={{}}
                 setTypographySettings={() => {}}
               />
+
+              {/* Mess-specific Super User Audio Kill-Switch */}
+              {(currentUser.role === "SUPERUSER" || currentUser.role === "ADMIN" || isUltimateAdmin) && (
+                <div className="mt-6 p-4 rounded-xl border border-dashed border-rose-500/20 bg-rose-950/5 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <LucideIcons.Music className="text-rose-400 shrink-0 mt-0.5" size={16} />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider">
+                        🔇 Mess Background Audio Override (Super User Power)
+                      </h4>
+                      <p className="text-[10px] text-slate-400 leading-normal mt-1">
+                        Turn off all background music and ambient streams specifically for this mess environment, even if globally enabled by the platform owner.
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const newDisabled = !messAnimations?.disableBackgroundAudio;
+                        const success = await handleUpdateSettings({
+                          disableBackgroundAudio: newDisabled
+                        });
+                        if (success) {
+                          setMessAnimations(prev => ({
+                            ...prev,
+                            disableBackgroundAudio: newDisabled
+                          }));
+                          showStatus("success", newDisabled ? "Background audio has been muted for this mess." : "Background audio has been enabled for this mess.");
+                        } else {
+                          showStatus("error", "Failed to toggle background audio override.");
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all shrink-0 ${
+                        messAnimations?.disableBackgroundAudio 
+                          ? "bg-rose-500 text-slate-950 shadow-lg shadow-rose-500/20"
+                          : "bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-300"
+                      }`}
+                    >
+                      {messAnimations?.disableBackgroundAudio ? "🔈 Muted for Mess" : "🔊 Playing for Mess"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
