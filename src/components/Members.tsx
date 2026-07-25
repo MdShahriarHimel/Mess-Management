@@ -115,6 +115,48 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
     showAdminRole: false
   });
 
+  const [deletedMembers, setDeletedMembers] = useState<{ member: Member; deletedAt: string; deletedBy: string }[]>([]);
+  const [showDeletedMembers, setShowDeletedMembers] = useState(false);
+
+  const fetchDeletedMembers = async () => {
+    if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.SUPERUSER) return;
+    try {
+      const response = await fetch("/api/members/deleted-list", {
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDeletedMembers(data.deletedMembers || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch deleted members:", e);
+    }
+  };
+
+  React.useEffect(() => {
+    if (showDeletedMembers || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) {
+      fetchDeletedMembers();
+    }
+  }, [showDeletedMembers, members]);
+
+  const handleUndoDelete = async (memberId: string) => {
+    try {
+      const response = await fetch(`/api/members/restore-deleted/${memberId}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (response.ok) {
+        onRefresh();
+        fetchDeletedMembers();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to restore deleted member");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const isEditingSelf = editingMember?.id === currentUser.id;
   const isUltimateAdminActor = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isTargetUltimateAdmin = editingMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
@@ -986,6 +1028,112 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   );
                 })}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Restoration Bin (Recently Deleted - Admin & Super User only) */}
+      {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
+        <div className="mt-8 pt-6 border-t border-slate-900/40" id="restoration-bin-wrapper">
+          <div 
+            onClick={() => setShowDeletedMembers(!showDeletedMembers)}
+            className={`p-5 rounded-2xl border cursor-pointer transition-all duration-300 flex items-center justify-between shadow-sm select-none ${
+              isDarkMode 
+                ? "bg-slate-900/20 border-slate-800 text-slate-200 hover:bg-slate-900/40 hover:border-slate-700" 
+                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300"
+            }`}
+            id="restoration-bin-toggle-box"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400">
+                <Trash2 size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold uppercase tracking-wider font-display flex items-center gap-2">
+                  Restoration Bin (Recently Deleted)
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                    isDarkMode ? "bg-orange-500/10 text-orange-400" : "bg-orange-100 text-orange-600"
+                  }`}>
+                    {deletedMembers.length} Accounts
+                  </span>
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  View permanently deleted accounts and restore their profiles with a single click
+                </p>
+              </div>
+            </div>
+            <div className="text-slate-400">
+              {showDeletedMembers ? <ChevronUp size={20} className="animate-pulse" /> : <ChevronDown size={20} />}
+            </div>
+          </div>
+
+          {showDeletedMembers && (
+            <div className="mt-5 space-y-4 animate-fade-in" id="deleted-members-container">
+              <p className="text-[10px] text-slate-400 italic">
+                Restoring a deleted member fully recovers their account access, original passwords, and automatically re-associates all of their historic meals, deposits, bills, and activity.
+              </p>
+
+              {deletedMembers.length === 0 ? (
+                <p className="text-xs text-slate-500 italic p-6 text-center border border-dashed border-slate-800 rounded-2xl">
+                  No recently deleted members in the bin. Everything is clean!
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {deletedMembers.map(({ member, deletedAt, deletedBy }) => (
+                    <div 
+                      key={member.id} 
+                      className={`relative overflow-hidden p-5 rounded-2xl border transition-all ${
+                        isDarkMode 
+                          ? "bg-slate-950/40 border-orange-500/10 text-slate-300 hover:border-orange-500/30" 
+                          : "bg-slate-100/50 border-slate-200 shadow-sm text-slate-600 hover:border-orange-300"
+                      }`}
+                    >
+                      <div className="flex gap-4 items-start">
+                        {/* Profile Photo */}
+                        <div>
+                          {member.photo ? (
+                            <img 
+                              src={member.photo} 
+                              alt={member.nickname} 
+                              className="w-16 h-16 rounded-xl object-cover border border-orange-500/20 opacity-70"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-xl bg-slate-850 border border-slate-800 flex items-center justify-center text-slate-400 font-bold text-lg font-display uppercase">
+                              {member.nickname.slice(0, 2)}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Core Details */}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-extrabold text-sm truncate text-slate-400 line-through decoration-slate-600">{member.name}</h3>
+                          <p className="text-xs text-slate-500 font-semibold">@{member.nickname}</p>
+
+                          <div className="mt-3.5 space-y-1.5 text-[11px] text-slate-500 font-mono">
+                            <p className="truncate">Role: <span className="text-slate-400">{member.role}</span></p>
+                            <p className="truncate">Deleted By: <span className="text-orange-400 font-semibold">{deletedBy}</span></p>
+                            <p className="truncate">Deleted At: <span className="text-slate-400">{new Date(deletedAt).toLocaleString()}</span></p>
+                          </div>
+                        </div>
+
+                        {/* Undo Restore Button */}
+                        <div className="flex self-center">
+                          <button
+                            onClick={() => handleUndoDelete(member.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 hover:text-orange-300 border border-orange-500/20 text-xs font-bold cursor-pointer transition-all hover:scale-105"
+                            title="Undo Deletion and Restore"
+                          >
+                            <RotateCcw size={13} />
+                            Undo Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

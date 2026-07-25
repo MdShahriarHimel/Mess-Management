@@ -97,6 +97,7 @@ interface DatabaseSchema {
   notices: Notice[];
   auditLogs: AuditLog[];
   mealRequests: MealRequest[];
+  deletedMembers?: { member: Member; deletedAt: string; deletedBy: string }[];
 }
 
 interface CredentialsSchema {

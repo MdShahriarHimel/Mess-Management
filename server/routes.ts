@@ -1192,11 +1192,65 @@ router.delete("/members/:id", authMiddleware, checkRole([]), (req: Authenticated
     return;
   }
 
+  // Backup member before deleting
+  if (!db.deletedMembers) {
+    db.deletedMembers = [];
+  }
+  db.deletedMembers.push({
+    member: original,
+    deletedAt: new Date().toISOString(),
+    deletedBy: req.user!.nickname
+  });
+  
+  // Cap at 50 recently deleted members
+  if (db.deletedMembers.length > 50) {
+    db.deletedMembers.shift();
+  }
+
   db.members.splice(index, 1);
   saveDB();
 
   logAudit(req.user!.id, req.user!.nickname, "PERMANENT_DELETE_MEMBER", original.nickname, "Deleted", `Permanently deleted user: ${original.nickname}`);
   res.json({ success: true });
+});
+
+// List Recently Deleted Members (Admin & Super User only)
+router.get("/members/deleted-list", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  const db = loadDB();
+  res.json({ deletedMembers: db.deletedMembers || [] });
+});
+
+// Restore a Deleted Member (Admin & Super User only)
+router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.deletedMembers) {
+    res.status(404).json({ error: "No deleted members history found" });
+    return;
+  }
+
+  const index = db.deletedMembers.findIndex(entry => entry.member.id === id);
+  if (index === -1) {
+    res.status(404).json({ error: "Deleted member not found in restoration bin" });
+    return;
+  }
+
+  const { member } = db.deletedMembers[index];
+
+  // Check if member already exists by email
+  const exists = db.members.some(m => m.email.toLowerCase() === member.email.toLowerCase());
+  if (exists) {
+    res.status(400).json({ error: "A member with this email already exists in active list. Cannot restore." });
+    return;
+  }
+
+  // Restore member
+  db.members.push(member);
+  db.deletedMembers.splice(index, 1);
+  saveDB();
+
+  logAudit(req.user!.id, req.user!.nickname, "RESTORE_DELETED_MEMBER", "Deleted", member.nickname, `Restored deleted member: ${member.nickname}`);
+  res.json({ success: true, member });
 });
 
 // ---------------------------------------------------------
