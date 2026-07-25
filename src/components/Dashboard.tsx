@@ -398,12 +398,12 @@ export default function Dashboard({
             <button
               onClick={() => {
                 if (onSetMarketForcedFlowStep) {
-                  onSetMarketForcedFlowStep("meal_planner");
+                  onSetMarketForcedFlowStep("submit_voucher");
                 }
                 if (onSetForcedMarketDate) {
                   onSetForcedMarketDate(todayStr);
                 }
-                onNavigateToTab("menu");
+                onNavigateToTab("market");
               }}
               className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-extrabold text-xs rounded-xl cursor-pointer shadow-md hover:shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
             >

@@ -2696,7 +2696,19 @@ router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Respon
     }
   }
   
-  res.json({ auditLogs: logs });
+  const totalCount = logs.length;
+  
+  const limitQuery = req.query.limit;
+  const offsetQuery = req.query.offset;
+  if (limitQuery !== undefined) {
+    const limit = parseInt(limitQuery as string, 10);
+    const offset = offsetQuery !== undefined ? parseInt(offsetQuery as string, 10) : 0;
+    if (!isNaN(limit) && limit > 0) {
+      logs = logs.slice(offset, offset + limit);
+    }
+  }
+  
+  res.json({ auditLogs: logs, totalCount });
 });
 
 router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest, res: Response) => {

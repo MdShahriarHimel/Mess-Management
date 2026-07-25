@@ -2252,6 +2252,10 @@ export default function App() {
 
   // Check if any recent logs (last 24 hours) were made by a super user
   const checkSuperUserRecentLogs = async (token: string, currentMembersList: Member[]) => {
+    if (activeTab !== "audit") {
+      // DO NOT execute GET /api/auditlogs unless the Audit Logs page is currently open.
+      return;
+    }
     try {
       const response = await fetch("/api/auditlogs", {
         headers: { "Authorization": `Bearer ${token}` }
@@ -4427,6 +4431,8 @@ export default function App() {
               safeMode={safeMode}
               subTab={marketSubTab}
               onSetSubTab={setMarketSubTab}
+              marketForcedFlowStep={marketForcedFlowStep}
+              onSetMarketForcedFlowStep={setMarketForcedFlowStep}
             />
           )}
 

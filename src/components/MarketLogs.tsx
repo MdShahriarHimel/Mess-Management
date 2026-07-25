@@ -28,6 +28,8 @@ interface MarketLogsProps {
   safeMode?: boolean;
   subTab?: "standard" | "managerial";
   onSetSubTab?: (tab: "standard" | "managerial") => void;
+  marketForcedFlowStep?: string | null;
+  onSetMarketForcedFlowStep?: (step: string | null) => void;
 }
 
 export default function MarketLogs({ 
@@ -39,7 +41,9 @@ export default function MarketLogs({
   dateRestrictions,
   safeMode = false,
   subTab = "standard",
-  onSetSubTab
+  onSetSubTab,
+  marketForcedFlowStep,
+  onSetMarketForcedFlowStep
 }: MarketLogsProps) {
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -185,6 +189,16 @@ export default function MarketLogs({
   useEffect(() => {
     fetchMarketsAndSchedules();
   }, [currentMonthId]);
+
+  useEffect(() => {
+    if (marketForcedFlowStep === "submit_voucher") {
+      resetForm();
+      setShowAddModal(true);
+      if (onSetMarketForcedFlowStep) {
+        onSetMarketForcedFlowStep(null);
+      }
+    }
+  }, [marketForcedFlowStep, onSetMarketForcedFlowStep]);
 
   // Load existing food menus for the selected covered dates
   useEffect(() => {

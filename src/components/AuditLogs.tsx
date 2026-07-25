@@ -49,6 +49,11 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
   const [endDate, setEndDate] = useState("");
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
 
+  // Pagination states
+  const [limit, setLimit] = useState(50);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+
   // Drilldown Modal
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
@@ -62,10 +67,11 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Fetch audit logs with query params
-  const fetchLogs = async () => {
+  // Fetch audit logs with query params and pagination
+  const fetchLogs = async (isAppend = false) => {
     setLoading(true);
     try {
+      const currentOffset = isAppend ? offset + limit : 0;
       const queryParams = new URLSearchParams();
       if (startDate) queryParams.append("startDate", startDate);
       if (endDate) queryParams.append("endDate", endDate);
@@ -74,13 +80,30 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
       if (selectedMess) queryParams.append("messId", selectedMess);
       if (selectedSuperUser) queryParams.append("superUserId", selectedSuperUser);
 
+      // Add pagination params
+      queryParams.append("limit", limit.toString());
+      queryParams.append("offset", currentOffset.toString());
+
       const url = `/api/auditlogs?${queryParams.toString()}`;
       const response = await fetch(url, {
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
         const data = await response.json();
-        setLogs(data.auditLogs || []);
+        const newLogs = data.auditLogs || [];
+        if (isAppend) {
+          setLogs(prev => [...prev, ...newLogs]);
+          setOffset(currentOffset);
+        } else {
+          setLogs(newLogs);
+          setOffset(0);
+        }
+        
+        if (newLogs.length < limit) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
       } else {
         console.error("Failed to fetch logs");
       }
@@ -719,6 +742,23 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
             </table>
           )}
         </div>
+
+        {/* Pagination / Load More button */}
+        {hasMore && filteredLogs.length > 0 && !loading && (
+          <div className="mt-6 pt-4 border-t border-cyan-500/5 flex justify-center pb-2">
+            <button
+              onClick={() => fetchLogs(true)}
+              className={`px-6 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95 ${
+                isDarkMode 
+                  ? "bg-slate-900 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/40" 
+                  : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:shadow-md"
+              }`}
+            >
+              <RefreshCw size={12} className="shrink-0" />
+              Load More Audit Records
+            </button>
+          </div>
+        )}
       </div>
 
       {/* DETAIL INSPECTION MODAL (DRILLDOWN OVERLAY) */}
