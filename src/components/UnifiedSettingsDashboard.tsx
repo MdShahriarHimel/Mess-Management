@@ -77,6 +77,16 @@ interface UnifiedSettingsDashboardProps {
   translations: any;
   setTranslations: React.Dispatch<React.SetStateAction<any>>;
   isPlatformOwner?: boolean;
+  editingMonthId: string | null;
+  setEditingMonthId: (val: string | null) => void;
+  editMonthName: string;
+  setEditMonthName: (val: string) => void;
+  editMonthStart: string;
+  setEditMonthStart: (val: string) => void;
+  editMonthEnd: string;
+  setEditMonthEnd: (val: string) => void;
+  handleUpdateMonthCycle: (monthId: string) => Promise<void>;
+  handleDeleteMonthCycle: (monthId: string) => Promise<void>;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -122,7 +132,17 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   handleCreateMonth,
   monthsList,
   translations,
-  setTranslations
+  setTranslations,
+  editingMonthId,
+  setEditingMonthId,
+  editMonthName,
+  setEditMonthName,
+  editMonthStart,
+  setEditMonthStart,
+  editMonthEnd,
+  setEditMonthEnd,
+  handleUpdateMonthCycle,
+  handleDeleteMonthCycle
 }) => {
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
@@ -1154,49 +1174,100 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Create Cycle */}
+                {/* Create or Edit Cycle */}
                 {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
-                  <form onSubmit={handleCreateMonth} className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-orange-400 uppercase block">New Cycle Name</label>
+                  editingMonthId ? (
+                    <form onSubmit={(e) => { e.preventDefault(); handleUpdateMonthCycle(editingMonthId); }} className="space-y-4 p-4 rounded-xl border border-dashed border-cyan-500/25 bg-cyan-950/10">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-bold text-cyan-400 uppercase block">Edit Cycle Name</label>
+                        <button
+                          type="button"
+                          onClick={() => setEditingMonthId(null)}
+                          className="text-[9px] px-2 py-0.5 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded cursor-pointer font-bold transition-all border border-slate-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                       <input
                         type="text"
                         required
-                        value={newMonthName}
-                        onChange={(e) => setNewMonthName(e.target.value)}
+                        value={editMonthName}
+                        onChange={(e) => setEditMonthName(e.target.value)}
                         placeholder="e.g., August 2026"
                         className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
                       />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Starts</label>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={editMonthStart}
+                            onChange={(e) => setEditMonthStart(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends</label>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={editMonthEnd}
+                            onChange={(e) => setEditMonthEnd(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-xs text-white rounded-lg transition-colors cursor-pointer"
+                      >
+                        SAVE CYCLE CHANGES
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleCreateMonth} className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-orange-400 uppercase block">Starts</label>
+                        <label className="text-[10px] font-bold text-orange-400 uppercase block">New Cycle Name</label>
                         <input
-                          type="datetime-local"
+                          type="text"
                           required
-                          value={newMonthStart}
-                          onChange={(e) => setNewMonthStart(e.target.value)}
+                          value={newMonthName}
+                          onChange={(e) => setNewMonthName(e.target.value)}
+                          placeholder="e.g., August 2026"
                           className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends</label>
-                        <input
-                          type="datetime-local"
-                          required
-                          value={newMonthEnd}
-                          onChange={(e) => setNewMonthEnd(e.target.value)}
-                          className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Starts</label>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={newMonthStart}
+                            onChange={(e) => setNewMonthStart(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends</label>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={newMonthEnd}
+                            onChange={(e) => setNewMonthEnd(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <button
-                      type="submit"
-                      className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-xs text-white rounded-lg transition-colors cursor-pointer"
-                    >
-                      INITIALIZE NEW MONTH CYCLE
-                    </button>
-                  </form>
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-xs text-white rounded-lg transition-colors cursor-pointer"
+                      >
+                        INITIALIZE NEW MONTH CYCLE
+                      </button>
+                    </form>
+                  )
                 )}
 
                 {/* List Active/Inactive Cycles */}
@@ -1204,23 +1275,52 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   <h4 className="text-xs font-bold text-slate-300 uppercase">Available Active Cycles</h4>
                   <div className="divide-y divide-slate-800/60 max-h-60 overflow-y-auto pr-1">
                     {monthsList.map(month => (
-                      <div key={month.id} className="flex items-center justify-between py-2">
+                      <div key={month.id} className="flex items-center justify-between py-2 border-b border-slate-800/40 last:border-0">
                         <div className="flex flex-col">
                           <span className="text-xs font-bold text-slate-200">{month.name}</span>
                           <span className="text-[9px] text-slate-500 font-mono">
                             {new Date(month.startDate).toLocaleDateString()} - {new Date(month.endDate).toLocaleDateString()}
                           </span>
                         </div>
-                        <button
-                          onClick={() => setActiveMonthId(month.id)}
-                          className={`px-3 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
-                            activeMonthId === month.id
-                              ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
-                              : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
-                          }`}
-                        >
-                          {activeMonthId === month.id ? "Selected" : "Activate"}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setActiveMonthId(month.id)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
+                              activeMonthId === month.id
+                                ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
+                            }`}
+                          >
+                            {activeMonthId === month.id ? "Selected" : "Activate"}
+                          </button>
+                          {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingMonthId(month.id);
+                                  setEditMonthName(month.name);
+                                  setEditMonthStart(month.startDate ? month.startDate.substring(0, 16) : "");
+                                  setEditMonthEnd(month.endDate ? month.endDate.substring(0, 16) : "");
+                                }}
+                                className="p-1 text-slate-400 hover:text-cyan-400 transition-colors cursor-pointer rounded bg-slate-950 border border-slate-800"
+                                title="Edit Cycle"
+                              >
+                                <LucideIcons.Edit2 size={11} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Are you sure you want to delete the cycle "${month.name}"?`)) {
+                                    handleDeleteMonthCycle(month.id);
+                                  }
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer rounded bg-slate-950 border border-slate-800"
+                                title="Delete Cycle"
+                              >
+                                <LucideIcons.Trash2 size={11} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

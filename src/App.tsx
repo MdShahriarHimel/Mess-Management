@@ -2715,23 +2715,75 @@ export default function App() {
     const year = now.getFullYear();
     const month = now.getMonth();
     const pad = (n: number) => String(n).padStart(2, "0");
-    const startVal = `${year}-${pad(month + 1)}-01T12:00`;
-    const nextMonthDate = new Date(year, month + 1, 1);
-    const endVal = `${nextMonthDate.getFullYear()}-${pad(nextMonthDate.getMonth() + 1)}-01T12:00`;
+    const startVal = `${year}-${pad(month + 1)}-01T00:00`;
+    const lastDay = new Date(year, month + 1, 0);
+    const endVal = `${year}-${pad(month + 1)}-${pad(lastDay.getDate())}T23:59`;
     
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const nameVal = `${monthNames[month]} ${year}`;
     return { nameVal, startVal, endVal };
   };
 
+  const getDatesForMonthName = (name: string) => {
+    const monthNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+    const shortMonthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const lower = name.toLowerCase();
+    
+    let foundMonth = -1;
+    for (let i = 0; i < monthNames.length; i++) {
+      if (lower.includes(monthNames[i])) {
+        foundMonth = i;
+        break;
+      }
+    }
+    if (foundMonth === -1) {
+      for (let i = 0; i < shortMonthNames.length; i++) {
+        if (lower.includes(shortMonthNames[i])) {
+          foundMonth = i;
+          break;
+        }
+      }
+    }
+    
+    const yearMatch = name.match(/\b(20\d{2})\b/);
+    const foundYear = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
+    
+    if (foundMonth !== -1) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const startVal = `${foundYear}-${pad(foundMonth + 1)}-01T00:00`;
+      const lastDay = new Date(foundYear, foundMonth + 1, 0);
+      const endVal = `${foundYear}-${pad(foundMonth + 1)}-${pad(lastDay.getDate())}T23:59`;
+      return { startVal, endVal };
+    }
+    return null;
+  };
+
   const [newMonthName, setNewMonthName] = useState(() => getMonthDefaults().nameVal);
   const [newMonthStart, setNewMonthStart] = useState(() => getMonthDefaults().startVal);
   const [newMonthEnd, setNewMonthEnd] = useState(() => getMonthDefaults().endVal);
+
+  const handleNewMonthNameChange = (val: string) => {
+    setNewMonthName(val);
+    const matched = getDatesForMonthName(val);
+    if (matched) {
+      setNewMonthStart(matched.startVal);
+      setNewMonthEnd(matched.endVal);
+    }
+  };
 
   const [editingMonthId, setEditingMonthId] = useState<string | null>(null);
   const [editMonthName, setEditMonthName] = useState("");
   const [editMonthStart, setEditMonthStart] = useState("");
   const [editMonthEnd, setEditMonthEnd] = useState("");
+
+  const handleEditMonthNameChange = (val: string) => {
+    setEditMonthName(val);
+    const matched = getDatesForMonthName(val);
+    if (matched) {
+      setEditMonthStart(matched.startVal);
+      setEditMonthEnd(matched.endVal);
+    }
+  };
 
   const handleCreateMonth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4509,7 +4561,7 @@ export default function App() {
                 handleToggleMessLock={handleToggleMessLock}
                 handleUpdateSettings={handleUpdateSettings}
                 newMonthName={newMonthName}
-                setNewMonthName={setNewMonthName}
+                setNewMonthName={handleNewMonthNameChange}
                 newMonthStart={newMonthStart}
                 setNewMonthStart={setNewMonthStart}
                 newMonthEnd={newMonthEnd}
@@ -4518,6 +4570,16 @@ export default function App() {
                 monthsList={months}
                 translations={translations}
                 setTranslations={setTranslations}
+                editingMonthId={editingMonthId}
+                setEditingMonthId={setEditingMonthId}
+                editMonthName={editMonthName}
+                setEditMonthName={handleEditMonthNameChange}
+                editMonthStart={editMonthStart}
+                setEditMonthStart={setEditMonthStart}
+                editMonthEnd={editMonthEnd}
+                setEditMonthEnd={setEditMonthEnd}
+                handleUpdateMonthCycle={handleUpdateMonthCycle}
+                handleDeleteMonthCycle={handleDeleteMonthCycle}
               />
 
               {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
