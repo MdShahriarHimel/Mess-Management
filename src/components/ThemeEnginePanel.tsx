@@ -664,252 +664,407 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
             </button>
           </div>
 
-          {/* Typography Sizes */}
-          <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
-            <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
-              <Type size={14} className="text-cyan-400" />
-              Dynamic Typography Scale
-            </h5>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Global Base Size ({typographySettings?.globalFontSize || 14}px)</label>
-                <input
-                  type="range"
-                  min="11"
-                  max="18"
-                  value={typographySettings?.globalFontSize || 14}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, globalFontSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+            {/* Left Controls Column (xl:col-span-7) */}
+            <div className="xl:col-span-7 space-y-6">
+              
+              {/* Typography Sizes */}
+              <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
+                <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
+                  <Type size={14} className="text-cyan-400" />
+                  Dynamic Typography Scale
+                </h5>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Global Base Size ({typographySettings?.globalFontSize || 14}px)</label>
+                    <input
+                      type="range"
+                      min="11"
+                      max="18"
+                      value={typographySettings?.globalFontSize || 14}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, globalFontSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Heading Size ({typographySettings?.headingSize || 22}px)</label>
+                    <input
+                      type="range"
+                      min="16"
+                      max="32"
+                      value={typographySettings?.headingSize || 22}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, headingSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Card Title Size ({typographySettings?.cardTitleSize || 15}px)</label>
+                    <input
+                      type="range"
+                      min="12"
+                      max="22"
+                      value={typographySettings?.cardTitleSize || 15}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, cardTitleSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Table Font Size ({typographySettings?.tableFontSize || 12}px)</label>
+                    <input
+                      type="range"
+                      min="9"
+                      max="16"
+                      value={typographySettings?.tableFontSize || 12}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, tableFontSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Input Box Font Size ({typographySettings?.inputFontSize || 12}px)</label>
+                    <input
+                      type="range"
+                      min="9"
+                      max="16"
+                      value={typographySettings?.inputFontSize || 12}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, inputFontSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Button Font Size ({typographySettings?.buttonFontSize || 12}px)</label>
+                    <input
+                      type="range"
+                      min="9"
+                      max="16"
+                      value={typographySettings?.buttonFontSize || 12}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, buttonFontSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Sidebar Font Size ({typographySettings?.sidebarFontSize || 12}px)</label>
+                    <input
+                      type="range"
+                      min="9"
+                      max="16"
+                      value={typographySettings?.sidebarFontSize || 12}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, sidebarFontSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Navigation Font Size ({typographySettings?.navigationFontSize || 12}px)</label>
+                    <input
+                      type="range"
+                      min="9"
+                      max="16"
+                      value={typographySettings?.navigationFontSize || 12}
+                      onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, navigationFontSize: Number(e.target.value) }))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Heading Size ({typographySettings?.headingSize || 22}px)</label>
-                <input
-                  type="range"
-                  min="16"
-                  max="32"
-                  value={typographySettings?.headingSize || 22}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, headingSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
+
+              {/* Dynamic 16M RGB Color Customizer */}
+              <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
+                <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
+                  <Palette size={14} className="text-cyan-400" />
+                  Dynamic 16-Million RGB Color customizer (Real-time updates)
+                </h5>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  {/* Left Selector List */}
+                  <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800">
+                    {colorFields.map((field) => {
+                      const val = field.type === "customColor" ? customColors?.[field.id] : typographySettings?.[field.id];
+                      const fallback = field.type === "customColor"
+                        ? (field.id === "accentColor" ? "#22d3ee" : isDarkMode ? "#0f172a" : "#ecfeff")
+                        : (field.id === "primaryFontColor" ? (isDarkMode ? "#f8fafc" : "#0f172a") : "#cbd5e1");
+                      const activeVal = val || fallback;
+                      const isSelected = selectedColorField === field.id;
+
+                      return (
+                        <button
+                          key={field.id}
+                          onClick={() => setSelectedColorField(field.id)}
+                          className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between border cursor-pointer ${
+                            isSelected
+                              ? "bg-cyan-500/10 border-cyan-500 text-cyan-300"
+                              : "bg-slate-900/40 border-slate-800/60 hover:border-slate-700 text-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {/* Circular preview swatch */}
+                            <div
+                              className="w-4 h-4 rounded-full border border-white/20"
+                              style={{ backgroundColor: activeVal }}
+                            />
+                            <span className="text-[10px] font-bold font-sans">{field.label}</span>
+                          </div>
+                          <span className="text-[10px] font-mono font-semibold text-slate-500">{activeVal}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right RgbColorPicker Container */}
+                  <div className="lg:col-span-7 flex flex-col items-center justify-center p-2 bg-slate-900/30 rounded-2xl border border-slate-800/50">
+                    <div className="w-full mb-3 text-center lg:text-left px-2">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Customizing Field</span>
+                      <span className="text-xs font-extrabold text-cyan-300 block">
+                        {colorFields.find(f => f.id === selectedColorField)?.label || "Selected Color"}
+                      </span>
+                    </div>
+                    
+                    <RgbColorPicker
+                      value={getSelectedColorValue()}
+                      onChange={handleColorPickerChange}
+                      isDarkMode={isDarkMode}
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Card Title Size ({typographySettings?.cardTitleSize || 15}px)</label>
-                <input
-                  type="range"
-                  min="12"
-                  max="22"
-                  value={typographySettings?.cardTitleSize || 15}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, cardTitleSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Table Font Size ({typographySettings?.tableFontSize || 12}px)</label>
-                <input
-                  type="range"
-                  min="9"
-                  max="16"
-                  value={typographySettings?.tableFontSize || 12}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, tableFontSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Input Box Font Size ({typographySettings?.inputFontSize || 12}px)</label>
-                <input
-                  type="range"
-                  min="9"
-                  max="16"
-                  value={typographySettings?.inputFontSize || 12}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, inputFontSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Button Font Size ({typographySettings?.buttonFontSize || 12}px)</label>
-                <input
-                  type="range"
-                  min="9"
-                  max="16"
-                  value={typographySettings?.buttonFontSize || 12}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, buttonFontSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Sidebar Font Size ({typographySettings?.sidebarFontSize || 12}px)</label>
-                <input
-                  type="range"
-                  min="9"
-                  max="16"
-                  value={typographySettings?.sidebarFontSize || 12}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, sidebarFontSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Navigation Font Size ({typographySettings?.navigationFontSize || 12}px)</label>
-                <input
-                  type="range"
-                  min="9"
-                  max="16"
-                  value={typographySettings?.navigationFontSize || 12}
-                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, navigationFontSize: Number(e.target.value) }))}
-                  className="w-full accent-cyan-500"
-                />
+
+              {/* Premium Glow & Preset Effects */}
+              <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
+                <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-cyan-400" />
+                  Special Premium Visual Effects
+                </h5>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.glowingLabels}
+                      onChange={(e) => toggleGlowPreset("glowingLabels", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Glowing Labels</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.glowingButtons}
+                      onChange={(e) => toggleGlowPreset("glowingButtons", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Glowing Buttons</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.glowingIcons}
+                      onChange={(e) => toggleGlowPreset("glowingIcons", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Glowing Icons</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.glowingCards}
+                      onChange={(e) => toggleGlowPreset("glowingCards", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Glowing Cards</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.neonBorders}
+                      onChange={(e) => toggleGlowPreset("neonBorders", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Neon Borders</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.rgbHover}
+                      onChange={(e) => toggleGlowPreset("rgbHover", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">RGB Hover Effects</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.animatedShadows}
+                      onChange={(e) => toggleGlowPreset("animatedShadows", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Animated Shadows</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={!!messAnimations?.glassCards}
+                      onChange={(e) => toggleGlowPreset("glassCards", e.target.checked)}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                    />
+                    <span className="text-[10px] font-bold text-slate-300">Holo Glass Cards</span>
+                  </label>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Dynamic 16M RGB Color Customizer */}
-          <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
-            <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
-              <Palette size={14} className="text-cyan-400" />
-              Dynamic 16-Million RGB Color customizer (Real-time updates)
-            </h5>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left Selector List */}
-              <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800">
-                {colorFields.map((field) => {
-                  const val = field.type === "customColor" ? customColors?.[field.id] : typographySettings?.[field.id];
-                  const fallback = field.type === "customColor"
-                    ? (field.id === "accentColor" ? "#22d3ee" : isDarkMode ? "#0f172a" : "#ecfeff")
-                    : (field.id === "primaryFontColor" ? (isDarkMode ? "#f8fafc" : "#0f172a") : "#cbd5e1");
-                  const activeVal = val || fallback;
-                  const isSelected = selectedColorField === field.id;
-
-                  return (
-                    <button
-                      key={field.id}
-                      onClick={() => setSelectedColorField(field.id)}
-                      className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between border cursor-pointer ${
-                        isSelected
-                          ? "bg-cyan-500/10 border-cyan-500 text-cyan-300"
-                          : "bg-slate-900/40 border-slate-800/60 hover:border-slate-700 text-slate-300"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {/* Circular preview swatch */}
-                        <div
-                          className="w-4 h-4 rounded-full border border-white/20"
-                          style={{ backgroundColor: activeVal }}
-                        />
-                        <span className="text-[10px] font-bold font-sans">{field.label}</span>
-                      </div>
-                      <span className="text-[10px] font-mono font-semibold text-slate-500">{activeVal}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Right RgbColorPicker Container */}
-              <div className="lg:col-span-7 flex flex-col items-center justify-center p-2 bg-slate-900/30 rounded-2xl border border-slate-800/50">
-                <div className="w-full mb-3 text-center lg:text-left px-2">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Customizing Field</span>
-                  <span className="text-xs font-extrabold text-cyan-300 block">
-                    {colorFields.find(f => f.id === selectedColorField)?.label || "Selected Color"}
+            {/* Right Interactive Live Sandbox Panel Column (xl:col-span-5) */}
+            <div className="xl:col-span-5 xl:sticky xl:top-6 space-y-4">
+              <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/40 backdrop-blur-md space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
+                  <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
+                    <Eye size={14} className="text-cyan-400" />
+                    Real-time Component Sandbox
+                  </h5>
+                  <span className="px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-[9px] font-bold text-cyan-300 tracking-wider uppercase animate-pulse">
+                    Live View
                   </span>
                 </div>
                 
-                <RgbColorPicker
-                  value={getSelectedColorValue()}
-                  onChange={handleColorPickerChange}
-                  isDarkMode={isDarkMode}
-                />
+                {/* Mini Header & Sidebar Layout */}
+                <div className="rounded-xl border border-slate-800/60 overflow-hidden bg-slate-950/40 text-[11px] font-sans">
+                  {/* Header */}
+                  <div 
+                    style={{ 
+                      backgroundColor: customColors?.headerBg || (isDarkMode ? "#0f172a" : "#ffffff"),
+                      borderBottom: `1px solid ${isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"}`
+                    }} 
+                    className="p-2.5 flex items-center justify-between transition-all"
+                  >
+                    <div className="flex items-center gap-1.5 font-bold" style={{ color: typographySettings?.headingColor || (isDarkMode ? "#22d3ee" : "#0f172a") }}>
+                      <Sparkles size={11} className="text-cyan-400" style={{ color: customColors?.accentColor || "#22d3ee" }} />
+                      <span>BENGAL BACHELOR ERP</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span className="text-[9px] text-slate-500 font-bold">ACTIVE</span>
+                    </div>
+                  </div>
+                  
+                  {/* Main Grid: Sidebar + Content */}
+                  <div className="grid grid-cols-12 min-h-[220px]">
+                    {/* Sidebar */}
+                    <div 
+                      style={{ 
+                        backgroundColor: customColors?.sidebarBg || (isDarkMode ? "#0f172a" : "#ecfeff"),
+                        color: typographySettings?.sidebarTextColor || (isDarkMode ? "#94a3b8" : "#0f172a"),
+                        fontSize: `${typographySettings?.sidebarFontSize || 12}px`
+                      }} 
+                      className="col-span-4 p-2 space-y-1.5 border-r border-slate-800/30 font-medium transition-all"
+                    >
+                      <div className="p-1.5 rounded bg-cyan-500/10 font-bold text-[9px] uppercase tracking-wider text-cyan-400 animate-pulse" style={{ color: customColors?.accentColor || undefined }}>
+                        NAVIGATION
+                      </div>
+                      <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
+                        <span>📊</span> Dashboard
+                      </div>
+                      <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
+                        <span>👥</span> Members
+                      </div>
+                      <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
+                        <span>⚙️</span> Settings
+                      </div>
+                    </div>
+                    
+                    {/* Page Content Area */}
+                    <div className="col-span-8 p-3 space-y-3 bg-slate-950/60 overflow-y-auto max-h-[260px]">
+                      {/* Sub card styled exactly with customized card background & colors */}
+                      <div 
+                        style={{ 
+                          backgroundColor: customColors?.cardBg || (isDarkMode ? "#1e293b" : "#ffffff"),
+                          color: typographySettings?.primaryFontColor || (isDarkMode ? "#f8fafc" : "#0f172a"),
+                          boxShadow: messAnimations?.glowingCards ? `0 0 10px ${customColors?.accentColor || "#22d3ee"}1a` : undefined,
+                          borderColor: messAnimations?.neonBorders ? `${customColors?.accentColor || "#22d3ee"}33` : undefined
+                        }} 
+                        className="p-2.5 rounded-lg border border-slate-800/50 space-y-2 transition-all"
+                      >
+                        <h6 
+                          style={{ 
+                            color: typographySettings?.headingColor || (isDarkMode ? "#22d3ee" : "#0f172a"),
+                            fontSize: `${typographySettings?.cardTitleSize || 15}px`
+                          }} 
+                          className="font-bold tracking-tight"
+                        >
+                          Overview Summary
+                        </h6>
+                        <p 
+                          style={{ 
+                            color: typographySettings?.secondaryFontColor || (isDarkMode ? "#94a3b8" : "#475569"),
+                            fontSize: `${typographySettings?.globalFontSize || 14}px`
+                          }} 
+                          className="leading-normal"
+                        >
+                          Welcome to your ERP system. This text block scales dynamically in real-time as you tweak typography settings.
+                        </p>
+                        
+                        {/* Sample Input box with customization */}
+                        <div className="space-y-1 text-left">
+                          <span className="text-[8px] font-bold text-orange-400 block uppercase">Search Database</span>
+                          <input 
+                            type="text" 
+                            disabled
+                            placeholder="Type a query..." 
+                            style={{
+                              backgroundColor: customColors?.inputBg || (isDarkMode ? "#0f172a" : "#ecfeff"),
+                              borderColor: customColors?.inputBorderColor || (isDarkMode ? "#334155" : "#cffafe"),
+                              color: customColors?.inputTextColor || (isDarkMode ? "#cbd5e1" : "#083344"),
+                              fontSize: `${typographySettings?.inputFontSize || 12}px`
+                            }}
+                            className="w-full px-2 py-1 rounded border outline-none font-medium cursor-not-allowed text-[10px]"
+                          />
+                        </div>
+
+                        {/* Interactive Accent color button */}
+                        <button 
+                          style={{ 
+                            background: `linear-gradient(to right, ${customColors?.accentColor || "#22d3ee"}, ${customColors?.accentColor || "#22d3ee"}dd)`,
+                            fontSize: `${typographySettings?.buttonFontSize || 12}px`,
+                            boxShadow: messAnimations?.glowingButtons ? `0 0 12px ${customColors?.accentColor || "#22d3ee"}40` : undefined
+                          }} 
+                          className="w-full text-slate-950 font-extrabold py-1 px-2.5 rounded cursor-not-allowed mt-1 text-[10px] tracking-wide"
+                        >
+                          SUBMIT REPORT
+                        </button>
+                      </div>
+
+                      {/* Cash Deposit Card and Settlement sheet Card */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div 
+                          style={{ 
+                            backgroundColor: customColors?.cashDepositBg || "#f973161a",
+                            borderColor: customColors?.cashDepositBorder || "#f97316"
+                          }} 
+                          className="p-2 rounded border text-left text-[10px]"
+                        >
+                          <span className="text-[8px] font-bold text-orange-400 block uppercase">Deposit Card</span>
+                          <span className="font-extrabold text-slate-200 block">৳ 12,450 BDT</span>
+                        </div>
+                        <div 
+                          style={{ 
+                            backgroundColor: customColors?.settlementBg || "#22c55e1a",
+                            borderColor: customColors?.settlementBorder || "#22c55e"
+                          }} 
+                          className="p-2 rounded border text-left text-[10px]"
+                        >
+                          <span className="text-[8px] font-bold text-emerald-400 block uppercase">Settled Balance</span>
+                          <span className="font-extrabold text-slate-200 block">৳ 4,120 BDT</span>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-
-          {/* Premium Glow & Preset Effects */}
-          <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
-            <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-cyan-400" />
-              Special Premium Visual Effects
-            </h5>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.glowingLabels}
-                  onChange={(e) => toggleGlowPreset("glowingLabels", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Glowing Labels</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.glowingButtons}
-                  onChange={(e) => toggleGlowPreset("glowingButtons", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Glowing Buttons</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.glowingIcons}
-                  onChange={(e) => toggleGlowPreset("glowingIcons", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Glowing Icons</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.glowingCards}
-                  onChange={(e) => toggleGlowPreset("glowingCards", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Glowing Cards</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.neonBorders}
-                  onChange={(e) => toggleGlowPreset("neonBorders", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Neon Borders</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.rgbHover}
-                  onChange={(e) => toggleGlowPreset("rgbHover", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">RGB Hover Effects</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.animatedShadows}
-                  onChange={(e) => toggleGlowPreset("animatedShadows", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Animated Shadows</span>
-              </label>
-
-              <label className="flex items-center gap-2 p-2 bg-slate-900/60 rounded-xl cursor-pointer border border-slate-800/40 hover:border-slate-700 transition-all">
-                <input
-                  type="checkbox"
-                  checked={!!messAnimations?.glassCards}
-                  onChange={(e) => toggleGlowPreset("glassCards", e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 focus:ring-offset-0"
-                />
-                <span className="text-[10px] font-bold text-slate-300">Holo Glass Cards</span>
-              </label>
             </div>
           </div>
         </div>

@@ -247,17 +247,51 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     }
   };
 
+  const isColorLight = (colorStr: string): boolean => {
+    if (!colorStr) return false;
+    const cleanColor = colorStr.trim();
+    if (cleanColor.startsWith("rgba") || cleanColor.startsWith("rgb")) {
+      const matches = cleanColor.match(/\d+/g);
+      if (matches && matches.length >= 3) {
+        const r = parseInt(matches[0]);
+        const g = parseInt(matches[1]);
+        const b = parseInt(matches[2]);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        return brightness > 128;
+      }
+    }
+    if (cleanColor.startsWith("#")) {
+      const hex = cleanColor.replace("#", "");
+      let r = 0, g = 0, b = 0;
+      if (hex.length === 3) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+      } else if (hex.length === 6) {
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      }
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+      return brightness > 128;
+    }
+    return false;
+  };
+
+  const isCardLight = liveCustomization?.cardBg ? isColorLight(liveCustomization.cardBg) : !isDarkMode;
+  const resolvedTextColor = liveCustomization?.textColor || (isCardLight ? "#0f172a" : "#ffffff");
+
   return (
     <div className="w-full max-w-md mx-auto" id="login-container">
       <div 
         style={{
           backgroundColor: liveCustomization?.cardBg || undefined,
-          color: liveCustomization?.textColor || undefined
+          color: resolvedTextColor
         }}
         className={`p-8 rounded-2xl border transition-all duration-300 ${fontClass} ${
-          isDarkMode 
-            ? "glass-panel cyan-glow text-white" 
-            : "glass-panel-light shadow-xl text-slate-800"
+          isCardLight 
+            ? "glass-panel-light shadow-xl text-slate-800" 
+            : "glass-panel cyan-glow text-white"
         }`}
       >
         
@@ -292,11 +326,13 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               color: liveCustomization?.accentColor || undefined,
               backgroundImage: liveCustomization?.accentColor ? "none" : undefined
             }}
-            className="text-3xl font-bold tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent"
+            className={`text-3xl font-bold tracking-tight font-display ${
+              liveCustomization?.accentColor ? "" : "bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent"
+            }`}
           >
             {title}
           </h1>
-          <p className={`text-xs mt-1 font-mono ${isDarkMode ? "text-cyan-300/60" : "text-slate-500"}`}>
+          <p className={`text-xs mt-1 font-mono ${!isCardLight ? "text-cyan-300/60" : "text-slate-500"}`}>
             {subtitle}
           </p>
         </div>
@@ -310,7 +346,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               className={`flex-1 pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all text-center ${
                 activeTab === "login"
                   ? "border-cyan-400 text-cyan-400 font-bold"
-                  : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
+                  : `border-transparent ${!isCardLight ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
               }`}
               style={{
                 borderColor: activeTab === "login" ? accentColor : undefined,
@@ -325,7 +361,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               className={`flex-1 pb-3 text-sm font-semibold tracking-wide border-b-2 transition-all text-center ${
                 activeTab === "activate"
                   ? "border-cyan-400 text-cyan-400 font-bold"
-                  : `border-transparent ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
+                  : `border-transparent ${!isCardLight ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`
               }`}
               style={{
                 borderColor: activeTab === "activate" ? accentColor : undefined,
@@ -343,7 +379,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
             <button
               type="button"
               onClick={() => { setActiveTab("login"); setError(null); setSuccess(null); }}
-              className={`text-xs hover:underline cursor-pointer ${isDarkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+              className={`text-xs hover:underline cursor-pointer ${!isCardLight ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}
             >
               Back to Login
             </button>
@@ -366,7 +402,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           <form onSubmit={handleSubmit} className="space-y-5" id="forgot-auth-form">
             {forgotStep === "send" ? (
               <>
-                <p className={`text-xs leading-relaxed ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                <p className={`text-xs leading-relaxed ${!isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                   Enter your registered email address below. We will generate and send a 6-digit secure Verification OTP to your email inbox (or printed in the server logs if SMTP is not configured) to verify your account and allow you to set a new password.
                 </p>
                 <div className="space-y-1.5">
@@ -384,9 +420,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="member@mess.erp"
                       className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode 
-                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                        isCardLight 
+                          ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                          : "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500"
                       }`}
                     />
                   </div>
@@ -412,7 +448,11 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               </>
             ) : (
               <>
-                <p className={`text-xs leading-relaxed p-2.5 rounded-lg border bg-cyan-500/5 border-cyan-500/10 ${isDarkMode ? "text-cyan-300" : "text-cyan-800"}`}>
+                <p className={`text-xs leading-relaxed p-2.5 rounded-lg border ${
+                  isCardLight 
+                    ? "bg-cyan-50 border-cyan-200 text-cyan-800"
+                    : "bg-cyan-500/5 border-cyan-500/10 text-cyan-300"
+                }`}>
                   We have generated a Verification OTP code. Please check your email inbox and enter it below along with your new password.
                 </p>
                 
@@ -433,9 +473,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                       placeholder="Enter 6-digit OTP"
                       className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all text-center tracking-[0.25em] font-bold focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode 
-                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                        isCardLight 
+                          ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                          : "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500"
                       }`}
                     />
                   </div>
@@ -457,9 +497,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Minimum 6 characters"
                       className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode 
-                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                        isCardLight 
+                          ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                          : "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500"
                       }`}
                     />
                     <button
@@ -488,9 +528,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                       onChange={(e) => setConfirmNewPassword(e.target.value)}
                       placeholder="Confirm new password"
                       className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                        isDarkMode 
-                          ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                          : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                        isCardLight 
+                          ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                          : "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500"
                       }`}
                     />
                   </div>
@@ -507,7 +547,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                   <button
                     type="button"
                     onClick={() => { setActiveTab("login"); setError(null); setSuccess(null); }}
-                    className={`hover:underline cursor-pointer ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                    className={`hover:underline cursor-pointer ${!isCardLight ? "text-slate-400" : "text-slate-500"}`}
                   >
                     Cancel
                   </button>
@@ -552,9 +592,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="member@mess.erp"
                   className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                    isDarkMode 
-                      ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                      : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                    isCardLight 
+                      ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                      : "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500"
                   }`}
                 />
               </div>
@@ -587,9 +627,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={activeTab === "login" ? "••••••••" : "Minimum 6 characters"}
                   className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-                    isDarkMode 
-                      ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-                      : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                    isCardLight 
+                      ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+                      : "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500"
                   }`}
                 />
                 <button
@@ -613,7 +653,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                     className="rounded bg-slate-900 border-cyan-500/30 text-cyan-500 focus:ring-cyan-500/50 cursor-pointer accent-cyan-500 h-4 w-4"
                   />
                   <span className={`text-xs font-medium transition-colors ${
-                    isDarkMode ? "text-slate-300 group-hover:text-cyan-400" : "text-slate-600 group-hover:text-cyan-600"
+                    !isCardLight ? "text-slate-300 group-hover:text-cyan-400" : "text-slate-600 group-hover:text-cyan-600"
                   }`}>
                     Remember me for 10 days
                   </span>
@@ -624,34 +664,34 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
             {/* Guidelines & Password requirements for activate tab */}
             {activeTab === "activate" && (
               <div className="space-y-2">
-                <div className={`p-2.5 rounded-lg border text-xs space-y-1 ${isDarkMode ? "bg-slate-900/40 border-cyan-500/20" : "bg-slate-50 border-slate-200"}`}>
+                <div className={`p-2.5 rounded-lg border text-xs space-y-1 ${isCardLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/40 border-cyan-500/20"}`}>
                   <span className="font-semibold uppercase tracking-wider text-[10px] text-orange-500 block mb-1">
                     Password Requirements:
                   </span>
                   <div className="grid grid-cols-1 gap-1 text-[11px]">
-                    <div className={`flex items-center gap-1.5 ${password.length >= 8 ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                    <div className={`flex items-center gap-1.5 ${password.length >= 8 ? "text-emerald-400 font-medium" : !isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                       <span className="text-[10px]">{password.length >= 8 ? "✓" : "•"}</span>
                       <span>At least 8 characters</span>
                     </div>
-                    <div className={`flex items-center gap-1.5 ${/[A-Z]/.test(password) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                    <div className={`flex items-center gap-1.5 ${/[A-Z]/.test(password) ? "text-emerald-400 font-medium" : !isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                       <span className="text-[10px]">{/[A-Z]/.test(password) ? "✓" : "•"}</span>
                       <span>At least 1 uppercase letter (A-Z)</span>
                     </div>
-                    <div className={`flex items-center gap-1.5 ${/[a-z]/.test(password) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                    <div className={`flex items-center gap-1.5 ${/[a-z]/.test(password) ? "text-emerald-400 font-medium" : !isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                       <span className="text-[10px]">{/[a-z]/.test(password) ? "✓" : "•"}</span>
                       <span>At least 1 lowercase letter (a-z)</span>
                     </div>
-                    <div className={`flex items-center gap-1.5 ${/[0-9]/.test(password) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                    <div className={`flex items-center gap-1.5 ${/[0-9]/.test(password) ? "text-emerald-400 font-medium" : !isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                       <span className="text-[10px]">{/[0-9]/.test(password) ? "✓" : "•"}</span>
                       <span>At least 1 number (0-9)</span>
                     </div>
-                    <div className={`flex items-center gap-1.5 ${(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) || /[^A-Za-z0-9]/.test(password)) ? "text-emerald-400 font-medium" : isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                    <div className={`flex items-center gap-1.5 ${(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) || /[^A-Za-z0-9]/.test(password)) ? "text-emerald-400 font-medium" : !isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                       <span className="text-[10px]">{(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) || /[^A-Za-z0-9]/.test(password)) ? "✓" : "•"}</span>
                       <span>At least 1 special character (@, #, $, etc.)</span>
                     </div>
                   </div>
                 </div>
-                <p className={`text-[11px] leading-relaxed italic ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                <p className={`text-[11px] leading-relaxed italic ${!isCardLight ? "text-slate-400" : "text-slate-500"}`}>
                   * Activation requires that your email has already been invited by the Administrator. If not invited, activation will fail.
                 </p>
               </div>
