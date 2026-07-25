@@ -1481,7 +1481,7 @@ export default function App() {
   });
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
   const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace("#", "");
     return hash || "dashboard";
@@ -1816,7 +1816,7 @@ export default function App() {
   const [erpBrandingState, setErpBrandingState] = useState<any>(null);
   const [messAppearanceState, setMessAppearanceState] = useState<any>(null);
   const [userPreferencesState, setUserPreferencesState] = useState<any>({
-    isDarkMode: true,
+    isDarkMode: false,
     accentColor: "#22d3ee",
     fontSize: "normal",
     compactMode: false,
@@ -3758,19 +3758,19 @@ export default function App() {
     }
 
     return {
-      primaryFontColor: typographySettings?.primaryFontColor || defaults.primaryFontColor,
-      secondaryFontColor: typographySettings?.secondaryFontColor || defaults.secondaryFontColor,
-      headingColor: typographySettings?.headingColor || defaults.headingColor,
-      menuTextColor: typographySettings?.menuTextColor || defaults.menuTextColor,
-      sidebarTextColor: typographySettings?.sidebarTextColor || defaults.sidebarTextColor,
-      navbarTextColor: typographySettings?.navbarTextColor || defaults.navbarTextColor,
-      cardTextColor: typographySettings?.cardTextColor || defaults.cardTextColor,
-      tableTextColor: typographySettings?.tableTextColor || defaults.tableTextColor,
-      buttonTextColor: typographySettings?.buttonTextColor || defaults.buttonTextColor,
-      linkColor: typographySettings?.linkColor || defaults.linkColor,
-      successTextColor: typographySettings?.successTextColor || defaults.successTextColor,
-      warningTextColor: typographySettings?.warningTextColor || defaults.warningTextColor,
-      errorTextColor: typographySettings?.errorTextColor || defaults.errorTextColor,
+      primaryFontColor: !isDark ? defaults.primaryFontColor : (typographySettings?.primaryFontColor || defaults.primaryFontColor),
+      secondaryFontColor: !isDark ? defaults.secondaryFontColor : (typographySettings?.secondaryFontColor || defaults.secondaryFontColor),
+      headingColor: !isDark ? defaults.headingColor : (typographySettings?.headingColor || defaults.headingColor),
+      menuTextColor: !isDark ? defaults.menuTextColor : (typographySettings?.menuTextColor || defaults.menuTextColor),
+      sidebarTextColor: !isDark ? defaults.sidebarTextColor : (typographySettings?.sidebarTextColor || defaults.sidebarTextColor),
+      navbarTextColor: !isDark ? defaults.navbarTextColor : (typographySettings?.navbarTextColor || defaults.navbarTextColor),
+      cardTextColor: !isDark ? defaults.cardTextColor : (typographySettings?.cardTextColor || defaults.cardTextColor),
+      tableTextColor: !isDark ? defaults.tableTextColor : (typographySettings?.tableTextColor || defaults.tableTextColor),
+      buttonTextColor: !isDark ? defaults.buttonTextColor : (typographySettings?.buttonTextColor || defaults.buttonTextColor),
+      linkColor: !isDark ? defaults.linkColor : (typographySettings?.linkColor || defaults.linkColor),
+      successTextColor: !isDark ? defaults.successTextColor : (typographySettings?.successTextColor || defaults.successTextColor),
+      warningTextColor: !isDark ? defaults.warningTextColor : (typographySettings?.warningTextColor || defaults.warningTextColor),
+      errorTextColor: !isDark ? defaults.errorTextColor : (typographySettings?.errorTextColor || defaults.errorTextColor),
       
       globalFontSize: typographySettings?.globalFontSize !== undefined ? Number(typographySettings.globalFontSize) : defaults.globalFontSize,
       headingSize: typographySettings?.headingSize !== undefined ? Number(typographySettings.headingSize) : defaults.headingSize,
@@ -3820,8 +3820,8 @@ export default function App() {
           --font-sans: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.sans} !important;
           --font-display: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.display} !important;
           --custom-sidebar-bg: ${activeCustomColors?.sidebarBg || "#0f172a"};
-          --custom-header-bg: ${activeCustomColors?.headerBg || "#0f172a"};
-          --custom-card-bg: ${activeCustomColors?.cardBg || "#1e293b"};
+          --custom-header-bg: ${activeIsDarkMode ? (activeCustomColors?.headerBg || "#0f172a") : "#ffffff"};
+          --custom-card-bg: ${activeIsDarkMode ? (activeCustomColors?.cardBg || "#1e293b") : "#ffffff"};
           --custom-accent-color: ${activeCustomColors?.accentColor || "#22d3ee"};
           --custom-typography-highlight: ${activeCustomColors?.typographyHighlightRgb || "#67e8f9"};
           --custom-layout-scale-color: ${activeCustomColors?.layoutScaleColorRgb || "#a78bfa"};
@@ -3936,6 +3936,9 @@ export default function App() {
         }
 
         /* Fix text contrast in light mode dynamically on common light mode containers */
+        .light-mode-root {
+          background-color: #f1f5f9 !important;
+        }
         .light-mode-root .text-slate-200,
         .light-mode-root .text-gray-200,
         .light-mode-root .text-slate-300,
@@ -3945,12 +3948,69 @@ export default function App() {
           color: var(--typo-primary-color) !important;
         }
 
+        .light-mode-root .bg-slate-950\/20,
+        .light-mode-root .bg-slate-950\/30,
         .light-mode-root .bg-slate-950\/40,
         .light-mode-root .bg-slate-950\/60,
+        .light-mode-root .bg-slate-900\/30,
+        .light-mode-root .bg-slate-900\/40,
         .light-mode-root .bg-slate-900\/50,
         .light-mode-root .bg-slate-950 {
-          background-color: #f1f5f9 !important;
-          border-color: #cbd5e1 !important;
+          background-color: #f8fafc !important;
+          border-color: #e2e8f0 !important;
+        }
+
+        .light-mode-root .border-slate-800,
+        .light-mode-root .border-slate-850,
+        .light-mode-root .border-slate-900,
+        .light-mode-root .border-slate-800\/60,
+        .light-mode-root .border-slate-850\/40,
+        .light-mode-root .border-slate-850\/55,
+        .light-mode-root .border-cyan-500\/10,
+        .light-mode-root .border-cyan-500\/15,
+        .light-mode-root .border-cyan-500\/20,
+        .light-mode-root .border-cyan-500\/30,
+        .light-mode-root .divide-slate-800,
+        .light-mode-root .divide-cyan-500\/5 {
+          border-color: #e2e8f0 !important;
+        }
+
+        /* Highly specific CSS overrides for the sidebar elements in Light Mode */
+        .light-mode-root .sidebar-container {
+          background-color: #ffffff !important;
+          border-color: #e2e8f0 !important;
+          color: #1e293b !important;
+        }
+        
+        .light-mode-root .sidebar-container .sidebar-brand-text {
+          color: #0f172a !important;
+          background-image: none !important;
+          background-clip: unset !important;
+          -webkit-background-clip: unset !important;
+          -webkit-text-fill-color: #0f172a !important;
+        }
+        
+        .light-mode-root .sidebar-container .sidebar-item-active {
+          background-color: #ecfeff !important; /* cyan-50 */
+          color: #0891b2 !important; /* cyan-600 */
+          border-left-color: #06b6d4 !important; /* cyan-500 */
+        }
+        
+        .light-mode-root .sidebar-container .sidebar-item-inactive {
+          color: #475569 !important; /* slate-600 */
+        }
+        
+        .light-mode-root .sidebar-container .sidebar-item-inactive:hover {
+          background-color: #f1f5f9 !important; /* slate-100 */
+          color: #0f172a !important; /* slate-900 */
+        }
+        
+        .light-mode-root .sidebar-container .sidebar-label-gray {
+          color: #64748b !important; /* slate-500 */
+        }
+        
+        .light-mode-root .sidebar-container .sidebar-profile-name {
+          color: #0f172a !important;
         }
 
         body, html {
@@ -4106,39 +4166,47 @@ export default function App() {
       {mobileMenuOpen && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 md:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div 
-            className={`w-64 h-full p-5 flex flex-col justify-between ${isDarkMode ? "bg-slate-900 border-r border-slate-800" : "bg-white text-slate-800 border-r"}`}
+            style={{
+              backgroundColor: activeIsDarkMode ? (activeCustomColors?.sidebarBg || "#020617") : "#ffffff"
+            }}
+            className={`w-64 h-full p-5 flex flex-col justify-between border-r sidebar-container ${
+              activeIsDarkMode ? "border-slate-900 text-slate-100 bg-slate-950" : "border-slate-200 text-slate-800 bg-white"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div>
               <div className="flex justify-between items-center mb-6">
-                <span className="font-black text-cyan-400 font-display">Mess Navigation</span>
-                <button onClick={() => setMobileMenuOpen(false)} className="text-slate-400">
+                <span className="font-black text-cyan-400 font-display sidebar-brand-text">Mess Navigation</span>
+                <button onClick={() => setMobileMenuOpen(false)} className="text-slate-400 sidebar-item-inactive">
                   <X size={18} />
                 </button>
               </div>
 
               <nav className="space-y-1.5">
-                {visibleNavItems.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                      activeTab === item.id
-                        ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400"
-                        : "hover:bg-slate-500/5 text-slate-400"
-                    }`}
-                  >
-                    {item.icon}
-                    <span className="flex-1">{item.label}</span>
-                    {item.id === "audit" && hasSuperUserChangeDot && (
-                      <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
-                    )}
-                  </button>
-                ))}
+                {visibleNavItems.map(item => {
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                        isActive
+                          ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold sidebar-item-active"
+                          : "hover:bg-slate-500/5 text-slate-400 hover:text-slate-200 sidebar-item-inactive"
+                      }`}
+                    >
+                      {item.icon}
+                      <span className="flex-1">{item.label}</span>
+                      {item.id === "audit" && hasSuperUserChangeDot && (
+                        <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
+                      )}
+                    </button>
+                  );
+                })}
               </nav>
             </div>
 
-            <div className={`space-y-4 border-t pt-4 ${isDarkMode ? "border-slate-800/60" : "border-slate-150"}`}>
+            <div className={`space-y-4 border-t pt-4 ${activeIsDarkMode ? "border-slate-800/60" : "border-slate-150"}`}>
               <div className="flex items-center gap-3 px-1">
                 {currentUser.photo ? (
                   <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20" alt="" />
@@ -4148,7 +4216,7 @@ export default function App() {
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className={`text-xs font-bold truncate leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{currentUser.nickname}</p>
+                  <p className="text-xs font-bold truncate leading-none sidebar-profile-name">{currentUser.nickname}</p>
                   <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-1">{currentUser.role}</span>
                 </div>
               </div>
@@ -4170,23 +4238,27 @@ export default function App() {
           --------------------------------------------------------- */}
       <aside 
         style={{
-          backgroundColor: activeIsDarkMode ? activeCustomColors?.sidebarBg || undefined : undefined
+          backgroundColor: activeIsDarkMode ? (activeCustomColors?.sidebarBg || "#020617") : "#ffffff"
         }}
-        className={`hidden md:flex flex-col justify-between w-64 shrink-0 border-r h-screen sticky top-0 z-10 transition-all ${
-          activeIsDarkMode ? "border-slate-900" : "bg-white border-slate-200"
+        className={`hidden md:flex flex-col justify-between w-64 shrink-0 border-r h-screen sticky top-0 z-10 transition-all sidebar-container ${
+          activeIsDarkMode ? "border-slate-900 text-slate-100 bg-slate-950" : "border-slate-200 text-slate-800 bg-white"
         }`}
       >
         <div className="p-6">
           {/* Logo brand */}
           <div className="flex items-center gap-2 mb-8">
-            <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border ${
+              activeIsDarkMode 
+                ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
+                : "bg-cyan-50 border-cyan-100 text-cyan-600"
+            }`}>
               <Sparkles size={16} />
             </span>
             <div>
-              <h1 className="font-extrabold text-base tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent leading-none uppercase">
+              <h1 className="font-extrabold text-base tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent leading-none uppercase sidebar-brand-text">
                 {messName}
               </h1>
-              <span className="text-[8px] font-bold text-slate-500 font-mono block tracking-wider mt-0.5 uppercase">
+              <span className="text-[8px] font-bold text-slate-500 font-mono block tracking-wider mt-0.5 uppercase sidebar-label-gray">
                 Enterprise Dashboard
               </span>
             </div>
@@ -4194,36 +4266,39 @@ export default function App() {
 
           {/* Navigation Menu */}
           <nav className="space-y-1.5">
-            {visibleNavItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all text-left cursor-pointer ${
-                  activeTab === item.id
-                    ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold"
-                    : "hover:bg-cyan-500/5 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {item.icon}
-                <span className="flex-1">{item.label}</span>
-                {item.id === "audit" && hasSuperUserChangeDot && (
-                  <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
-                )}
-              </button>
-            ))}
+            {visibleNavItems.map(item => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all text-left cursor-pointer ${
+                    isActive
+                      ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold sidebar-item-active"
+                      : "hover:bg-cyan-500/5 text-slate-400 hover:text-slate-200 sidebar-item-inactive"
+                  }`}
+                >
+                  {item.icon}
+                  <span className="flex-1">{item.label}</span>
+                  {item.id === "audit" && hasSuperUserChangeDot && (
+                    <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
+                  )}
+                </button>
+              );
+            })}
           </nav>
         </div>
 
         {/* Footer info & Logout */}
-        <div className="p-6 border-t border-cyan-500/5 space-y-4">
+        <div className={`p-6 border-t space-y-4 ${activeIsDarkMode ? "border-cyan-500/5" : "border-slate-100"}`}>
           <div className="flex justify-between items-center text-xs">
             <div className="flex justify-between items-center text-xs">
-            <span className="text-[10px] text-slate-500">Cloud Sync</span>
+            <span className="text-[10px] text-slate-500 sidebar-label-gray">Cloud Sync</span>
             <SyncIndicator />
           </div>
           </div>
           <div className="flex justify-between items-center text-xs">
-            <span className="text-[10px] text-slate-500">Theme</span>
+            <span className="text-[10px] text-slate-500 sidebar-label-gray">Theme</span>
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
@@ -4243,7 +4318,7 @@ export default function App() {
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold truncate leading-none">{currentUser.nickname}</p>
+              <p className="text-xs font-bold truncate leading-none sidebar-profile-name">{currentUser.nickname}</p>
               <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider">{currentUser.role}</span>
             </div>
             
