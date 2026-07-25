@@ -22,6 +22,7 @@ import {
   HelpCircle
 } from "lucide-react";
 import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
+import RgbColorPicker from "./RgbColorPicker";
 
 interface ThemeEnginePanelProps {
   messAnimations: {
@@ -108,6 +109,90 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
   const showStatus = (type: "success" | "error", text: string) => {
     setStatusMsg({ type, text });
     setTimeout(() => setStatusMsg(null), 4000);
+  };
+
+  // State for 16-million RGB customization field
+  const [selectedColorField, setSelectedColorField] = useState<string>("accentColor");
+
+  const colorFields = [
+    { id: "accentColor", label: "Accent Glow Color (Main)", type: "customColor" },
+    { id: "sidebarBg", label: "Sidebar Background Color", type: "customColor" },
+    { id: "sidebarTextColor", label: "Sidebar & Menu Text Color", type: "typography" },
+    { id: "cardBg", label: "Container & Card Background", type: "customColor" },
+    { id: "headerBg", label: "Header & Navbar Background", type: "customColor" },
+    { id: "primaryFontColor", label: "Global Primary Font Color", type: "typography" },
+    { id: "secondaryFontColor", label: "Global Secondary Font Color", type: "typography" },
+    { id: "headingColor", label: "Global Heading Color", type: "typography" },
+    { id: "inputBg", label: "Input Box Background", type: "customColor" },
+    { id: "inputBorderColor", label: "Input Box Border Color", type: "customColor" },
+    { id: "inputTextColor", label: "Input Box Text Color", type: "customColor" },
+    { id: "cashDepositBg", label: "Cash Deposit Card Background", type: "customColor" },
+    { id: "cashDepositBorder", label: "Cash Deposit Card Border", type: "customColor" },
+    { id: "settlementBg", label: "Settlement Sheet Background", type: "customColor" },
+    { id: "settlementBorder", label: "Settlement Sheet Border", type: "customColor" },
+  ];
+
+  const getSelectedColorValue = () => {
+    const field = colorFields.find(f => f.id === selectedColorField);
+    if (!field) return "#22d3ee";
+    if (field.type === "customColor") {
+      const val = customColors?.[field.id];
+      if (val) return val;
+      // Fallbacks
+      if (selectedColorField === "accentColor") return "#22d3ee";
+      if (selectedColorField === "sidebarBg") return isDarkMode ? "#0f172a" : "#ecfeff";
+      if (selectedColorField === "cardBg") return isDarkMode ? "#1e293b" : "#ffffff";
+      if (selectedColorField === "headerBg") return isDarkMode ? "#0f172a" : "#ffffff";
+      if (selectedColorField === "inputBg") return isDarkMode ? "#0f172a" : "#ecfeff";
+      if (selectedColorField === "inputBorderColor") return isDarkMode ? "#334155" : "#cffafe";
+      if (selectedColorField === "inputTextColor") return isDarkMode ? "#cbd5e1" : "#083344";
+      if (selectedColorField === "cashDepositBg") return "#f973161a";
+      if (selectedColorField === "cashDepositBorder") return "#f97316";
+      if (selectedColorField === "settlementBg") return "#22c55e1a";
+      if (selectedColorField === "settlementBorder") return "#22c55e";
+      return "#22d3ee";
+    } else {
+      const val = typographySettings?.[field.id];
+      if (val) return val;
+      // Fallbacks
+      if (selectedColorField === "primaryFontColor") return isDarkMode ? "#f8fafc" : "#0f172a";
+      if (selectedColorField === "secondaryFontColor") return isDarkMode ? "#94a3b8" : "#475569";
+      if (selectedColorField === "headingColor") return isDarkMode ? "#22d3ee" : "#0f172a";
+      if (selectedColorField === "sidebarTextColor") return isDarkMode ? "#94a3b8" : "#0f172a";
+      return "#22d3ee";
+    }
+  };
+
+  const handleColorPickerChange = (newValue: string) => {
+    const field = colorFields.find(f => f.id === selectedColorField);
+    if (!field) return;
+    if (field.type === "customColor") {
+      setCustomColors((prev: any) => {
+        const updated = { ...prev, [selectedColorField]: newValue };
+        if (selectedColorField === "accentColor") {
+          updated.siteAccentColorRgb = newValue;
+          updated.typographyHighlightRgb = newValue;
+        }
+        return updated;
+      });
+    } else {
+      setTypographySettings((prev: any) => ({
+        ...prev,
+        [selectedColorField]: newValue
+      }));
+    }
+  };
+
+  const handleSaveCustomizerChanges = async () => {
+    try {
+      await handleUpdateSettings({
+        customColors,
+        typographySettings
+      });
+      showStatus("success", "Customizer configuration successfully saved to the database!");
+    } catch (err) {
+      showStatus("error", "Failed to save configuration.");
+    }
   };
 
   // Combine pre-defined themes with user-created themes
@@ -563,7 +648,22 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
 
       {/* Tab CONTENT: Theme Customizer */}
       {activeTab === "customizer" && (
-        <div className="space-y-6">
+        <div className="space-y-6 text-left">
+          {/* Header Action Row */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-2xl border border-cyan-500/20 bg-cyan-950/10 backdrop-blur-sm">
+            <div>
+              <h4 className="text-xs font-bold font-display text-cyan-300">Save Your Customizations</h4>
+              <p className="text-[10px] text-slate-400">Save your custom colors and typography selections to the database to preserve them permanently.</p>
+            </div>
+            <button
+              onClick={handleSaveCustomizerChanges}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 hover:text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Save size={14} />
+              Save to ERP Database
+            </button>
+          </div>
+
           {/* Typography Sizes */}
           <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
             <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
@@ -616,67 +716,109 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
                   className="w-full accent-cyan-500"
                 />
               </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">Input Box Font Size ({typographySettings?.inputFontSize || 12}px)</label>
+                <input
+                  type="range"
+                  min="9"
+                  max="16"
+                  value={typographySettings?.inputFontSize || 12}
+                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, inputFontSize: Number(e.target.value) }))}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">Button Font Size ({typographySettings?.buttonFontSize || 12}px)</label>
+                <input
+                  type="range"
+                  min="9"
+                  max="16"
+                  value={typographySettings?.buttonFontSize || 12}
+                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, buttonFontSize: Number(e.target.value) }))}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">Sidebar Font Size ({typographySettings?.sidebarFontSize || 12}px)</label>
+                <input
+                  type="range"
+                  min="9"
+                  max="16"
+                  value={typographySettings?.sidebarFontSize || 12}
+                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, sidebarFontSize: Number(e.target.value) }))}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">Navigation Font Size ({typographySettings?.navigationFontSize || 12}px)</label>
+                <input
+                  type="range"
+                  min="9"
+                  max="16"
+                  value={typographySettings?.navigationFontSize || 12}
+                  onChange={(e) => setTypographySettings((prev: any) => ({ ...prev, navigationFontSize: Number(e.target.value) }))}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Core Colors customizer */}
+          {/* Dynamic 16M RGB Color Customizer */}
           <div className="p-4 rounded-2xl border border-slate-800/40 bg-slate-950/20 space-y-4">
             <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
               <Palette size={14} className="text-cyan-400" />
-              Dynamic Color Pickers (Real-time updates)
+              Dynamic 16-Million RGB Color customizer (Real-time updates)
             </h5>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-[9px] text-slate-400 mb-1 uppercase tracking-widest">Accent Glow Color</label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={customColors?.accentColor || "#22d3ee"}
-                    onChange={(e) => setCustomColors((prev: any) => ({ ...prev, accentColor: e.target.value }))}
-                    className="w-8 h-8 rounded border border-slate-800 cursor-pointer bg-transparent"
-                  />
-                  <span className="text-[10px] font-mono">{customColors?.accentColor || "#22d3ee"}</span>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Left Selector List */}
+              <div className="lg:col-span-5 space-y-2 max-h-[380px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800">
+                {colorFields.map((field) => {
+                  const val = field.type === "customColor" ? customColors?.[field.id] : typographySettings?.[field.id];
+                  const fallback = field.type === "customColor"
+                    ? (field.id === "accentColor" ? "#22d3ee" : isDarkMode ? "#0f172a" : "#ecfeff")
+                    : (field.id === "primaryFontColor" ? (isDarkMode ? "#f8fafc" : "#0f172a") : "#cbd5e1");
+                  const activeVal = val || fallback;
+                  const isSelected = selectedColorField === field.id;
+
+                  return (
+                    <button
+                      key={field.id}
+                      onClick={() => setSelectedColorField(field.id)}
+                      className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between border cursor-pointer ${
+                        isSelected
+                          ? "bg-cyan-500/10 border-cyan-500 text-cyan-300"
+                          : "bg-slate-900/40 border-slate-800/60 hover:border-slate-700 text-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {/* Circular preview swatch */}
+                        <div
+                          className="w-4 h-4 rounded-full border border-white/20"
+                          style={{ backgroundColor: activeVal }}
+                        />
+                        <span className="text-[10px] font-bold font-sans">{field.label}</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-semibold text-slate-500">{activeVal}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div>
-                <label className="block text-[9px] text-slate-400 mb-1 uppercase tracking-widest">Sidebar Base</label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={customColors?.sidebarBg || "#0f172a"}
-                    onChange={(e) => setCustomColors((prev: any) => ({ ...prev, sidebarBg: e.target.value }))}
-                    className="w-8 h-8 rounded border border-slate-800 cursor-pointer bg-transparent"
-                  />
-                  <span className="text-[10px] font-mono">{customColors?.sidebarBg || "#0f172a"}</span>
+              {/* Right RgbColorPicker Container */}
+              <div className="lg:col-span-7 flex flex-col items-center justify-center p-2 bg-slate-900/30 rounded-2xl border border-slate-800/50">
+                <div className="w-full mb-3 text-center lg:text-left px-2">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Customizing Field</span>
+                  <span className="text-xs font-extrabold text-cyan-300 block">
+                    {colorFields.find(f => f.id === selectedColorField)?.label || "Selected Color"}
+                  </span>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-[9px] text-slate-400 mb-1 uppercase tracking-widest">Container & Card Base</label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={customColors?.cardBg || "#1e293b"}
-                    onChange={(e) => setCustomColors((prev: any) => ({ ...prev, cardBg: e.target.value }))}
-                    className="w-8 h-8 rounded border border-slate-800 cursor-pointer bg-transparent"
-                  />
-                  <span className="text-[10px] font-mono">{customColors?.cardBg || "#1e293b"}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[9px] text-slate-400 mb-1 uppercase tracking-widest">Header Bar Base</label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={customColors?.headerBg || "#0f172a"}
-                    onChange={(e) => setCustomColors((prev: any) => ({ ...prev, headerBg: e.target.value }))}
-                    className="w-8 h-8 rounded border border-slate-800 cursor-pointer bg-transparent"
-                  />
-                  <span className="text-[10px] font-mono">{customColors?.headerBg || "#0f172a"}</span>
-                </div>
+                
+                <RgbColorPicker
+                  value={getSelectedColorValue()}
+                  onChange={handleColorPickerChange}
+                  isDarkMode={isDarkMode}
+                />
               </div>
             </div>
           </div>

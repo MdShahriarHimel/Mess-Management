@@ -3690,7 +3690,7 @@ export default function App() {
       secondaryFontColor: isDark ? "#94a3b8" : "#475569",
       headingColor: isDark ? "#22d3ee" : "#0f172a",
       menuTextColor: isDark ? "#cbd5e1" : "#1e293b",
-      sidebarTextColor: isDark ? "#94a3b8" : "#f1f5f9",
+      sidebarTextColor: isDark ? "#94a3b8" : "#0f172a",
       navbarTextColor: isDark ? "#cbd5e1" : "#0f172a",
       cardTextColor: isDark ? "#cbd5e1" : "#1e293b",
       tableTextColor: isDark ? "#cbd5e1" : "#1e293b",
@@ -3708,6 +3708,7 @@ export default function App() {
       cardBodySize: 12,
       tableFontSize: 12,
       buttonFontSize: 12,
+      inputFontSize: 12,
       
       fontFamily: "Inter",
       accessibilityPreset: "normal"
@@ -3758,19 +3759,19 @@ export default function App() {
     }
 
     return {
-      primaryFontColor: !isDark ? defaults.primaryFontColor : (typographySettings?.primaryFontColor || defaults.primaryFontColor),
-      secondaryFontColor: !isDark ? defaults.secondaryFontColor : (typographySettings?.secondaryFontColor || defaults.secondaryFontColor),
-      headingColor: !isDark ? defaults.headingColor : (typographySettings?.headingColor || defaults.headingColor),
-      menuTextColor: !isDark ? defaults.menuTextColor : (typographySettings?.menuTextColor || defaults.menuTextColor),
-      sidebarTextColor: !isDark ? defaults.sidebarTextColor : (typographySettings?.sidebarTextColor || defaults.sidebarTextColor),
-      navbarTextColor: !isDark ? defaults.navbarTextColor : (typographySettings?.navbarTextColor || defaults.navbarTextColor),
-      cardTextColor: !isDark ? defaults.cardTextColor : (typographySettings?.cardTextColor || defaults.cardTextColor),
-      tableTextColor: !isDark ? defaults.tableTextColor : (typographySettings?.tableTextColor || defaults.tableTextColor),
-      buttonTextColor: !isDark ? defaults.buttonTextColor : (typographySettings?.buttonTextColor || defaults.buttonTextColor),
-      linkColor: !isDark ? defaults.linkColor : (typographySettings?.linkColor || defaults.linkColor),
-      successTextColor: !isDark ? defaults.successTextColor : (typographySettings?.successTextColor || defaults.successTextColor),
-      warningTextColor: !isDark ? defaults.warningTextColor : (typographySettings?.warningTextColor || defaults.warningTextColor),
-      errorTextColor: !isDark ? defaults.errorTextColor : (typographySettings?.errorTextColor || defaults.errorTextColor),
+      primaryFontColor: typographySettings?.primaryFontColor || defaults.primaryFontColor,
+      secondaryFontColor: typographySettings?.secondaryFontColor || defaults.secondaryFontColor,
+      headingColor: typographySettings?.headingColor || defaults.headingColor,
+      menuTextColor: typographySettings?.menuTextColor || defaults.menuTextColor,
+      sidebarTextColor: typographySettings?.sidebarTextColor || defaults.sidebarTextColor,
+      navbarTextColor: typographySettings?.navbarTextColor || defaults.navbarTextColor,
+      cardTextColor: typographySettings?.cardTextColor || defaults.cardTextColor,
+      tableTextColor: typographySettings?.tableTextColor || defaults.tableTextColor,
+      buttonTextColor: typographySettings?.buttonTextColor || defaults.buttonTextColor,
+      linkColor: typographySettings?.linkColor || defaults.linkColor,
+      successTextColor: typographySettings?.successTextColor || defaults.successTextColor,
+      warningTextColor: typographySettings?.warningTextColor || defaults.warningTextColor,
+      errorTextColor: typographySettings?.errorTextColor || defaults.errorTextColor,
       
       globalFontSize: typographySettings?.globalFontSize !== undefined ? Number(typographySettings.globalFontSize) : defaults.globalFontSize,
       headingSize: typographySettings?.headingSize !== undefined ? Number(typographySettings.headingSize) : defaults.headingSize,
@@ -3780,6 +3781,7 @@ export default function App() {
       cardBodySize: typographySettings?.cardBodySize !== undefined ? Number(typographySettings.cardBodySize) : defaults.cardBodySize,
       tableFontSize: typographySettings?.tableFontSize !== undefined ? Number(typographySettings.tableFontSize) : defaults.tableFontSize,
       buttonFontSize: typographySettings?.buttonFontSize !== undefined ? Number(typographySettings.buttonFontSize) : defaults.buttonFontSize,
+      inputFontSize: typographySettings?.inputFontSize !== undefined ? Number(typographySettings.inputFontSize) : defaults.inputFontSize || 12,
       
       fontFamily: typographySettings?.fontFamily || defaults.fontFamily,
       accessibilityPreset: preset
@@ -3853,6 +3855,12 @@ export default function App() {
 
           /* Typography Font Family */
           --typo-font-family: ${getFontFamilyStack(activeTypography.fontFamily)};
+
+          /* Input Box Styling Customization */
+          --custom-input-bg: ${activeCustomColors?.inputBg || (activeIsDarkMode ? "#0f172a" : "#ecfeff")};
+          --custom-input-border: ${activeCustomColors?.inputBorderColor || (activeIsDarkMode ? "#334155" : "#cffafe")};
+          --custom-input-text: ${activeCustomColors?.inputTextColor || (activeIsDarkMode ? "#cbd5e1" : "#083344")};
+          --typo-input-size: ${activeTypography.inputFontSize * getScaleFactor()}px;
         }
 
         /* Applying custom typography rules globally */
@@ -3939,25 +3947,140 @@ export default function App() {
         .light-mode-root {
           background-color: #f1f5f9 !important;
         }
+        .light-mode-root .text-slate-50,
+        .light-mode-root .text-slate-100,
         .light-mode-root .text-slate-200,
+        .light-mode-root .text-gray-50,
+        .light-mode-root .text-gray-100,
         .light-mode-root .text-gray-200,
+        .light-mode-root .text-cyan-50,
+        .light-mode-root .text-cyan-100,
+        .light-mode-root .text-cyan-200,
         .light-mode-root .text-slate-300,
         .light-mode-root .text-gray-300,
-        .light-mode-root .text-slate-400,
-        .light-mode-root .text-gray-400 {
+        .light-mode-root .text-cyan-300,
+        .light-mode-root .text-white {
           color: var(--typo-primary-color) !important;
         }
+        .light-mode-root .text-slate-400,
+        .light-mode-root .text-gray-400,
+        .light-mode-root .text-cyan-400 {
+          color: var(--typo-secondary-color) !important;
+        }
 
-        .light-mode-root .bg-slate-950\/20,
-        .light-mode-root .bg-slate-950\/30,
-        .light-mode-root .bg-slate-950\/40,
+        /* Overrides for background slate colors to turn dark regions into beautiful soft light surfaces */
+        .light-mode-root .bg-slate-950,
+        .light-mode-root .bg-slate-900,
+        .light-mode-root .bg-slate-850,
+        .light-mode-root .bg-slate-800,
+        .light-mode-root .bg-slate-950\/80,
+        .light-mode-root .bg-slate-950\/70,
         .light-mode-root .bg-slate-950\/60,
-        .light-mode-root .bg-slate-900\/30,
-        .light-mode-root .bg-slate-900\/40,
+        .light-mode-root .bg-slate-950\/50,
+        .light-mode-root .bg-slate-950\/40,
+        .light-mode-root .bg-slate-950\/30,
+        .light-mode-root .bg-slate-950\/20,
+        .light-mode-root .bg-slate-950\/10,
+        .light-mode-root .bg-slate-900\/60,
         .light-mode-root .bg-slate-900\/50,
-        .light-mode-root .bg-slate-950 {
+        .light-mode-root .bg-slate-900\/40,
+        .light-mode-root .bg-slate-900\/30,
+        .light-mode-root .bg-slate-900\/20,
+        .light-mode-root .bg-slate-900\/10,
+        .light-mode-root .bg-slate-800\/80,
+        .light-mode-root .bg-slate-800\/60,
+        .light-mode-root .bg-slate-800\/50,
+        .light-mode-root .bg-slate-800\/40,
+        .light-mode-root .bg-slate-800\/30,
+        .light-mode-root .bg-slate-800\/20,
+        .light-mode-root .bg-slate-950\/10 {
           background-color: #f8fafc !important;
-          border-color: #e2e8f0 !important;
+          color: #0f172a !important;
+          border-color: #cbd5e1 !important;
+        }
+
+        /* Beautiful sidebar-like Cyan tinted backgrounds for panels, selects, and status indicators */
+        .light-mode-root .bg-cyan-950\/60,
+        .light-mode-root .bg-cyan-950\/40,
+        .light-mode-root .bg-cyan-950\/20,
+        .light-mode-root .bg-cyan-900\/30,
+        .light-mode-root .bg-cyan-500\/10 {
+          background-color: #ecfeff !important; /* cyan-50 background */
+          border-color: #cffafe !important;
+          color: #083344 !important;
+        }
+
+        /* Dynamic Input, Select & Textarea overrides globally to support full custom theme values */
+        input:not([type="checkbox"]):not([type="radio"]),
+        select,
+        textarea {
+          background-color: var(--custom-input-bg) !important;
+          border: 1.25px solid var(--custom-input-border) !important;
+          color: var(--custom-input-text) !important;
+          font-size: var(--typo-input-size) !important;
+          font-weight: 500 !important;
+        }
+        
+        input:not([type="checkbox"]):not([type="radio"]):focus,
+        select:focus,
+        textarea:focus {
+          border-color: var(--custom-accent-color) !important;
+          outline: none !important;
+          box-shadow: 0 0 0 1.5px var(--custom-accent-color) !important;
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+          color: var(--custom-input-text) !important;
+          opacity: 0.55 !important;
+        }
+
+        select option {
+          background-color: var(--custom-input-bg) !important;
+          color: var(--custom-input-text) !important;
+        }
+
+        /* Lock controls, alerts, and system notifications contrast adjustments in light mode */
+        .light-mode-root .bg-amber-500\/5 {
+          background-color: #fffbeb !important; /* amber-50 */
+          border-color: #fde68a !important; /* amber-200 */
+        }
+        .light-mode-root .text-amber-300 {
+          color: #92400e !important; /* amber-800 */
+        }
+        .light-mode-root .text-orange-400 {
+          color: #c2410c !important; /* orange-700 */
+        }
+        .light-mode-root .bg-emerald-500\/10 {
+          background-color: #f0fdf4 !important; /* emerald-50 */
+          border-color: #bbf7d0 !important; /* emerald-200 */
+        }
+        .light-mode-root .text-emerald-400 {
+          color: #166534 !important; /* emerald-800 */
+        }
+        .light-mode-root .bg-rose-500\/10,
+        .light-mode-root .bg-rose-500\/5 {
+          background-color: #fff1f2 !important; /* rose-50 */
+          border-color: #fecdd3 !important; /* rose-200 */
+        }
+        .light-mode-root .text-rose-400 {
+          color: #9f1239 !important; /* rose-800 */
+        }
+
+        /* Table components, table cells, table headers contrast overrides in light mode */
+        .light-mode-root th,
+        .light-mode-root td {
+          color: #0f172a !important;
+          background-color: #ffffff !important;
+          border-color: #cbd5e1 !important;
+        }
+        .light-mode-root thead th {
+          background-color: #ecfeff !important; /* Cyan-50 headers for beautiful tables */
+          color: #083344 !important;
+          font-weight: 800 !important;
+        }
+        .light-mode-root tr:hover td {
+          background-color: #f0fdfa !important; /* light cyan/teal row hover */
         }
 
         .light-mode-root .border-slate-800,
@@ -3972,45 +4095,7 @@ export default function App() {
         .light-mode-root .border-cyan-500\/30,
         .light-mode-root .divide-slate-800,
         .light-mode-root .divide-cyan-500\/5 {
-          border-color: #e2e8f0 !important;
-        }
-
-        /* Highly specific CSS overrides for the sidebar elements in Light Mode */
-        .light-mode-root .sidebar-container {
-          background-color: #ffffff !important;
-          border-color: #e2e8f0 !important;
-          color: #1e293b !important;
-        }
-        
-        .light-mode-root .sidebar-container .sidebar-brand-text {
-          color: #0f172a !important;
-          background-image: none !important;
-          background-clip: unset !important;
-          -webkit-background-clip: unset !important;
-          -webkit-text-fill-color: #0f172a !important;
-        }
-        
-        .light-mode-root .sidebar-container .sidebar-item-active {
-          background-color: #ecfeff !important; /* cyan-50 */
-          color: #0891b2 !important; /* cyan-600 */
-          border-left-color: #06b6d4 !important; /* cyan-500 */
-        }
-        
-        .light-mode-root .sidebar-container .sidebar-item-inactive {
-          color: #475569 !important; /* slate-600 */
-        }
-        
-        .light-mode-root .sidebar-container .sidebar-item-inactive:hover {
-          background-color: #f1f5f9 !important; /* slate-100 */
-          color: #0f172a !important; /* slate-900 */
-        }
-        
-        .light-mode-root .sidebar-container .sidebar-label-gray {
-          color: #64748b !important; /* slate-500 */
-        }
-        
-        .light-mode-root .sidebar-container .sidebar-profile-name {
-          color: #0f172a !important;
+          border-color: #cbd5e1 !important;
         }
 
         body, html {
@@ -4167,17 +4252,19 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 md:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div 
             style={{
-              backgroundColor: activeIsDarkMode ? (activeCustomColors?.sidebarBg || "#020617") : "#ffffff"
+              backgroundColor: activeCustomColors?.sidebarBg || (activeIsDarkMode ? "#020617" : "#ecfeff")
             }}
-            className={`w-64 h-full p-5 flex flex-col justify-between border-r sidebar-container ${
-              activeIsDarkMode ? "border-slate-900 text-slate-100 bg-slate-950" : "border-slate-200 text-slate-800 bg-white"
+            className={`w-64 h-full p-5 flex flex-col justify-between border-r transition-all ${
+              activeIsDarkMode 
+                ? "border-slate-900 bg-slate-950 text-slate-100" 
+                : "border-cyan-100 bg-cyan-50 text-cyan-900"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <div className="flex justify-between items-center mb-6">
-                <span className="font-black text-cyan-400 font-display sidebar-brand-text">Mess Navigation</span>
-                <button onClick={() => setMobileMenuOpen(false)} className="text-slate-400 sidebar-item-inactive">
+              <div className={`flex justify-between items-center mb-6 pb-2 border-b ${activeIsDarkMode ? "border-slate-800/40" : "border-cyan-100"}`}>
+                <span className={`font-black font-display ${activeIsDarkMode ? "text-cyan-400" : "text-cyan-800"}`}>Mess Navigation</span>
+                <button onClick={() => setMobileMenuOpen(false)} className={activeIsDarkMode ? "text-slate-400 hover:text-slate-100" : "text-cyan-700 hover:text-cyan-900"}>
                   <X size={18} />
                 </button>
               </div>
@@ -4191,8 +4278,12 @@ export default function App() {
                       onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
                         isActive
-                          ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold sidebar-item-active"
-                          : "hover:bg-slate-500/5 text-slate-400 hover:text-slate-200 sidebar-item-inactive"
+                          ? (activeIsDarkMode 
+                              ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold"
+                              : "bg-cyan-100 border-l-4 border-cyan-600 text-cyan-800 font-extrabold shadow-sm")
+                          : (activeIsDarkMode
+                              ? "hover:bg-cyan-500/5 text-slate-400 hover:text-slate-200"
+                              : "hover:bg-cyan-5/50 text-cyan-900/70 hover:text-cyan-900")
                       }`}
                     >
                       {item.icon}
@@ -4206,24 +4297,30 @@ export default function App() {
               </nav>
             </div>
 
-            <div className={`space-y-4 border-t pt-4 ${activeIsDarkMode ? "border-slate-800/60" : "border-slate-150"}`}>
+            <div className={`space-y-4 border-t pt-4 ${activeIsDarkMode ? "border-slate-800/60" : "border-cyan-100"}`}>
               <div className="flex items-center gap-3 px-1">
                 {currentUser.photo ? (
                   <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20" alt="" />
                 ) : (
-                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 text-xs font-bold">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border ${
+                    activeIsDarkMode 
+                      ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
+                      : "bg-cyan-100 border-cyan-200 text-cyan-700"
+                  }`}>
                     {currentUser.nickname.slice(0, 2).toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold truncate leading-none sidebar-profile-name">{currentUser.nickname}</p>
+                  <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{currentUser.nickname}</p>
                   <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-1">{currentUser.role}</span>
                 </div>
               </div>
 
               <button 
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-500/10 cursor-pointer text-left transition-all"
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer text-left transition-all ${
+                  activeIsDarkMode ? "text-rose-400 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-100/60"
+                }`}
               >
                 <LogOut size={16} />
                 Sign Out Access
@@ -4238,10 +4335,12 @@ export default function App() {
           --------------------------------------------------------- */}
       <aside 
         style={{
-          backgroundColor: activeIsDarkMode ? (activeCustomColors?.sidebarBg || "#020617") : "#ffffff"
+          backgroundColor: activeCustomColors?.sidebarBg || (activeIsDarkMode ? "#020617" : "#ecfeff")
         }}
-        className={`hidden md:flex flex-col justify-between w-64 shrink-0 border-r h-screen sticky top-0 z-10 transition-all sidebar-container ${
-          activeIsDarkMode ? "border-slate-900 text-slate-100 bg-slate-950" : "border-slate-200 text-slate-800 bg-white"
+        className={`hidden md:flex flex-col justify-between w-64 shrink-0 border-r h-screen sticky top-0 z-10 transition-all ${
+          activeIsDarkMode 
+            ? "border-slate-900 bg-slate-950 text-slate-100" 
+            : "border-cyan-100 bg-cyan-50 text-cyan-900"
         }`}
       >
         <div className="p-6">
@@ -4250,15 +4349,19 @@ export default function App() {
             <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border ${
               activeIsDarkMode 
                 ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
-                : "bg-cyan-50 border-cyan-100 text-cyan-600"
+                : "bg-cyan-100 border-cyan-200 text-cyan-600"
             }`}>
               <Sparkles size={16} />
             </span>
             <div>
-              <h1 className="font-extrabold text-base tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent leading-none uppercase sidebar-brand-text">
+              <h1 className={`font-extrabold text-base tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-none uppercase ${
+                activeIsDarkMode ? "from-cyan-400 to-cyan-500" : "from-cyan-700 to-cyan-900"
+              }`}>
                 {messName}
               </h1>
-              <span className="text-[8px] font-bold text-slate-500 font-mono block tracking-wider mt-0.5 uppercase sidebar-label-gray">
+              <span className={`text-[8px] font-bold font-mono block tracking-wider mt-0.5 uppercase ${
+                activeIsDarkMode ? "text-slate-500" : "text-cyan-600/70"
+              }`}>
                 Enterprise Dashboard
               </span>
             </div>
@@ -4274,8 +4377,12 @@ export default function App() {
                   onClick={() => setActiveTab(item.id)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all text-left cursor-pointer ${
                     isActive
-                      ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold sidebar-item-active"
-                      : "hover:bg-cyan-500/5 text-slate-400 hover:text-slate-200 sidebar-item-inactive"
+                      ? (activeIsDarkMode 
+                          ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold"
+                          : "bg-cyan-100 border-l-4 border-cyan-600 text-cyan-800 font-extrabold shadow-sm")
+                      : (activeIsDarkMode
+                          ? "hover:bg-cyan-500/5 text-slate-400 hover:text-slate-200"
+                          : "hover:bg-cyan-5/50 text-cyan-900/70 hover:text-cyan-900")
                   }`}
                 >
                   {item.icon}
@@ -4290,19 +4397,21 @@ export default function App() {
         </div>
 
         {/* Footer info & Logout */}
-        <div className={`p-6 border-t space-y-4 ${activeIsDarkMode ? "border-cyan-500/5" : "border-slate-100"}`}>
+        <div className={`p-6 border-t space-y-4 ${activeIsDarkMode ? "border-slate-800/60" : "border-cyan-100"}`}>
           <div className="flex justify-between items-center text-xs">
             <div className="flex justify-between items-center text-xs">
-            <span className="text-[10px] text-slate-500 sidebar-label-gray">Cloud Sync</span>
-            <SyncIndicator />
-          </div>
+              <span className={`text-[10px] ${activeIsDarkMode ? "text-slate-500" : "text-cyan-900/50 font-semibold"}`}>Cloud Sync</span>
+              <SyncIndicator />
+            </div>
           </div>
           <div className="flex justify-between items-center text-xs">
-            <span className="text-[10px] text-slate-500 sidebar-label-gray">Theme</span>
+            <span className={`text-[10px] ${activeIsDarkMode ? "text-slate-500" : "text-cyan-900/50 font-semibold"}`}>Theme</span>
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
-                isDarkMode ? "border-slate-800 text-cyan-400 bg-slate-950/40" : "border-slate-200 text-slate-600 bg-slate-50"
+                activeIsDarkMode 
+                  ? "border-slate-800 text-cyan-400 bg-slate-950/40 hover:bg-slate-900/60" 
+                  : "border-cyan-200 text-cyan-600 bg-cyan-100/50 hover:bg-cyan-100"
               }`}
             >
               {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
@@ -4313,18 +4422,24 @@ export default function App() {
             {currentUser.photo ? (
               <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20" alt="" />
             ) : (
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 text-xs font-bold">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border ${
+                activeIsDarkMode 
+                  ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
+                  : "bg-cyan-100 border-cyan-200 text-cyan-700"
+              }`}>
                 {currentUser.nickname.slice(0, 2).toUpperCase()}
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold truncate leading-none sidebar-profile-name">{currentUser.nickname}</p>
-              <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider">{currentUser.role}</span>
+              <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{currentUser.nickname}</p>
+              <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-0.5">{currentUser.role}</span>
             </div>
             
             <button 
               onClick={handleLogout}
-              className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors"
+              className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                activeIsDarkMode ? "text-rose-400 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-100/60"
+              }`}
               title="Sign Out Access"
             >
               <LogOut size={14} />
@@ -4725,6 +4840,8 @@ export default function App() {
                 setFontStyle={setFontStyle}
                 customColors={customColors}
                 setCustomColors={setCustomColors}
+                typographySettings={typographySettings}
+                setTypographySettings={setTypographySettings}
                 messAnimations={messAnimations}
                 setMessAnimations={setMessAnimations}
                 creditConfig={creditConfig}

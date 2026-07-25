@@ -87,6 +87,8 @@ interface UnifiedSettingsDashboardProps {
   setEditMonthEnd: (val: string) => void;
   handleUpdateMonthCycle: (monthId: string) => Promise<void>;
   handleDeleteMonthCycle: (monthId: string) => Promise<void>;
+  typographySettings?: any;
+  setTypographySettings?: React.Dispatch<React.SetStateAction<any>>;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -142,7 +144,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   editMonthEnd,
   setEditMonthEnd,
   handleUpdateMonthCycle,
-  handleDeleteMonthCycle
+  handleDeleteMonthCycle,
+  typographySettings = {},
+  setTypographySettings = () => {}
 }) => {
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
@@ -1058,8 +1062,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 previewTemplateId={null}
                 setPreviewTemplateId={() => {}}
                 handleUpdateSettings={handleUpdateSettings}
-                typographySettings={{}}
-                setTypographySettings={() => {}}
+                typographySettings={typographySettings}
+                setTypographySettings={setTypographySettings}
               />
 
               {/* Mess-specific Super User Audio Kill-Switch */}
