@@ -65,7 +65,8 @@ import {
   ManagerRating, 
   Notice, 
   AuditLog,
-  MealRequest
+  MealRequest,
+  CycleProposal
 } from "../src/types.js";
 
 export const DB_DIR = process.env.VERCEL ? "/tmp/data" : path.join(process.cwd(), "data");
@@ -98,6 +99,7 @@ interface DatabaseSchema {
   auditLogs: AuditLog[];
   mealRequests: MealRequest[];
   deletedMembers?: { member: Member; deletedAt: string; deletedBy: string }[];
+  cycleProposals?: CycleProposal[];
 }
 
 interface CredentialsSchema {

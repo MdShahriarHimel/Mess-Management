@@ -48,6 +48,10 @@ interface DashboardProps {
   onSetForcedMarketDate?: (date: string) => void;
   dashboardVisibility?: any;
   mealTypes?: any[];
+  cycleProposals?: any[];
+  onVoteCycleProposal?: (proposalId: string, vote: "APPROVED" | "REJECTED") => void;
+  onApplyCycleProposal?: (proposalId: string) => void;
+  onDeleteCycleProposal?: (proposalId: string) => void;
 }
 
 export default function Dashboard({ 
@@ -70,7 +74,11 @@ export default function Dashboard({
   forcedMarketDate,
   onSetForcedMarketDate,
   dashboardVisibility,
-  mealTypes
+  mealTypes,
+  cycleProposals = [],
+  onVoteCycleProposal,
+  onApplyCycleProposal,
+  onDeleteCycleProposal
 }: DashboardProps) {
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -470,6 +478,183 @@ export default function Dashboard({
         </div>
       )}
       
+      {/* Democratic Cycle Change Proposals */}
+      {cycleProposals && cycleProposals.length > 0 && (
+        <div className="space-y-4 mb-6 animate-fade-in" id="dashboard-cycle-proposals">
+          <div className={`p-6 rounded-2xl border transition-all ${
+            isDarkMode 
+              ? "bg-slate-900/60 border-amber-500/20 text-white" 
+              : "bg-amber-50/40 border-amber-200 text-slate-800 shadow-sm"
+          }`}>
+            <div className="flex justify-between items-center border-b border-amber-500/10 pb-3 mb-4">
+              <h3 className="text-sm font-black tracking-tight flex items-center gap-2 text-amber-500">
+                <Vote className="w-5 h-5 text-amber-400 shrink-0" />
+                Democratic Cycle Change Proposals
+              </h3>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500">
+                {cycleProposals.filter((p: any) => p.status !== "APPLIED").length} Active
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {cycleProposals.map((proposal: any) => {
+                const totalVoters = Object.keys(proposal.votes || {}).length;
+                const approvedCount = Object.values(proposal.votes || {}).filter(v => v === "APPROVED").length;
+                const rejectedCount = Object.values(proposal.votes || {}).filter(v => v === "REJECTED").length;
+                const pendingCount = Object.values(proposal.votes || {}).filter(v => v === "PENDING").length;
+                
+                const percentage = totalVoters > 0 ? Math.round((approvedCount / totalVoters) * 100) : 0;
+                const myVote = proposal.votes?.[currentUser.id];
+                const isApproved = proposal.status === "APPROVED";
+                const isRejected = proposal.status === "REJECTED";
+                const isApplied = proposal.status === "APPLIED";
+
+                return (
+                  <div 
+                    key={proposal.id}
+                    className={`p-4 rounded-xl border transition-all ${
+                      isApplied 
+                        ? (isDarkMode ? "bg-slate-950/40 border-slate-850 text-slate-400" : "bg-slate-100/50 border-slate-200 text-slate-500")
+                        : isApproved
+                          ? (isDarkMode ? "bg-emerald-950/20 border-emerald-500/30 text-white" : "bg-emerald-50/50 border-emerald-200 text-slate-800")
+                          : isRejected
+                            ? (isDarkMode ? "bg-rose-950/20 border-rose-500/30 text-white" : "bg-rose-50/50 border-rose-200 text-slate-800")
+                            : (isDarkMode ? "bg-slate-950/60 border-slate-850 text-white" : "bg-white border-slate-100 text-slate-800 shadow-sm")
+                    }`}
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full ${
+                            isApplied 
+                              ? "bg-slate-500/10 text-slate-400"
+                              : isApproved
+                                ? "bg-emerald-500/10 text-emerald-400 animate-pulse"
+                                : isRejected
+                                  ? "bg-rose-500/10 text-rose-400"
+                                  : "bg-amber-500/10 text-amber-500"
+                          }`}>
+                            {isApplied ? "Applied ✅" : isApproved ? "Consensus Reached 🤝" : isRejected ? "Rejected ❌" : "Voting Open 🗳️"}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Proposed: {new Date(proposal.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        <h4 className="font-bold text-sm">
+                          {proposal.type === "CREATE" ? "Create New Month Cycle" : "Extend / Edit Cycle"}: <span className="text-cyan-400">{proposal.name}</span>
+                        </h4>
+
+                        <div className="text-xs text-slate-400 font-mono">
+                          Proposed Schedule: <span className="text-slate-200 font-bold">{new Date(proposal.startDate).toLocaleDateString() + " " + new Date(proposal.startDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span> to <span className="text-slate-200 font-bold">{new Date(proposal.endDate).toLocaleDateString() + " " + new Date(proposal.endDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+
+                        <div className="text-[11px] text-slate-500 font-semibold">
+                          Proposed by Super User: <span className="text-slate-300">{proposal.proposedBy?.name || proposal.proposedBy?.nickname}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 min-w-[200px]">
+                        {/* Vote count and progress */}
+                        <div className="flex justify-between items-center text-[10px] font-black text-slate-400">
+                          <span>Progress</span>
+                          <span>{approvedCount} of {totalVoters} Approved ({percentage}%)</span>
+                        </div>
+                        <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                          <div 
+                            className={`h-full transition-all duration-500 ${
+                              isApplied ? "bg-slate-500" : isApproved ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-amber-500"
+                            }`}
+                            style={{ width: `${percentage}%` }}
+                          ></div>
+                        </div>
+
+                        <div className="flex gap-2 text-[10px] font-bold text-slate-500 mt-1">
+                          <span>👍 Approved: {approvedCount}</span>
+                          <span>•</span>
+                          <span>👎 Rejected: {rejectedCount}</span>
+                          <span>•</span>
+                          <span>⏳ Pending: {pendingCount}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interaction controls */}
+                    {!isApplied && (
+                      <div className="mt-4 pt-3 border-t border-slate-800/40 flex flex-wrap items-center justify-between gap-3">
+                        {/* Member voting buttons */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-400">Your Permission:</span>
+                          {myVote ? (
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                              myVote === "APPROVED" 
+                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            }`}>
+                              {myVote === "APPROVED" ? "Permission Granted 👍" : "Permission Denied 👎"}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-amber-400 font-bold">Pending Vote ⏳</span>
+                          )}
+
+                          <div className="flex items-center gap-1 ml-2">
+                            <button
+                              onClick={() => onVoteCycleProposal?.(proposal.id, "APPROVED")}
+                              className={`px-3 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
+                                myVote === "APPROVED"
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-slate-950 border border-slate-800 text-emerald-400 hover:bg-emerald-500/10"
+                              }`}
+                            >
+                              Grant
+                            </button>
+                            <button
+                              onClick={() => onVoteCycleProposal?.(proposal.id, "REJECTED")}
+                              className={`px-3 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
+                                myVote === "REJECTED"
+                                  ? "bg-rose-600 text-white"
+                                  : "bg-slate-950 border border-slate-800 text-rose-400 hover:bg-rose-500/10"
+                              }`}
+                            >
+                              Deny
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Admin / Proposer Execution buttons */}
+                        <div className="flex items-center gap-2">
+                          {isApproved && (currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ADMIN) && (
+                            <button
+                              onClick={() => onApplyCycleProposal?.(proposal.id)}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-lg cursor-pointer transition-all shadow-sm"
+                            >
+                              Execute & Apply Cycle Change ⚡
+                            </button>
+                          )}
+                          {(currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ADMIN) && (
+                            <button
+                              onClick={() => {
+                                if (confirm("Are you sure you want to delete this cycle proposal?")) {
+                                  onDeleteCycleProposal?.(proposal.id);
+                                }
+                              }}
+                              className="p-1.5 bg-slate-950 border border-slate-850 text-slate-400 hover:text-rose-400 hover:border-rose-500/20 rounded-lg cursor-pointer transition-all"
+                              title="Delete Proposal"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Section: Hostel Notice Board */}
       {activeNotices.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in" id="dashboard-top-section">

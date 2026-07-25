@@ -36,7 +36,7 @@ import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 
 // Types
-import { Member, MessMonth, UserRole } from "./types.js";
+import { Member, MessMonth, UserRole, CycleProposal } from "./types.js";
 
 const COLOR_PALETTES = [
   { name: "Sunset Orange", hex: "#ea580c" },
@@ -1491,6 +1491,7 @@ export default function App() {
   // General Month states
   const [months, setMonths] = useState<MessMonth[]>([]);
   const [currentMonthId, setCurrentMonthId] = useState("");
+  const [cycleProposals, setCycleProposals] = useState<CycleProposal[]>([]);
   const [reportSummary, setReportSummary] = useState<any>(null);
   const [membersList, setMembersList] = useState<Member[]>([]);
   const [currencySymbol, setCurrencySymbol] = useState("৳");
@@ -2318,6 +2319,17 @@ export default function App() {
         setMembersList(mList);
         await checkSuperUserRecentLogs(token, mList, isInitialLoad);
       }
+
+      // Fetch dynamic cycle proposals
+      try {
+        const propRes = await fetch("/api/cycle-proposals", { headers: authHeader });
+        if (propRes.ok) {
+          const propData = await propRes.json();
+          setCycleProposals(propData.proposals || []);
+        }
+      } catch (err) {
+        console.error("Error fetching cycle proposals:", err);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -2795,21 +2807,23 @@ export default function App() {
     if (!newMonthName || !newMonthStart || !newMonthEnd || !sessionToken) return;
 
     try {
-      const response = await fetch("/api/months", {
+      const response = await fetch("/api/cycle-proposals", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionToken}`
         },
         body: JSON.stringify({
+          type: "CREATE",
           name: newMonthName,
           startDate: newMonthStart,
-          endDate: newMonthEnd
+          endDate: newMonthEnd,
+          gracePeriodEnabled: true
         })
       });
 
       if (response.ok) {
-        alert("Success: New month cycle added!");
+        alert("Success: Cycle creation proposal has been submitted! It requires 100% permission (approval) from all active members of your mess before it can be applied.");
         const defaults = getMonthDefaults();
         setNewMonthName(defaults.nameVal);
         setNewMonthStart(defaults.startVal);
@@ -2817,7 +2831,7 @@ export default function App() {
         fetchMonthsAndMembers(sessionToken);
       } else {
         const data = await response.json();
-        alert(data.error || "Failed to create cycle");
+        alert(data.error || "Failed to submit cycle proposal");
       }
     } catch (e) {
       console.error(e);
@@ -2827,27 +2841,98 @@ export default function App() {
   const handleUpdateMonthCycle = async (monthId: string) => {
     if (!sessionToken || !editMonthName || !editMonthStart || !editMonthEnd) return;
     try {
-      const response = await fetch(`/api/months/${monthId}`, {
-        method: "PUT",
+      const response = await fetch("/api/cycle-proposals", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionToken}`
         },
         body: JSON.stringify({
+          type: "EDIT",
+          monthId,
           name: editMonthName,
           startDate: editMonthStart,
-          endDate: editMonthEnd
+          endDate: editMonthEnd,
+          gracePeriodEnabled: true
         })
       });
 
       if (response.ok) {
-        alert("Success: Month cycle updated!");
+        alert("Success: Cycle change proposal has been submitted! It requires 100% permission (approval) from all active members of your mess before it can be applied.");
         setEditingMonthId(null);
+        fetchMonthsAndMembers(sessionToken);
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to submit cycle proposal");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleVoteCycleProposal = async (proposalId: string, vote: "APPROVED" | "REJECTED") => {
+    if (!sessionToken) return;
+    try {
+      const response = await fetch(`/api/cycle-proposals/${proposalId}/vote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({ vote })
+      });
+
+      if (response.ok) {
+        alert(`Success: Your permission vote (${vote}) has been cast!`);
+        fetchMonthsAndMembers(sessionToken);
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to cast permission vote");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleApplyCycleProposal = async (proposalId: string) => {
+    if (!sessionToken) return;
+    try {
+      const response = await fetch(`/api/cycle-proposals/${proposalId}/apply`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${sessionToken}`
+        }
+      });
+
+      if (response.ok) {
+        alert("Success: Cycle change proposal has been executed and applied to database!");
         fetchMonthsAndMembers(sessionToken);
         fetchReportSummary();
       } else {
         const data = await response.json();
-        alert(data.error || "Failed to update cycle");
+        alert(data.error || "Failed to apply cycle proposal");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteCycleProposal = async (proposalId: string) => {
+    if (!sessionToken) return;
+    try {
+      const response = await fetch(`/api/cycle-proposals/${proposalId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${sessionToken}`
+        }
+      });
+
+      if (response.ok) {
+        alert("Success: Cycle change proposal deleted!");
+        fetchMonthsAndMembers(sessionToken);
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to delete proposal");
       }
     } catch (e) {
       console.error(e);
@@ -4380,6 +4465,10 @@ export default function App() {
               onSetForcedMarketDate={setForcedMarketDate}
               dashboardVisibility={dashboardVisibility}
               mealTypes={mealTypes}
+              cycleProposals={cycleProposals}
+              onVoteCycleProposal={handleVoteCycleProposal}
+              onApplyCycleProposal={handleApplyCycleProposal}
+              onDeleteCycleProposal={handleDeleteCycleProposal}
             />
           )}
 

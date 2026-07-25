@@ -208,3 +208,18 @@ export interface MealRequest {
   timestamp: string;
 }
 
+export interface CycleProposal {
+  id: string;
+  type: "CREATE" | "EDIT";
+  monthId?: string; // for EDIT
+  name: string;
+  startDate: string;
+  endDate: string;
+  gracePeriodEnabled: boolean;
+  proposedBy: { id: string; nickname: string; name: string };
+  votes: { [memberId: string]: "APPROVED" | "REJECTED" | "PENDING" };
+  createdAt: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "APPLIED";
+}
+
+

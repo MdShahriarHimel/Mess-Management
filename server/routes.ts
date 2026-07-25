@@ -55,7 +55,8 @@ import {
   ManagerHolding, 
   ManagerRating, 
   Notice, 
-  AuditLog 
+  AuditLog,
+  CycleProposal
 } from "../src/types.js";
 
 const router = Router();
@@ -1363,6 +1364,240 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (r
   saveDB();
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_MONTH", "None", name, `Deleted month cycle ${name}`);
+  res.json({ success: true });
+});
+
+// ---------------------------------------------------------
+// CYCLE PROPOSALS & DEMOCRATIC PERMISSIONS API
+// ---------------------------------------------------------
+router.get("/cycle-proposals", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const db = loadDB();
+  if (!db.cycleProposals) {
+    db.cycleProposals = [];
+  }
+  res.json({ proposals: db.cycleProposals });
+});
+
+router.post("/cycle-proposals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditCycles")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to propose cycle changes." });
+    return;
+  }
+  
+  const { type, monthId, name, startDate, endDate, gracePeriodEnabled } = req.body;
+  if (!type || !name || !startDate || !endDate) {
+    res.status(400).json({ error: "Proposal Type, Name, Start Date, and End Date are required." });
+    return;
+  }
+
+  const db = loadDB();
+  const activeMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE);
+  
+  // Initialize votes
+  const votes: { [memberId: string]: "APPROVED" | "REJECTED" | "PENDING" } = {};
+  activeMembers.forEach(m => {
+    votes[m.id] = m.id === req.user!.id ? "APPROVED" : "PENDING";
+  });
+
+  if (!db.cycleProposals) {
+    db.cycleProposals = [];
+  }
+
+  const isOnlyProposer = activeMembers.length <= 1;
+
+  const newProposal: CycleProposal = {
+    id: generateUUID(),
+    type,
+    monthId,
+    name,
+    startDate,
+    endDate,
+    gracePeriodEnabled: gracePeriodEnabled !== false,
+    proposedBy: {
+      id: req.user!.id,
+      nickname: req.user!.nickname,
+      name: req.user!.name || req.user!.nickname
+    },
+    votes,
+    createdAt: new Date().toISOString(),
+    status: isOnlyProposer ? "APPROVED" : "PENDING"
+  };
+
+  db.cycleProposals.push(newProposal);
+  saveDB();
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "PROPOSE_CYCLE_CHANGE",
+    "None",
+    name,
+    `Proposed month cycle ${type === "CREATE" ? "creation" : "extension"} for ${name} (${startDate} to ${endDate})`
+  );
+
+  res.json({ success: true, proposal: newProposal });
+});
+
+router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const { id } = req.params;
+  const { vote } = req.body;
+
+  if (vote !== "APPROVED" && vote !== "REJECTED") {
+    res.status(400).json({ error: "Invalid vote value. Must be APPROVED or REJECTED." });
+    return;
+  }
+
+  const db = loadDB();
+  if (!db.cycleProposals) {
+    db.cycleProposals = [];
+  }
+
+  const proposal = db.cycleProposals.find(p => p.id === id);
+  if (!proposal) {
+    res.status(404).json({ error: "Proposal not found." });
+    return;
+  }
+
+  if (proposal.status === "APPLIED") {
+    res.status(400).json({ error: "Proposal has already been applied." });
+    return;
+  }
+
+  // Ensure user is registered to vote in this proposal
+  if (!proposal.votes || !(req.user!.id in proposal.votes)) {
+    // If they became an active member recently, add them to vote
+    const member = db.members.find(m => m.id === req.user!.id);
+    if (!member || member.status !== MemberStatus.ACTIVE) {
+      res.status(403).json({ error: "Access denied. Only active members of this mess can vote." });
+      return;
+    }
+  }
+
+  proposal.votes[req.user!.id] = vote;
+
+  // Recalculate proposal status
+  const voteValues = Object.values(proposal.votes);
+  const totalVotes = voteValues.length;
+  const approvedCount = voteValues.filter(v => v === "APPROVED").length;
+  const rejectedCount = voteValues.filter(v => v === "REJECTED").length;
+
+  if (rejectedCount > 0) {
+    proposal.status = "REJECTED";
+  } else if (approvedCount === totalVotes) {
+    proposal.status = "APPROVED";
+  } else {
+    proposal.status = "PENDING";
+  }
+
+  saveDB();
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "CAST_CYCLE_VOTE",
+    "None",
+    vote,
+    `Voted ${vote} on cycle change proposal for ${proposal.name}`
+  );
+
+  res.json({ success: true, proposal });
+});
+
+router.post("/cycle-proposals/:id/apply", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditCycles")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to apply cycle changes." });
+    return;
+  }
+
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.cycleProposals) {
+    db.cycleProposals = [];
+  }
+
+  const proposal = db.cycleProposals.find(p => p.id === id);
+  if (!proposal) {
+    res.status(404).json({ error: "Proposal not found." });
+    return;
+  }
+
+  if (proposal.status !== "APPROVED") {
+    res.status(400).json({ error: "Proposal must be approved by 100% of active members before applying." });
+    return;
+  }
+
+  if (proposal.type === "CREATE") {
+    const newMonth: MessMonth = {
+      id: generateUUID(),
+      name: proposal.name,
+      startDate: proposal.startDate,
+      endDate: proposal.endDate,
+      isLocked: false,
+      gracePeriodEnabled: proposal.gracePeriodEnabled
+    };
+    db.months.push(newMonth);
+  } else {
+    const index = db.months.findIndex(m => m.id === proposal.monthId);
+    if (index === -1) {
+      res.status(404).json({ error: "Original month cycle not found." });
+      return;
+    }
+    const original = db.months[index];
+    db.months[index] = {
+      ...original,
+      name: proposal.name,
+      startDate: proposal.startDate,
+      endDate: proposal.endDate,
+      gracePeriodEnabled: proposal.gracePeriodEnabled
+    };
+  }
+
+  proposal.status = "APPLIED";
+  saveDB();
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "APPLY_CYCLE_CHANGE",
+    "APPROVED",
+    "APPLIED",
+    `Applied democratic cycle change for ${proposal.name} (${proposal.startDate} to ${proposal.endDate})`
+  );
+
+  res.json({ success: true, proposal });
+});
+
+router.delete("/cycle-proposals/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditCycles")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to delete proposals." });
+    return;
+  }
+
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.cycleProposals) {
+    db.cycleProposals = [];
+  }
+
+  const index = db.cycleProposals.findIndex(p => p.id === id);
+  if (index === -1) {
+    res.status(404).json({ error: "Proposal not found." });
+    return;
+  }
+
+  const proposal = db.cycleProposals[index];
+  db.cycleProposals.splice(index, 1);
+  saveDB();
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "DELETE_CYCLE_PROPOSAL",
+    proposal.status,
+    "Deleted",
+    `Deleted cycle change proposal for ${proposal.name}`
+  );
+
   res.json({ success: true });
 });
 
