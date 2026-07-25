@@ -896,6 +896,14 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
 
   // Permission Hierarchy Check
   if (!isActorUltimateAdmin) {
+    // Check if standard admin has permission to edit other members' profiles
+    if (!isSelf && req.user!.role === UserRole.ADMIN) {
+      if (!checkAdminPermission(req, "canEditProfiles")) {
+        res.status(403).json({ error: "Access denied. You do not have permission to edit someone else's profile." });
+        return;
+      }
+    }
+
     // Normal member editing someone else
     if (!isSelf && !isMessAdmin && !isManager) {
       res.status(403).json({ error: "Permission denied: You can only edit your own profile." });
@@ -1263,6 +1271,10 @@ router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response)
 
 // Create new month (Admin and Super User only)
 router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditCycles")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
+    return;
+  }
   const { name, startDate, endDate, gracePeriodEnabled } = req.body;
   if (!name || !startDate || !endDate) {
     res.status(400).json({ error: "Month Name, Start Date, and End Date are required" });
@@ -1288,6 +1300,10 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: Au
 
 // Update Month config (lock, unlock, dates)
 router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditCycles")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
+    return;
+  }
   const { id } = req.params;
   const updates: Partial<MessMonth> = req.body;
   const db = loadDB();
@@ -1329,6 +1345,10 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
 
 // Delete Month (Admin and Super User only)
 router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  if (!checkAdminPermission(req, "canEditCycles")) {
+    res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
+    return;
+  }
   const { id } = req.params;
   const db = loadDB();
   const index = db.months.findIndex(m => m.id === id);
@@ -1431,14 +1451,18 @@ router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, 
 
 // Bulk Enter/Edit meals for a month (Manager, Admin, Super User, Assistant Super User, Member)
 router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.MEMBER, UserRole.PARTIAL_MANAGER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  if (!checkAdminPermission(req, "canManageMeals")) {
-    res.status(403).json({ error: "Access denied. You do not have permission to manage meals." });
-    return;
-  }
   const { monthId, meals } = req.body; // meals: Array of meals to save/upsert
 
   if (!monthId || !Array.isArray(meals)) {
     res.status(400).json({ error: "Month ID and meals array are required" });
+    return;
+  }
+
+  const hasManageMealsPermission = checkAdminPermission(req, "canManageMeals");
+  const isOnlySelf = meals.every(m => m.memberId === req.user!.id);
+
+  if (!hasManageMealsPermission && !isOnlySelf) {
+    res.status(403).json({ error: "Access denied. You do not have permission to manage other members' meals." });
     return;
   }
 
@@ -1469,7 +1493,7 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     UserRole.ASSISTANT_SUPERUSER,
     UserRole.MANAGER,
     UserRole.PARTIAL_MANAGER
-  ].includes(req.user!.role);
+  ].includes(req.user!.role) && hasManageMealsPermission;
 
   if (!isManagement) {
     if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
@@ -2072,13 +2096,17 @@ function areDatesConsecutive(dates: string[]): boolean {
 }
 
 router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
-  if (!checkAdminPermission(req, "canAddMarkets")) {
-    res.status(403).json({ error: "Access denied. You do not have permission to manage market logs." });
-    return;
-  }
   const { id, monthId, memberId, date, amount, receiptUrl, description, isExtra, quantity, coveredDates } = req.body;
   if (!monthId || !memberId || !date || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, Date, and Amount are required" });
+    return;
+  }
+
+  const hasMarketPermission = checkAdminPermission(req, "canAddMarkets");
+  const isSelf = req.user!.id === memberId;
+
+  if (!hasMarketPermission && !isSelf) {
+    res.status(403).json({ error: "Access denied. You do not have permission to manage other members' market logs." });
     return;
   }
 
@@ -2090,12 +2118,13 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   // Determine role permissions
-  const isSelf = req.user!.id === memberId;
   const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER;
   const isManager = req.user!.role === UserRole.MANAGER;
 
-  // Normal members (UserRole.MEMBER) must be strictly checked
-  if (req.user!.role === UserRole.MEMBER) {
+  // Normal members or restricted Admins acting as members must be strictly checked
+  const actsAsMember = (req.user!.role === UserRole.MEMBER) || (req.user!.role === UserRole.ADMIN && !hasMarketPermission);
+
+  if (actsAsMember) {
     if (!isSelf) {
       res.status(403).json({ error: "Forbidden: You can only submit market entries for yourself." });
       return;
@@ -2142,7 +2171,7 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (existingIndex !== -1) {
     // If editing, check permissions for the OLD entry to prevent hijacking
     const oldEntry = db.marketEntries[existingIndex];
-    if (req.user!.role === UserRole.MEMBER) {
+    if (actsAsMember) {
       const assignedDates = getAssignedMarketDatesForUser(db, oldEntry.monthId, req.user!.id);
       const oldDates = oldEntry.coveredDates && Array.isArray(oldEntry.coveredDates) ? oldEntry.coveredDates : [oldEntry.date];
       const oldAllAssigned = oldDates.every(d => assignedDates.includes(d));
@@ -2171,10 +2200,6 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
 
 // Delete Market Entry
 router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.MEMBER]), (req: AuthenticatedRequest, res: Response): void => {
-  if (!checkAdminPermission(req, "canAddMarkets")) {
-    res.status(403).json({ error: "Access denied. You do not have permission to manage market logs." });
-    return;
-  }
   const { id } = req.params;
   const db = loadDB();
   const index = db.marketEntries.findIndex(e => e.id === id);
@@ -2185,9 +2210,12 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
   }
 
   const original = db.marketEntries[index];
+  const hasMarketPermission = checkAdminPermission(req, "canAddMarkets");
 
-  // If a normal member attempts to delete, verify they own the entry and it's on their assigned date
-  if (req.user!.role === UserRole.MEMBER) {
+  // Apply standard member rules if the user is a normal member OR a restricted Admin acting as a member
+  const actsAsMember = (req.user!.role === UserRole.MEMBER) || (req.user!.role === UserRole.ADMIN && !hasMarketPermission);
+
+  if (actsAsMember) {
     const assignedDates = getAssignedMarketDatesForUser(db, original.monthId, req.user!.id);
     const originalDates = original.coveredDates && Array.isArray(original.coveredDates) ? original.coveredDates : [original.date];
     const isAuthorized = originalDates.every(d => assignedDates.includes(d)) && original.memberId === req.user!.id;
@@ -4520,6 +4548,8 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
   if (actionKey === "canManageMeals" && userControls.canManageMeals === false) return false;
   if (actionKey === "canAddMarkets" && userControls.canAddMarkets === false) return false;
   if (actionKey === "canSuspendMembers" && userControls.canSuspendMembers === false) return false;
+  if (actionKey === "canEditProfiles" && userControls.canEditProfiles === false) return false;
+  if (actionKey === "canEditCycles" && userControls.canEditCycles === false) return false;
 
   return true;
 }
@@ -4588,7 +4618,7 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
     return;
   }
   
-  const { userId, email, allowedMesses, canEditBills, canManageMeals, canAddMarkets, canSuspendMembers } = req.body;
+  const { userId, email, allowedMesses, canEditBills, canManageMeals, canAddMarkets, canSuspendMembers, canEditProfiles, canEditCycles } = req.body;
   if (!userId && !email) {
     res.status(400).json({ error: "User ID or Email is required." });
     return;
@@ -4600,7 +4630,9 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
     canEditBills: canEditBills !== false,
     canManageMeals: canManageMeals !== false,
     canAddMarkets: canAddMarkets !== false,
-    canSuspendMembers: canSuspendMembers !== false
+    canSuspendMembers: canSuspendMembers !== false,
+    canEditProfiles: canEditProfiles !== false,
+    canEditCycles: canEditCycles !== false
   };
 
   if (userId) {

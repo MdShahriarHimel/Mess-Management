@@ -19,6 +19,8 @@ interface AdminControlConfig {
   canManageMeals: boolean;
   canAddMarkets: boolean;
   canSuspendMembers: boolean;
+  canEditProfiles: boolean;
+  canEditCycles: boolean;
 }
 
 export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminControlsPanelProps) {
@@ -35,6 +37,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
   const [canManageMeals, setCanManageMeals] = useState(true);
   const [canAddMarkets, setCanAddMarkets] = useState(true);
   const [canSuspendMembers, setCanSuspendMembers] = useState(true);
+  const [canEditProfiles, setCanEditProfiles] = useState(true);
+  const [canEditCycles, setCanEditCycles] = useState(true);
 
   // Fetch all members to find other admins across all messes
   const fetchData = async () => {
@@ -79,7 +83,9 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
       canEditBills: true,
       canManageMeals: true,
       canAddMarkets: true,
-      canSuspendMembers: true
+      canSuspendMembers: true,
+      canEditProfiles: true,
+      canEditCycles: true
     };
 
     setAllowedMesses(config.allowedMesses || []);
@@ -87,6 +93,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
     setCanManageMeals(config.canManageMeals !== false);
     setCanAddMarkets(config.canAddMarkets !== false);
     setCanSuspendMembers(config.canSuspendMembers !== false);
+    setCanEditProfiles(config.canEditProfiles !== false);
+    setCanEditCycles(config.canEditCycles !== false);
   };
 
   const handleAdminChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -129,7 +137,9 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
           canEditBills,
           canManageMeals,
           canAddMarkets,
-          canSuspendMembers
+          canSuspendMembers,
+          canEditProfiles,
+          canEditCycles
         })
       });
 
@@ -289,6 +299,32 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                   <div>
                     <p className="text-xs font-bold text-slate-200">Can Suspend / Archive Members</p>
                     <p className="text-[9px] text-slate-500">Allow suspending active profiles, left notices, or soft deletion.</p>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={canEditProfiles}
+                    onChange={(e) => setCanEditProfiles(e.target.checked)}
+                    className="accent-cyan-400 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <p className="text-xs font-bold text-slate-200">Can Edit Someone's Profile</p>
+                    <p className="text-[9px] text-slate-500">Allow modifying other members' contact, bio, or status profiles.</p>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={canEditCycles}
+                    onChange={(e) => setCanEditCycles(e.target.checked)}
+                    className="accent-cyan-400 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <p className="text-xs font-bold text-slate-200">Can Edit Cycles (Months)</p>
+                    <p className="text-[9px] text-slate-500">Allow creating, updating, locking, unlocking, or deleting monthly cycles.</p>
                   </div>
                 </label>
               </div>
