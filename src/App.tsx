@@ -2251,13 +2251,14 @@ export default function App() {
   const [hasSuperUserChangeDot, setHasSuperUserChangeDot] = useState(false);
 
   // Check if any recent logs (last 24 hours) were made by a super user
-  const checkSuperUserRecentLogs = async (token: string, currentMembersList: Member[]) => {
-    if (activeTab !== "audit") {
-      // DO NOT execute GET /api/auditlogs unless the Audit Logs page is currently open.
+  const checkSuperUserRecentLogs = async (token: string, currentMembersList: Member[], force = false) => {
+    if (!force && activeTab !== "audit") {
+      // DO NOT execute GET /api/auditlogs unless the Audit Logs page is currently open or during initial load.
       return;
     }
     try {
-      const response = await fetch("/api/auditlogs", {
+      // Query with a very small limit so it is extremely bandwidth-friendly!
+      const response = await fetch("/api/auditlogs?limit=15", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
@@ -2271,7 +2272,7 @@ export default function App() {
         const hasRecentSUChange = logs.some(log => {
           const logTime = new Date(log.timestamp).getTime();
           const isRecent = logTime > oneDayAgo;
-          const isSuperUserOperator = superUsers.includes(log.userId) || log.reason.toLowerCase().includes("superuser");
+          const isSuperUserOperator = superUsers.includes(log.userId) || (log.reason && log.reason.toLowerCase().includes("superuser"));
           return isRecent && isSuperUserOperator;
         });
         
@@ -2283,7 +2284,7 @@ export default function App() {
   };
 
   // Fetch core constants
-  const fetchMonthsAndMembers = async (token: string) => {
+  const fetchMonthsAndMembers = async (token: string, isInitialLoad = false) => {
     try {
       const authHeader = { "Authorization": `Bearer ${token}` };
       
@@ -2315,7 +2316,7 @@ export default function App() {
         const membersData = await membersRes.json();
         const mList = membersData.members || [];
         setMembersList(mList);
-        await checkSuperUserRecentLogs(token, mList);
+        await checkSuperUserRecentLogs(token, mList, isInitialLoad);
       }
     } catch (e) {
       console.error(e);
@@ -2360,7 +2361,7 @@ export default function App() {
         return;
       }
       validateSession(sessionToken);
-      fetchMonthsAndMembers(sessionToken);
+      fetchMonthsAndMembers(sessionToken, true);
       fetchSettings(sessionToken);
       fetchMesses(sessionToken);
       fetchElections(sessionToken);
