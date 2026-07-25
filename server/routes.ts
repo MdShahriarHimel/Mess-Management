@@ -1345,11 +1345,33 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
   mealDebugLogs.push(`[upsertMealsTx] Finished bulk upsert`);
 }
 
+async function getMealsForCurrentCycle(monthId: string) {
+  const dbConfig = loadDB();
+  const rawMeals = await drizzleDb.select().from(mealsTable).where(eq(mealsTable.monthId, monthId));
+  const monthObj = dbConfig.months?.find((m: any) => m.id === monthId);
+  if (!monthObj) {
+    return rawMeals;
+  }
+  
+  const validDates = new Set<string>();
+  const start = new Date(monthObj.startDate);
+  const end = new Date(monthObj.endDate);
+  let current = new Date(start);
+  let safetyCounter = 0;
+  while (current <= end && safetyCounter < 120) {
+    safetyCounter++;
+    const year = current.getFullYear();
+    const m = String(current.getMonth() + 1).padStart(2, '0');
+    const d = String(current.getDate()).padStart(2, '0');
+    validDates.add(`${year}-${m}-${d}`);
+    current.setDate(current.getDate() + 1);
+  }
+  return rawMeals.filter(meal => validDates.has(meal.date));
+}
+
 router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const dbConfig = loadDB(); // keep for side effects if any, or just load
-  const meals = await drizzleDb.select().from(mealsTable).where(eq(mealsTable.monthId, monthId));
-  
+  const meals = await getMealsForCurrentCycle(monthId);
   res.json({ meals });
 });
 
@@ -2743,7 +2765,9 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY);
   const monthDeposits = db.deposits.filter(d => d.monthId === monthId);
   const monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
-  const monthMeals = await drizzleDb.select().from(mealsTable).where(eq(mealsTable.monthId, monthId));
+  
+  const monthMeals = await getMealsForCurrentCycle(monthId);
+
   const monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
   const monthBills = db.bills.filter(b => b.monthId === monthId);
 

@@ -658,7 +658,7 @@ export default function FinanceSettlement({
     const list = [];
     let current = new Date(start);
     let safetyCounter = 0;
-    while (current <= end && safetyCounter < 40) {
+    while (current <= end && safetyCounter < 120) {
       safetyCounter++;
       const year = current.getFullYear();
       const m = String(current.getMonth() + 1).padStart(2, '0');
