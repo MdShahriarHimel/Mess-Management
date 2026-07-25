@@ -2258,7 +2258,7 @@ export default function App() {
     }
     try {
       // Query with a very small limit so it is extremely bandwidth-friendly!
-      const response = await fetch("/api/auditlogs?limit=15", {
+      const response = await fetch("/api/auditlogs?limit=10", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {

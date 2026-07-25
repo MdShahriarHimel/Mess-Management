@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Shield, Search, Clock, Info, Download, FileSpreadsheet, FileText, 
   Filter, Calendar, User, Layers, Settings, Check, X, Eye, 
@@ -67,8 +67,10 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
     setTimeout(() => setToast(null), 4000);
   };
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Fetch audit logs with query params and pagination
-  const fetchLogs = async (isAppend = false) => {
+  const fetchLogs = async (isAppend = false, signal?: AbortSignal) => {
     setLoading(true);
     try {
       const currentOffset = isAppend ? offset + limit : 0;
@@ -86,7 +88,8 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
 
       const url = `/api/auditlogs?${queryParams.toString()}`;
       const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${currentUser.id}` },
+        signal
       });
       if (response.ok) {
         const data = await response.json();
@@ -107,11 +110,26 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
       } else {
         console.error("Failed to fetch logs");
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === "AbortError") {
+        console.log("Fetch aborted");
+        return;
+      }
       console.error(e);
     } finally {
-      setLoading(false);
+      if (!signal || !signal.aborted) {
+        setLoading(false);
+      }
     }
+  };
+
+  const triggerFetchLogs = async (isAppend = false) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    await fetchLogs(isAppend, controller.signal);
   };
 
   // Fetch messes list (Admin only)
@@ -164,7 +182,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
       if (response.ok) {
         setRetentionDays(days);
         showToast(`Retention period updated to ${days} Days. Older logs deleted safely.`, "success");
-        fetchLogs();
+        triggerFetchLogs();
       } else {
         const err = await response.json();
         showToast(err.error || "Failed to save retention settings.", "error");
@@ -177,13 +195,37 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
     }
   };
 
-  // Init loads
+  const isFirstMount = useRef(true);
+
+  // Mount-only init for messes and settings
   useEffect(() => {
-    if (isModuleDisabled("auditLog")) return;
-    fetchLogs();
     fetchMesses();
     fetchSettings();
-  }, [startDate, endDate, selectedRole, selectedModule, selectedMess, selectedSuperUser, refreshTriggers.auditLog]);
+  }, []);
+
+  // Debounced filters fetch
+  useEffect(() => {
+    if (isModuleDisabled("auditLog")) return;
+
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      triggerFetchLogs(false);
+    }, 300); // ≈300 ms debounce
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [startDate, endDate, selectedRole, selectedModule, selectedMess, selectedSuperUser]);
+
+  // Refresh trigger (on manual refresh or initial mount)
+  useEffect(() => {
+    if (isModuleDisabled("auditLog")) return;
+    triggerFetchLogs(false);
+  }, [refreshTriggers.auditLog]);
 
   // Client-side search filters combined with API results
   const filteredLogs = logs.filter(l => {
@@ -248,7 +290,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
       document.body.removeChild(link);
       
       showToast("Audit Trail successfully exported to Excel format.", "success");
-      fetchLogs(); // refresh logs to record this export log
+      triggerFetchLogs(); // refresh logs to record this export log
     } catch (err) {
       console.error(err);
       showToast("Failed to export Excel file.", "error");
@@ -275,7 +317,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
       // Simple, beautiful standard print invocation
       window.print();
       showToast("PDF print window triggered successfully.", "success");
-      fetchLogs();
+      triggerFetchLogs();
     } catch (err) {
       console.error(err);
     }
@@ -363,7 +405,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
           <RefreshButton 
             module="auditLog" 
             onRefresh={async () => {
-              await fetchLogs();
+              await triggerFetchLogs();
             }}
           />
           <button
@@ -747,7 +789,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
         {hasMore && filteredLogs.length > 0 && !loading && (
           <div className="mt-6 pt-4 border-t border-cyan-500/5 flex justify-center pb-2">
             <button
-              onClick={() => fetchLogs(true)}
+              onClick={() => triggerFetchLogs(true)}
               className={`px-6 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95 ${
                 isDarkMode 
                   ? "bg-slate-900 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/40" 
