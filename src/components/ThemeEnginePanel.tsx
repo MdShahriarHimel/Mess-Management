@@ -557,13 +557,17 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       )}
 
       {/* Navigation sub-tabs */}
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-800/40 pb-2">
+      <div className={`flex flex-wrap gap-1.5 border-b pb-2 ${isDarkMode ? "border-slate-800/40" : "border-slate-200"}`}>
         <button
           onClick={() => setActiveTab("library")}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === "library"
-              ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
-              : "text-slate-400 hover:text-slate-200"
+              ? isDarkMode 
+                ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
+                : "bg-cyan-50 text-cyan-800 border border-cyan-200 shadow"
+              : isDarkMode
+                ? "text-slate-400 hover:text-slate-200"
+                : "text-slate-600 hover:text-slate-900"
           }`}
         >
           <Palette size={14} />
@@ -573,8 +577,12 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           onClick={() => setActiveTab("backgrounds")}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === "backgrounds"
-              ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
-              : "text-slate-400 hover:text-slate-200"
+              ? isDarkMode
+                ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
+                : "bg-cyan-50 text-cyan-800 border border-cyan-200 shadow"
+              : isDarkMode
+                ? "text-slate-400 hover:text-slate-200"
+                : "text-slate-600 hover:text-slate-900"
           }`}
         >
           <Sparkles size={14} />
@@ -584,8 +592,12 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           onClick={() => setActiveTab("customizer")}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === "customizer"
-              ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
-              : "text-slate-400 hover:text-slate-200"
+              ? isDarkMode
+                ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
+                : "bg-cyan-50 text-cyan-800 border border-cyan-200 shadow"
+              : isDarkMode
+                ? "text-slate-400 hover:text-slate-200"
+                : "text-slate-600 hover:text-slate-900"
           }`}
         >
           <Sliders size={14} />
@@ -595,8 +607,12 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           onClick={() => setActiveTab("presets")}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === "presets"
-              ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
-              : "text-slate-400 hover:text-slate-200"
+              ? isDarkMode
+                ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow"
+                : "bg-cyan-50 text-cyan-800 border border-cyan-200 shadow"
+              : isDarkMode
+                ? "text-slate-400 hover:text-slate-200"
+                : "text-slate-600 hover:text-slate-900"
           }`}
         >
           <Settings size={14} />

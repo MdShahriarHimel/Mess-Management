@@ -797,6 +797,133 @@ export default function FinanceSettlement({
     }
   };
 
+  const exportMealSpreadsheetToExcel = () => {
+    if (activeMembers.length === 0) return;
+
+    const sheetData = [
+      ["RESIDENT DAILY MEAL SPREADSHEET"],
+      [`Month: ${selectedMonth?.name || "Active month Cycle"} | Exported on: ${new Date().toLocaleDateString()}`],
+      [], 
+    ];
+
+    const headers = [
+      "Member Name",
+      ...datesList.map(d => {
+        const dateObj = new Date(d);
+        return dateObj.getDate().toString();
+      }),
+      "Total Meals"
+    ];
+    sheetData.push(headers);
+
+    activeMembers.forEach(member => {
+      const row: any[] = [member.name ? `${member.name} (${member.nickname})` : member.nickname];
+      let memberTotal = 0;
+      datesList.forEach(d => {
+        const val = spreadsheetData[member.id]?.[d] || 0;
+        row.push(val === 0 ? "" : val);
+        memberTotal += val;
+      });
+      row.push(memberTotal);
+      sheetData.push(row);
+    });
+
+    sheetData.push([]);
+    const summaryRow: any[] = ["TOTAL DAILY MEALS"];
+    let grandTotal = 0;
+    datesList.forEach(d => {
+      const dailyTotal = activeMembers.reduce((sum, member) => sum + (spreadsheetData[member.id]?.[d] || 0), 0);
+      summaryRow.push(dailyTotal === 0 ? "" : dailyTotal);
+      grandTotal += dailyTotal;
+    });
+    summaryRow.push(grandTotal);
+    sheetData.push(summaryRow);
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+    ws["!cols"] = [
+      { wch: 25 }, 
+      ...datesList.map(() => ({ wch: 6 })), 
+      { wch: 12 } 
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Meals Spreadsheet");
+    XLSX.writeFile(wb, `Resident_Meals_Spreadsheet_${currentMonthId}.xlsx`);
+  };
+
+  const exportMealSpreadsheetToPDF = () => {
+    if (activeMembers.length === 0) return;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Resident Daily Meal Spreadsheet - ${selectedMonth?.name || "Active Month"}</title>
+        <style>
+          @media print {
+            @page { size: landscape; margin: 10mm; }
+          }
+          body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 15px; font-size: 10px; color: #333; }
+          .header { text-align: center; border-bottom: 2px solid #06b6d4; padding-bottom: 8px; margin-bottom: 15px; }
+          .header h1 { margin: 0; font-size: 16px; color: #0891b2; text-transform: uppercase; }
+          .header p { margin: 4px 0 0; font-size: 10px; color: #666; }
+          table { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 10px; }
+          th, td { border: 1px solid #cbd5e1; padding: 4px 4px; text-align: center; }
+          th { background-color: #f1f5f9; color: #334155; font-weight: bold; }
+          .member-col { text-align: left !important; font-weight: bold; background-color: #f8fafc; min-width: 140px; }
+          .total-col { font-weight: bold; background-color: #f1f5f9; }
+          .grand-total-row td { background-color: #e2e8f0; font-weight: bold; color: #0f172a; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Resident Daily Meal Spreadsheet</h1>
+          <p>Month: ${selectedMonth?.name || "Active Month"} | Exported on: ${new Date().toLocaleDateString()}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th class="member-col">Member</th>
+              ${datesList.map(d => `<th>${new Date(d).getDate()}</th>`).join('')}
+              <th class="total-col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${activeMembers.map(member => {
+              const total = datesList.reduce((sum, d) => sum + (spreadsheetData[member.id]?.[d] || 0), 0);
+              return `
+                <tr>
+                  <td class="member-col">${member.name ? `${member.name} (${member.nickname})` : member.nickname}</td>
+                  ${datesList.map(d => {
+                    const val = spreadsheetData[member.id]?.[d];
+                    return `<td>${val === undefined || val === null || val === 0 ? '' : val}</td>`;
+                  }).join('')}
+                  <td class="total-col">${total}</td>
+                </tr>
+              `;
+            }).join('')}
+            <tr class="grand-total-row">
+              <td class="member-col">Total Daily Meals</td>
+              ${datesList.map(d => {
+                const dailyTotal = activeMembers.reduce((sum, member) => sum + (spreadsheetData[member.id]?.[d] || 0), 0);
+                return `<td>${dailyTotal || ''}</td>`;
+              }).join('')}
+              <td class="total-col">${activeMembers.reduce((sum, member) => sum + datesList.reduce((sumD, d) => sumD + (spreadsheetData[member.id]?.[d] || 0), 0), 0)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>
+    `;
+    const printWin = window.open("", "_blank");
+    if (printWin) {
+      printWin.document.write(htmlContent);
+      printWin.document.close();
+    }
+  };
+
   const getCellColorClass = (val: number) => {
     if (val === 2) return "text-cyan-400 font-bold";
     if (val === 0) return "text-slate-500 font-medium opacity-60";
@@ -1657,34 +1784,59 @@ export default function FinanceSettlement({
             </p>
           </div>
 
-          {canEditSpreadsheet && (
-            <div className="flex items-center gap-2">
-              {saveSuccess && (
-                <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded font-bold flex items-center gap-1">
-                  <Check size={12} />
-                  Spreadsheet saved!
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={fetchMeals}
-                disabled={mealsLoading || saveLoading}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-all active:scale-95"
-                title="Reset/Reload meals data"
-              >
-                <RefreshCw size={14} className={mealsLoading ? "animate-spin" : ""} />
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveSpreadsheet}
-                disabled={saveLoading}
-                className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-55 active:scale-95 transition-all"
-              >
-                <Save size={14} />
-                {saveLoading ? "SAVING..." : "SAVE SPREADSHEET"}
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Export buttons - visible to everyone */}
+            <button
+              type="button"
+              onClick={exportMealSpreadsheetToExcel}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              title="Export Meal Spreadsheet to Excel"
+            >
+              <FileSpreadsheet size={14} />
+              EXPORT EXCEL
+            </button>
+            <button
+              type="button"
+              onClick={exportMealSpreadsheetToPDF}
+              className="px-3 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95"
+              title="Export Meal Spreadsheet to PDF"
+            >
+              <Printer size={14} />
+              EXPORT PDF
+            </button>
+
+            {/* Separator */}
+            {canEditSpreadsheet && <div className="h-5 w-[1px] bg-slate-700 mx-1 hidden sm:block"></div>}
+
+            {canEditSpreadsheet && (
+              <div className="flex items-center gap-2">
+                {saveSuccess && (
+                  <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded font-bold flex items-center gap-1">
+                    <Check size={12} />
+                    Spreadsheet saved!
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={fetchMeals}
+                  disabled={mealsLoading || saveLoading}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-all active:scale-95"
+                  title="Reset/Reload meals data"
+                >
+                  <RefreshCw size={14} className={mealsLoading ? "animate-spin" : ""} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSpreadsheet}
+                  disabled={saveLoading}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-55 active:scale-95 transition-all"
+                >
+                  <Save size={14} />
+                  {saveLoading ? "SAVING..." : "SAVE SPREADSHEET"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {mealsLoading && Object.keys(spreadsheetData).length === 0 ? (
@@ -1906,7 +2058,7 @@ export default function FinanceSettlement({
           }`} id="finance-bills-actions-bar">
             
             {/* Search Box */}
-            <div className="relative w-full md:max-w-xs">
+            <div className="relative w-full md:max-w-md">
               <Search className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
               <input
                 type="text"
@@ -1919,24 +2071,6 @@ export default function FinanceSettlement({
                     : "bg-slate-50 border-slate-200 text-slate-800"
                 }`}
               />
-            </div>
-
-            {/* Export Actions */}
-            <div className="flex gap-2 w-full md:w-auto justify-end">
-              <button
-                onClick={exportToExcel}
-                className="flex-1 md:flex-none px-4 py-2.5 rounded-full text-[11px] font-extrabold tracking-wider uppercase bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-              >
-                <FileSpreadsheet size={13} />
-                Export
-              </button>
-              <button
-                onClick={handleOpenLedgerPDFModal}
-                className="flex-1 md:flex-none px-4 py-2.5 rounded-full text-[11px] font-extrabold tracking-wider uppercase bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-              >
-                <Printer size={13} />
-                PDF
-              </button>
             </div>
 
           </div>
@@ -1953,7 +2087,7 @@ export default function FinanceSettlement({
                 </div>
                 <h3 className="text-xs font-black tracking-wider uppercase">MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT)</h3>
               </div>
-              <div className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-950/60 px-3 py-1 rounded-full border border-slate-200/50 dark:border-slate-850">
+              <div className="text-[10px] font-bold text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-950/60 px-3 py-1 rounded-full border border-slate-200/50 dark:border-slate-850/50">
                 Mess: {logoText || "Ababil mess"} • {months.find(m => m.id === currentMonthId)?.name || "Active month Cycle"}
               </div>
             </div>

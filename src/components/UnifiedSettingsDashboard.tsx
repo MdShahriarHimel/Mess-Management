@@ -507,8 +507,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         <div className={`lg:w-64 shrink-0 p-4 rounded-2xl border ${
           isDarkMode ? "bg-slate-950/80 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
         } flex flex-col gap-1.5`}>
-          <div className="px-2 py-2 mb-2 border-b border-slate-800/60">
-            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest block">Customization Levels</span>
+          <div className={`px-2 py-2 mb-2 border-b ${isDarkMode ? "border-slate-800/60" : "border-slate-100"}`}>
+            <span className="text-[10px] font-bold text-cyan-500 dark:text-cyan-400 uppercase tracking-widest block">Customization Levels</span>
             <span className="text-[9px] text-slate-500">Separated ERP Config Engine</span>
           </div>
 
@@ -532,7 +532,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  {renderIcon(tab.icon, 14, activeSubTab === tab.id ? "text-cyan-400" : "text-slate-400")}
+                  {renderIcon(tab.icon, 14, activeSubTab === tab.id ? "text-cyan-400" : (isDarkMode ? "text-slate-400" : "text-slate-500"))}
                   <span>{tab.label}</span>
                 </div>
                 {cannotAccess ? (
@@ -554,7 +554,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Sparkles size={18} className="text-cyan-400" />
                   ERP Identity & Global Customization (Level 1)
                 </h3>
@@ -760,8 +760,12 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                                 }}
                                 className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
                                   override.enabled 
-                                    ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
-                                    : "bg-rose-950 border border-rose-500/20 text-rose-300"
+                                    ? isDarkMode
+                                      ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                      : "bg-cyan-50 border border-cyan-200 text-cyan-800"
+                                    : isDarkMode
+                                      ? "bg-rose-950 border border-rose-500/20 text-rose-300"
+                                      : "bg-rose-50 border border-rose-200 text-rose-800"
                                 }`}
                               >
                                 {override.enabled ? "🔈 On" : "🔇 Off"}
@@ -799,8 +803,12 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             onClick={() => handleToggleMessLock(mess.id, !isLocked)}
                             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                               isLocked 
-                                ? "bg-rose-950 border border-rose-500/20 text-rose-300"
-                                : "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                ? isDarkMode
+                                  ? "bg-rose-950 border border-rose-500/20 text-rose-300"
+                                  : "bg-rose-50 border border-rose-200 text-rose-800"
+                                : isDarkMode
+                                  ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                  : "bg-cyan-50 border border-cyan-200 text-cyan-800"
                             }`}
                           >
                             {isLocked ? "🔒 Locked" : "🔓 Unlocked"}
@@ -832,7 +840,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Heart size={18} className="text-rose-400" />
                   Creator Attribution & Credit Panel
                 </h3>
@@ -963,7 +971,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Palette size={18} className="text-cyan-400" />
                   Central Custom Theme Library & Templates
                 </h3>
@@ -1021,7 +1029,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/60 pb-4">
                 <div>
-                  <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                     <LucideIcons.Sliders size={18} className="text-cyan-400" />
                     Mess Workspace Appearance Customizer (Level 2)
                   </h3>
@@ -1113,7 +1121,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.User size={18} className="text-cyan-400" />
                   Personal Workspace Preferences (Level 3)
                 </h3>
@@ -1125,9 +1133,13 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
                 {/* Dark Mode toggle */}
-                <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950/40 border border-slate-800">
+                <div className={`flex items-center justify-between p-3.5 rounded-xl border ${
+                  isDarkMode 
+                    ? "bg-slate-950/40 border-slate-800" 
+                    : "bg-slate-50 border-slate-200"
+                }`}>
                   <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-slate-200 block">Dark Canvas Theme</span>
+                    <span className={`text-xs font-bold block ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Dark Canvas Theme</span>
                     <span className="text-[10px] text-slate-500">Apply custom eye-safe midnight palette.</span>
                   </div>
                   <button
@@ -1242,7 +1254,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Shield size={18} className="text-cyan-400" />
                   Granular Customization Permission Matrix
                 </h3>
@@ -1311,7 +1323,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Calendar size={18} className="text-cyan-400" />
                   Cycle & System Rules
                 </h3>
@@ -1443,8 +1455,12 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             onClick={() => setActiveMonthId(month.id)}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
                               activeMonthId === month.id
-                                ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
-                                : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
+                                ? isDarkMode
+                                  ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                  : "bg-cyan-50 border border-cyan-200 text-cyan-800"
+                                : isDarkMode
+                                  ? "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
+                                  : "bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900"
                             }`}
                           >
                             {activeMonthId === month.id ? "Selected" : "Activate"}
@@ -1491,7 +1507,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Languages size={18} className="text-cyan-400" />
                   Global Translation & Sentence Matrix
                 </h3>
@@ -1565,7 +1581,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               {/* Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/50 pb-5">
                 <div>
-                  <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                     <LucideIcons.BookOpen size={18} className="text-cyan-400" />
                     Hybrid AI Food Dictionary & Knowledge Base
                   </h3>
@@ -2179,7 +2195,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
               <div>
-                <h3 className="text-base font-bold font-display text-cyan-300 flex items-center gap-2">
+                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
                   <LucideIcons.Cpu size={18} className="text-cyan-400" />
                   Performance & Auto Refresh Manager
                 </h3>

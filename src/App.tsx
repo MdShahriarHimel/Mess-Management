@@ -3960,16 +3960,16 @@ export default function App() {
           color: var(--custom-sidebar-text) !important;
           font-size: var(--typo-sidebar-size) !important;
         }
-        aside .text-slate-400, aside .text-slate-500, aside .text-slate-300, aside .text-cyan-900\/50 {
+        aside .text-slate-400, aside .text-slate-500, aside .text-slate-300, aside .text-cyan-900\\/50 {
           color: var(--custom-sidebar-secondary-text) !important;
         }
         /* Active Sidebar items should glow with accent color */
-        aside button.bg-cyan-500\/10, aside button.bg-cyan-100, .sidebar-link.active {
+        aside button.bg-cyan-500\\/10, aside button.bg-cyan-100, .sidebar-link.active {
           background-color: var(--custom-accent-color) !important;
           color: var(--custom-accent-contrast-text) !important;
           border-left: 4px solid var(--custom-accent-color) !important;
         }
-        aside button.bg-cyan-500\/10 *, aside button.bg-cyan-100 * {
+        aside button.bg-cyan-500\\/10 *, aside button.bg-cyan-100 * {
           color: var(--custom-accent-contrast-text) !important;
         }
         aside button:hover:not(.bg-cyan-500\/10):not(.bg-cyan-100) {
@@ -3994,7 +3994,7 @@ export default function App() {
         /* ------------------------------------------------------------------
            CARDS & PANEL STYLING
            ------------------------------------------------------------------ */
-        .glass-panel, .glass-panel-light, .card-container, .bg-slate-900\/50, .bg-slate-950\/40, .bg-slate-900\/40, .bg-slate-900\/60, .bg-slate-950\/20, .bg-slate-950, .bg-slate-900, .bg-slate-850, .bg-slate-800, .bg-white {
+        .glass-panel, .glass-panel-light, .card-container, .bg-slate-900\\/50, .bg-slate-950\\/40, .bg-slate-900\\/40, .bg-slate-900\\/60, .bg-slate-950\\/20, .bg-slate-950, .bg-slate-900, .bg-slate-850, .bg-slate-800, .bg-white {
           background-color: var(--custom-card-bg) !important;
           border-color: var(--custom-input-border) !important;
           color: var(--custom-card-text) !important;
@@ -4109,6 +4109,136 @@ export default function App() {
         .settlement-sheet-card, [style*="settlementBg"] {
           background-color: var(--custom-settlement-bg) !important;
           border-color: var(--custom-settlement-border) !important;
+        }
+
+        /* ------------------------------------------------------------------
+           LIGHT MODE REFINEMENTS & CONTRAST ENGINE
+           ------------------------------------------------------------------ */
+        .light-mode-root {
+          background-color: var(--custom-header-bg) !important;
+          color: var(--custom-card-text) !important;
+        }
+
+        /* High specificity overrides for dark background helper utility classes in Light Mode */
+        .light-mode-root .bg-slate-950,
+        .light-mode-root .bg-slate-900,
+        .light-mode-root .bg-slate-850,
+        .light-mode-root .bg-slate-800,
+        .light-mode-root .bg-slate-750 {
+          background-color: var(--custom-card-bg) !important;
+          color: var(--custom-card-text) !important;
+          border-color: var(--custom-input-border) !important;
+        }
+
+        /* Transparent overlays and opacity tints rewritten for clean, bright contrast */
+        .light-mode-root .bg-slate-950\\/40,
+        .light-mode-root .bg-slate-900\\/40,
+        .light-mode-root .bg-slate-950\\/60,
+        .light-mode-root .bg-slate-900\\/60,
+        .light-mode-root .bg-slate-950\\/20,
+        .light-mode-root .bg-slate-950\\/15,
+        .light-mode-root .bg-slate-950\\/10,
+        .light-mode-root .bg-slate-950\\/30,
+        .light-mode-root .bg-slate-950\\/80,
+        .light-mode-root .bg-slate-900\\/20,
+        .light-mode-root .bg-slate-900\\/10,
+        .light-mode-root .bg-slate-950\\/50 {
+          background-color: rgba(0, 0, 0, 0.03) !important;
+          color: var(--custom-card-text) !important;
+          border-color: var(--custom-input-border) !important;
+        }
+
+        /* Ensure borders in light mode are crisp and use theme-specific border color */
+        .light-mode-root .border-slate-800,
+        .light-mode-root .border-slate-850,
+        .light-mode-root .border-slate-900,
+        .light-mode-root .border-slate-850\\/50,
+        .light-mode-root [class*="border-cyan-500/10"],
+        .light-mode-root [class*="border-cyan-500/20"] {
+          border-color: var(--custom-input-border) !important;
+        }
+
+        /* Light Mode High-Contrast Typography mapping for dark utility classes */
+        .light-mode-root .text-white,
+        .light-mode-root .text-slate-50,
+        .light-mode-root .text-slate-100,
+        .light-mode-root .text-slate-200,
+        .light-mode-root .text-slate-300,
+        .light-mode-root .text-gray-100,
+        .light-mode-root .text-gray-200,
+        .light-mode-root .text-gray-300 {
+          color: var(--custom-card-text) !important;
+        }
+
+        .light-mode-root .text-slate-400,
+        .light-mode-root .text-slate-500,
+        .light-mode-root .text-gray-400,
+        .light-mode-root .text-gray-500 {
+          color: var(--custom-card-secondary-text) !important;
+        }
+
+        /* Sticky spreadsheet tables elements */
+        .light-mode-root td.sticky,
+        .light-mode-root th.sticky {
+          background-color: var(--custom-card-bg) !important;
+          color: var(--custom-card-text) !important;
+          border-color: var(--custom-input-border) !important;
+        }
+        .light-mode-root td.sticky {
+          box-shadow: 2px 0 5px rgba(0, 0, 0, 0.04) !important;
+        }
+
+        /* Secondary actions/refresh buttons map to clean light border/outline controls */
+        .light-mode-root button.bg-slate-900,
+        .light-mode-root button.bg-slate-800,
+        .light-mode-root button.bg-slate-950 {
+          background-color: var(--custom-input-bg) !important;
+          color: var(--custom-input-text) !important;
+          border: 1px solid var(--custom-input-border) !important;
+        }
+        .light-mode-root button.bg-slate-900 *,
+        .light-mode-root button.bg-slate-800 *,
+        .light-mode-root button.bg-slate-950 * {
+          color: var(--custom-input-text) !important;
+        }
+        .light-mode-root button.bg-slate-900:hover,
+        .light-mode-root button.bg-slate-800:hover,
+        .light-mode-root button.bg-slate-950:hover {
+          background-color: rgba(0, 0, 0, 0.05) !important;
+          color: var(--custom-card-text) !important;
+        }
+
+        /* Status colors & soft light pills */
+        .light-mode-root .bg-cyan-950,
+        .light-mode-root .bg-cyan-950\\/20 {
+          background-color: rgba(6, 182, 212, 0.1) !important;
+          color: #0c4a6e !important;
+        }
+        .light-mode-root .bg-amber-950,
+        .light-mode-root .bg-amber-950\\/50 {
+          background-color: rgba(245, 158, 11, 0.1) !important;
+          color: #713f12 !important;
+        }
+        .light-mode-root .text-cyan-400,
+        .light-mode-root .text-cyan-300 {
+          color: #0891b2 !important;
+        }
+        .light-mode-root .text-amber-400,
+        .light-mode-root .text-amber-300 {
+          color: #b45309 !important;
+        }
+        .light-mode-root .text-emerald-400,
+        .light-mode-root .text-emerald-500 {
+          color: #15803d !important;
+        }
+        .light-mode-root .bg-emerald-500\\/10 {
+          background-color: rgba(34, 197, 94, 0.1) !important;
+          color: #15803d !important;
+        }
+        .light-mode-root .bg-rose-500\\/20,
+        .light-mode-root .bg-red-500\\/20 {
+          background-color: rgba(239, 68, 68, 0.1) !important;
+          color: #b91c1c !important;
         }
 
         /* ------------------------------------------------------------------
@@ -4534,7 +4664,7 @@ export default function App() {
         
         {/* TOP STATUS SUBBAR */}
         <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center ${
-          isDarkMode ? "bg-slate-900/30 border-cyan-500/15" : "bg-white border-slate-200 shadow-sm"
+          activeIsDarkMode ? "bg-slate-900/30 border-cyan-500/15" : "bg-white border-slate-200 shadow-sm"
         }`}>
           <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
@@ -4554,7 +4684,7 @@ export default function App() {
                 value={currentMonthId}
                 onChange={(e) => setCurrentMonthId(e.target.value)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full sm:w-auto ${
-                  isDarkMode ? "bg-slate-950 border-slate-800 text-cyan-300" : "bg-white border-slate-200 text-slate-800"
+                  activeIsDarkMode ? "bg-slate-950 border-slate-800 text-cyan-300" : "bg-white border-slate-200 text-slate-800"
                 }`}
               >
                 {getSelectableMonths().map(m => (
@@ -4589,7 +4719,7 @@ export default function App() {
                     setCurrentUser(prev => prev ? { ...prev, role: newRole as UserRole } : null);
                   }}
                   className={`px-3 py-1.5 text-xs font-bold rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer ${
-                    isDarkMode ? "bg-slate-950 border-slate-800 text-orange-400 font-bold" : "bg-white border-slate-200 text-orange-600 font-bold"
+                    activeIsDarkMode ? "bg-slate-950 border-slate-800 text-orange-400 font-bold" : "bg-white border-slate-200 text-orange-600 font-bold"
                   }`}
                 >
                   <option value={UserRole.ADMIN}>Admin (Myself)</option>
@@ -4605,7 +4735,7 @@ export default function App() {
             <button
               onClick={handleRefreshAll}
               className={`p-2 rounded-lg border cursor-pointer transition-all ${
-                isDarkMode ? "border-slate-800 hover:border-cyan-500/30 text-slate-400 hover:text-white" : "border-slate-200 text-slate-500"
+                activeIsDarkMode ? "border-slate-800 hover:border-cyan-500/30 text-slate-400 hover:text-white" : "border-slate-200 text-slate-500"
               }`}
               title="Refresh ledger details"
             >
@@ -4661,7 +4791,7 @@ export default function App() {
             <Dashboard 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               onNavigateToTab={(tab) => { 
                 setActiveTab(tab); 
                 if (tab === "market") {
@@ -4695,7 +4825,7 @@ export default function App() {
             <Members 
               currentUser={currentUser}
               members={membersList}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               currentMonthId={currentMonthId}
               dropdownOptions={dropdownOptions}
@@ -4709,7 +4839,7 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               members={membersList}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
               mealTypes={mealTypes}
@@ -4720,7 +4850,7 @@ export default function App() {
             <FoodMenu 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               dateRestrictions={dateRestrictions}
               marketForcedFlowStep={marketForcedFlowStep}
               onSetMarketForcedFlowStep={setMarketForcedFlowStep}
@@ -4734,7 +4864,7 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               members={membersList}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
               safeMode={safeMode}
@@ -4751,7 +4881,7 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               members={membersList}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               currencySymbol={currencySymbol}
               customColors={customColors}
@@ -4764,7 +4894,7 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               members={membersList}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               reportSummary={reportSummary}
               onRefresh={handleRefreshAll}
               months={months}
@@ -4780,14 +4910,14 @@ export default function App() {
           {activeTab === "notices" && (
             <Notices 
               currentUser={currentUser}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
             />
           )}
 
           {activeTab === "audit" && (
             <AuditLogs 
               currentUser={currentUser}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               members={membersList}
             />
           )}
@@ -4795,7 +4925,7 @@ export default function App() {
           {activeTab === "democracy" && (
             <Democracy 
               currentUser={currentUser}
-              isDarkMode={isDarkMode}
+              isDarkMode={activeIsDarkMode}
               members={membersList}
               elections={elections}
               sessionToken={sessionToken}
@@ -4822,7 +4952,7 @@ export default function App() {
               <div className="max-w-2xl">
                 <SecuritySettings 
                   currentUser={currentUser}
-                  isDarkMode={isDarkMode}
+                  isDarkMode={activeIsDarkMode}
                   sessionToken={sessionToken}
                 />
               </div>
@@ -4846,7 +4976,7 @@ export default function App() {
 
               <UnifiedSettingsDashboard
                 currentUser={currentUser}
-                isDarkMode={isDarkMode}
+                isDarkMode={activeIsDarkMode}
                 setIsDarkMode={setIsDarkMode}
                 siteColor={siteColor}
                 setSiteColor={setSiteColor}
@@ -4904,7 +5034,7 @@ export default function App() {
                 <AdminControlsPanel
                   messes={messes}
                   sessionToken={sessionToken || ""}
-                  isDarkMode={isDarkMode}
+                  isDarkMode={activeIsDarkMode}
                 />
               )}
             </div>
@@ -4914,7 +5044,7 @@ export default function App() {
             <div className="space-y-6 animate-fadeIn" id="founder-console-view-wrapper">
               <FounderConsole 
                 currentUser={currentUser!}
-                isDarkMode={isDarkMode}
+                isDarkMode={activeIsDarkMode}
                 t={t}
                 onRefreshPlatformStatus={fetchPlatformStatus}
               />

@@ -448,7 +448,11 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
             <h1 className="text-2xl font-bold font-sans tracking-tight bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
               Founder Console
             </h1>
-            <span className="px-2 py-0.5 text-[10px] font-mono rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            <span className={`px-2 py-0.5 text-[10px] font-mono rounded border ${
+              isDarkMode 
+                ? "bg-purple-500/20 text-purple-300 border-purple-500/30" 
+                : "bg-purple-100 text-purple-800 border-purple-200"
+            }`}>
               Platform Owner Mode
             </span>
           </div>

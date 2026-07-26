@@ -250,7 +250,11 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
               </p>
 
               <div className="space-y-2">
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
                   <input
                     type="checkbox"
                     checked={canEditBills}
@@ -258,12 +262,16 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                     className="accent-cyan-400 w-4 h-4 cursor-pointer"
                   />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">Can Edit Utility Bills</p>
-                    <p className="text-[9px] text-slate-500">Allow adding, editing, or deleting monthly utility bills.</p>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Edit Utility Bills</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow adding, editing, or deleting monthly utility bills.</p>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
                   <input
                     type="checkbox"
                     checked={canManageMeals}
@@ -271,12 +279,16 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                     className="accent-cyan-400 w-4 h-4 cursor-pointer"
                   />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">Can Manage Daily Meals</p>
-                    <p className="text-[9px] text-slate-500">Allow logging, editing, and shifting daily member meal counts.</p>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Manage Daily Meals</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow logging, editing, and shifting daily member meal counts.</p>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
                   <input
                     type="checkbox"
                     checked={canAddMarkets}
@@ -284,12 +296,16 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                     className="accent-cyan-400 w-4 h-4 cursor-pointer"
                   />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">Can Log/Manage Markets</p>
-                    <p className="text-[9px] text-slate-500">Allow adding or deleting daily grocery purchase market entries.</p>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Log/Manage Markets</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow adding or deleting daily grocery purchase market entries.</p>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
                   <input
                     type="checkbox"
                     checked={canSuspendMembers}
@@ -297,12 +313,16 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                     className="accent-cyan-400 w-4 h-4 cursor-pointer"
                   />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">Can Suspend / Archive Members</p>
-                    <p className="text-[9px] text-slate-500">Allow suspending active profiles, left notices, or soft deletion.</p>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Suspend / Archive Members</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow suspending active profiles, left notices, or soft deletion.</p>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
                   <input
                     type="checkbox"
                     checked={canEditProfiles}
@@ -310,12 +330,16 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                     className="accent-cyan-400 w-4 h-4 cursor-pointer"
                   />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">Can Edit Someone's Profile</p>
-                    <p className="text-[9px] text-slate-500">Allow modifying other members' contact, bio, or status profiles.</p>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Edit Someone's Profile</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow modifying other members' contact, bio, or status profiles.</p>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/15 border border-slate-850/50 cursor-pointer hover:bg-slate-950/30 transition-all">
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
                   <input
                     type="checkbox"
                     checked={canEditCycles}
@@ -323,8 +347,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                     className="accent-cyan-400 w-4 h-4 cursor-pointer"
                   />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">Can Edit Cycles (Months)</p>
-                    <p className="text-[9px] text-slate-500">Allow creating, updating, locking, unlocking, or deleting monthly cycles.</p>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Edit Cycles (Months)</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow creating, updating, locking, unlocking, or deleting monthly cycles.</p>
                   </div>
                 </label>
               </div>
