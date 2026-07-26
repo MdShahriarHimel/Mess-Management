@@ -283,6 +283,26 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
 
   return (
     <div className="w-full max-w-md mx-auto" id="login-container">
+      <style dangerouslySetInnerHTML={{ __html: `
+        #login-container input:focus {
+          border-color: ${accentColor} !important;
+          box-shadow: 0 0 0 1px ${accentColor} !important;
+        }
+        #login-container .text-cyan-500, 
+        #login-container .text-cyan-400 {
+          color: ${accentColor} !important;
+        }
+        #login-container .border-cyan-500, 
+        #login-container .border-cyan-400 {
+          border-color: ${accentColor} !important;
+        }
+        #login-container .bg-cyan-500 {
+          background-color: ${accentColor} !important;
+        }
+        #login-container .hover\\:text-cyan-400:hover {
+          color: ${accentColor} !important;
+        }
+      `}} />
       <div 
         style={{
           backgroundColor: liveCustomization?.cardBg || undefined,

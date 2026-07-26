@@ -3684,18 +3684,18 @@ export default function App() {
     }
   };
 
-  const getActiveTypographySettings = (isDark: boolean) => {
+  const getActiveTypographySettings = (isDark: boolean, rcColors?: any) => {
     const defaults = {
-      primaryFontColor: isDark ? "#f8fafc" : "#0f172a",
-      secondaryFontColor: isDark ? "#94a3b8" : "#475569",
-      headingColor: isDark ? "#22d3ee" : "#0f172a",
-      menuTextColor: isDark ? "#cbd5e1" : "#1e293b",
-      sidebarTextColor: isDark ? "#94a3b8" : "#0f172a",
-      navbarTextColor: isDark ? "#cbd5e1" : "#0f172a",
-      cardTextColor: isDark ? "#cbd5e1" : "#1e293b",
-      tableTextColor: isDark ? "#cbd5e1" : "#1e293b",
-      buttonTextColor: isDark ? "#ffffff" : "#0f172a",
-      linkColor: isDark ? "#38bdf8" : "#0284c7",
+      primaryFontColor: rcColors?.cardText || (isDark ? "#f8fafc" : "#0f172a"),
+      secondaryFontColor: rcColors?.cardSecondaryText || (isDark ? "#94a3b8" : "#475569"),
+      headingColor: rcColors?.accentColor || (isDark ? "#22d3ee" : "#0f172a"),
+      menuTextColor: rcColors?.cardText || (isDark ? "#cbd5e1" : "#1e293b"),
+      sidebarTextColor: rcColors?.sidebarText || (isDark ? "#94a3b8" : "#0f172a"),
+      navbarTextColor: rcColors?.headerText || (isDark ? "#cbd5e1" : "#0f172a"),
+      cardTextColor: rcColors?.cardText || (isDark ? "#cbd5e1" : "#1e293b"),
+      tableTextColor: rcColors?.cardText || (isDark ? "#cbd5e1" : "#1e293b"),
+      buttonTextColor: rcColors?.accentContrastText || (isDark ? "#ffffff" : "#0f172a"),
+      linkColor: rcColors?.accentColor || (isDark ? "#38bdf8" : "#0284c7"),
       successTextColor: isDark ? "#4ade80" : "#16a34a",
       warningTextColor: isDark ? "#facc15" : "#d97706",
       errorTextColor: isDark ? "#f87171" : "#dc2626",
@@ -3788,13 +3788,60 @@ export default function App() {
     };
   };
 
+  const getReconciledThemeColors = (templateId: string, rawColors: any, isDark: boolean) => {
+    const colors = rawColors ? { ...rawColors } : { ...THEME_TEMPLATES[0].customColors };
+
+    // Fallbacks
+    colors.accentColor = colors.accentColor || "#22d3ee";
+    colors.sidebarBg = colors.sidebarBg || (isDark ? "#0f172a" : "#f1f5f9");
+    colors.headerBg = colors.headerBg || (isDark ? "#0f172a" : "#ffffff");
+    colors.cardBg = colors.cardBg || (isDark ? "#1e293b" : "#ffffff");
+
+    // Reconcile and adapt if there is a mismatch between mode and background luminance
+    const sidebarIsLight = getContrastColor(colors.sidebarBg, "#ffffff", "#000000") === "#000000";
+    const headerIsLight = getContrastColor(colors.headerBg, "#ffffff", "#000000") === "#000000";
+    const cardIsLight = getContrastColor(colors.cardBg, "#ffffff", "#000000") === "#000000";
+
+    if (isDark) {
+      if (sidebarIsLight) colors.sidebarBg = "#0b0f19";
+      if (headerIsLight) colors.headerBg = "#0f172a";
+      if (cardIsLight) colors.cardBg = "#1e293b";
+    } else {
+      if (!sidebarIsLight) colors.sidebarBg = "#f8fafc";
+      if (!headerIsLight) colors.headerBg = "#ffffff";
+      if (!cardIsLight) colors.cardBg = "#ffffff";
+    }
+
+    // Force inputs base colors
+    colors.inputBg = isDark ? "#0f172a" : "#f8fafc";
+    colors.inputBorderColor = isDark ? "#334155" : "#e2e8f0";
+    colors.inputTextColor = isDark ? "#f8fafc" : "#0f172a";
+
+    // Dynamic contrast validation outputs
+    colors.sidebarText = getContrastColor(colors.sidebarBg, "#f8fafc", "#0f172a");
+    colors.sidebarSecondaryText = getContrastColor(colors.sidebarBg, "#cbd5e1", "#475569");
+    colors.headerText = getContrastColor(colors.headerBg, "#f8fafc", "#0f172a");
+    colors.cardText = getContrastColor(colors.cardBg, "#f8fafc", "#0f172a");
+    colors.cardSecondaryText = getContrastColor(colors.cardBg, "#cbd5e1", "#475569");
+    colors.accentContrastText = getContrastColor(colors.accentColor, "#ffffff", "#020617");
+
+    // Dynamic finance components highlight
+    colors.cashDepositBg = isDark ? "rgba(249, 115, 22, 0.15)" : "rgba(249, 115, 22, 0.1)";
+    colors.cashDepositBorder = "#f97316";
+    colors.settlementBg = isDark ? "rgba(34, 197, 94, 0.15)" : "rgba(34, 197, 94, 0.1)";
+    colors.settlementBorder = "#22c55e";
+
+    return colors;
+  };
+
   const currentTemplateId = previewTemplateId || messAnimations?.themeTemplate || "default-erp";
   const currentTemplate = THEME_TEMPLATES.find(t => t.id === currentTemplateId) || THEME_TEMPLATES[0];
   const activeIsDarkMode = previewTemplateId ? currentTemplate.isDarkMode : isDarkMode;
-  const activeCustomColors = previewTemplateId ? currentTemplate.customColors : (customColors || THEME_TEMPLATES[0].customColors);
+  const rawCustomColors = previewTemplateId ? currentTemplate.customColors : (customColors || THEME_TEMPLATES[0].customColors);
+  const activeCustomColors = getReconciledThemeColors(currentTemplateId, rawCustomColors, activeIsDarkMode);
   const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
 
-  const activeTypography = getActiveTypographySettings(activeIsDarkMode);
+  const activeTypography = getActiveTypographySettings(activeIsDarkMode, activeCustomColors);
 
   const getScaleFactor = () => {
     const prefSize = userPreferencesState?.fontSize || fontSize || "normal";
@@ -3821,12 +3868,29 @@ export default function App() {
           --color-cyan-600: ${colors.c600} !important;
           --font-sans: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.sans} !important;
           --font-display: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.display} !important;
-          --custom-sidebar-bg: ${activeCustomColors?.sidebarBg || "#0f172a"};
-          --custom-header-bg: ${activeIsDarkMode ? (activeCustomColors?.headerBg || "#0f172a") : "#ffffff"};
-          --custom-card-bg: ${activeIsDarkMode ? (activeCustomColors?.cardBg || "#1e293b") : "#ffffff"};
-          --custom-accent-color: ${activeCustomColors?.accentColor || "#22d3ee"};
-          --custom-typography-highlight: ${activeCustomColors?.typographyHighlightRgb || "#67e8f9"};
-          --custom-layout-scale-color: ${activeCustomColors?.layoutScaleColorRgb || "#a78bfa"};
+          
+          --custom-sidebar-bg: ${activeCustomColors.sidebarBg};
+          --custom-sidebar-text: ${activeCustomColors.sidebarText};
+          --custom-sidebar-secondary-text: ${activeCustomColors.sidebarSecondaryText};
+          
+          --custom-header-bg: ${activeCustomColors.headerBg};
+          --custom-header-text: ${activeCustomColors.headerText};
+          
+          --custom-card-bg: ${activeCustomColors.cardBg};
+          --custom-card-text: ${activeCustomColors.cardText};
+          --custom-card-secondary-text: ${activeCustomColors.cardSecondaryText};
+          
+          --custom-accent-color: ${activeCustomColors.accentColor};
+          --custom-accent-contrast-text: ${activeCustomColors.accentContrastText};
+          
+          --custom-input-bg: ${activeCustomColors.inputBg};
+          --custom-input-border: ${activeCustomColors.inputBorderColor};
+          --custom-input-text: ${activeCustomColors.inputTextColor};
+
+          --custom-cash-deposit-bg: ${activeCustomColors.cashDepositBg};
+          --custom-cash-deposit-border: ${activeCustomColors.cashDepositBorder};
+          --custom-settlement-bg: ${activeCustomColors.settlementBg};
+          --custom-settlement-border: ${activeCustomColors.settlementBorder};
 
           /* Typography Custom Colors */
           --typo-primary-color: ${activeTypography.primaryFontColor};
@@ -3855,84 +3919,176 @@ export default function App() {
 
           /* Typography Font Family */
           --typo-font-family: ${getFontFamilyStack(activeTypography.fontFamily)};
-
-          /* Input Box Styling Customization */
-          --custom-input-bg: ${activeCustomColors?.inputBg || (activeIsDarkMode ? "#0f172a" : "#ecfeff")};
-          --custom-input-border: ${activeCustomColors?.inputBorderColor || (activeIsDarkMode ? "#334155" : "#cffafe")};
-          --custom-input-text: ${activeCustomColors?.inputTextColor || (activeIsDarkMode ? "#cbd5e1" : "#083344")};
           --typo-input-size: ${activeTypography.inputFontSize * getScaleFactor()}px;
         }
 
-        /* Applying custom typography rules globally */
-        body, html, .font-sans, p, span, div, input, select, textarea, label {
+        /* ------------------------------------------------------------------
+           GLOBAL THEME STYLES - 100% UNIFIED COLOR ENGINE
+           ------------------------------------------------------------------ */
+        body, html, #root, .min-h-screen {
+          font-family: var(--typo-font-family), system-ui, sans-serif !important;
+          font-size: var(--typo-global-size) !important;
+          background-color: var(--custom-header-bg) !important;
+          color: var(--custom-card-text) !important;
+        }
+
+        /* Text Element Overrides */
+        p, span, div, label {
           font-family: var(--typo-font-family), system-ui, sans-serif !important;
         }
 
-        /* Global base size overrides */
-        body, html {
-          font-size: var(--typo-global-size) !important;
-        }
-
-        /* Headings text override */
-        h1, h2, h3, h4, h5, h6, .font-display, .text-cyan-300, .text-cyan-400, .text-cyan-500 {
+        /* Headings typography & color override */
+        h1, h2, h3, h4, h5, h6, .font-display {
           color: var(--typo-heading-color) !important;
           font-family: var(--typo-font-family), system-ui, sans-serif !important;
         }
 
-        /* Adjusting header sizing based on customization */
-        h1, .text-xl, .text-2xl, .text-3xl {
-          font-size: var(--typo-heading-size) !important;
-        }
-        h2, .text-lg {
-          font-size: calc(var(--typo-heading-size) - 2px) !important;
-        }
-        h3, h4, .text-base {
-          font-size: calc(var(--typo-heading-size) - 4px) !important;
-        }
+        /* Adjust heading scale precisely */
+        h1, .text-xl, .text-2xl, .text-3xl { font-size: var(--typo-heading-size) !important; }
+        h2, .text-lg { font-size: calc(var(--typo-heading-size) - 2px) !important; }
+        h3, h4, .text-base { font-size: calc(var(--typo-heading-size) - 4px) !important; }
 
-        /* Sidebar/Navigation overrides */
-        aside, .sidebar-container, [id^="sidebar"], .sidebar-link {
+        /* ------------------------------------------------------------------
+           SIDEBAR STYLING - AUTOMATIC HIGH-CONTRAST READABILITY
+           ------------------------------------------------------------------ */
+        aside, .sidebar-container, [id^="sidebar"] {
+          background-color: var(--custom-sidebar-bg) !important;
+          border-color: var(--custom-input-border) !important;
           font-size: var(--typo-sidebar-size) !important;
         }
         aside span, aside a, aside button, .sidebar-link, .sidebar-text {
-          color: var(--typo-sidebar-color) !important;
+          color: var(--custom-sidebar-text) !important;
           font-size: var(--typo-sidebar-size) !important;
         }
+        aside .text-slate-400, aside .text-slate-500, aside .text-slate-300, aside .text-cyan-900\/50 {
+          color: var(--custom-sidebar-secondary-text) !important;
+        }
+        /* Active Sidebar items should glow with accent color */
+        aside button.bg-cyan-500\/10, aside button.bg-cyan-100, .sidebar-link.active {
+          background-color: var(--custom-accent-color) !important;
+          color: var(--custom-accent-contrast-text) !important;
+          border-left: 4px solid var(--custom-accent-color) !important;
+        }
+        aside button.bg-cyan-500\/10 *, aside button.bg-cyan-100 * {
+          color: var(--custom-accent-contrast-text) !important;
+        }
+        aside button:hover:not(.bg-cyan-500\/10):not(.bg-cyan-100) {
+          background-color: rgba(128, 128, 128, 0.1) !important;
+        }
 
-        /* Navigation elements text */
+        /* ------------------------------------------------------------------
+           NAVBAR / HEADER STYLING
+           ------------------------------------------------------------------ */
+        header, .top-header, nav {
+          background-color: var(--custom-header-bg) !important;
+          border-color: var(--custom-input-border) !important;
+          color: var(--custom-header-text) !important;
+        }
+        header *, nav * {
+          color: var(--custom-header-text) !important;
+        }
         nav a, nav button, header a, header button, .nav-item {
-          color: var(--typo-navbar-color) !important;
           font-size: var(--typo-navigation-size) !important;
         }
 
-        /* Card and Panel text/body size overrides */
-        .glass-panel, .glass-panel-light, .card-container, .bg-slate-900\/50, .bg-slate-950\/40 {
-          color: var(--typo-card-color) !important;
+        /* ------------------------------------------------------------------
+           CARDS & PANEL STYLING
+           ------------------------------------------------------------------ */
+        .glass-panel, .glass-panel-light, .card-container, .bg-slate-900\/50, .bg-slate-950\/40, .bg-slate-900\/40, .bg-slate-900\/60, .bg-slate-950\/20, .bg-slate-950, .bg-slate-900, .bg-slate-850, .bg-slate-800, .bg-white {
+          background-color: var(--custom-card-bg) !important;
+          border-color: var(--custom-input-border) !important;
+          color: var(--custom-card-text) !important;
+        }
+        .glass-panel *, .card-container *, .card * {
+          color: var(--custom-card-text);
         }
         .glass-panel p, .glass-panel span, .card-container p, .card-container span {
           font-size: var(--typo-card-body-size) !important;
         }
         .glass-panel h3, .glass-panel h4, .card-container h3, .card-container h4, .card-title {
           font-size: var(--typo-card-title-size) !important;
+          color: var(--typo-heading-color) !important;
+        }
+        /* Secondary details */
+        .glass-panel .text-slate-400, .glass-panel .text-slate-500, .glass-panel .text-slate-300,
+        .rounded-2xl .text-slate-400, .rounded-2xl .text-slate-500, .rounded-2xl .text-slate-300,
+        .text-slate-400, .text-slate-500, .text-slate-300 {
+          color: var(--custom-card-secondary-text) !important;
         }
 
-        /* Table font style overrides */
-        table, .table-container, th, td, tr, thead, tbody {
-          color: var(--typo-table-color) !important;
-          font-size: var(--typo-table-size) !important;
+        /* ------------------------------------------------------------------
+           FORM CONTROLS & INPUT STYLING
+           ------------------------------------------------------------------ */
+        input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+          background-color: var(--custom-input-bg) !important;
+          border: 1.25px solid var(--custom-input-border) !important;
+          color: var(--custom-input-text) !important;
+          font-size: var(--typo-input-size) !important;
+          font-weight: 500 !important;
+        }
+        input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
+          border-color: var(--custom-accent-color) !important;
+          outline: none !important;
+          box-shadow: 0 0 0 1.5px var(--custom-accent-color) !important;
+        }
+        input::placeholder, textarea::placeholder {
+          color: var(--custom-card-secondary-text) !important;
+          opacity: 0.65 !important;
+        }
+        select option {
+          background-color: var(--custom-card-bg) !important;
+          color: var(--custom-card-text) !important;
         }
 
-        /* Link colors overrides */
-        a:not([role="button"]):not(.btn), .link {
-          color: var(--typo-link-color) !important;
-        }
-
-        /* Button sizes & text colors */
+        /* ------------------------------------------------------------------
+           BUTTON STYLING - MAXIMUM READABILITY
+           ------------------------------------------------------------------ */
         button:not(.nav-item), .btn {
           font-size: var(--typo-button-size) !important;
+          transition: all 0.2s ease-in-out !important;
+        }
+        /* Force accent background and contrast text on solid primary buttons */
+        button.bg-cyan-600, button.bg-cyan-500, button.bg-indigo-600, button.bg-blue-600, button.bg-gradient-to-r, .bg-gradient-to-r {
+          background: var(--custom-accent-color) !important;
+          color: var(--custom-accent-contrast-text) !important;
+          border: none !important;
+        }
+        button.bg-cyan-600 *, button.bg-cyan-500 *, button.bg-indigo-600 *, button.bg-blue-600 *, button.bg-gradient-to-r * {
+          color: var(--custom-accent-contrast-text) !important;
+        }
+        button.bg-cyan-600:hover, button.bg-cyan-500:hover, button.bg-indigo-600:hover, button.bg-blue-600:hover {
+          opacity: 0.9 !important;
+          transform: translateY(-0.5px);
         }
 
-        /* Statuses color overrides */
+        /* ------------------------------------------------------------------
+           TABLE STYLING - AUTOMATIC HEADER CONTRAST
+           ------------------------------------------------------------------ */
+        table, .table-container {
+          border-color: var(--custom-input-border) !important;
+        }
+        th, thead th {
+          background-color: var(--custom-input-bg) !important;
+          color: var(--custom-input-text) !important;
+          border-color: var(--custom-input-border) !important;
+          font-weight: 700 !important;
+          font-size: var(--typo-table-size) !important;
+        }
+        td {
+          color: var(--custom-card-text) !important;
+          border-color: var(--custom-input-border) !important;
+          font-size: var(--typo-table-size) !important;
+        }
+        tr:nth-child(even) td {
+          background-color: rgba(128, 128, 128, 0.03) !important;
+        }
+        tr:hover td {
+          background-color: rgba(128, 128, 128, 0.08) !important;
+        }
+
+        /* ------------------------------------------------------------------
+           SPECIAL STATUS / ALERTS & BADGES STYLING
+           ------------------------------------------------------------------ */
         .text-emerald-400, .text-emerald-500, .text-green-400, .text-green-500, .text-success {
           color: var(--typo-success-color) !important;
         }
@@ -3943,169 +4099,30 @@ export default function App() {
           color: var(--typo-error-color) !important;
         }
 
-        /* Fix text contrast in light mode dynamically on common light mode containers */
-        .light-mode-root {
-          background-color: #f1f5f9 !important;
+        /* ------------------------------------------------------------------
+           SPECIALIZED FINANCE COMPONENTS
+           ------------------------------------------------------------------ */
+        .cash-deposit-card, [style*="cashDepositBg"] {
+          background-color: var(--custom-cash-deposit-bg) !important;
+          border-color: var(--custom-cash-deposit-border) !important;
         }
-        .light-mode-root .text-slate-50,
-        .light-mode-root .text-slate-100,
-        .light-mode-root .text-slate-200,
-        .light-mode-root .text-gray-50,
-        .light-mode-root .text-gray-100,
-        .light-mode-root .text-gray-200,
-        .light-mode-root .text-cyan-50,
-        .light-mode-root .text-cyan-100,
-        .light-mode-root .text-cyan-200,
-        .light-mode-root .text-slate-300,
-        .light-mode-root .text-gray-300,
-        .light-mode-root .text-cyan-300,
-        .light-mode-root .text-white {
-          color: var(--typo-primary-color) !important;
-        }
-        .light-mode-root .text-slate-400,
-        .light-mode-root .text-gray-400,
-        .light-mode-root .text-cyan-400 {
-          color: var(--typo-secondary-color) !important;
+        .settlement-sheet-card, [style*="settlementBg"] {
+          background-color: var(--custom-settlement-bg) !important;
+          border-color: var(--custom-settlement-border) !important;
         }
 
-        /* Overrides for background slate colors to turn dark regions into beautiful soft light surfaces */
-        .light-mode-root .bg-slate-950,
-        .light-mode-root .bg-slate-900,
-        .light-mode-root .bg-slate-850,
-        .light-mode-root .bg-slate-800,
-        .light-mode-root .bg-slate-950\/80,
-        .light-mode-root .bg-slate-950\/70,
-        .light-mode-root .bg-slate-950\/60,
-        .light-mode-root .bg-slate-950\/50,
-        .light-mode-root .bg-slate-950\/40,
-        .light-mode-root .bg-slate-950\/30,
-        .light-mode-root .bg-slate-950\/20,
-        .light-mode-root .bg-slate-950\/10,
-        .light-mode-root .bg-slate-900\/60,
-        .light-mode-root .bg-slate-900\/50,
-        .light-mode-root .bg-slate-900\/40,
-        .light-mode-root .bg-slate-900\/30,
-        .light-mode-root .bg-slate-900\/20,
-        .light-mode-root .bg-slate-900\/10,
-        .light-mode-root .bg-slate-800\/80,
-        .light-mode-root .bg-slate-800\/60,
-        .light-mode-root .bg-slate-800\/50,
-        .light-mode-root .bg-slate-800\/40,
-        .light-mode-root .bg-slate-800\/30,
-        .light-mode-root .bg-slate-800\/20,
-        .light-mode-root .bg-slate-950\/10 {
-          background-color: #f8fafc !important;
-          color: #0f172a !important;
-          border-color: #cbd5e1 !important;
+        /* ------------------------------------------------------------------
+           SCROLLBARS
+           ------------------------------------------------------------------ */
+        ::-webkit-scrollbar-thumb {
+          background: rgba(${colors.rgb}, 0.35) !important;
         }
-
-        /* Beautiful sidebar-like Cyan tinted backgrounds for panels, selects, and status indicators */
-        .light-mode-root .bg-cyan-950\/60,
-        .light-mode-root .bg-cyan-950\/40,
-        .light-mode-root .bg-cyan-950\/20,
-        .light-mode-root .bg-cyan-900\/30,
-        .light-mode-root .bg-cyan-500\/10 {
-          background-color: #ecfeff !important; /* cyan-50 background */
-          border-color: #cffafe !important;
-          color: #083344 !important;
-        }
-
-        /* Dynamic Input, Select & Textarea overrides globally to support full custom theme values */
-        input:not([type="checkbox"]):not([type="radio"]),
-        select,
-        textarea {
-          background-color: var(--custom-input-bg) !important;
-          border: 1.25px solid var(--custom-input-border) !important;
-          color: var(--custom-input-text) !important;
-          font-size: var(--typo-input-size) !important;
-          font-weight: 500 !important;
-        }
-        
-        input:not([type="checkbox"]):not([type="radio"]):focus,
-        select:focus,
-        textarea:focus {
-          border-color: var(--custom-accent-color) !important;
-          outline: none !important;
-          box-shadow: 0 0 0 1.5px var(--custom-accent-color) !important;
-        }
-
-        input::placeholder,
-        textarea::placeholder {
-          color: var(--custom-input-text) !important;
-          opacity: 0.55 !important;
-        }
-
-        select option {
-          background-color: var(--custom-input-bg) !important;
-          color: var(--custom-input-text) !important;
-        }
-
-        /* Lock controls, alerts, and system notifications contrast adjustments in light mode */
-        .light-mode-root .bg-amber-500\/5 {
-          background-color: #fffbeb !important; /* amber-50 */
-          border-color: #fde68a !important; /* amber-200 */
-        }
-        .light-mode-root .text-amber-300 {
-          color: #92400e !important; /* amber-800 */
-        }
-        .light-mode-root .text-orange-400 {
-          color: #c2410c !important; /* orange-700 */
-        }
-        .light-mode-root .bg-emerald-500\/10 {
-          background-color: #f0fdf4 !important; /* emerald-50 */
-          border-color: #bbf7d0 !important; /* emerald-200 */
-        }
-        .light-mode-root .text-emerald-400 {
-          color: #166534 !important; /* emerald-800 */
-        }
-        .light-mode-root .bg-rose-500\/10,
-        .light-mode-root .bg-rose-500\/5 {
-          background-color: #fff1f2 !important; /* rose-50 */
-          border-color: #fecdd3 !important; /* rose-200 */
-        }
-        .light-mode-root .text-rose-400 {
-          color: #9f1239 !important; /* rose-800 */
-        }
-
-        /* Table components, table cells, table headers contrast overrides in light mode */
-        .light-mode-root th,
-        .light-mode-root td {
-          color: #0f172a !important;
-          background-color: #ffffff !important;
-          border-color: #cbd5e1 !important;
-        }
-        .light-mode-root thead th {
-          background-color: #ecfeff !important; /* Cyan-50 headers for beautiful tables */
-          color: #083344 !important;
-          font-weight: 800 !important;
-        }
-        .light-mode-root tr:hover td {
-          background-color: #f0fdfa !important; /* light cyan/teal row hover */
-        }
-
-        .light-mode-root .border-slate-800,
-        .light-mode-root .border-slate-850,
-        .light-mode-root .border-slate-900,
-        .light-mode-root .border-slate-800\/60,
-        .light-mode-root .border-slate-850\/40,
-        .light-mode-root .border-slate-850\/55,
-        .light-mode-root .border-cyan-500\/10,
-        .light-mode-root .border-cyan-500\/15,
-        .light-mode-root .border-cyan-500\/20,
-        .light-mode-root .border-cyan-500\/30,
-        .light-mode-root .divide-slate-800,
-        .light-mode-root .divide-cyan-500\/5 {
-          border-color: #cbd5e1 !important;
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(${colors.rgb}, 0.6) !important;
         }
 
         body, html {
           ${sizeStyle}
-        }
-        ::-webkit-scrollbar-thumb {
-          background: rgba(${colors.rgb}, 0.4) !important;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(${colors.rgb}, 0.7) !important;
         }
         .glass-panel {
           border-color: rgba(${colors.rgb}, 0.15) !important;

@@ -434,7 +434,6 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "branding", label: "ERP Identity", role: "ultimate-admin", icon: "Sparkles" },
     { id: "credit", label: "Credit Panel", role: "ultimate-admin", icon: "Heart" },
     { id: "theme-library", label: "Theme Library", role: "ultimate-admin", icon: "Palette" },
-    { id: "appearance-templates", label: "Appearance Templates", role: "ultimate-admin", icon: "Layers" },
     { id: "mess-appearance", label: "Mess Appearance", role: "any", icon: "Sliders" },
     { id: "user-appearance", label: "Personal Preferences", role: "any", icon: "User" },
     { id: "permissions", label: "Permission Matrix", role: "admin", icon: "Shield" },
@@ -457,7 +456,6 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       const allowedAdminTabs = [
         "branding", // ERP Identity
         "theme-library", // Theme Library
-        "appearance-templates", // Appearance Templates
         "mess-appearance", // Mess Appearance
         "user-appearance", // Personal Preferences
         "permissions", // Permission Matrix
@@ -959,8 +957,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           )}
 
           {/* 3. THEME LIBRARY / PRESETS */}
-          {(activeSubTab === "theme-library" || activeSubTab === "appearance-templates") && 
-           (filteredTabs.some(t => t.id === "theme-library") || filteredTabs.some(t => t.id === "appearance-templates")) && (
+          {activeSubTab === "theme-library" && 
+           filteredTabs.some(t => t.id === "theme-library") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>

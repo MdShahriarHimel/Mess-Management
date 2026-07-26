@@ -113,23 +113,24 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
 
   // State for 16-million RGB customization field
   const [selectedColorField, setSelectedColorField] = useState<string>("accentColor");
+  const [previewMode, setPreviewMode] = useState<"dashboard" | "login">("dashboard");
 
   const colorFields = [
-    { id: "accentColor", label: "Accent Glow Color (Main)", type: "customColor" },
-    { id: "sidebarBg", label: "Sidebar Background Color", type: "customColor" },
-    { id: "sidebarTextColor", label: "Sidebar & Menu Text Color", type: "typography" },
-    { id: "cardBg", label: "Container & Card Background", type: "customColor" },
-    { id: "headerBg", label: "Header & Navbar Background", type: "customColor" },
-    { id: "primaryFontColor", label: "Global Primary Font Color", type: "typography" },
-    { id: "secondaryFontColor", label: "Global Secondary Font Color", type: "typography" },
-    { id: "headingColor", label: "Global Heading Color", type: "typography" },
-    { id: "inputBg", label: "Input Box Background", type: "customColor" },
-    { id: "inputBorderColor", label: "Input Box Border Color", type: "customColor" },
-    { id: "inputTextColor", label: "Input Box Text Color", type: "customColor" },
-    { id: "cashDepositBg", label: "Cash Deposit Card Background", type: "customColor" },
-    { id: "cashDepositBorder", label: "Cash Deposit Card Border", type: "customColor" },
-    { id: "settlementBg", label: "Settlement Sheet Background", type: "customColor" },
-    { id: "settlementBorder", label: "Settlement Sheet Border", type: "customColor" },
+    { id: "accentColor", label: "Accent Glow Color (Main)", type: "customColor", description: "Primary action buttons, active tab indicators, focus rings, highlights and key controls." },
+    { id: "sidebarBg", label: "Sidebar Background Color", type: "customColor", description: "Background of the entire left navigation sidebar panel." },
+    { id: "sidebarTextColor", label: "Sidebar & Menu Text Color", type: "typography", description: "Typography font color for text and icons inside the navigation panel." },
+    { id: "cardBg", label: "Container & Card Background", type: "customColor", description: "Background of standard modules, summary grids, detailed tables and popup forms." },
+    { id: "headerBg", label: "Header & Navbar Background", type: "customColor", description: "The top navbar/header containing user profile and theme switchers." },
+    { id: "primaryFontColor", label: "Global Primary Font Color", type: "typography", description: "Main text color for lists, transaction logs, statistics and primary tables." },
+    { id: "secondaryFontColor", label: "Global Secondary Font Color", type: "typography", description: "Subheadings, footnotes, tooltips and description captions." },
+    { id: "headingColor", label: "Global Heading Color", type: "typography", description: "All prominent page titles, main category labels and dashboard section headers." },
+    { id: "inputBg", label: "Input Box Background", type: "customColor", description: "Background fill inside text, number, and search fields." },
+    { id: "inputBorderColor", label: "Input Box Border Color", type: "customColor", description: "The border outline for input boxes, highlighting field boundaries." },
+    { id: "inputTextColor", label: "Input Box Text Color", type: "customColor", description: "The font color of typed-in values and placeholders inside input fields." },
+    { id: "cashDepositBg", label: "Cash Deposit Card Background", type: "customColor", description: "Background highlight tint for the active cash deposits panel." },
+    { id: "cashDepositBorder", label: "Cash Deposit Card Border", type: "customColor", description: "Primary border framing cash deposit forms and items." },
+    { id: "settlementBg", label: "Settlement Sheet Background", type: "customColor", description: "Background tint of active calculations and settlement details." },
+    { id: "settlementBorder", label: "Settlement Sheet Border", type: "customColor", description: "Outline border framing settlement statuses and action sheets." },
   ];
 
   const getSelectedColorValue = () => {
@@ -192,6 +193,115 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       showStatus("success", "Customizer configuration successfully saved to the database!");
     } catch (err) {
       showStatus("error", "Failed to save configuration.");
+    }
+  };
+
+  const handleResetField = (fieldId: string) => {
+    const field = colorFields.find(f => f.id === fieldId);
+    if (!field) return;
+    
+    const targetTheme = THEME_TEMPLATES.find(t => t.id === (messAnimations?.themeTemplate || "default-erp")) || THEME_TEMPLATES[0];
+    
+    if (field.type === "customColor") {
+      let defaultVal = targetTheme.customColors?.[fieldId];
+      if (!defaultVal) {
+        // Fallbacks
+        if (fieldId === "accentColor") defaultVal = "#3b82f6";
+        else if (fieldId === "sidebarBg") defaultVal = isDarkMode ? "#020617" : "#f8fafc";
+        else if (fieldId === "cardBg") defaultVal = isDarkMode ? "#0b1329" : "#ffffff";
+        else if (fieldId === "headerBg") defaultVal = isDarkMode ? "#020617" : "#ffffff";
+        else if (fieldId === "inputBg") defaultVal = isDarkMode ? "#0f172a" : "#f1f5f9";
+        else if (fieldId === "inputBorderColor") defaultVal = isDarkMode ? "#1e293b" : "#e2e8f0";
+        else if (fieldId === "inputTextColor") defaultVal = isDarkMode ? "#cbd5e1" : "#0f172a";
+        else if (fieldId === "cashDepositBg") defaultVal = "#1d4ed81a";
+        else if (fieldId === "cashDepositBorder") defaultVal = "#1d4ed8";
+        else if (fieldId === "settlementBg") defaultVal = "#1e3a8a1a";
+        else if (fieldId === "settlementBorder") defaultVal = "#1e3a8a";
+        else defaultVal = "#3b82f6";
+      }
+      setCustomColors((prev: any) => ({
+        ...prev,
+        [fieldId]: defaultVal
+      }));
+      showStatus("success", `Reset "${field.label}" color inside preview state. Remember to click Save below!`);
+    } else {
+      let defaultVal = undefined;
+      // Fallbacks
+      if (fieldId === "primaryFontColor") defaultVal = isDarkMode ? "#f8fafc" : "#0f172a";
+      else if (fieldId === "secondaryFontColor") defaultVal = isDarkMode ? "#94a3b8" : "#475569";
+      else if (fieldId === "headingColor") defaultVal = isDarkMode ? "#22d3ee" : "#0f172a";
+      else if (fieldId === "sidebarTextColor") defaultVal = isDarkMode ? "#94a3b8" : "#0f172a";
+      else defaultVal = isDarkMode ? "#f8fafc" : "#0f172a";
+      
+      setTypographySettings((prev: any) => ({
+        ...prev,
+        [fieldId]: defaultVal
+      }));
+      showStatus("success", `Reset "${field.label}" typography color. Remember to click Save below!`);
+    }
+  };
+
+  const handleResetAllFieldsToDefaults = () => {
+    const targetTheme = THEME_TEMPLATES.find(t => t.id === (messAnimations?.themeTemplate || "default-erp")) || THEME_TEMPLATES[0];
+    
+    setCustomColors(targetTheme.customColors || {});
+    setTypographySettings((prev: any) => ({
+      ...prev,
+      primaryFontColor: targetTheme.isDarkMode ? "#f8fafc" : "#0f172a",
+      secondaryFontColor: targetTheme.isDarkMode ? "#94a3b8" : "#475569",
+      headingColor: targetTheme.isDarkMode ? "#22d3ee" : "#0f172a",
+      sidebarTextColor: targetTheme.isDarkMode ? "#94a3b8" : "#0f172a"
+    }));
+    
+    showStatus("success", "All customizer inputs successfully reset to theme defaults! Click Save below to apply.");
+  };
+
+  const handleRevertToMidnightNavy = async () => {
+    const targetTheme = THEME_TEMPLATES.find(t => t.id === "midnight");
+    if (targetTheme) {
+      try {
+        const payload = {
+          siteColor: targetTheme.siteColor,
+          fontStyle: targetTheme.fontStyle,
+          customColors: targetTheme.customColors,
+          messAnimations: {
+            ...messAnimations,
+            backgroundTheme: targetTheme.backgroundTheme,
+            themeTemplate: targetTheme.id
+          },
+          typographySettings: {
+            globalFontSize: 14,
+            headingSize: 22,
+            cardTitleSize: 15,
+            tableFontSize: 12,
+            inputFontSize: 12,
+            buttonFontSize: 12,
+            sidebarFontSize: 12,
+            navigationFontSize: 12,
+            primaryFontColor: "#f8fafc",
+            secondaryFontColor: "#94a3b8",
+            headingColor: "#22d3ee",
+            sidebarTextColor: "#94a3b8"
+          }
+        };
+        
+        setIsDarkMode(true);
+        setCustomColors(targetTheme.customColors);
+        setTypographySettings(payload.typographySettings);
+        setSiteColor(targetTheme.siteColor);
+        setFontStyle(targetTheme.fontStyle);
+        setMessAnimations((prev: any) => ({
+          ...prev,
+          backgroundTheme: targetTheme.backgroundTheme,
+          themeTemplate: targetTheme.id
+        }));
+
+        await handleUpdateSettings(payload);
+        setPreviewTemplateId(null);
+        showStatus("success", `Successfully applied and restored the Midnight Navy theme! Dark mode contrast is fixed.`);
+      } catch (e) {
+        showStatus("error", "Failed to revert to Midnight Navy theme.");
+      }
     }
   };
 
@@ -649,19 +759,48 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       {/* Tab CONTENT: Theme Customizer */}
       {activeTab === "customizer" && (
         <div className="space-y-6 text-left">
-          {/* Header Action Row */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-2xl border border-cyan-500/20 bg-cyan-950/10 backdrop-blur-sm">
-            <div>
-              <h4 className="text-xs font-bold font-display text-cyan-300">Save Your Customizations</h4>
-              <p className="text-[10px] text-slate-400">Save your custom colors and typography selections to the database to preserve them permanently.</p>
+          {/* Quick Troubleshooting / Revert to Navy Banner */}
+          <div className="p-4 rounded-2xl border border-blue-500/30 bg-blue-950/25 backdrop-blur-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg shadow-blue-500/5">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="text-blue-400 animate-spin-slow shrink-0" size={16} />
+                <h4 className="text-xs font-extrabold font-display text-blue-300 uppercase tracking-wider">Trouble customizing or lost your theme?</h4>
+              </div>
+              <p className="text-[10px] text-slate-300 leading-relaxed max-w-2xl">
+                If some colors are hard to read or dark mode feels disturbed, use this button to instantly restore the stable, high-contrast <strong>Midnight Navy Theme</strong> (yesterday's comfortable deep navy layout with perfect readability).
+              </p>
             </div>
             <button
-              onClick={handleSaveCustomizerChanges}
-              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 hover:text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              onClick={handleRevertToMidnightNavy}
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border border-blue-400/20"
             >
-              <Save size={14} />
-              Save to ERP Database
+              <RotateCcw size={14} />
+              Revert to Midnight Navy
             </button>
+          </div>
+
+          {/* Header Action Row */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl border border-cyan-500/20 bg-cyan-950/10 backdrop-blur-sm">
+            <div>
+              <h4 className="text-xs font-bold font-display text-cyan-300">Theme Customizer Actions</h4>
+              <p className="text-[10px] text-slate-400">Apply individual changes or reset the whole customizer form back to current theme defaults.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleResetAllFieldsToDefaults}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 font-bold text-xs rounded-xl active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw size={13} />
+                Reset Form Defaults
+              </button>
+              <button
+                onClick={handleSaveCustomizerChanges}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 hover:text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save size={14} />
+                Save to ERP Database
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -789,33 +928,45 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
                         <button
                           key={field.id}
                           onClick={() => setSelectedColorField(field.id)}
-                          className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between border cursor-pointer ${
+                          className={`w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 border cursor-pointer ${
                             isSelected
                               ? "bg-cyan-500/10 border-cyan-500 text-cyan-300"
                               : "bg-slate-900/40 border-slate-800/60 hover:border-slate-700 text-slate-300"
                           }`}
                         >
-                          <div className="flex items-center gap-2">
-                            {/* Circular preview swatch */}
-                            <div
-                              className="w-4 h-4 rounded-full border border-white/20"
-                              style={{ backgroundColor: activeVal }}
-                            />
-                            <span className="text-[10px] font-bold font-sans">{field.label}</span>
+                          <div className="w-full flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {/* Circular preview swatch */}
+                              <div
+                                className="w-4 h-4 rounded-full border border-white/20 shrink-0"
+                                style={{ backgroundColor: activeVal }}
+                              />
+                              <span className="text-[10px] font-bold font-sans">{field.label}</span>
+                            </div>
+                            <span className="text-[10px] font-mono font-semibold text-slate-500">{activeVal}</span>
                           </div>
-                          <span className="text-[10px] font-mono font-semibold text-slate-500">{activeVal}</span>
+                          {field.description && (
+                            <span className="text-[9px] text-slate-400 pl-6 leading-tight font-normal line-clamp-1">
+                              {field.description}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
                   </div>
 
                   {/* Right RgbColorPicker Container */}
-                  <div className="lg:col-span-7 flex flex-col items-center justify-center p-2 bg-slate-900/30 rounded-2xl border border-slate-800/50">
+                  <div className="lg:col-span-7 flex flex-col items-center justify-center p-4 bg-slate-900/30 rounded-2xl border border-slate-800/50">
                     <div className="w-full mb-3 text-center lg:text-left px-2">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Customizing Field</span>
                       <span className="text-xs font-extrabold text-cyan-300 block">
                         {colorFields.find(f => f.id === selectedColorField)?.label || "Selected Color"}
                       </span>
+                      {colorFields.find(f => f.id === selectedColorField)?.description && (
+                        <p className="text-[10px] text-slate-400 mt-1 leading-normal italic">
+                          ℹ️ {colorFields.find(f => f.id === selectedColorField)?.description}
+                        </p>
+                      )}
                     </div>
                     
                     <RgbColorPicker
@@ -823,6 +974,26 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
                       onChange={handleColorPickerChange}
                       isDarkMode={isDarkMode}
                     />
+
+                    {/* Dedicated Reset and Save buttons for individual customization field */}
+                    <div className="w-full mt-4 flex items-center justify-between gap-2 px-2 pt-3 border-t border-slate-800/60">
+                      <button
+                        onClick={() => handleResetField(selectedColorField)}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 font-bold text-[10px] uppercase tracking-wider rounded-lg active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                        title="Reset this specific field to its template default"
+                      >
+                        <RotateCcw size={12} />
+                        Reset Field
+                      </button>
+                      <button
+                        onClick={handleSaveCustomizerChanges}
+                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg shadow-md active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                        title="Save all changes to the ERP database"
+                      >
+                        <Save size={12} />
+                        Save Changes
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -924,146 +1095,243 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
                 <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
                   <h5 className="text-xs font-bold font-display text-cyan-300 flex items-center gap-1.5">
                     <Eye size={14} className="text-cyan-400" />
-                    Real-time Component Sandbox
+                    Real-time Sandbox
                   </h5>
-                  <span className="px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-[9px] font-bold text-cyan-300 tracking-wider uppercase animate-pulse">
-                    Live View
-                  </span>
+                  <div className="flex bg-slate-900/60 rounded-lg p-0.5 border border-slate-800">
+                    <button
+                      onClick={() => setPreviewMode("dashboard")}
+                      className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider rounded-md cursor-pointer transition-all ${
+                        previewMode === "dashboard"
+                          ? "bg-cyan-500 text-slate-950 font-extrabold shadow"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Dashboard
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode("login")}
+                      className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider rounded-md cursor-pointer transition-all ${
+                        previewMode === "login"
+                          ? "bg-cyan-500 text-slate-950 font-extrabold shadow"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Login Page
+                    </button>
+                  </div>
                 </div>
-                
-                {/* Mini Header & Sidebar Layout */}
-                <div className="rounded-xl border border-slate-800/60 overflow-hidden bg-slate-950/40 text-[11px] font-sans">
-                  {/* Header */}
+
+                {previewMode === "login" ? (
+                  /* MINI LIVE LOGIN CARD */
                   <div 
-                    style={{ 
-                      backgroundColor: customColors?.headerBg || (isDarkMode ? "#0f172a" : "#ffffff"),
-                      borderBottom: `1px solid ${isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"}`
-                    }} 
-                    className="p-2.5 flex items-center justify-between transition-all"
+                    style={{
+                      backgroundColor: customColors?.cardBg || (isDarkMode ? "#0b1329" : "#ffffff"),
+                    }}
+                    className={`p-6 rounded-2xl border border-slate-800/50 space-y-4 transition-all text-left max-w-sm mx-auto shadow-xl`}
                   >
-                    <div className="flex items-center gap-1.5 font-bold" style={{ color: typographySettings?.headingColor || (isDarkMode ? "#22d3ee" : "#0f172a") }}>
-                      <Sparkles size={11} className="text-cyan-400" style={{ color: customColors?.accentColor || "#22d3ee" }} />
-                      <span>BENGAL BACHELOR ERP</span>
+                    <div className="text-center space-y-1">
+                      <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 mb-1" style={{ color: customColors?.accentColor || "#22d3ee" }}>
+                        <Lock size={18} />
+                      </div>
+                      <h6 className="text-xs font-extrabold tracking-tight font-display" style={{ color: customColors?.accentColor || undefined }}>
+                        BENGAL BACHELOR ERP
+                      </h6>
+                      <p className="text-[8px] font-mono text-slate-400 uppercase tracking-wider">
+                        SECURE HOSTEL PORTAL
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      <span className="text-[9px] text-slate-500 font-bold">ACTIVE</span>
+
+                    {/* Email Input mock */}
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-orange-400 block uppercase">
+                        Email Address
+                      </label>
+                      <input
+                        type="text"
+                        disabled
+                        placeholder="member@mess.erp"
+                        style={{
+                          backgroundColor: customColors?.inputBg || (isDarkMode ? "#0f172a" : "#f1f5f9"),
+                          borderColor: customColors?.inputBorderColor || (isDarkMode ? "#1e293b" : "#e2e8f0"),
+                          color: customColors?.inputTextColor || (isDarkMode ? "#cbd5e1" : "#0f172a"),
+                          fontSize: `${typographySettings?.inputFontSize || 12}px`
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border outline-none text-[10px] cursor-not-allowed"
+                      />
+                    </div>
+
+                    {/* Password Input mock */}
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-orange-400 block uppercase">
+                        Password
+                      </label>
+                      <input
+                        type="password"
+                        disabled
+                        value="12345678"
+                        style={{
+                          backgroundColor: customColors?.inputBg || (isDarkMode ? "#0f172a" : "#f1f5f9"),
+                          borderColor: customColors?.inputBorderColor || (isDarkMode ? "#1e293b" : "#e2e8f0"),
+                          color: customColors?.inputTextColor || (isDarkMode ? "#cbd5e1" : "#0f172a"),
+                          fontSize: `${typographySettings?.inputFontSize || 12}px`
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border outline-none text-[10px] cursor-not-allowed"
+                      />
+                    </div>
+
+                    {/* Submit Button mock */}
+                    <button 
+                      style={{ 
+                        background: `linear-gradient(to right, ${customColors?.accentColor || "#22d3ee"}, ${customColors?.accentColor || "#22d3ee"}dd)`,
+                        boxShadow: messAnimations?.glowingButtons ? `0 0 12px ${customColors?.accentColor || "#22d3ee"}40` : undefined,
+                        fontSize: `${typographySettings?.buttonFontSize || 12}px`
+                      }} 
+                      className="w-full text-slate-950 font-extrabold py-2 px-2.5 rounded-lg cursor-not-allowed mt-2 text-[10px] tracking-wide uppercase shadow"
+                    >
+                      ACCESS ENTERPRISE
+                    </button>
+                    
+                    <div className="text-center pt-1">
+                      <span className="text-[8px] text-slate-500 font-bold hover:underline cursor-not-allowed uppercase">
+                        Forgot Password?
+                      </span>
                     </div>
                   </div>
-                  
-                  {/* Main Grid: Sidebar + Content */}
-                  <div className="grid grid-cols-12 min-h-[220px]">
-                    {/* Sidebar */}
+                ) : (
+                  /* Mini Header & Sidebar Layout */
+                  <div className="rounded-xl border border-slate-800/60 overflow-hidden bg-slate-950/40 text-[11px] font-sans">
+                    {/* Header */}
                     <div 
                       style={{ 
-                        backgroundColor: customColors?.sidebarBg || (isDarkMode ? "#0f172a" : "#ecfeff"),
-                        color: typographySettings?.sidebarTextColor || (isDarkMode ? "#94a3b8" : "#0f172a"),
-                        fontSize: `${typographySettings?.sidebarFontSize || 12}px`
+                        backgroundColor: customColors?.headerBg || (isDarkMode ? "#0f172a" : "#ffffff"),
+                        borderBottom: `1px solid ${isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"}`
                       }} 
-                      className="col-span-4 p-2 space-y-1.5 border-r border-slate-800/30 font-medium transition-all"
+                      className="p-2.5 flex items-center justify-between transition-all"
                     >
-                      <div className="p-1.5 rounded bg-cyan-500/10 font-bold text-[9px] uppercase tracking-wider text-cyan-400 animate-pulse" style={{ color: customColors?.accentColor || undefined }}>
-                        NAVIGATION
+                      <div className="flex items-center gap-1.5 font-bold" style={{ color: typographySettings?.headingColor || (isDarkMode ? "#22d3ee" : "#0f172a") }}>
+                        <Sparkles size={11} className="text-cyan-400" style={{ color: customColors?.accentColor || "#22d3ee" }} />
+                        <span>BENGAL BACHELOR ERP</span>
                       </div>
-                      <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
-                        <span>📊</span> Dashboard
-                      </div>
-                      <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
-                        <span>👥</span> Members
-                      </div>
-                      <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
-                        <span>⚙️</span> Settings
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span className="text-[9px] text-slate-500 font-bold">ACTIVE</span>
                       </div>
                     </div>
                     
-                    {/* Page Content Area */}
-                    <div className="col-span-8 p-3 space-y-3 bg-slate-950/60 overflow-y-auto max-h-[260px]">
-                      {/* Sub card styled exactly with customized card background & colors */}
+                    {/* Main Grid: Sidebar + Content */}
+                    <div className="grid grid-cols-12 min-h-[220px]">
+                      {/* Sidebar */}
                       <div 
                         style={{ 
-                          backgroundColor: customColors?.cardBg || (isDarkMode ? "#1e293b" : "#ffffff"),
-                          color: typographySettings?.primaryFontColor || (isDarkMode ? "#f8fafc" : "#0f172a"),
-                          boxShadow: messAnimations?.glowingCards ? `0 0 10px ${customColors?.accentColor || "#22d3ee"}1a` : undefined,
-                          borderColor: messAnimations?.neonBorders ? `${customColors?.accentColor || "#22d3ee"}33` : undefined
+                          backgroundColor: customColors?.sidebarBg || (isDarkMode ? "#0f172a" : "#ecfeff"),
+                          color: typographySettings?.sidebarTextColor || (isDarkMode ? "#94a3b8" : "#0f172a"),
+                          fontSize: `${typographySettings?.sidebarFontSize || 12}px`
                         }} 
-                        className="p-2.5 rounded-lg border border-slate-800/50 space-y-2 transition-all"
+                        className="col-span-4 p-2 space-y-1.5 border-r border-slate-800/30 font-medium transition-all"
                       >
-                        <h6 
-                          style={{ 
-                            color: typographySettings?.headingColor || (isDarkMode ? "#22d3ee" : "#0f172a"),
-                            fontSize: `${typographySettings?.cardTitleSize || 15}px`
-                          }} 
-                          className="font-bold tracking-tight"
-                        >
-                          Overview Summary
-                        </h6>
-                        <p 
-                          style={{ 
-                            color: typographySettings?.secondaryFontColor || (isDarkMode ? "#94a3b8" : "#475569"),
-                            fontSize: `${typographySettings?.globalFontSize || 14}px`
-                          }} 
-                          className="leading-normal"
-                        >
-                          Welcome to your ERP system. This text block scales dynamically in real-time as you tweak typography settings.
-                        </p>
-                        
-                        {/* Sample Input box with customization */}
-                        <div className="space-y-1 text-left">
-                          <span className="text-[8px] font-bold text-orange-400 block uppercase">Search Database</span>
-                          <input 
-                            type="text" 
-                            disabled
-                            placeholder="Type a query..." 
-                            style={{
-                              backgroundColor: customColors?.inputBg || (isDarkMode ? "#0f172a" : "#ecfeff"),
-                              borderColor: customColors?.inputBorderColor || (isDarkMode ? "#334155" : "#cffafe"),
-                              color: customColors?.inputTextColor || (isDarkMode ? "#cbd5e1" : "#083344"),
-                              fontSize: `${typographySettings?.inputFontSize || 12}px`
-                            }}
-                            className="w-full px-2 py-1 rounded border outline-none font-medium cursor-not-allowed text-[10px]"
-                          />
+                        <div className="p-1.5 rounded bg-cyan-500/10 font-bold text-[9px] uppercase tracking-wider text-cyan-400 animate-pulse" style={{ color: customColors?.accentColor || undefined }}>
+                          NAVIGATION
                         </div>
-
-                        {/* Interactive Accent color button */}
-                        <button 
-                          style={{ 
-                            background: `linear-gradient(to right, ${customColors?.accentColor || "#22d3ee"}, ${customColors?.accentColor || "#22d3ee"}dd)`,
-                            fontSize: `${typographySettings?.buttonFontSize || 12}px`,
-                            boxShadow: messAnimations?.glowingButtons ? `0 0 12px ${customColors?.accentColor || "#22d3ee"}40` : undefined
-                          }} 
-                          className="w-full text-slate-950 font-extrabold py-1 px-2.5 rounded cursor-not-allowed mt-1 text-[10px] tracking-wide"
-                        >
-                          SUBMIT REPORT
-                        </button>
-                      </div>
-
-                      {/* Cash Deposit Card and Settlement sheet Card */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div 
-                          style={{ 
-                            backgroundColor: customColors?.cashDepositBg || "#f973161a",
-                            borderColor: customColors?.cashDepositBorder || "#f97316"
-                          }} 
-                          className="p-2 rounded border text-left text-[10px]"
-                        >
-                          <span className="text-[8px] font-bold text-orange-400 block uppercase">Deposit Card</span>
-                          <span className="font-extrabold text-slate-200 block">৳ 12,450 BDT</span>
+                        <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
+                          <span>📊</span> Dashboard
                         </div>
-                        <div 
-                          style={{ 
-                            backgroundColor: customColors?.settlementBg || "#22c55e1a",
-                            borderColor: customColors?.settlementBorder || "#22c55e"
-                          }} 
-                          className="p-2 rounded border text-left text-[10px]"
-                        >
-                          <span className="text-[8px] font-bold text-emerald-400 block uppercase">Settled Balance</span>
-                          <span className="font-extrabold text-slate-200 block">৳ 4,120 BDT</span>
+                        <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
+                          <span>👥</span> Members
+                        </div>
+                        <div className="p-1.5 rounded flex items-center gap-1 hover:bg-slate-500/5 cursor-pointer">
+                          <span>⚙️</span> Settings
                         </div>
                       </div>
+                      
+                      {/* Page Content Area */}
+                      <div className="col-span-8 p-3 space-y-3 bg-slate-950/60 overflow-y-auto max-h-[260px]">
+                        {/* Sub card styled exactly with customized card background & colors */}
+                        <div 
+                          style={{ 
+                            backgroundColor: customColors?.cardBg || (isDarkMode ? "#1e293b" : "#ffffff"),
+                            color: typographySettings?.primaryFontColor || (isDarkMode ? "#f8fafc" : "#0f172a"),
+                            boxShadow: messAnimations?.glowingCards ? `0 0 10px ${customColors?.accentColor || "#22d3ee"}1a` : undefined,
+                            borderColor: messAnimations?.neonBorders ? `${customColors?.accentColor || "#22d3ee"}33` : undefined
+                          }} 
+                          className="p-2.5 rounded-lg border border-slate-800/50 space-y-2 transition-all"
+                        >
+                          <h6 
+                            style={{ 
+                              color: typographySettings?.headingColor || (isDarkMode ? "#22d3ee" : "#0f172a"),
+                              fontSize: `${typographySettings?.cardTitleSize || 15}px`
+                            }} 
+                            className="font-bold tracking-tight"
+                          >
+                            Overview Summary
+                          </h6>
+                          <p 
+                            style={{ 
+                              color: typographySettings?.secondaryFontColor || (isDarkMode ? "#94a3b8" : "#475569"),
+                              fontSize: `${typographySettings?.globalFontSize || 14}px`
+                            }} 
+                            className="leading-normal"
+                          >
+                            Welcome to your ERP system. This text block scales dynamically in real-time as you tweak typography settings.
+                          </p>
+                          
+                          {/* Sample Input box with customization */}
+                          <div className="space-y-1 text-left">
+                            <span className="text-[8px] font-bold text-orange-400 block uppercase">Search Database</span>
+                            <input 
+                              type="text" 
+                              disabled
+                              placeholder="Type a query..." 
+                              style={{
+                                backgroundColor: customColors?.inputBg || (isDarkMode ? "#0f172a" : "#ecfeff"),
+                                borderColor: customColors?.inputBorderColor || (isDarkMode ? "#334155" : "#cffafe"),
+                                color: customColors?.inputTextColor || (isDarkMode ? "#cbd5e1" : "#083344"),
+                                fontSize: `${typographySettings?.inputFontSize || 12}px`
+                              }}
+                              className="w-full px-2 py-1 rounded border outline-none font-medium cursor-not-allowed text-[10px]"
+                            />
+                          </div>
 
+                          {/* Interactive Accent color button */}
+                          <button 
+                            style={{ 
+                              background: `linear-gradient(to right, ${customColors?.accentColor || "#22d3ee"}, ${customColors?.accentColor || "#22d3ee"}dd)`,
+                              fontSize: `${typographySettings?.buttonFontSize || 12}px`,
+                              boxShadow: messAnimations?.glowingButtons ? `0 0 12px ${customColors?.accentColor || "#22d3ee"}40` : undefined
+                            }} 
+                            className="w-full text-slate-950 font-extrabold py-1 px-2.5 rounded cursor-not-allowed mt-1 text-[10px] tracking-wide"
+                          >
+                            SUBMIT REPORT
+                          </button>
+                        </div>
+
+                        {/* Cash Deposit Card and Settlement sheet Card */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div 
+                            style={{ 
+                              backgroundColor: customColors?.cashDepositBg || "#f973161a",
+                              borderColor: customColors?.cashDepositBorder || "#f97316"
+                            }} 
+                            className="p-2 rounded border text-left text-[10px]"
+                          >
+                            <span className="text-[8px] font-bold text-orange-400 block uppercase">Deposit Card</span>
+                            <span className="font-extrabold text-slate-200 block">৳ 12,450 BDT</span>
+                          </div>
+                          <div 
+                            style={{ 
+                              backgroundColor: customColors?.settlementBg || "#22c55e1a",
+                              borderColor: customColors?.settlementBorder || "#22c55e"
+                            }} 
+                            className="p-2 rounded border text-left text-[10px]"
+                          >
+                            <span className="text-[8px] font-bold text-emerald-400 block uppercase">Settled Balance</span>
+                            <span className="font-extrabold text-slate-200 block">৳ 4,120 BDT</span>
+                          </div>
+                        </div>
+
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
