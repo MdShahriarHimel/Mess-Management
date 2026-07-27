@@ -12,6 +12,7 @@ import {
 import { Member, UserRole, MemberStatus } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
 
+
 const COLOR_PALETTES = [
   { name: "Sunset Orange", hex: "#ea580c" },
   { name: "Emerald Green", hex: "#16a34a" },
@@ -283,7 +284,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
+      const img = document.createElement('img');
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
@@ -308,7 +309,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
+      const img = document.createElement('img');
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
@@ -685,6 +686,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
             <span className="text-[10px] text-slate-500 font-mono">Join: {member.joiningDate}</span>
           </div>
 
+
           {(isAuthorizedToEdit || currentUser.id === member.id) && (
             <div className="flex gap-1.5">
               {/* Super Users cannot modify Admins */}
@@ -978,6 +980,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                             </p>
                           </div>
                         </div>
+
 
                         {(isAuthorizedToEdit || currentUser.id === member.id) && (
                           <div className="flex gap-1.5">
@@ -2136,7 +2139,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                         }}
                       >
                         <MicroAnimationOverlay animationType={editingMember.animation} />
-                        <div className="flex gap-3 items-center relative z-20">
+                        <div className="flex gap-3 items-center">
                           {editingMember.photo ? (
                             <img 
                               src={editingMember.photo} 

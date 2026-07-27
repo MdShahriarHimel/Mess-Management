@@ -73,7 +73,7 @@ export const VISUAL_THEMES = [
   { id: "ice-glacier", name: "Arctic Glacier", icon: "Wind", desc: "Frosted polar glacier shelves", bg: "linear-gradient(135deg, #010a14 0%, #083344 100%)", lightBg: "linear-gradient(135deg, #f0f9ff 0%, #bae6fd 100%)" },
   { id: "bento-grid-dark", name: "Bento Minimal", icon: "Grid", desc: "Carbon fiber technical outline grid", bg: "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px)", lightBg: "linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)" },
   { id: "solar-storm", name: "Solar Storm", icon: "AlertTriangle", desc: "Solar flares and amber cosmic winds", bg: "linear-gradient(135deg, #080200 0%, #431407 100%)", lightBg: "linear-gradient(135deg, #fffbeb 0%, #fde68a 100%)" },
-  { id: "custom", name: "Custom Image", icon: "Image", desc: "Specify your own custom background URL", bg: "linear-gradient(45deg, #1e293b, #0f172a)", lightBg: "linear-gradient(45deg, #f1f5f9, #cbd5e1)" }
+  { id: "custom", name: "Custom Image", icon: "ImageIcon", desc: "Specify your own custom background URL", bg: "linear-gradient(45deg, #1e293b, #0f172a)", lightBg: "linear-gradient(45deg, #f1f5f9, #cbd5e1)" }
 ];
 
 export function ColorPalettePicker({ 
@@ -1656,7 +1656,16 @@ export default function App() {
       }
 
       // Add X-Acting-Role header for ultimate admin
-      let headers = init?.headers ? new Headers(init.headers) : new Headers();
+      let headers = new Headers();
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          init.headers.forEach((value, key) => headers.append(key, value));
+        } else if (Array.isArray(init.headers)) {
+          init.headers.forEach(([key, value]) => headers.append(key, value));
+        } else {
+          Object.entries(init.headers).forEach(([key, value]) => headers.append(key, value as string));
+        }
+      }
       const actingRole = localStorage.getItem("acting_role");
       if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && actingRole) {
         headers.set("X-Acting-Role", actingRole);
@@ -2379,6 +2388,30 @@ export default function App() {
   };
 
   useEffect(() => {
+    const fetchPublicSettings = async () => {
+      try {
+        const response = await fetch("/api/settings/public");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.loginCustomization) {
+            setLoginCustomization(prev => ({ ...prev, ...data.loginCustomization }));
+          }
+          if (data.messName) {
+            setMessName(data.messName);
+            setNewMessName(data.messName);
+          }
+          if (data.siteColor) setSiteColor(data.siteColor);
+          if (data.fontStyle) setFontStyle(data.fontStyle);
+          if (data.logoText) setLogoText(data.logoText);
+        }
+      } catch (e) {
+        console.error("Error fetching public settings on mount in App:", e);
+      }
+    };
+    fetchPublicSettings();
+  }, []);
+
+  useEffect(() => {
     if (sessionToken) {
       if (sessionToken.startsWith("ey") && !firebaseAuthChecked) {
         // Skip initial check of Firebase token, wait for onAuthStateChanged to refresh/verify
@@ -2430,7 +2463,7 @@ export default function App() {
             }
             
             localStorage.setItem("mess_token", freshToken);
-            window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken }));
+            window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken } as any));
 
             // Reconstruct options with new Authorization header
             const newInit = { ...init } as any;
@@ -2468,7 +2501,7 @@ export default function App() {
   // Update session token state when custom refresh event fires
   useEffect(() => {
     const handleTokenRefreshed = (e: Event) => {
-      const freshToken = (e as CustomEvent).detail;
+      const freshToken = (e as any).detail;
       setSessionToken(freshToken);
     };
     window.addEventListener("firebase-token-refreshed", handleTokenRefreshed);
@@ -3231,12 +3264,7 @@ export default function App() {
   // Authentication gate
   if (!sessionToken || !currentUser) {
     return (
-      <div className={`min-h-screen transition-all flex items-center justify-center p-4 relative ${isDarkMode ? "bg-slate-950 font-sans" : "bg-slate-50 font-sans"}`}>
-        {/* Glow backgrounds */}
-        <div className="absolute left-1/4 top-1/4 w-96 h-96 bg-radial-gradient opacity-20 animate-pulse pointer-events-none"></div>
-        <div className="absolute right-1/4 bottom-1/4 w-96 h-96 bg-radial-gradient opacity-25 animate-pulse pointer-events-none"></div>
-        <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
-      </div>
+      <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
     );
   }
 
@@ -4975,6 +5003,8 @@ export default function App() {
               </div>
 
               <UnifiedSettingsDashboard
+                loginCustomization={loginCustomization}
+                setLoginCustomization={setLoginCustomization}
                 currentUser={currentUser}
                 isDarkMode={activeIsDarkMode}
                 setIsDarkMode={setIsDarkMode}

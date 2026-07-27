@@ -960,7 +960,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", itemId ? "Successfully equipped aesthetic asset!" : "Successfully removed cosmetic styling.");
         loadState();
         // Notify App.tsx to reload the user profile dynamically
-        window.dispatchEvent(new Event("refresh-current-user"));
+        window.dispatchEvent(new CustomEvent("refresh-current-user"));
       } else {
         const data = await res.json();
         showStatus("error", data.error || "Equip process failed.");
@@ -1014,7 +1014,9 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
 
   // Helper to render icon dynamically
   const renderIcon = (name: string, size = 16, className = "") => {
-    const Component = (LucideIcons as any)[name];
+    // Avoid dynamic lookup for known globals
+    let Component = (LucideIcons as any)[name];
+    if (name === "Image") Component = (LucideIcons as any)["ImageIcon"];
     return Component ? <Component size={size} className={className} /> : null;
   };
 
@@ -2517,7 +2519,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {achievementsList.map((ach) => {
-                            const IconComponent = (LucideIcons as any)[ach.icon] || LucideIcons.Award;
+                            let IconComponent = (LucideIcons as any)[ach.icon] || LucideIcons.Award;
+    if (ach.icon === "Image") IconComponent = (LucideIcons as any)["ImageIcon"];
                             const isClaimed = !!ach.isClaimed;
                             const progressPercent = Math.min(100, Math.round((ach.currentProgress / ach.requiredProgress) * 100));
                             const isComplete = ach.currentProgress >= ach.requiredProgress;

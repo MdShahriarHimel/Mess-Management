@@ -19,7 +19,8 @@ import {
   FileJson,
   Eye,
   Settings,
-  HelpCircle
+  HelpCircle,
+  Lock
 } from "lucide-react";
 import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
 import RgbColorPicker from "./RgbColorPicker";

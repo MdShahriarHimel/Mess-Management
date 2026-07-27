@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import * as LucideIcons from "lucide-react";
 import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
 import { ThemeEnginePanel } from "./ThemeEnginePanel";
+import { LoginEnginePanel } from "./LoginEnginePanel";
 import { MonetizationHub } from "./MonetizationHub";
 
 interface Member {
@@ -29,6 +30,8 @@ interface CreditConfig {
 }
 
 interface UnifiedSettingsDashboardProps {
+  loginCustomization?: any;
+  setLoginCustomization?: React.Dispatch<React.SetStateAction<any>>;
   currentUser: {
     id: string;
     email: string;
@@ -92,6 +95,8 @@ interface UnifiedSettingsDashboardProps {
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
+  loginCustomization,
+  setLoginCustomization,
   currentUser,
   isDarkMode,
   setIsDarkMode,
@@ -434,6 +439,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "branding", label: "ERP Identity", role: "ultimate-admin", icon: "Sparkles" },
     { id: "credit", label: "Credit Panel", role: "ultimate-admin", icon: "Heart" },
     { id: "theme-library", label: "Theme Library", role: "ultimate-admin", icon: "Palette" },
+    { id: "login-customizer", label: "Login Engine", role: "ultimate-admin", icon: "LayoutTemplate" },
     { id: "mess-appearance", label: "Mess Appearance", role: "any", icon: "Sliders" },
     { id: "user-appearance", label: "Personal Preferences", role: "any", icon: "User" },
     { id: "permissions", label: "Permission Matrix", role: "admin", icon: "Shield" },
@@ -485,8 +491,21 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   // Helper to render icon dynamically
   const renderIcon = (name: string, size = 15, className = "") => {
-    const Component = (LucideIcons as any)[name];
-    return Component ? <Component size={size} className={className} /> : null;
+    // Disable dynamic lucide icon rendering to prevent illegal constructor in some environments
+    // Fallback to static icons for the known ones in settings tabs
+    if (name === "Palette") return <LucideIcons.Palette size={size} className={className} />;
+    if (name === "LayoutDashboard") return <LucideIcons.LayoutDashboard size={size} className={className} />;
+    if (name === "Image") return <LucideIcons.ImageIcon size={size} className={className} />;
+    if (name === "Shield") return <LucideIcons.Shield size={size} className={className} />;
+    if (name === "Key") return <LucideIcons.Key size={size} className={className} />;
+    if (name === "Database") return <LucideIcons.Database size={size} className={className} />;
+    if (name === "Sliders") return <LucideIcons.Sliders size={size} className={className} />;
+    if (name === "DollarSign") return <LucideIcons.DollarSign size={size} className={className} />;
+    if (name === "MonitorPlay") return <LucideIcons.MonitorPlay size={size} className={className} />;
+    if (name === "CreditCard") return <LucideIcons.CreditCard size={size} className={className} />;
+    if (name === "Zap") return <LucideIcons.Zap size={size} className={className} />;
+    
+    return <LucideIcons.Settings size={size} className={className} />;
   };
 
   return (
@@ -962,6 +981,16 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 </div>
               )}
             </div>
+          )}
+
+          {activeSubTab === "login-customizer" && filteredTabs.some(t => t.id === "login-customizer") && (
+            <LoginEnginePanel 
+              loginCustomization={loginCustomization} 
+              setLoginCustomization={setLoginCustomization} 
+              isDarkMode={isDarkMode} 
+              handleUpdateSettings={handleUpdateSettings}
+              sessionToken={sessionToken}
+            />
           )}
 
           {/* 3. THEME LIBRARY / PRESETS */}

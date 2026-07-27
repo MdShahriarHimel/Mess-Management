@@ -1,0 +1,5 @@
+.glow-wrapper-target > div:not(.absolute),
+.glow-wrapper-target > p {
+  position: relative;
+  z-index: 10;
+}

@@ -500,4 +500,213 @@
   border-width: 2px !important;
 }
 
+/* ==========================================================
+   PREMIUM DETAILED TRANSITIONS, SHIMMERS, AND FLOATING PARTICLES
+   ========================================================== */
 
+@keyframes premium-mesh-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes laserScan {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes neonBorderPulse {
+  0%, 100% {
+    border-color: rgba(var(--neon-color-1), 0.5);
+    box-shadow: 0 0 10px rgba(var(--neon-color-1), 0.25), inset 0 0 5px rgba(var(--neon-color-1), 0.1);
+  }
+  50% {
+    border-color: rgba(var(--neon-color-2), 0.95);
+    box-shadow: 0 0 25px rgba(var(--neon-color-2), 0.75), inset 0 0 12px rgba(var(--neon-color-2), 0.3);
+  }
+}
+
+@keyframes royalCrownRays {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes floatUpPremium {
+  0% {
+    transform: translateY(110px) scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.8;
+  }
+  85% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-40px) scale(1.1) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.float-up-item {
+  animation-name: floatUpPremium;
+  animation-iteration-count: infinite;
+  animation-timing-function: linear;
+  pointer-events: none;
+}
+
+.bg-retro-grid {
+  background-image: linear-gradient(rgba(139, 92, 246, 0.15) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(139, 92, 246, 0.15) 1px, transparent 1px);
+  background-size: 15px 15px;
+}
+
+.bg-radial-gold-rays {
+  background: radial-gradient(circle, rgba(234, 179, 8, 0.2) 0%, transparent 75%);
+}
+
+.bg-matrix-digital-rain {
+  background: linear-gradient(180deg, rgba(0, 255, 0, 0.05) 0%, transparent 100%);
+  position: relative;
+}
+
+.bg-matrix-digital-rain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(0, 255, 0, 0.1) 50%, transparent 50%);
+  background-size: 100% 4px;
+}
+
+
+/* ==========================================================
+   ENHANCED PREMIUM ANIMATION VISIBILITY
+   ========================================================== */
+
+/* Elevate text content above the glow and GIF layers */
+div[class*="glow-"] > div:not(.absolute),
+div[class*="glow-"] > p {
+  position: relative;
+  z-index: 10;
+}
+
+/* Base style for the animated glow overlays */
+div[class*="glow-"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.8;
+  mix-blend-mode: color-dodge;
+}
+
+/* Ensure text legibility in dark mode */
+.dark div[class*="glow-"]::before {
+  opacity: 0.6;
+}
+
+@keyframes premiumMesh {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.glow-royal-majesty::before {
+  background: radial-gradient(circle at top right, rgba(251, 191, 36, 0.4), transparent 60%), radial-gradient(circle at bottom left, rgba(217, 119, 6, 0.4), transparent 60%); animation: premiumMesh 4s infinite alternate ease-in-out;
+}
+
+.glow-sakura-blossom::before {
+  background: linear-gradient(135deg, rgba(244,63,94,0.3) 0%, rgba(251,113,133,0.1) 50%, rgba(225,29,72,0.3) 100%); background-size: 200% 200%; animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-dark-matter::before {
+  background: linear-gradient(45deg, rgba(124, 58, 237, 0.4), rgba(219, 39, 119, 0.1), rgba(76, 29, 149, 0.4)); background-size: 200% 200%; animation: premiumMesh 5s infinite ease-in-out;
+}
+
+.glow-supernova::before {
+  background: radial-gradient(circle at center, rgba(249, 115, 22, 0.3) 0%, rgba(239, 68, 68, 0.1) 50%, transparent 100%); animation: premiumMesh 2s infinite ease-in-out;
+}
+
+.glow-matrix-rain::before {
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.2) 0%, rgba(21, 128, 61, 0.05) 50%, rgba(34, 197, 94, 0.2) 100%); background-size: 100% 200%; animation: premiumMesh 3s infinite linear;
+}
+
+.glow-electric-storm::before {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(129, 140, 248, 0.1), rgba(67, 56, 202, 0.3)); background-size: 200% 200%; animation: premiumMesh 1.5s infinite ease-in-out;
+}
+
+.glow-retro-horizon::before {
+  background: linear-gradient(180deg, rgba(236, 72, 153, 0.2) 0%, transparent 50%, rgba(139, 92, 246, 0.3) 100%);
+}
+
+.glow-nitro-classic::before {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.2), rgba(99, 102, 241, 0.3)); background-size: 200% 200%; animation: premiumMesh 4s infinite ease-in-out;
+}
+
+.glow-nitro-boost::before {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.4), rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.4)); background-size: 200% 200%; animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-cyber-laser::before {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.3), rgba(236, 72, 153, 0.1), rgba(6, 182, 212, 0.3)); background-size: 200% 100%; animation: premiumMesh 2s infinite linear;
+}
+
+.glow-golden-aura::before {
+  background: radial-gradient(circle at center, rgba(253, 224, 71, 0.4), rgba(234, 179, 8, 0.1), transparent); animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-cyberpunk-neon::before {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.3), rgba(6, 182, 212, 0.3), rgba(234, 179, 8, 0.3)); background-size: 200% 200%; animation: premiumMesh 3s infinite linear;
+}
+
+/* Enhance GIF visibility for MicroAnimationOverlay */
+div.relative > div.absolute.z-0 > img.opacity-30 {
+  opacity: 0.65 !important;
+  filter: saturate(1.2) contrast(1.1);
+}
+
+.dark div.relative > div.absolute.z-0 > img.opacity-30 {
+  opacity: 0.55 !important;
+}
+
+/* Make sure the overlay layer doesn't overly dim the GIF */
+div.relative > div.absolute.z-0 > div.bg-slate-950\/15 {
+  opacity: 0.5 !important;
+}
+
+/* Ensure text is always above MicroAnimationOverlay for ALL member cards */
+div.relative.overflow-hidden.p-5.rounded-2xl > div:not(.absolute),
+div.relative.overflow-hidden.p-5.rounded-2xl > p {
+  position: relative;
+  z-index: 10;
+}
+
+/* Ensure text is above MicroAnimationOverlay for Preview card */
+div.relative.overflow-hidden.w-64.p-3.rounded-xl > div:not(.absolute) {
+  position: relative;
+  z-index: 10;
+}
