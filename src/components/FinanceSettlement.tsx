@@ -269,17 +269,18 @@ export default function FinanceSettlement({
     
     const totalDeposits = reportSummary.totalDeposits || 0;
     const totalMarkets = reportSummary.totalMarkets || 0;
-    const effectiveCost = reportSummary.effectiveCost || 0;
     const totalMeals = reportSummary.totalMeals || 0;
     const mealRate = reportSummary.mealRate || 0;
+    const sumMealCost = (reportSummary.memberSettlements || []).reduce((sum: number, m: any) => sum + (m.mealCost || 0), 0);
+    const sumBalance = (reportSummary.memberSettlements || []).reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
     
     const summaryRow = [
       "TOTALS / SUMMARY",
       totalDeposits,
       totalMarkets,
       totalMeals,
-      effectiveCost,
-      "",
+      sumMealCost,
+      sumBalance,
       `Meal Rate: ৳${mealRate}`
     ];
     
@@ -442,8 +443,9 @@ export default function FinanceSettlement({
               <td><strong>TOTALS:</strong></td>
               <td>৳ ${reportSummary?.totalDeposits || 0}</td>
               <td>৳ ${reportSummary?.totalMarkets || 0}</td>
-              <td>৳ ${reportSummary?.effectiveCost || 0}</td>
-              <td colspan="2" style="text-align: right;">Meal Rate: ৳ ${reportSummary?.mealRate || 0}</td>
+              <td>৳ ${(reportSummary?.memberSettlements || []).reduce((s: number, m: any) => s + (m.mealCost || 0), 0).toFixed(2)}</td>
+              <td><strong>৳ ${(reportSummary?.memberSettlements || []).reduce((s: number, m: any) => s + (m.balance || 0), 0).toFixed(2)}</strong></td>
+              <td>Meal Rate: ৳ ${reportSummary?.mealRate || 0}</td>
             </tr>
           </tbody>
         </table>
@@ -626,39 +628,13 @@ export default function FinanceSettlement({
   // Find selected month object
   const selectedMonth = months?.find(m => m.id === currentMonthId);
 
-  // Permission check evaluated dynamically from current database state (members list)
-  const isUltimateAdmin = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const currentMemberInList = members.find(m => m.id === currentUser?.id);
-  const activeUserRole = isUltimateAdmin ? currentUser?.role : (currentMemberInList?.role || currentUser?.role);
-
-  const canViewSettlementSheet = isUltimateAdmin || [
-    UserRole.ADMIN,
-    UserRole.SUPERUSER,
-    UserRole.ASSISTANT_SUPERUSER,
-    UserRole.MANAGER,
-    UserRole.PARTIAL_MANAGER
-  ].includes(activeUserRole);
-
-  const canEditSpreadsheet = isUltimateAdmin || [
+  // Permission check for editing the spreadsheet
+  const canEditSpreadsheet = [
     UserRole.ADMIN,
     UserRole.SUPERUSER,
     UserRole.ASSISTANT_SUPERUSER,
     UserRole.MANAGER
-  ].includes(activeUserRole);
-
-  if (!canViewSettlementSheet) {
-    return (
-      <div className="p-8 bg-slate-900/60 border border-rose-500/30 rounded-2xl text-center space-y-4 my-6">
-        <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/20 rounded-full flex items-center justify-center mx-auto text-rose-400">
-          <ShieldAlert size={24} />
-        </div>
-        <h3 className="text-lg font-bold text-white">Access Restricted</h3>
-        <p className="text-xs text-slate-400 max-w-md mx-auto">
-          Settlement Sheet access is strictly determined from current database state (Current Month Manager, Super User, Admin, or Ultimate Admin).
-        </p>
-      </div>
-    );
-  }
+  ].includes(currentUser.role);
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 
@@ -1764,33 +1740,41 @@ export default function FinanceSettlement({
                 })
               )}
             </tbody>
-            {reportSummary?.memberSettlements && reportSummary.memberSettlements.length > 0 && (
-              <tfoot>
-                <tr className={`border-t font-extrabold text-[11px] ${
-                  isDarkMode ? "bg-slate-950/20 border-slate-800 text-cyan-300" : "bg-slate-100/50 border-slate-200 text-slate-700"
-                }`}>
-                  <td className="py-3.5 px-4 font-black">TOTALS</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.totalDeposits || 0}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.totalMarkets || 0}</td>
-                  <td className="py-3.5 px-4 text-center">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full font-black font-mono text-xs ${
-                      isDarkMode ? "bg-slate-950 text-slate-400 border border-slate-800/80" : "bg-slate-200 text-slate-700 border border-slate-300"
-                    }`}>
-                      {reportSummary.totalMeals || 0} Meals (Value)
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {reportSummary.effectiveCost || 0}</td>
-                  <td className={`py-3.5 px-4 text-right font-mono font-black ${
-                    (reportSummary.totalDeposits + reportSummary.totalMarkets - reportSummary.effectiveCost) >= 0 ? "text-emerald-400" : "text-rose-400"
+            {reportSummary?.memberSettlements && reportSummary.memberSettlements.length > 0 && (() => {
+              const totalDeposits = reportSummary.totalDeposits || 0;
+              const totalMarkets = reportSummary.totalMarkets || 0;
+              const totalMeals = reportSummary.totalMeals || 0;
+              const sumMealCost = reportSummary.memberSettlements.reduce((sum: number, m: any) => sum + (m.mealCost || 0), 0);
+              const sumBalance = reportSummary.memberSettlements.reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
+
+              return (
+                <tfoot>
+                  <tr className={`border-t font-extrabold text-[11px] ${
+                    isDarkMode ? "bg-slate-950/20 border-slate-800 text-cyan-300" : "bg-slate-100/50 border-slate-200 text-slate-700"
                   }`}>
-                    {currencySymbol} {(reportSummary.totalDeposits + reportSummary.totalMarkets - reportSummary.effectiveCost).toFixed(2)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-semibold font-sans text-[10px] text-slate-400">
-                    Rate: {currencySymbol} {reportSummary.mealRate || 0}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
+                    <td className="py-3.5 px-4 font-black">TOTALS</td>
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {totalDeposits}</td>
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {totalMarkets}</td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full font-black font-mono text-xs ${
+                        isDarkMode ? "bg-slate-950 text-slate-400 border border-slate-800/80" : "bg-slate-200 text-slate-700 border border-slate-300"
+                      }`}>
+                        {totalMeals} Meals (Value)
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-200">{currencySymbol} {sumMealCost.toFixed(2)}</td>
+                    <td className={`py-3.5 px-4 text-right font-mono font-black ${
+                      sumBalance >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {currencySymbol} {sumBalance.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-semibold font-sans text-[10px] text-slate-400">
+                      Rate: {currencySymbol} {reportSummary.mealRate || 0}
+                    </td>
+                  </tr>
+                </tfoot>
+              );
+            })()}
           </table>
         </div>
       </div>
@@ -1925,7 +1909,7 @@ export default function FinanceSettlement({
                       {/* Date Cells */}
                       {datesList.map((d) => {
                         const val = spreadsheetData[member.id]?.[d];
-                        const isBlank = val === undefined || val === null || val === 0;
+                        const isNil = val === undefined || val === null;
                         return (
                           <td key={d} className="p-0 border border-slate-850 text-center bg-slate-950/10 min-w-12">
                              {canEditSpreadsheet ? (
@@ -1934,13 +1918,13 @@ export default function FinanceSettlement({
                                 step="0.5"
                                 min="0"
                                 max="10"
-                                value={isBlank ? "" : val}
+                                value={isNil || val === 0 ? "" : val}
                                 onChange={(e) => handleCellChange(member.id, d, e.target.value)}
                                 className={`w-12 text-center bg-transparent border-0 focus:bg-slate-800 focus:ring-1 focus:ring-cyan-500 p-1.5 text-xs font-mono font-extrabold transition-all rounded outline-none ${getCellColorClass(val || 0)}`}
                               />
                             ) : (
                               <span className={`block py-1.5 text-center font-mono text-xs font-extrabold ${getCellColorClass(val || 0)}`}>
-                                {isBlank ? "" : val}
+                                {isNil ? "0" : val}
                               </span>
                             )}
                           </td>

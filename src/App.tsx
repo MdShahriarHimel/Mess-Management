@@ -2651,12 +2651,6 @@ export default function App() {
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    if (currentUser?.role === UserRole.MEMBER && activeTab === "meals") {
-      setActiveTab("dashboard");
-    }
-  }, [currentUser, activeTab]);
-
   const getIsPreviousMonth = () => {
     if (!currentMonthId || months.length === 0) return false;
     const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
@@ -2678,87 +2672,17 @@ export default function App() {
   };
 
   const getSelectableMonths = () => {
-    if (months.length === 0) return [];
-    
-    const isAdminOrSuper = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.SUPERUSER || currentUser?.role === UserRole.ASSISTANT_SUPERUSER;
-    if (isAdminOrSuper) {
-      return months;
-    }
-
-    const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-    
-    const now = new Date();
-    let currentIdx = sorted.findIndex(m => {
-      const start = new Date(m.startDate);
-      const end = new Date(m.endDate);
-      return now >= start && now <= end;
-    });
-    if (currentIdx === -1) {
-      currentIdx = sorted.length - 1;
-    }
-
-    const allowedIds = new Set<string>();
-    if (currentIdx >= 0 && currentIdx < sorted.length) {
-      allowedIds.add(sorted[currentIdx].id);
-    }
-    if (currentIdx > 0) {
-      allowedIds.add(sorted[currentIdx - 1].id);
-    }
-
-    return months.filter(m => allowedIds.has(m.id));
+    return months;
   };
-
-  // Evaluate Settlement Sheet permission directly from current database state (membersList)
-  const canAccessSettlementSheet = (() => {
-    if (!currentUser) return false;
-    const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-    if (isUltimateAdmin) return true;
-
-    const dbMember = membersList.find(m => m.id === currentUser.id);
-    const activeRole = dbMember ? dbMember.role : currentUser.role;
-
-    const allowedRoles: UserRole[] = [
-      UserRole.ADMIN,
-      UserRole.SUPERUSER,
-      UserRole.ASSISTANT_SUPERUSER,
-      UserRole.MANAGER,
-      UserRole.PARTIAL_MANAGER
-    ];
-
-    return allowedRoles.includes(activeRole as UserRole);
-  })();
-
-  // Keep currentUser state in sync with membersList DB changes
-  useEffect(() => {
-    if (currentUser && membersList.length > 0) {
-      const dbMember = membersList.find(m => m.id === currentUser.id);
-      if (dbMember) {
-        const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-        const actingRole = isUltimateAdmin ? localStorage.getItem("acting_role") : null;
-        const targetRole = (isUltimateAdmin && actingRole) ? (actingRole as UserRole) : dbMember.role;
-
-        if (currentUser.role !== targetRole) {
-          setCurrentUser(prev => prev ? { ...prev, role: targetRole } : null);
-        }
-      }
-    }
-  }, [membersList]);
-
-  // Redirect if current activeTab is finance but access is not granted
-  useEffect(() => {
-    if (activeTab === "finance" && currentUser && !canAccessSettlementSheet) {
-      setActiveTab(getIsPreviousMonth() ? "market" : "dashboard");
-    }
-  }, [activeTab, currentUser, canAccessSettlementSheet, currentMonthId]);
 
   useEffect(() => {
     if (getIsPreviousMonth()) {
-      const allowed = canAccessSettlementSheet ? ["finance", "market", "menu"] : ["market", "menu"];
+      const allowed = ["finance", "market", "menu"];
       if (!allowed.includes(activeTab)) {
-        setActiveTab(canAccessSettlementSheet ? "finance" : "market");
+        setActiveTab("finance");
       }
     }
-  }, [currentMonthId, months, activeTab, canAccessSettlementSheet]);
+  }, [currentMonthId, months, activeTab]);
 
   useEffect(() => {
     if (!currentUser || months.length === 0 || !currentMonthId) return;
@@ -3408,16 +3332,12 @@ export default function App() {
 
   const visibleNavItems = navItems.filter(item => {
     if (getIsPreviousMonth()) {
-      const allowedPrevious = canAccessSettlementSheet ? ["finance", "market", "menu"] : ["market", "menu"];
-      return allowedPrevious.includes(item.id);
+      return ["finance", "market", "menu"].includes(item.id);
     }
-
-    if (item.id === "finance" && !canAccessSettlementSheet) return false;
 
     if (item.id === "democracy" && showResultsInDashboard) return false;
     if (item.id === "audit" && dashboardVisibility && !dashboardVisibility.showAuditLogs) return false;
     if (item.id === "deposits" && dashboardVisibility && !dashboardVisibility.showCashDeposit) return false;
-    if (item.id === "meals" && currentUser?.role === UserRole.MEMBER) return false;
     if (item.id === "meals" && dashboardVisibility && !dashboardVisibility.showMealTracker) return false;
     if (item.id === "menu" && dashboardVisibility && !dashboardVisibility.showFoodMenu) return false;
     if (item.id === "notices" && dashboardVisibility && !dashboardVisibility.showNotices) return false;

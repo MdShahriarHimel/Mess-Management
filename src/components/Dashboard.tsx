@@ -1566,7 +1566,7 @@ export default function Dashboard({
             </span>
           </div>
           <p className="text-[10px] text-slate-400 mt-2">
-            member's markets (৳{reportSummary?.totalMarkets || 0}) + Deposits (৳{reportSummary?.totalDeposits || 0})
+            Total Deposits (৳{reportSummary?.totalDeposits || 0}) + Total Market (৳{reportSummary?.totalMarkets || 0})
           </p>
         </div>
 
@@ -1668,18 +1668,16 @@ export default function Dashboard({
           {/* Desktop/Tablet Layout */}
           <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
             
-            {currentUser.role !== UserRole.MEMBER && (
-              <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
-                isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
-              }`} onClick={() => onNavigateToTab("meals")}>
-                <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                  <Coffee size={16} /> Meals Tracker
-                </h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Log daily member lunch/dinner servings and compute total rates automatically.
-                </p>
-              </div>
-            )}
+            <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+              isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
+            }`} onClick={() => onNavigateToTab("meals")}>
+              <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
+                <Coffee size={16} /> Meals Tracker
+              </h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Log daily member lunch/dinner servings and compute total rates automatically.
+              </p>
+            </div>
 
             <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
               isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
@@ -1730,11 +1728,7 @@ export default function Dashboard({
             <div className="grid grid-cols-2 gap-3 text-center">
               {/* MEAL TRACKER */}
               <div 
-                onClick={() => {
-                  if (currentUser.role !== UserRole.MEMBER) {
-                    onNavigateToTab("meals");
-                  }
-                }}
+                onClick={() => onNavigateToTab("meals")}
                 className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
                   isDarkMode 
                     ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
@@ -1750,7 +1744,7 @@ export default function Dashboard({
                     {myMeals.total} <span className="text-[9px] font-bold text-slate-500">Meals</span>
                   </span>
                   <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                    {currentUser.role !== UserRole.MEMBER ? "Tap to log servings" : "Admin access only"}
+                    Tap to view & request servings
                   </span>
                 </div>
               </div>

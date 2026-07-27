@@ -3101,7 +3101,7 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   // Total holding advance (always 0 now as advance management deposits are removed)
   const totalHolding = 0;
   
-  // Effective Cost is now equal to totalCost to align meal rate calculations properly
+  // Effective Cost equals totalCost
   const effectiveCost = totalCost;
 
   // Sum total meals in the month dynamically based on configured meal types
