@@ -389,44 +389,53 @@ Return a strict JSON array conforming to the schema.`;
 
   try {
     console.log(`[Gemini Teacher] Asking Gemini to teach us about unknown phrases: ${phrases.join(", ")}`);
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          description: "List of classified foods",
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              originalPhrase: {
-                type: Type.STRING,
-                description: "The exact original phrase from the input"
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            description: "List of classified foods",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                originalPhrase: {
+                  type: Type.STRING,
+                  description: "The exact original phrase from the input"
+                },
+                label: {
+                  type: Type.STRING,
+                  description: "The canonical, normalized Bengali name of the food item (e.g. 'সরিষা ইলিশ' or 'লাউ ডাল')"
+                },
+                aliases: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Common Bengali aliases, phonetic spellings, or translation names"
+                },
+                category: {
+                  type: Type.STRING,
+                  description: "Main category choice: 'Vegetables', 'Fish', 'Chicken', 'Beef', 'Mutton', 'Eggs', 'Lentils', 'Rice', 'Dessert', 'Drinks', 'Other'"
+                },
+                confidence: {
+                  type: Type.NUMBER,
+                  description: "Confidence score from 0.0 to 1.0"
+                }
               },
-              label: {
-                type: Type.STRING,
-                description: "The canonical, normalized Bengali name of the food item (e.g. 'সরিষা ইলিশ' or 'লাউ ডাল')"
-              },
-              aliases: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "Common Bengali aliases, phonetic spellings, or translation names"
-              },
-              category: {
-                type: Type.STRING,
-                description: "Main category choice: 'Vegetables', 'Fish', 'Chicken', 'Beef', 'Mutton', 'Eggs', 'Lentils', 'Rice', 'Dessert', 'Drinks', 'Other'"
-              },
-              confidence: {
-                type: Type.NUMBER,
-                description: "Confidence score from 0.0 to 1.0"
-              }
-            },
-            required: ["originalPhrase", "label", "aliases", "category", "confidence"]
+              required: ["originalPhrase", "label", "aliases", "category", "confidence"]
+            }
           }
         }
-      }
-    });
+      });
+    } catch (err: any) {
+      console.warn(`[Gemini Teacher] Primary model call failed (${err?.message}). Attempting fallback query...`);
+      response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt
+      });
+    }
 
     const results = JSON.parse(response.text.trim());
     const learnedList: any[] = [];
@@ -629,7 +638,7 @@ OR if it's a completely different food:
 
     console.log(`[Food Knowledge] Calling Gemini AI for semantic recognition of: "${rawName}"`);
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.6-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",

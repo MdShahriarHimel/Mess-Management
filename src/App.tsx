@@ -1567,6 +1567,11 @@ export default function App() {
   const [maintenanceDetails, setMaintenanceDetails] = useState<any>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [platformOwners, setPlatformOwners] = useState<{ email: string; role: string }[]>([]);
+  const isPlatformOwner = Boolean(
+    currentUser && platformOwners.some(
+      o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
+    )
+  );
   const [activeAnnouncements, setActiveAnnouncements] = useState<any[]>([]);
   const [dismissedAnnIds, setDismissedAnnIds] = useState<string[]>([]);
 
@@ -2685,6 +2690,21 @@ export default function App() {
   }, [currentMonthId, months, activeTab]);
 
   useEffect(() => {
+    if (activeTab === "meals") {
+      const canViewMealsIntake = currentUser && (
+        currentUser.role === UserRole.ADMIN ||
+        currentUser.role === UserRole.MANAGER ||
+        currentUser.role === UserRole.SUPERUSER ||
+        currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
+        isPlatformOwner
+      );
+      if (!canViewMealsIntake) {
+        setActiveTab("dashboard");
+      }
+    }
+  }, [currentUser, activeTab, isPlatformOwner]);
+
+  useEffect(() => {
     if (!currentUser || months.length === 0 || !currentMonthId) return;
     const isAdminOrSuper = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER;
     if (isAdminOrSuper) return;
@@ -3235,10 +3255,6 @@ export default function App() {
     );
   }
 
-  const isPlatformOwner = currentUser && platformOwners.some(
-    o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
-  );
-
   // Full-Screen Emergency Maintenance Lock Screen blocker
   if (maintenanceMode === "Full Lock" && !isPlatformOwner) {
     const r = maintenanceDetails || {};
@@ -3338,7 +3354,17 @@ export default function App() {
     if (item.id === "democracy" && showResultsInDashboard) return false;
     if (item.id === "audit" && dashboardVisibility && !dashboardVisibility.showAuditLogs) return false;
     if (item.id === "deposits" && dashboardVisibility && !dashboardVisibility.showCashDeposit) return false;
-    if (item.id === "meals" && dashboardVisibility && !dashboardVisibility.showMealTracker) return false;
+    if (item.id === "meals") {
+      const canViewMealsIntake = currentUser && (
+        currentUser.role === UserRole.ADMIN ||
+        currentUser.role === UserRole.MANAGER ||
+        currentUser.role === UserRole.SUPERUSER ||
+        currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
+        isPlatformOwner
+      );
+      if (!canViewMealsIntake) return false;
+      if (dashboardVisibility && !dashboardVisibility.showMealTracker) return false;
+    }
     if (item.id === "menu" && dashboardVisibility && !dashboardVisibility.showFoodMenu) return false;
     if (item.id === "notices" && dashboardVisibility && !dashboardVisibility.showNotices) return false;
     

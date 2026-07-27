@@ -520,7 +520,7 @@ router.get("/gemini-status", platformOwnerMiddleware, (req: AuthenticatedRequest
     lastResetDate: new Date().toISOString().split("T")[0]
   };
 
-  // Pricing models: gemini-3.5-flash costs ~$0.075 / 1M input tokens and ~$0.30 / 1M output tokens
+  // Pricing models: gemini-3.6-flash costs ~$0.075 / 1M input tokens and ~$0.30 / 1M output tokens
   // We approximate $0.00015 per API query to show friendly cost estimations
   const avgCostPerRequest = 0.00015;
   const estimatedUsage = `$${(stats.totalRequests * avgCostPerRequest).toFixed(5)}`;

@@ -1684,8 +1684,8 @@ router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, 
   res.json({ meals });
 });
 
-// Bulk Enter/Edit meals for a month (Manager, Admin, Super User, Assistant Super User, Member)
-router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.MEMBER, UserRole.PARTIAL_MANAGER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// Bulk Enter/Edit meals for a month (Only Manager, Admin, Super User, Assistant Super User)
+router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, meals } = req.body; // meals: Array of meals to save/upsert
 
   if (!monthId || !Array.isArray(meals)) {
@@ -1694,10 +1694,9 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
   }
 
   const hasManageMealsPermission = checkAdminPermission(req, "canManageMeals");
-  const isOnlySelf = meals.every(m => m.memberId === req.user!.id);
 
-  if (!hasManageMealsPermission && !isOnlySelf) {
-    res.status(403).json({ error: "Access denied. You do not have permission to manage other members' meals." });
+  if (!hasManageMealsPermission) {
+    res.status(403).json({ error: "Access denied. You do not have permission to manage meals." });
     return;
   }
 
@@ -1721,16 +1720,13 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     return;
   }
 
-  // Intercept normal Member requests - managers and admins save directly
-  const isManagement = [
+  // Direct edit is strictly reserved for Ultimate Admin and Manager
+  const isDirectEdit = ([
     UserRole.ADMIN,
-    UserRole.SUPERUSER,
-    UserRole.ASSISTANT_SUPERUSER,
-    UserRole.MANAGER,
-    UserRole.PARTIAL_MANAGER
-  ].includes(req.user!.role) && hasManageMealsPermission;
+    UserRole.MANAGER
+  ].includes(req.user!.role) || (req.user!.email && req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com")) && hasManageMealsPermission;
 
-  if (!isManagement) {
+  if (!isDirectEdit) {
     if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
     const newRequest = {
       id: generateUUID(),
@@ -1744,7 +1740,7 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     };
     dbConfig.mealRequests.push(newRequest);
     saveDB();
-    logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_REQUESTED", "None", `Requested meal logs for ${newRequest.date}`, `Meal changes submitted for manager approval`);
+    logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_REQUESTED", "None", `Requested meal logs for ${newRequest.date}`, `Super User meal changes submitted for manager approval`);
     res.json({ 
       pendingApproval: true, 
       message: "Meals update requested! Your changes have been submitted to the Manager for confirmation." 
@@ -1752,7 +1748,7 @@ router.post("/meals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.AS
     return;
   }
 
-  // Upsert meal logs directly for Manager
+  // Upsert meal logs directly for Manager / Admin
   const settings = loadSettings();
   const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
@@ -2958,33 +2954,35 @@ router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const role = user.role;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   
-  const isAdmin = role === UserRole.ADMIN;
-  const isSuperUser = role === UserRole.SUPERUSER;
-  
-  if (!isAdmin && !isSuperUser) {
-    res.status(403).json({ error: "Access Denied: You do not have permission to view audit logs." });
-    return;
-  }
+  const isAdmin = role === UserRole.ADMIN || isUltimateAdmin;
+  const isSuperUser = role === UserRole.SUPERUSER || role === UserRole.ASSISTANT_SUPERUSER;
   
   const db = loadDB();
   let logs = db.auditLogs || [];
   
   // 1. Enforce Hierarchical Access Control
-  if (isSuperUser) {
-    // Determine Super User's allowed messes from admin controls, falling back to the active mess
-    const controls = loadAdminControls().controls;
-    const emailKey = user.email ? user.email.toLowerCase() : "";
-    const userControls = (emailKey && controls[emailKey]) || controls[user.id];
-    let allowedMesses: string[] = [];
-    if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
-      allowedMesses = userControls.allowedMesses;
+  if (!isAdmin) {
+    if (isSuperUser) {
+      // Determine Super User's allowed messes from admin controls, falling back to the active mess
+      const controls = loadAdminControls().controls;
+      const emailKey = user.email ? user.email.toLowerCase() : "";
+      const userControls = (emailKey && controls[emailKey]) || controls[user.id];
+      let allowedMesses: string[] = [];
+      if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
+        allowedMesses = userControls.allowedMesses;
+      } else {
+        allowedMesses = [getActiveMessId()];
+      }
+      
+      // Filter logs to only include those belonging to the Super User's own messes
+      logs = logs.filter(log => allowedMesses.includes(log.messId || "default"));
     } else {
-      allowedMesses = [getActiveMessId()];
+      // Standard Managers / Members / Assistant Super Users restricted to current active mess
+      const activeMessId = getActiveMessId();
+      logs = logs.filter(log => (log.messId || "default") === activeMessId);
     }
-    
-    // Filter logs to only include those belonging to the Super User's own messes
-    logs = logs.filter(log => allowedMesses.includes(log.messId || "default"));
   }
   
   // 2. Apply Filters from query params

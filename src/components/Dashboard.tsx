@@ -1666,53 +1666,64 @@ export default function Dashboard({
 
           {/* QUICK SHORTCUTS & UTILITIES */}
           {/* Desktop/Tablet Layout */}
-          <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
-              isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
-            }`} onClick={() => onNavigateToTab("meals")}>
-              <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                <Coffee size={16} /> Meals Tracker
-              </h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Log daily member lunch/dinner servings and compute total rates automatically.
-              </p>
-            </div>
+          {(() => {
+            const canViewMealsIntake = currentUser && [
+              UserRole.ADMIN,
+              UserRole.MANAGER,
+              UserRole.SUPERUSER,
+              UserRole.ASSISTANT_SUPERUSER
+            ].includes(currentUser.role as UserRole);
 
-            <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
-              isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
-            }`} onClick={() => onNavigateToTab("market")}>
-              <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                <Calendar size={16} /> Market Scheduling
-              </h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Submit market expense vouchers, check assigned dates, and upload shopping receipts.
-              </p>
-            </div>
+            return (
+              <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {canViewMealsIntake && (
+                  <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                    isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
+                  }`} onClick={() => onNavigateToTab("meals")}>
+                    <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
+                      <Coffee size={16} /> Meals Tracker
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Log daily member lunch/dinner servings and compute total rates automatically.
+                    </p>
+                  </div>
+                )}
 
-            <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
-              isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
-            }`} onClick={() => onNavigateToTab("finance")}>
-              <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                <DollarSign size={16} /> Live Balance Sheet
-              </h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Review deposits, manager holdings, utility bill lists, and complete calculations.
-              </p>
-            </div>
+                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                  isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
+                }`} onClick={() => onNavigateToTab("market")}>
+                  <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
+                    <Calendar size={16} /> Market Scheduling
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Submit market expense vouchers, check assigned dates, and upload shopping receipts.
+                  </p>
+                </div>
 
-            <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
-              isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
-            }`} onClick={() => onNavigateToTab("menu")}>
-              <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                <FileText size={16} /> Food Menu Planner
-              </h4>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Check what's cooking today and explore statistical meat vs vegetable cycles.
-              </p>
-            </div>
+                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                  isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
+                }`} onClick={() => onNavigateToTab("finance")}>
+                  <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
+                    <DollarSign size={16} /> Live Balance Sheet
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Review deposits, manager holdings, utility bill lists, and complete calculations.
+                  </p>
+                </div>
 
-          </div>
+                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                  isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
+                }`} onClick={() => onNavigateToTab("menu")}>
+                  <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
+                    <FileText size={16} /> Food Menu Planner
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Check what's cooking today and explore statistical meat vs vegetable cycles.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Mobile Phone Layout (Minimalist Compound Box) */}
           <div className={`block sm:hidden p-5 rounded-2xl border transition-all ${
@@ -1725,60 +1736,44 @@ export default function Dashboard({
               Simplified Mess Summary
             </h3>
             
-            <div className="grid grid-cols-2 gap-3 text-center">
-              {/* MEAL TRACKER */}
-              <div 
-                onClick={() => onNavigateToTab("meals")}
-                className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
-                  isDarkMode 
-                    ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
-                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Meal Tracker</span>
-                  <Coffee size={12} className="text-cyan-400 shrink-0" />
-                </div>
-                <div className="mt-1">
-                  <span className="text-base font-black text-cyan-400 font-mono block leading-tight">
-                    {myMeals.total} <span className="text-[9px] font-bold text-slate-500">Meals</span>
-                  </span>
-                  <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                    Tap to view & request servings
-                  </span>
-                </div>
-              </div>
+            {(() => {
+              const canViewMealsIntake = currentUser && [
+                UserRole.ADMIN,
+                UserRole.MANAGER,
+                UserRole.SUPERUSER,
+                UserRole.ASSISTANT_SUPERUSER
+              ].includes(currentUser.role as UserRole);
 
-              {/* MARKET SCHEDULE */}
-              <div 
-                onClick={() => onNavigateToTab("market")}
-                className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
-                  isDarkMode 
-                    ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
-                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Market Cost</span>
-                  <Calendar size={12} className="text-cyan-400 shrink-0" />
-                </div>
-                <div className="mt-1">
-                  <span className="text-base font-black text-orange-400 font-mono block leading-tight">
-                    ৳{reportSummary?.totalMarkets || 0}
-                  </span>
-                  <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                    Tap to view vouchers
-                  </span>
-                </div>
-              </div>
+              return (
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  {/* MEAL TRACKER */}
+                  {canViewMealsIntake && (
+                    <div 
+                      onClick={() => onNavigateToTab("meals")}
+                      className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                        isDarkMode 
+                          ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                          : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Meal Tracker</span>
+                        <Coffee size={12} className="text-cyan-400 shrink-0" />
+                      </div>
+                      <div className="mt-1">
+                        <span className="text-base font-black text-cyan-400 font-mono block leading-tight">
+                          {myMeals.total} <span className="text-[9px] font-bold text-slate-500">Meals</span>
+                        </span>
+                        <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                          Tap to view & manage
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
-              {/* LIVE BALANCE SHEET */}
-              {(() => {
-                const mySettlement = reportSummary?.memberSettlements?.find((s: any) => s.memberId === currentUser.id);
-                const myBalance = mySettlement?.balance ?? 0;
-                return (
+                  {/* MARKET SCHEDULE */}
                   <div 
-                    onClick={() => onNavigateToTab("finance")}
+                    onClick={() => onNavigateToTab("market")}
                     className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
                       isDarkMode 
                         ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
@@ -1786,44 +1781,73 @@ export default function Dashboard({
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Live Balance</span>
-                      <DollarSign size={12} className="text-cyan-400 shrink-0" />
+                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Market Cost</span>
+                      <Calendar size={12} className="text-cyan-400 shrink-0" />
                     </div>
                     <div className="mt-1">
-                      <span className={`text-base font-black font-mono block leading-tight ${myBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        ৳{myBalance >= 0 ? "+" : ""}{myBalance.toFixed(0)}
+                      <span className="text-base font-black text-orange-400 font-mono block leading-tight">
+                        ৳{reportSummary?.totalMarkets || 0}
                       </span>
                       <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                        {myBalance >= 0 ? "Return amount" : "Owed amount"}
+                        Tap to view vouchers
                       </span>
                     </div>
                   </div>
-                );
-              })()}
 
-              {/* FOOD MENU PLANNER */}
-              <div 
-                onClick={() => onNavigateToTab("menu")}
-                className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
-                  isDarkMode 
-                    ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
-                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Menu Planner</span>
-                  <FileText size={12} className="text-cyan-400 shrink-0" />
+                  {/* LIVE BALANCE SHEET */}
+                  {(() => {
+                    const mySettlement = reportSummary?.memberSettlements?.find((s: any) => s.memberId === currentUser.id);
+                    const myBalance = mySettlement?.balance ?? 0;
+                    return (
+                      <div 
+                        onClick={() => onNavigateToTab("finance")}
+                        className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                          isDarkMode 
+                            ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                            : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Live Balance</span>
+                          <DollarSign size={12} className="text-cyan-400 shrink-0" />
+                        </div>
+                        <div className="mt-1">
+                          <span className={`text-base font-black font-mono block leading-tight ${myBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            ৳{myBalance >= 0 ? "+" : ""}{myBalance.toFixed(0)}
+                          </span>
+                          <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                            {myBalance >= 0 ? "Return amount" : "Owed amount"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* FOOD MENU PLANNER */}
+                  <div 
+                    onClick={() => onNavigateToTab("menu")}
+                    className={`p-3 rounded-xl border flex flex-col justify-between text-left transition-all relative overflow-hidden active:scale-95 cursor-pointer ${
+                      isDarkMode 
+                        ? "bg-slate-950/25 border-slate-850/40 hover:border-cyan-500/20" 
+                        : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Menu Planner</span>
+                      <FileText size={12} className="text-cyan-400 shrink-0" />
+                    </div>
+                    <div className="mt-1">
+                      <span className="text-base font-black text-pink-400 block leading-tight truncate">
+                        Active Plan
+                      </span>
+                      <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
+                        Tap to view weekly meals
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1">
-                  <span className="text-base font-black text-pink-400 block leading-tight truncate">
-                    Active Plan
-                  </span>
-                  <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                    Tap to view weekly meals
-                  </span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
         </div>

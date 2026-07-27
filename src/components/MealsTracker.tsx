@@ -353,8 +353,18 @@ export default function MealsTracker({
         </div>
       )}
 
-      {/* Pending Approval Requests (Manager only) */}
-      {currentUser.role === UserRole.MANAGER && pendingRequests.length > 0 && (
+      {/* Notice for Super Users */}
+      {(currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER) && (
+        <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs flex items-center gap-2">
+          <AlertTriangle size={16} className="shrink-0 text-cyan-400" />
+          <span>
+            <strong>Super User Mode:</strong> Any edits to meal counts will create a request sent to the Manager for official approval.
+          </span>
+        </div>
+      )}
+
+      {/* Pending Approval Requests (Manager and Admin) */}
+      {(currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN) && pendingRequests.length > 0 && (
         <div className={`p-5 rounded-2xl border ${
           isDarkMode ? "bg-slate-900/40 border-amber-500/20" : "bg-amber-500/5 border-amber-200"
         }`} id="manager-pending-confirmations">
