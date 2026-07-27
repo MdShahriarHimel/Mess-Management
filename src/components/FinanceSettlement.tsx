@@ -626,13 +626,39 @@ export default function FinanceSettlement({
   // Find selected month object
   const selectedMonth = months?.find(m => m.id === currentMonthId);
 
-  // Permission check for editing the spreadsheet
-  const canEditSpreadsheet = [
+  // Permission check evaluated dynamically from current database state (members list)
+  const isUltimateAdmin = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const currentMemberInList = members.find(m => m.id === currentUser?.id);
+  const activeUserRole = isUltimateAdmin ? currentUser?.role : (currentMemberInList?.role || currentUser?.role);
+
+  const canViewSettlementSheet = isUltimateAdmin || [
+    UserRole.ADMIN,
+    UserRole.SUPERUSER,
+    UserRole.ASSISTANT_SUPERUSER,
+    UserRole.MANAGER,
+    UserRole.PARTIAL_MANAGER
+  ].includes(activeUserRole);
+
+  const canEditSpreadsheet = isUltimateAdmin || [
     UserRole.ADMIN,
     UserRole.SUPERUSER,
     UserRole.ASSISTANT_SUPERUSER,
     UserRole.MANAGER
-  ].includes(currentUser.role);
+  ].includes(activeUserRole);
+
+  if (!canViewSettlementSheet) {
+    return (
+      <div className="p-8 bg-slate-900/60 border border-rose-500/30 rounded-2xl text-center space-y-4 my-6">
+        <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/20 rounded-full flex items-center justify-center mx-auto text-rose-400">
+          <ShieldAlert size={24} />
+        </div>
+        <h3 className="text-lg font-bold text-white">Access Restricted</h3>
+        <p className="text-xs text-slate-400 max-w-md mx-auto">
+          Settlement Sheet access is strictly determined from current database state (Current Month Manager, Super User, Admin, or Ultimate Admin).
+        </p>
+      </div>
+    );
+  }
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 

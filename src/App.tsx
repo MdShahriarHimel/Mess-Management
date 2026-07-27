@@ -2708,14 +2708,57 @@ export default function App() {
     return months.filter(m => allowedIds.has(m.id));
   };
 
+  // Evaluate Settlement Sheet permission directly from current database state (membersList)
+  const canAccessSettlementSheet = (() => {
+    if (!currentUser) return false;
+    const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+    if (isUltimateAdmin) return true;
+
+    const dbMember = membersList.find(m => m.id === currentUser.id);
+    const activeRole = dbMember ? dbMember.role : currentUser.role;
+
+    const allowedRoles: UserRole[] = [
+      UserRole.ADMIN,
+      UserRole.SUPERUSER,
+      UserRole.ASSISTANT_SUPERUSER,
+      UserRole.MANAGER,
+      UserRole.PARTIAL_MANAGER
+    ];
+
+    return allowedRoles.includes(activeRole as UserRole);
+  })();
+
+  // Keep currentUser state in sync with membersList DB changes
   useEffect(() => {
-    if (getIsPreviousMonth()) {
-      const allowed = ["finance", "market", "menu"];
-      if (!allowed.includes(activeTab)) {
-        setActiveTab("finance");
+    if (currentUser && membersList.length > 0) {
+      const dbMember = membersList.find(m => m.id === currentUser.id);
+      if (dbMember) {
+        const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+        const actingRole = isUltimateAdmin ? localStorage.getItem("acting_role") : null;
+        const targetRole = (isUltimateAdmin && actingRole) ? (actingRole as UserRole) : dbMember.role;
+
+        if (currentUser.role !== targetRole) {
+          setCurrentUser(prev => prev ? { ...prev, role: targetRole } : null);
+        }
       }
     }
-  }, [currentMonthId, months, activeTab]);
+  }, [membersList]);
+
+  // Redirect if current activeTab is finance but access is not granted
+  useEffect(() => {
+    if (activeTab === "finance" && currentUser && !canAccessSettlementSheet) {
+      setActiveTab(getIsPreviousMonth() ? "market" : "dashboard");
+    }
+  }, [activeTab, currentUser, canAccessSettlementSheet, currentMonthId]);
+
+  useEffect(() => {
+    if (getIsPreviousMonth()) {
+      const allowed = canAccessSettlementSheet ? ["finance", "market", "menu"] : ["market", "menu"];
+      if (!allowed.includes(activeTab)) {
+        setActiveTab(canAccessSettlementSheet ? "finance" : "market");
+      }
+    }
+  }, [currentMonthId, months, activeTab, canAccessSettlementSheet]);
 
   useEffect(() => {
     if (!currentUser || months.length === 0 || !currentMonthId) return;
@@ -3365,8 +3408,11 @@ export default function App() {
 
   const visibleNavItems = navItems.filter(item => {
     if (getIsPreviousMonth()) {
-      return ["finance", "market", "menu"].includes(item.id);
+      const allowedPrevious = canAccessSettlementSheet ? ["finance", "market", "menu"] : ["market", "menu"];
+      return allowedPrevious.includes(item.id);
     }
+
+    if (item.id === "finance" && !canAccessSettlementSheet) return false;
 
     if (item.id === "democracy" && showResultsInDashboard) return false;
     if (item.id === "audit" && dashboardVisibility && !dashboardVisibility.showAuditLogs) return false;
