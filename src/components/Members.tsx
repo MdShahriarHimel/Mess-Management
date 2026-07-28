@@ -561,9 +561,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
       ? member.memberGlow 
       : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none")));
 
-    const glowStyle = useMemberSettings
+    const rawGlowStyle = useMemberSettings
       ? (member.memberGlowStyle || "")
       : (member.glowStyle || config?.glowStyle || "");
+
+    const glowStyle = (hasGlow && (!rawGlowStyle || rawGlowStyle === "none")) ? "nitro-classic" : rawGlowStyle;
 
     const finalAnimation = useMemberSettings
       ? (member.memberAnimation || "none")
@@ -571,11 +573,13 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
     let cardGlowStyle: React.CSSProperties = {};
     let cardGlowClass = "";
-    if (hasGlow && glowStyle) {
+    if (hasGlow && glowStyle && glowStyle !== "none") {
       if (glowStyle.startsWith("#")) {
         cardGlowStyle = {
-          boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
-          borderColor: `${glowStyle}60`
+          boxShadow: isDarkMode 
+            ? `0 0 24px ${glowStyle}85, 0 0 10px ${glowStyle}55, inset 0 0 12px ${glowStyle}35` 
+            : `0 0 24px ${glowStyle}aa, 0 0 12px ${glowStyle}70, inset 0 0 12px ${glowStyle}30`,
+          borderColor: isDarkMode ? `${glowStyle}dd` : glowStyle
         };
       } else {
         cardGlowClass = `glow-${glowStyle}`;
@@ -586,10 +590,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
       <div 
         key={member.id} 
         onClick={() => { setSelectedMemberForMeals(member); fetchMemberData(member.id); }}
-        className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/30 active:scale-[0.99] ${cardGlowClass} ${
+        className={`relative overflow-hidden p-5 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] hover:shadow-lg hover:border-cyan-500/40 active:scale-[0.99] ${cardGlowClass} ${
           isDarkMode 
-            ? "bg-slate-900/40 border-cyan-500/10 text-white" 
-            : "bg-white border-slate-200 shadow-sm text-slate-800"
+            ? "bg-slate-900/80 border-cyan-500/20 text-white shadow-md backdrop-blur-md" 
+            : "bg-white/95 border-slate-300 shadow-md text-slate-900 backdrop-blur-md"
         }`}
         style={cardGlowStyle}
       >
@@ -601,22 +605,24 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
               <img 
                 src={member.photo} 
                 alt={member.nickname} 
-                className="w-16 h-16 rounded-xl object-cover border border-cyan-500/25"
+                className="w-16 h-16 rounded-xl object-cover border border-cyan-500/30"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-lg font-display uppercase">
+              <div className={`w-16 h-16 rounded-xl border flex items-center justify-center font-bold text-lg font-display uppercase ${
+                isDarkMode ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300" : "bg-cyan-100 border-cyan-400 text-cyan-900"
+              }`}>
                 {member.nickname.slice(0, 2)}
               </div>
             )}
             
             {/* Status Indicator bubble */}
             <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
-              member.status === MemberStatus.ACTIVE ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-              member.status === MemberStatus.AWAY ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-              member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
-              member.status === MemberStatus.PENDING ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse" :
-              "bg-slate-500/10 text-slate-400 border-slate-500/20"
+              member.status === MemberStatus.ACTIVE ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
+              member.status === MemberStatus.AWAY ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
+              member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
+              member.status === MemberStatus.PENDING ? "bg-orange-500/20 text-orange-400 border-orange-500/30 animate-pulse" :
+              "bg-slate-500/20 text-slate-300 border-slate-500/30"
             }`}>
               {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status}
             </span>
@@ -626,15 +632,19 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-start gap-1">
               <div>
-                <h3 className="font-extrabold text-sm truncate flex items-center gap-1.5">
+                <h3 className={`font-extrabold text-sm truncate flex items-center gap-1.5 ${
+                  isDarkMode ? "text-slate-100" : "text-slate-900"
+                }`}>
                   {member.name}
                   {member.id === currentUser.id && (
                     <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase animate-pulse">Me</span>
                   )}
                 </h3>
-                <p className="text-xs text-cyan-400 font-semibold">@{member.nickname}</p>
+                <p className={`text-xs font-bold ${isDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
+                  @{member.nickname}
+                </p>
               </div>
-              <span className={member.id === currentUser.id ? "text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl border transition-all animate-pulse border-cyan-400/30 bg-cyan-500/15 text-cyan-300" : getRoleStyle(displayRole)}>
+              <span className={member.id === currentUser.id ? "text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl border transition-all animate-pulse border-cyan-400/40 bg-cyan-500/20 text-cyan-300" : getRoleStyle(displayRole)}>
                 {member.id === currentUser.id 
                   ? (displayRole === UserRole.MEMBER ? "ME" : `ME (${displayRole.replace("_", " ")})`) 
                   : displayRole.replace("_", " ")}
@@ -642,23 +652,25 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
             </div>
 
             {showFullDetails ? (
-              <div className="mt-3.5 space-y-1.5 text-xs text-slate-400 font-mono">
+              <div className={`mt-3.5 space-y-1.5 text-xs font-mono font-medium ${
+                isDarkMode ? "text-slate-200" : "text-slate-800"
+              }`}>
                 <p className="flex items-center gap-1.5 truncate">
-                  <Mail size={12} className="text-cyan-500/60" />
-                  {displayEmail}
+                  <Mail size={13} className={isDarkMode ? "text-cyan-400 shrink-0" : "text-cyan-600 shrink-0"} />
+                  <span>{displayEmail}</span>
                 </p>
                 <p className="flex items-center gap-1.5 truncate">
-                  <Phone size={12} className="text-cyan-500/60" />
-                  {displayPhone}
+                  <Phone size={13} className={isDarkMode ? "text-cyan-400 shrink-0" : "text-cyan-600 shrink-0"} />
+                  <span>{displayPhone}</span>
                 </p>
                 <p className="flex items-center gap-1.5 text-[11px]">
-                  <Briefcase size={12} className="text-cyan-500/60" />
-                  {member.occupation || "Independent"}
+                  <Briefcase size={13} className={isDarkMode ? "text-cyan-400 shrink-0" : "text-cyan-600 shrink-0"} />
+                  <span>{member.occupation || "Independent"}</span>
                 </p>
               </div>
             ) : (
-              <div className="mt-4 p-2 bg-cyan-500/5 rounded border border-cyan-500/10 text-center">
-                <p className="text-[9px] font-bold text-cyan-400 tracking-wider uppercase animate-pulse">Click Profile to View Meals</p>
+              <div className="mt-4 p-2 bg-cyan-500/10 rounded border border-cyan-500/20 text-center">
+                <p className="text-[9px] font-extrabold text-cyan-500 tracking-wider uppercase animate-pulse">Click Profile to View Meals</p>
               </div>
             )}
           </div>
@@ -666,8 +678,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
         {/* Notes Section */}
         {showFullDetails && member.notes && (
-          <p className={`mt-4 p-2.5 rounded-lg text-[11px] leading-relaxed italic ${
-            isDarkMode ? "bg-slate-950/40 text-slate-400" : "bg-slate-50 text-slate-600"
+          <p className={`mt-4 p-2.5 rounded-lg text-[11px] leading-relaxed italic border ${
+            isDarkMode ? "bg-slate-950/80 border-slate-800 text-slate-200" : "bg-slate-100 border-slate-300 text-slate-800 font-medium"
           }`}>
             &ldquo;{member.notes}&rdquo;
           </p>
@@ -676,14 +688,18 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
         {/* Action buttons footer */}
         <div className="flex items-center gap-1.5 mt-5 pt-4 border-t border-cyan-500/10 justify-between animate-fade-in">
           
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {showFullDetails && (
-              <span className="inline-flex items-center gap-1 text-[10px] bg-cyan-500/5 px-2 py-0.5 rounded border border-cyan-500/15 font-mono text-cyan-300">
+              <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border font-mono font-bold ${
+                isDarkMode ? "bg-cyan-500/20 text-cyan-200 border-cyan-500/40" : "bg-cyan-100 text-cyan-900 border-cyan-300"
+              }`}>
                 <Heart size={10} className="text-orange-500 fill-orange-500" />
                 {member.bloodGroup}
               </span>
             )}
-            <span className="text-[10px] text-slate-500 font-mono">Join: {member.joiningDate}</span>
+            <span className={`text-[10px] font-mono font-medium ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+              Join: {member.joiningDate}
+            </span>
           </div>
 
 
@@ -892,9 +908,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     ? member.memberGlow 
                     : (member.glow || (config?.glow && config?.glowStyle && config?.glowStyle !== "none"));
 
-                  const glowStyle = useMemberSettings
+                  const rawGlowStyle = useMemberSettings
                     ? (member.memberGlowStyle || "")
                     : (member.glowStyle || config?.glowStyle || "");
+
+                  const glowStyle = (hasGlow && (!rawGlowStyle || rawGlowStyle === "none")) ? "nitro-classic" : rawGlowStyle;
 
                   const finalAnimation = useMemberSettings
                     ? (member.memberAnimation || "none")
@@ -902,11 +920,13 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
 
                   let cardGlowStyle: React.CSSProperties = {};
                   let cardGlowClass = "";
-                  if (hasGlow && glowStyle) {
+                  if (hasGlow && glowStyle && glowStyle !== "none") {
                     if (glowStyle.startsWith("#")) {
                       cardGlowStyle = {
-                        boxShadow: isDarkMode ? `0 0 15px ${glowStyle}25` : `0 0 10px ${glowStyle}15`,
-                        borderColor: `${glowStyle}60`
+                        boxShadow: isDarkMode 
+                          ? `0 0 24px ${glowStyle}85, 0 0 10px ${glowStyle}55, inset 0 0 12px ${glowStyle}35` 
+                          : `0 0 24px ${glowStyle}aa, 0 0 12px ${glowStyle}70, inset 0 0 12px ${glowStyle}30`,
+                        borderColor: isDarkMode ? `${glowStyle}dd` : glowStyle
                       };
                     } else {
                       cardGlowClass = `glow-${glowStyle}`;
@@ -2134,8 +2154,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           editingMember.glow && (!editingMember.glowStyle || !editingMember.glowStyle.startsWith("#")) ? `glow-${editingMember.glowStyle}` : ""
                         }`}
                         style={{
-                          boxShadow: editingMember.glow && editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? `0 0 12px ${editingMember.glowStyle}30` : undefined,
-                          borderColor: editingMember.glow && editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? `${editingMember.glowStyle}60` : undefined
+                          boxShadow: editingMember.glow && editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? `0 0 22px ${editingMember.glowStyle}90, 0 0 10px ${editingMember.glowStyle}50` : undefined,
+                          borderColor: editingMember.glow && editingMember.glowStyle && editingMember.glowStyle.startsWith("#") ? `${editingMember.glowStyle}dd` : undefined
                         }}
                       >
                         <MicroAnimationOverlay animationType={editingMember.animation} />

@@ -208,6 +208,9 @@ const INITIAL_FOOD_SEED = [
   { label: "সবজি", category: "Vegetables", aliases: ["sobji", "vegetable", "সবজী", "নিরামিষ"] },
 ];
 
+// Global rate-limit cooldown tracker to avoid spamming Gemini when 429 RESOURCE_EXHAUSTED is hit
+let geminiCooldownUntil = 0;
+
 /**
  * Initialize Cache from database or seed it if empty
  */
@@ -374,6 +377,24 @@ export async function learnUnknownFoods(phrases: string[]): Promise<{
 }> {
   if (phrases.length === 0) return { learned: [], queued: [] };
 
+  if (Date.now() < geminiCooldownUntil) {
+    console.warn(`[Gemini Teacher] Gemini rate limit cooldown active. Queuing ${phrases.length} phrases directly.`);
+    const timestamp = new Date().toISOString();
+    for (const p of phrases) {
+      try {
+        await db.insert(foodReviewQueue).values({
+          id: "review_" + generateUUID(),
+          phrase: p,
+          detectedFood: "Rate-limited",
+          confidence: 0.0,
+          timestamp,
+          status: "PENDING",
+        }).onConflictDoNothing();
+      } catch (err) {}
+    }
+    return { learned: [], queued: phrases.map(p => ({ phrase: p, confidence: 0 })) };
+  }
+
   const prompt = `You are a culinary expert on Bengali foods and daily meal menus.
 Analyze the following list of raw food phrases from a meal menu dashboard.
 For each phrase, identify:
@@ -514,8 +535,14 @@ Return a strict JSON array conforming to the schema.`;
 
     console.log(`[Gemini Teacher] Finished teaching pipeline: Cataloged ${learnedList.length} foods automatically; Sent ${queuedList.length} items to the Review Queue.`);
     return { learned: learnedList, queued: queuedList };
-  } catch (error) {
-    console.error("[Gemini Teacher] Failed to execute Gemini learning pipeline:", error);
+  } catch (error: any) {
+    const isQuota = error?.status === "RESOURCE_EXHAUSTED" || error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("quota") || error?.message?.includes("RESOURCE_EXHAUSTED");
+    if (isQuota) {
+      geminiCooldownUntil = Date.now() + 45000;
+      console.warn(`[Gemini Teacher] Gemini rate limit reached (429/RESOURCE_EXHAUSTED). Entering 45s cooldown.`);
+    } else {
+      console.warn("[Gemini Teacher] Failed to execute Gemini learning pipeline:", error?.message || error);
+    }
     // On error, write original phrases to review queue as PENDING so they are not lost
     const timestamp = new Date().toISOString();
     for (const p of phrases) {
@@ -597,6 +624,10 @@ export async function resolveCanonicalFood(rawName: string): Promise<{ label: st
   }
 
   // Step 4: Gemini AI (Last Resort semantic reasoning)
+  if (Date.now() < geminiCooldownUntil) {
+    return { label: rawName, category: "Other", id: "" };
+  }
+
   try {
     const existingFoods = Array.from(foodCache.values()).map(f => ({
       id: f.id,
@@ -738,8 +769,14 @@ OR if it's a completely different food:
     console.log(`[Food Knowledge] Self-learned new food: Created "${newLabel}" under "${newCategory}"`);
     return { label: newLabel, category: newCategory, id: foodId };
 
-  } catch (error) {
-    console.error("[Food Knowledge] Gemini semantic recognition failed:", error);
+  } catch (error: any) {
+    const isQuota = error?.status === "RESOURCE_EXHAUSTED" || error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("quota") || error?.message?.includes("RESOURCE_EXHAUSTED");
+    if (isQuota) {
+      geminiCooldownUntil = Date.now() + 45000;
+      console.warn(`[Food Knowledge] Gemini rate limit reached (429/RESOURCE_EXHAUSTED) for "${rawName}". Entering 45s cooldown.`);
+    } else {
+      console.warn(`[Food Knowledge] Gemini semantic recognition failed for "${rawName}":`, error?.message || error);
+    }
     // Graceful fallback to raw input in case of Gemini errors
     return { label: rawName, category: "Other", id: "" };
   }

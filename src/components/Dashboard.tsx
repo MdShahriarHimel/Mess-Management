@@ -36,6 +36,9 @@ interface DashboardProps {
     accentColor?: string;
     showQuickActions?: boolean;
     showBanner?: boolean;
+    showNoticeBoard?: boolean;
+    customNoticeTitle?: string;
+    noticeBoardSize?: string;
   };
   elections?: any;
   membersListProp?: Member[];
@@ -655,96 +658,106 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* Top Section: Hostel Notice Board */}
-      {activeNotices.length > 0 && (
+      {/* Top Section: Compact Hostel Notice Board */}
+      {activeNotices.length > 0 && homeCustomization?.showNoticeBoard !== false && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in" id="dashboard-top-section">
           
-          {/* Notice Board at top (full width of the grid row) */}
-          <div className={`md:col-span-3 p-5 rounded-2xl border flex flex-col justify-between ${
+          {/* Compact Notice Board at top */}
+          <div className={`md:col-span-3 p-3.5 sm:p-4 rounded-xl border flex flex-col justify-between ${
             isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 text-slate-800 shadow-sm"
           }`}>
             <div>
-              <div className="flex justify-between items-center mb-3 border-b border-cyan-500/5 pb-2">
-                <h3 className="text-xs font-bold font-display uppercase tracking-wider text-orange-500 flex items-center gap-1.5">
-                  <Bell size={14} className="text-cyan-400 animate-bounce" />
-                  Hostel Notice Board
-                </h3>
+              <div className="flex justify-between items-center mb-2.5 border-b border-cyan-500/10 pb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-bold font-display uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                    <Bell size={13} className="text-cyan-400 animate-pulse" />
+                    {homeCustomization?.customNoticeTitle || "Hostel Notice Board"}
+                  </h3>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40 text-cyan-300">
+                    {activeNotices.length} {activeNotices.length === 1 ? "Notice" : "Notices"} ({pinnedNotices.length} Global)
+                  </span>
+                </div>
                 <button 
                   onClick={() => onNavigateToTab("notices")}
-                  className="text-[10px] text-cyan-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer font-semibold"
                 >
-                  Edit / Create <ArrowRight size={10} />
+                  View All / Manage <ArrowRight size={10} />
                 </button>
               </div>
 
-              <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
-                {/* Pinned notices first */}
+              <div className="space-y-1.5 max-h-[135px] overflow-y-auto pr-1">
+                {/* Pinned Global notices first */}
                 {pinnedNotices.map((notice) => (
                   <div 
                     key={notice.id} 
-                    className={`p-3 rounded-xl border relative transition-all text-xs ${
+                    className={`p-2.5 rounded-lg border relative transition-all text-xs ${
                       isDarkMode 
-                        ? "bg-cyan-950/20 border-cyan-500/20 text-white" 
-                        : "bg-cyan-50/70 border-cyan-200 text-slate-800"
+                        ? "bg-orange-950/20 border-orange-500/20 text-white" 
+                        : "bg-orange-50/70 border-orange-200 text-slate-800"
                     }`}
                   >
-                    <div className="absolute right-2 top-2 flex items-center gap-1.5 text-cyan-400">
-                      <Pin size={12} className="rotate-45" />
-                      {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
-                        <button 
-                          onClick={() => handleDeleteNotice(notice.id)}
-                          className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded animate-fade-in"
-                          title="Delete notice"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[8px] font-mono font-bold text-orange-400 bg-orange-950/50 px-1.5 py-0.5 rounded border border-orange-500/30 uppercase flex items-center gap-1">
+                          <Pin size={9} className="rotate-45" /> GLOBAL PINNED
+                        </span>
+                        <h4 className="font-bold text-cyan-300 text-xs">{notice.title}</h4>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-slate-400 text-[10px] shrink-0 font-mono">
+                        <span>{notice.date}</span>
+                        {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
+                          <button 
+                            onClick={() => handleDeleteNotice(notice.id)}
+                            className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded"
+                            title="Delete notice"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-[8px] font-mono font-bold text-orange-500 uppercase">PINNED</span>
-                    <h4 className="font-bold text-cyan-300">{notice.title}</h4>
-                    <p className={`text-[11px] mt-1 leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                    <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
                       {notice.content}
                     </p>
-                    <div className="flex items-center gap-2 mt-2 text-[9px] text-slate-500 font-mono">
-                      <span>By {notice.authorName}</span>
-                      <span>•</span>
-                      <span>{notice.date}</span>
+                    <div className="text-[9px] text-slate-500 font-mono mt-1">
+                      By {notice.authorName}
                     </div>
                   </div>
                 ))}
 
-                {/* General notices */}
+                {/* Mess specific notices */}
                 {generalNotices.map((notice) => (
                   <div 
                     key={notice.id} 
-                    className={`p-3 rounded-xl border relative transition-all text-xs ${
+                    className={`p-2.5 rounded-lg border relative transition-all text-xs ${
                       isDarkMode ? "bg-slate-950/40 border-slate-800 text-white" : "bg-white border-slate-100 text-slate-800"
                     }`}
                   >
-                    <div className="absolute right-2 top-2 flex items-center gap-1 text-slate-500">
-                      {notice.isDirectToManager && (
-                        <span className="text-[8px] font-bold text-rose-400 bg-rose-950/30 px-1.5 py-0.5 rounded mr-1">
-                          DIRECT TO MANAGER✉
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[8px] font-mono font-bold text-cyan-400 bg-cyan-950/50 px-1.5 py-0.5 rounded border border-cyan-800/40 uppercase">
+                          MESS NOTICE
                         </span>
-                      )}
-                      {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
-                        <button 
-                          onClick={() => handleDeleteNotice(notice.id)}
-                          className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded animate-fade-in"
-                          title="Delete notice"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
+                        <h4 className="font-bold text-slate-200 text-xs">{notice.title}</h4>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-slate-400 text-[10px] shrink-0 font-mono">
+                        <span>{notice.date}</span>
+                        {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
+                          <button 
+                            onClick={() => handleDeleteNotice(notice.id)}
+                            className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded"
+                            title="Delete notice"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <h4 className="font-bold text-slate-200">{notice.title}</h4>
-                    <p className={`text-[11px] mt-1 leading-relaxed ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
+                    <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                       {notice.content}
                     </p>
-                    <div className="flex items-center gap-2 mt-2 text-[9px] text-slate-500 font-mono">
-                      <span>By {notice.authorName}</span>
-                      <span>•</span>
-                      <span>{notice.date}</span>
+                    <div className="text-[9px] text-slate-500 font-mono mt-1">
+                      By {notice.authorName}
                     </div>
                   </div>
                 ))}

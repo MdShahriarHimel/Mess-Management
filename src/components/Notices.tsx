@@ -169,9 +169,13 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
             <div>
               <div className="flex justify-between items-start">
                 <span className={`text-[9px] font-bold tracking-widest uppercase ${
-                  notice.isDirectToManager ? "text-rose-400" : notice.pinned ? "text-orange-500" : "text-slate-500"
+                  notice.isDirectToManager ? "text-rose-400 bg-rose-950/30 px-1.5 py-0.5 rounded" : 
+                  (notice.isGlobal || notice.pinned) ? "text-orange-400 bg-orange-950/30 px-1.5 py-0.5 rounded" : 
+                  "text-cyan-400 bg-cyan-950/30 px-1.5 py-0.5 rounded"
                 }`}>
-                  {notice.isDirectToManager ? "DIRECT NOTICE TO MANAGER ✉" : notice.pinned ? "PINNED BULLETIN" : "GENERAL BULLETIN"}
+                  {notice.isDirectToManager ? "DIRECT NOTICE TO MANAGER ✉" : 
+                   (notice.isGlobal || notice.pinned) ? "GLOBAL PINNED BULLETIN 📌" : 
+                   "MESS BULLETIN 🏠"}
                 </span>
                 {notice.archived && (
                   <span className="text-[9px] font-bold tracking-widest text-slate-500 uppercase bg-slate-800 px-1.5 py-0.5 rounded">

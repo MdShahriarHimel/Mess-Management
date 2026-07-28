@@ -4997,6 +4997,10 @@ export default function App() {
               <UnifiedSettingsDashboard
                 loginCustomization={loginCustomization}
                 setLoginCustomization={setLoginCustomization}
+                dashboardVisibility={dashboardVisibility}
+                setDashboardVisibility={setDashboardVisibility}
+                homeCustomization={homeCustomization}
+                setHomeCustomization={setHomeCustomization}
                 currentUser={currentUser}
                 isDarkMode={activeIsDarkMode}
                 setIsDarkMode={setIsDarkMode}

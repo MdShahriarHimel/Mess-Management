@@ -163,6 +163,8 @@ export interface Notice {
   authorName: string;
   date: string;
   isDirectToManager?: boolean;
+  messId?: string;
+  isGlobal?: boolean;
 }
 
 export interface AuditLog {

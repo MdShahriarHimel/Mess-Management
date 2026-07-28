@@ -61,49 +61,49 @@
 }
 
 /* ==========================================
-   10 CUSTOM GLOWING EFFECTS KEYFRAMES & CLASSES
+   10+ CUSTOM GLOWING EFFECTS KEYFRAMES & CLASSES
    ========================================== */
 
 /* 1. Golden Aura */
 @keyframes goldenAuraPulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(251, 191, 36, 0.35), inset 0 0 6px rgba(251, 191, 36, 0.15);
-    border-color: rgba(251, 191, 36, 0.55);
+    box-shadow: 0 0 18px rgba(234, 179, 8, 0.75), 0 0 6px rgba(234, 179, 8, 0.5), inset 0 0 8px rgba(234, 179, 8, 0.3);
+    border-color: #eab308;
   }
   50% {
-    box-shadow: 0 0 28px rgba(251, 191, 36, 0.85), inset 0 0 14px rgba(251, 191, 36, 0.35);
-    border-color: rgba(251, 191, 36, 0.95);
+    box-shadow: 0 0 36px rgba(234, 179, 8, 1), 0 0 14px rgba(250, 204, 21, 0.85), inset 0 0 16px rgba(234, 179, 8, 0.5);
+    border-color: #facc15;
   }
 }
 .glow-golden-aura {
   animation: goldenAuraPulse 3s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 2. Volcanic Flame */
 @keyframes volcanicFlameShift {
   0%, 100% {
-    box-shadow: 0 -4px 14px rgba(239, 68, 68, 0.55), 0 4px 14px rgba(249, 115, 22, 0.35);
+    box-shadow: 0 -4px 20px rgba(239, 68, 68, 0.85), 0 4px 20px rgba(249, 115, 22, 0.65), inset 0 0 8px rgba(239, 68, 68, 0.3);
     border-color: #ef4444;
   }
   50% {
-    box-shadow: 0 -10px 28px rgba(239, 68, 68, 0.85), 0 8px 24px rgba(249, 115, 22, 0.65);
+    box-shadow: 0 -12px 36px rgba(239, 68, 68, 1), 0 10px 32px rgba(249, 115, 22, 0.9), inset 0 0 18px rgba(249, 115, 22, 0.5);
     border-color: #f97316;
   }
 }
 .glow-volcanic-flame {
   animation: volcanicFlameShift 2s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 3. Cyberpunk Neon */
 @keyframes cyberpunkNeonPulse {
   0%, 100% {
-    box-shadow: 0 0 10px #06b6d4, 0 0 18px #ec4899;
+    box-shadow: 0 0 18px #06b6d4, 0 0 28px #ec4899, inset 0 0 10px rgba(6, 182, 212, 0.4);
     border-color: #06b6d4;
   }
   50% {
-    box-shadow: 0 0 24px #ec4899, 0 0 34px #06b6d4;
+    box-shadow: 0 0 36px #ec4899, 0 0 46px #06b6d4, inset 0 0 18px rgba(236, 72, 153, 0.5);
     border-color: #ec4899;
   }
 }
@@ -115,79 +115,75 @@
 /* 4. Emerald Ripple */
 @keyframes emeraldRipplePulse {
   0%, 100% {
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.25), 0 0 0 0px rgba(16, 185, 129, 0.2);
-    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 0 18px rgba(16, 185, 129, 0.75), inset 0 0 8px rgba(16, 185, 129, 0.35);
+    border-color: #10b981;
   }
   50% {
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.65), 0 0 0 10px rgba(16, 185, 129, 0);
-    border-color: rgba(16, 185, 129, 0.95);
+    box-shadow: 0 0 34px rgba(16, 185, 129, 1), 0 0 0 14px rgba(16, 185, 129, 0), inset 0 0 18px rgba(52, 211, 153, 0.55);
+    border-color: #34d399;
   }
 }
 .glow-emerald-ripple {
   animation: emeraldRipplePulse 3s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 5. Solar Flare */
 @keyframes solarFlarePulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.75), inset 0 0 10px rgba(245, 158, 11, 0.35);
     border-color: #f59e0b;
-    filter: brightness(0.95);
   }
   50% {
-    box-shadow: 0 0 32px rgba(245, 158, 11, 0.9);
+    box-shadow: 0 0 42px rgba(245, 158, 11, 1), 0 0 16px rgba(251, 191, 36, 0.85), inset 0 0 20px rgba(251, 191, 36, 0.6);
     border-color: #fbbf24;
-    filter: brightness(1.1);
   }
 }
 .glow-solar-flare {
   animation: solarFlarePulse 1.8s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 6. Cosmic Nebula */
 @keyframes cosmicNebulaShift {
   0%, 100% {
-    box-shadow: 0 0 16px rgba(139, 92, 246, 0.45), 0 0 6px rgba(59, 130, 246, 0.35);
+    box-shadow: 0 0 22px rgba(139, 92, 246, 0.8), 0 0 12px rgba(59, 130, 246, 0.65), inset 0 0 10px rgba(139, 92, 246, 0.35);
     border-color: #8b5cf6;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(88, 28, 135, 0.2) 100%);
   }
   50% {
-    box-shadow: 0 0 32px rgba(236, 72, 153, 0.55), 0 0 18px rgba(59, 130, 246, 0.55);
+    box-shadow: 0 0 42px rgba(236, 72, 153, 0.95), 0 0 26px rgba(59, 130, 246, 0.85), inset 0 0 20px rgba(236, 72, 153, 0.55);
     border-color: #ec4899;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 58, 138, 0.3) 100%);
   }
 }
 .glow-cosmic-nebula {
   animation: cosmicNebulaShift 4s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 7. Deep Ocean Glow */
 @keyframes deepOceanPulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(29, 78, 216, 0.35), 0 0 6px rgba(6, 182, 212, 0.25);
+    box-shadow: 0 0 20px rgba(29, 78, 216, 0.75), 0 0 12px rgba(6, 182, 212, 0.55), inset 0 0 10px rgba(29, 78, 216, 0.35);
     border-color: #1d4ed8;
   }
   50% {
-    box-shadow: 0 0 28px rgba(29, 78, 216, 0.75), 0 0 18px rgba(6, 182, 212, 0.65);
+    box-shadow: 0 0 38px rgba(29, 78, 216, 1), 0 0 26px rgba(6, 182, 212, 0.9), inset 0 0 20px rgba(6, 182, 212, 0.55);
     border-color: #06b6d4;
   }
 }
 .glow-deep-ocean {
   animation: deepOceanPulse 3.5s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 8. Ruby Laser */
 @keyframes rubyLaserPulse {
   0%, 100% {
-    box-shadow: 0 0 6px #be123c, 0 0 12px #e11d48;
+    box-shadow: 0 0 14px #be123c, 0 0 22px #e11d48, inset 0 0 10px rgba(225, 29, 72, 0.35);
     border-color: #be123c;
   }
   50% {
-    box-shadow: 0 0 20px #f43f5e, 0 0 28px #e11d48;
+    box-shadow: 0 0 32px #f43f5e, 0 0 42px #e11d48, inset 0 0 20px rgba(244, 63, 94, 0.55);
     border-color: #f43f5e;
   }
 }
@@ -199,34 +195,33 @@
 /* 9. Velvet Pulse */
 @keyframes velvetPulseShift {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(109, 40, 217, 0.35), inset 0 0 6px rgba(109, 40, 217, 0.15);
+    box-shadow: 0 0 20px rgba(109, 40, 217, 0.75), inset 0 0 12px rgba(109, 40, 217, 0.4);
     border-color: #6d28d9;
   }
   50% {
-    box-shadow: 0 0 28px rgba(109, 40, 217, 0.8), inset 0 0 14px rgba(109, 40, 217, 0.45);
+    box-shadow: 0 0 42px rgba(109, 40, 217, 1), inset 0 0 22px rgba(167, 139, 250, 0.65);
     border-color: #a78bfa;
   }
 }
 .glow-velvet-pulse {
   animation: velvetPulseShift 2.8s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 10. Amethyst Shimmer */
 @keyframes amethystShimmerShift {
   0%, 100% {
-    box-shadow: 0 0 14px rgba(167, 139, 250, 0.35);
+    box-shadow: 0 0 22px rgba(167, 139, 250, 0.75), inset 0 0 10px rgba(167, 139, 250, 0.35);
     border-color: #a78bfa;
   }
   50% {
-    box-shadow: 0 0 30px rgba(192, 132, 252, 0.85);
+    box-shadow: 0 0 42px rgba(192, 132, 252, 1), inset 0 0 20px rgba(192, 132, 252, 0.55);
     border-color: #c084fc;
   }
 }
 .glow-amethyst-shimmer {
   animation: amethystShimmerShift 3s infinite ease-in-out;
-  background-image: linear-gradient(45deg, rgba(167, 139, 250, 0.05), rgba(192, 132, 252, 0.15)) !important;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 
@@ -278,14 +273,12 @@
 /* 1. Nitro Classic Glow */
 @keyframes nitroClassicPulse {
   0%, 100% {
-    box-shadow: 0 0 10px rgba(255, 115, 250, 0.5), 0 0 20px rgba(78, 156, 255, 0.3);
+    box-shadow: 0 0 16px rgba(255, 115, 250, 0.75), 0 0 28px rgba(78, 156, 255, 0.5), inset 0 0 10px rgba(255, 115, 250, 0.3);
     border-color: #ff73fa;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(255, 115, 250, 0.1) 100%);
   }
   50% {
-    box-shadow: 0 0 25px rgba(255, 115, 250, 0.95), 0 0 35px rgba(78, 156, 255, 0.8);
+    box-shadow: 0 0 36px rgba(255, 115, 250, 1), 0 0 46px rgba(78, 156, 255, 0.95), inset 0 0 20px rgba(78, 156, 255, 0.5);
     border-color: #4e9cff;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(78, 156, 255, 0.15) 100%);
   }
 }
 .glow-nitro-classic {
@@ -297,34 +290,33 @@
 @keyframes nitroBoostShimmer {
   0% {
     background-position: 0% 50%;
-    box-shadow: 0 0 12px rgba(114, 137, 218, 0.4);
+    box-shadow: 0 0 18px rgba(114, 137, 218, 0.65);
     border-color: #7289da;
   }
   50% {
-    box-shadow: 0 0 28px rgba(114, 137, 218, 0.9), 0 0 15px rgba(235, 69, 158, 0.6);
+    box-shadow: 0 0 38px rgba(114, 137, 218, 1), 0 0 22px rgba(235, 69, 158, 0.85);
     border-color: #eb459e;
   }
   100% {
     background-position: 100% 50%;
-    box-shadow: 0 0 12px rgba(114, 137, 218, 0.4);
+    box-shadow: 0 0 18px rgba(114, 137, 218, 0.65);
     border-color: #7289da;
   }
 }
 .glow-nitro-boost {
   animation: nitroBoostShimmer 4s infinite linear;
   background-size: 200% 200%;
-  background-image: linear-gradient(45deg, rgba(114,137,218,0.1), rgba(235,69,158,0.15), rgba(114,137,218,0.1)) !important;
   border-width: 2px !important;
 }
 
 /* 3. Cyberpunk Grid Laser */
 @keyframes cyberLaserMove {
   0%, 100% {
-    box-shadow: 0 0 8px #f43f5e, inset 0 0 4px #f43f5e;
+    box-shadow: 0 0 14px #f43f5e, inset 0 0 8px #f43f5e;
     border-color: #f43f5e;
   }
   50% {
-    box-shadow: 0 0 22px #06b6d4, inset 0 0 10px #06b6d4;
+    box-shadow: 0 0 32px #06b6d4, inset 0 0 16px #06b6d4;
     border-color: #06b6d4;
   }
 }
@@ -335,13 +327,13 @@
 
 /* 4. Prismatic Rainbow */
 @keyframes prismaticRainbowShift {
-  0% { border-color: #ff0000; box-shadow: 0 0 12px rgba(255,0,0,0.5); }
-  17% { border-color: #ff7f00; box-shadow: 0 0 12px rgba(255,127,0,0.5); }
-  33% { border-color: #ffff00; box-shadow: 0 0 12px rgba(255,255,0,0.5); }
-  50% { border-color: #00ff00; box-shadow: 0 0 12px rgba(0,255,0,0.5); }
-  67% { border-color: #0000ff; box-shadow: 0 0 12px rgba(0,0,255,0.5); }
-  84% { border-color: #4b0082; box-shadow: 0 0 12px rgba(75,0,130,0.5); }
-  100% { border-color: #ff0000; box-shadow: 0 0 12px rgba(255,0,0,0.5); }
+  0% { border-color: #ff0000; box-shadow: 0 0 18px rgba(255,0,0,0.75); }
+  17% { border-color: #ff7f00; box-shadow: 0 0 18px rgba(255,127,0,0.75); }
+  33% { border-color: #ffff00; box-shadow: 0 0 18px rgba(255,255,0,0.75); }
+  50% { border-color: #00ff00; box-shadow: 0 0 18px rgba(0,255,0,0.75); }
+  67% { border-color: #0000ff; box-shadow: 0 0 18px rgba(0,0,255,0.75); }
+  84% { border-color: #a855f7; box-shadow: 0 0 18px rgba(168,85,247,0.75); }
+  100% { border-color: #ff0000; box-shadow: 0 0 18px rgba(255,0,0,0.75); }
 }
 .glow-rainbow-shimmer {
   animation: prismaticRainbowShift 6s infinite linear;
@@ -351,14 +343,12 @@
 /* 5. Frozen Frostbite */
 @keyframes frozenFrostbitePulse {
   0%, 100% {
-    box-shadow: 0 0 10px rgba(186, 230, 253, 0.4), inset 0 0 4px rgba(186, 230, 253, 0.2);
+    box-shadow: 0 0 16px rgba(186, 230, 253, 0.65), inset 0 0 8px rgba(186, 230, 253, 0.35);
     border-color: #bae6fd;
-    background-color: rgba(15, 23, 42, 0.9);
   }
   50% {
-    box-shadow: 0 0 26px rgba(56, 189, 248, 0.9), inset 0 0 12px rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 36px rgba(56, 189, 248, 1), inset 0 0 18px rgba(56, 189, 248, 0.6);
     border-color: #38bdf8;
-    background-color: rgba(12, 74, 110, 0.2);
   }
 }
 .glow-frozen-frost {
@@ -369,14 +359,12 @@
 /* 6. Royal Gold Majesty */
 @keyframes royalGoldPulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(234, 179, 8, 0.4), 0 0 2px rgba(234, 179, 8, 0.2);
+    box-shadow: 0 0 18px rgba(234, 179, 8, 0.65), 0 0 6px rgba(234, 179, 8, 0.4);
     border-color: #eab308;
-    background-image: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(234,179,8,0.03)) !important;
   }
   50% {
-    box-shadow: 0 0 32px rgba(234, 179, 8, 0.95), 0 0 12px rgba(253, 224, 71, 0.6);
+    box-shadow: 0 0 42px rgba(234, 179, 8, 1), 0 0 18px rgba(253, 224, 71, 0.85);
     border-color: #fde047;
-    background-image: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(234,179,8,0.08)) !important;
   }
 }
 .glow-royal-majesty {
@@ -387,45 +375,43 @@
 /* 7. Sakura Blossom Wave */
 @keyframes sakuraBlossomWave {
   0%, 100% {
-    box-shadow: 0 0 10px rgba(244, 63, 94, 0.35);
+    box-shadow: 0 0 16px rgba(244, 63, 94, 0.65);
     border-color: #f43f5e;
   }
   50% {
-    box-shadow: 0 0 26px rgba(251, 113, 133, 0.85);
+    box-shadow: 0 0 36px rgba(251, 113, 133, 0.95);
     border-color: #fb7185;
   }
 }
 .glow-sakura-blossom {
   animation: sakuraBlossomWave 2.8s infinite ease-in-out;
-  background-image: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(244,63,94,0.06) 100%) !important;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 8. Dark Matter Singularity */
 @keyframes darkMatterPulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(124, 58, 237, 0.3), 0 0 4px rgba(219, 39, 119, 0.1);
+    box-shadow: 0 0 18px rgba(124, 58, 237, 0.65), 0 0 8px rgba(219, 39, 119, 0.45);
     border-color: #7c3aed;
   }
   50% {
-    box-shadow: 0 0 30px rgba(124, 58, 237, 0.7), 0 0 18px rgba(219, 39, 119, 0.5);
+    box-shadow: 0 0 40px rgba(124, 58, 237, 0.95), 0 0 24px rgba(219, 39, 119, 0.85);
     border-color: #db2714;
   }
 }
 .glow-dark-matter {
   animation: darkMatterPulse 3.5s infinite ease-in-out;
-  background-color: rgba(3, 7, 18, 0.95) !important;
   border-width: 2px !important;
 }
 
 /* 9. Supernova Blast */
 @keyframes supernovaBlastPulse {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(249, 115, 22, 0.4);
+    box-shadow: 0 0 18px rgba(249, 115, 22, 0.65);
     border-color: #f97316;
   }
   50% {
-    box-shadow: 0 0 34px rgba(239, 68, 68, 0.95), 0 0 14px rgba(234, 179, 8, 0.6);
+    box-shadow: 0 0 42px rgba(239, 68, 68, 1), 0 0 20px rgba(234, 179, 8, 0.85);
     border-color: #ef4444;
   }
 }
@@ -437,37 +423,37 @@
 /* 10. Emerald Matrix Rain */
 @keyframes matrixRainPulse {
   0%, 100% {
-    box-shadow: 0 0 8px rgba(34, 197, 94, 0.4), inset 0 0 4px rgba(34, 197, 94, 0.2);
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.65), inset 0 0 8px rgba(34, 197, 94, 0.35);
     border-color: #22c55e;
   }
   50% {
-    box-shadow: 0 0 24px rgba(34, 197, 94, 0.85), inset 0 0 10px rgba(34, 197, 94, 0.45);
+    box-shadow: 0 0 34px rgba(34, 197, 94, 1), inset 0 0 16px rgba(34, 197, 94, 0.6);
     border-color: #4ade80;
   }
 }
 .glow-matrix-rain {
   animation: matrixRainPulse 2s infinite ease-in-out;
-  border-width: 1.5px !important;
+  border-width: 2px !important;
 }
 
 /* 11. Electric Storm */
 @keyframes electricStormFlicker {
   0%, 100% {
-    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4), 0 0 12px rgba(129, 140, 248, 0.2);
+    box-shadow: 0 0 14px rgba(99, 102, 241, 0.65), 0 0 18px rgba(129, 140, 248, 0.45);
     border-color: #6366f1;
     opacity: 0.98;
   }
   45% {
-    box-shadow: 0 0 10px rgba(99, 102, 241, 0.45), 0 0 14px rgba(129, 140, 248, 0.25);
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.7), 0 0 20px rgba(129, 140, 248, 0.5);
     border-color: #6366f1;
   }
   50% {
-    box-shadow: 0 0 28px rgba(99, 102, 241, 0.95), 0 0 32px rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 38px rgba(99, 102, 241, 1), 0 0 42px rgba(255, 255, 255, 0.9);
     border-color: #ffffff;
     opacity: 1;
   }
   55% {
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.5), 0 0 16px rgba(129, 140, 248, 0.3);
+    box-shadow: 0 0 18px rgba(99, 102, 241, 0.75), 0 0 22px rgba(129, 140, 248, 0.55);
     border-color: #818cf8;
   }
 }
@@ -480,23 +466,22 @@
 @keyframes retroSunsetHorizon {
   0% {
     background-position: 0% 50%;
-    box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+    box-shadow: 0 0 18px rgba(168, 85, 247, 0.65);
     border-color: #a855f7;
   }
   50% {
-    box-shadow: 0 0 28px rgba(236, 72, 153, 0.85), 0 0 14px rgba(249, 115, 22, 0.6);
+    box-shadow: 0 0 38px rgba(236, 72, 153, 0.95), 0 0 22px rgba(249, 115, 22, 0.85);
     border-color: #ec4899;
   }
   100% {
     background-position: 100% 50%;
-    box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+    box-shadow: 0 0 18px rgba(168, 85, 247, 0.65);
     border-color: #f97316;
   }
 }
 .glow-retro-horizon {
   animation: retroSunsetHorizon 5s infinite linear;
   background-size: 200% 200%;
-  background-image: linear-gradient(90deg, rgba(168,85,247,0.1), rgba(236,72,153,0.15), rgba(249,115,22,0.1)) !important;
   border-width: 2px !important;
 }
 
@@ -620,13 +605,18 @@ div[class*="glow-"]::before {
   z-index: 1;
   pointer-events: none;
   border-radius: inherit;
-  opacity: 0.8;
-  mix-blend-mode: color-dodge;
+  opacity: 0.45;
+  transition: opacity 0.3s ease;
 }
 
-/* Ensure text legibility in dark mode */
 .dark div[class*="glow-"]::before {
-  opacity: 0.6;
+  opacity: 0.65;
+  mix-blend-mode: screen;
+}
+
+:not(.dark) div[class*="glow-"]::before {
+  opacity: 0.45;
+  mix-blend-mode: normal;
 }
 
 @keyframes premiumMesh {
@@ -635,52 +625,92 @@ div[class*="glow-"]::before {
   100% { background-position: 0% 50%; }
 }
 
-.glow-royal-majesty::before {
-  background: radial-gradient(circle at top right, rgba(251, 191, 36, 0.4), transparent 60%), radial-gradient(circle at bottom left, rgba(217, 119, 6, 0.4), transparent 60%); animation: premiumMesh 4s infinite alternate ease-in-out;
-}
-
-.glow-sakura-blossom::before {
-  background: linear-gradient(135deg, rgba(244,63,94,0.3) 0%, rgba(251,113,133,0.1) 50%, rgba(225,29,72,0.3) 100%); background-size: 200% 200%; animation: premiumMesh 3s infinite ease-in-out;
-}
-
-.glow-dark-matter::before {
-  background: linear-gradient(45deg, rgba(124, 58, 237, 0.4), rgba(219, 39, 119, 0.1), rgba(76, 29, 149, 0.4)); background-size: 200% 200%; animation: premiumMesh 5s infinite ease-in-out;
-}
-
-.glow-supernova::before {
-  background: radial-gradient(circle at center, rgba(249, 115, 22, 0.3) 0%, rgba(239, 68, 68, 0.1) 50%, transparent 100%); animation: premiumMesh 2s infinite ease-in-out;
-}
-
-.glow-matrix-rain::before {
-  background: linear-gradient(180deg, rgba(34, 197, 94, 0.2) 0%, rgba(21, 128, 61, 0.05) 50%, rgba(34, 197, 94, 0.2) 100%); background-size: 100% 200%; animation: premiumMesh 3s infinite linear;
-}
-
-.glow-electric-storm::before {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(129, 140, 248, 0.1), rgba(67, 56, 202, 0.3)); background-size: 200% 200%; animation: premiumMesh 1.5s infinite ease-in-out;
-}
-
-.glow-retro-horizon::before {
-  background: linear-gradient(180deg, rgba(236, 72, 153, 0.2) 0%, transparent 50%, rgba(139, 92, 246, 0.3) 100%);
-}
-
-.glow-nitro-classic::before {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.2), rgba(99, 102, 241, 0.3)); background-size: 200% 200%; animation: premiumMesh 4s infinite ease-in-out;
-}
-
-.glow-nitro-boost::before {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.4), rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.4)); background-size: 200% 200%; animation: premiumMesh 3s infinite ease-in-out;
-}
-
-.glow-cyber-laser::before {
-  background: linear-gradient(90deg, rgba(6, 182, 212, 0.3), rgba(236, 72, 153, 0.1), rgba(6, 182, 212, 0.3)); background-size: 200% 100%; animation: premiumMesh 2s infinite linear;
-}
-
 .glow-golden-aura::before {
-  background: radial-gradient(circle at center, rgba(253, 224, 71, 0.4), rgba(234, 179, 8, 0.1), transparent); animation: premiumMesh 3s infinite ease-in-out;
+  background: radial-gradient(circle at center, rgba(253, 224, 71, 0.45), rgba(234, 179, 8, 0.15), transparent); animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-volcanic-flame::before {
+  background: radial-gradient(circle at top right, rgba(239, 68, 68, 0.4), rgba(249, 115, 22, 0.25), transparent 70%); animation: premiumMesh 2.5s infinite ease-in-out;
 }
 
 .glow-cyberpunk-neon::before {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.3), rgba(6, 182, 212, 0.3), rgba(234, 179, 8, 0.3)); background-size: 200% 200%; animation: premiumMesh 3s infinite linear;
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.35), rgba(6, 182, 212, 0.35), rgba(234, 179, 8, 0.2)); background-size: 200% 200%; animation: premiumMesh 3s infinite linear;
+}
+
+.glow-emerald-ripple::before {
+  background: radial-gradient(circle at center, rgba(16, 185, 129, 0.4), rgba(52, 211, 153, 0.15), transparent 70%); animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-solar-flare::before {
+  background: radial-gradient(circle at center, rgba(245, 158, 11, 0.45), rgba(251, 191, 36, 0.2), transparent 70%); animation: premiumMesh 2s infinite ease-in-out;
+}
+
+.glow-cosmic-nebula::before {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(236, 72, 153, 0.25), rgba(59, 130, 246, 0.3)); background-size: 200% 200%; animation: premiumMesh 4s infinite ease-in-out;
+}
+
+.glow-deep-ocean::before {
+  background: linear-gradient(135deg, rgba(29, 78, 216, 0.4), rgba(6, 182, 212, 0.25), rgba(14, 165, 233, 0.3)); background-size: 200% 200%; animation: premiumMesh 3.5s infinite ease-in-out;
+}
+
+.glow-ruby-laser::before {
+  background: radial-gradient(circle at center, rgba(244, 63, 94, 0.4), rgba(225, 29, 72, 0.2), transparent 75%); animation: premiumMesh 1.5s infinite ease-in-out;
+}
+
+.glow-velvet-pulse::before {
+  background: linear-gradient(135deg, rgba(109, 40, 217, 0.4), rgba(167, 139, 250, 0.25)); animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-amethyst-shimmer::before {
+  background: linear-gradient(45deg, rgba(167, 139, 250, 0.35), rgba(192, 132, 252, 0.25)); animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-nitro-classic::before {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(236, 72, 153, 0.25), rgba(99, 102, 241, 0.3)); background-size: 200% 200%; animation: premiumMesh 4s infinite ease-in-out;
+}
+
+.glow-nitro-boost::before {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.4), rgba(168, 85, 247, 0.25), rgba(236, 72, 153, 0.3)); background-size: 200% 200%; animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-cyber-laser::before {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.35), rgba(236, 72, 153, 0.2), rgba(6, 182, 212, 0.35)); background-size: 200% 100%; animation: premiumMesh 2s infinite linear;
+}
+
+.glow-rainbow-shimmer::before {
+  background: linear-gradient(90deg, rgba(255,0,0,0.25), rgba(255,127,0,0.25), rgba(234,179,8,0.25), rgba(34,197,94,0.25), rgba(6,182,212,0.25), rgba(168,85,247,0.25)); background-size: 200% 100%; animation: premiumMesh 5s infinite linear;
+}
+
+.glow-frozen-frost::before {
+  background: radial-gradient(circle at center, rgba(186, 230, 253, 0.45), rgba(56, 189, 248, 0.2), transparent 70%); animation: premiumMesh 2.5s infinite ease-in-out;
+}
+
+.glow-royal-majesty::before {
+  background: radial-gradient(circle at top right, rgba(251, 191, 36, 0.45), transparent 60%), radial-gradient(circle at bottom left, rgba(217, 119, 6, 0.4), transparent 60%); animation: premiumMesh 4s infinite alternate ease-in-out;
+}
+
+.glow-sakura-blossom::before {
+  background: linear-gradient(135deg, rgba(244,63,94,0.35) 0%, rgba(251,113,133,0.15) 50%, rgba(225,29,72,0.35) 100%); background-size: 200% 200%; animation: premiumMesh 3s infinite ease-in-out;
+}
+
+.glow-dark-matter::before {
+  background: linear-gradient(45deg, rgba(124, 58, 237, 0.4), rgba(219, 39, 119, 0.2), rgba(76, 29, 149, 0.4)); background-size: 200% 200%; animation: premiumMesh 5s infinite ease-in-out;
+}
+
+.glow-supernova::before {
+  background: radial-gradient(circle at center, rgba(249, 115, 22, 0.4) 0%, rgba(239, 68, 68, 0.2) 50%, transparent 100%); animation: premiumMesh 2s infinite ease-in-out;
+}
+
+.glow-matrix-rain::before {
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.3) 0%, rgba(21, 128, 61, 0.1) 50%, rgba(34, 197, 94, 0.3) 100%); background-size: 100% 200%; animation: premiumMesh 3s infinite linear;
+}
+
+.glow-electric-storm::before {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(129, 140, 248, 0.15), rgba(67, 56, 202, 0.35)); background-size: 200% 200%; animation: premiumMesh 1.5s infinite ease-in-out;
+}
+
+.glow-retro-horizon::before {
+  background: linear-gradient(180deg, rgba(236, 72, 153, 0.3) 0%, transparent 50%, rgba(139, 92, 246, 0.35) 100%); animation: premiumMesh 4s infinite ease-in-out;
 }
 
 /* Enhance GIF visibility for MicroAnimationOverlay */

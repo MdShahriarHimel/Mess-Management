@@ -1101,11 +1101,13 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
       id: generateUUID(),
       title: `Profile Updated by ${actorName}`,
       content: `${noticeContent} (Mess: ${activeMess})`,
-      pinned: true,
+      pinned: false,
       archived: false,
       authorId: req.user!.id,
       authorName: actorName,
       date: new Date().toISOString().split("T")[0],
+      messId: activeMess,
+      isGlobal: false
     };
 
     if (!db.notices) db.notices = [];
@@ -2196,6 +2198,7 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
   
   const vegCounts: Record<string, number> = {};
   const dishCounts: Record<string, number> = {};
+  const localCanonicalCache = new Map<string, { label: string; category: string; id: string }>();
 
   // Process all planned menu texts asynchronously using our semantic recognition engine
   for (const item of menu) {
@@ -2205,7 +2208,11 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
       const parts = splitMenuText(field);
       for (const part of parts) {
         try {
-          const canonical = await resolveCanonicalFood(part);
+          let canonical = localCanonicalCache.get(part);
+          if (!canonical) {
+            canonical = await resolveCanonicalFood(part);
+            localCanonicalCache.set(part, canonical);
+          }
           if (canonical.label) {
             total++;
             // Aggregate dish distribution using the semantic Canonical Name
@@ -2792,50 +2799,85 @@ router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: 
 });
 
 // ---------------------------------------------------------
+// ---------------------------------------------------------
 // NOTICES API
 // ---------------------------------------------------------
 router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const db = loadDB();
-  const sortedNotices = db.notices
-    .filter(n => n.id !== "notice-uuid-1")
-    .sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return b.date.localeCompare(a.date);
-    });
+  const activeMessId = getActiveMessId();
+  const user = req.user!;
+  
+  const rawNotices = (db.notices || []).filter(n => n.id !== "notice-uuid-1");
+
+  // Ensure automated profile update notices are not pinned
+  rawNotices.forEach(n => {
+    if (n.title && n.title.startsWith("Profile Updated by")) {
+      n.pinned = false;
+    }
+  });
+
+  const scopedNotices = rawNotices.filter(n => {
+    const isGlobal = !!n.isGlobal || n.messId === "global" || (!!n.pinned && (!n.messId || n.messId === "global"));
+    const isCurrentMess = !n.messId || n.messId === activeMessId;
+    const isAuthor = n.authorId === user.id;
+
+    if (n.isDirectToManager) {
+      const isManagerOrAdmin = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER;
+      if (!isManagerOrAdmin && !isAuthor) return false;
+    }
+
+    return isGlobal || isCurrentMess || isAuthor;
+  });
+
+  const sortedNotices = scopedNotices.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return (b.date || "").localeCompare(a.date || "");
+  });
+
   res.json({ notices: sortedNotices });
 });
 
 router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
-  const { title, content, pinned, isDirectToManager } = req.body;
+  const { title, content, pinned, isDirectToManager, isGlobal } = req.body;
   if (!title || !content) {
     res.status(400).json({ error: "Title and content are required" });
     return;
   }
 
-  const isManagerOrSuper = req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.MANAGER;
-  if (!isManagerOrSuper && !isDirectToManager) {
-    res.status(403).json({ error: "Forbidden: Only Managers or Super Users can post general notices." });
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
+  const isManager = user.role === UserRole.MANAGER;
+
+  if (!isAdminOrSuper && !isManager && !isDirectToManager) {
+    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or Admins can post general notices." });
     return;
   }
+
+  const activeMessId = getActiveMessId();
+  const shouldPin = isAdminOrSuper ? !!pinned : false;
+  const shouldGlobal = isAdminOrSuper ? (!!isGlobal || shouldPin) : false;
 
   const db = loadDB();
   const newNotice: Notice = {
     id: generateUUID(),
     title,
     content,
-    pinned: isManagerOrSuper ? !!pinned : false,
+    pinned: shouldPin,
     archived: false,
-    authorId: req.user!.id,
-    authorName: req.user!.nickname,
+    authorId: user.id,
+    authorName: user.nickname,
     date: new Date().toISOString().split("T")[0],
-    isDirectToManager: !!isDirectToManager
+    isDirectToManager: !!isDirectToManager,
+    messId: shouldGlobal ? "global" : activeMessId,
+    isGlobal: shouldGlobal
   };
 
   db.notices.push(newNotice);
   saveDB();
 
-  logAudit(req.user!.id, req.user!.nickname, "CREATE_NOTICE", "None", title, `Published notice: ${title} (Direct to Manager: ${!!isDirectToManager})`);
+  logAudit(user.id, user.nickname, "CREATE_NOTICE", "None", title, `Published notice: ${title} (Mess: ${newNotice.messId}, Global: ${shouldGlobal}, Pinned: ${shouldPin})`);
   res.json({ success: true, notice: newNotice });
 });
 
@@ -2851,24 +2893,41 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   }
 
   const original = db.notices[index];
-  const isManagerOrSuper = req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
-  const isAuthor = original.authorId === req.user!.id;
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
+  const isManager = user.role === UserRole.MANAGER;
+  const isAuthor = original.authorId === user.id;
 
-  if (!isManagerOrSuper && !isAuthor) {
-    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or the author can update this notice." });
+  if (!isAdminOrSuper && !isManager && !isAuthor) {
+    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, Admins, or the author can update this notice." });
     return;
+  }
+
+  let finalUpdates = { ...updates };
+  if (!isAdminOrSuper) {
+    delete finalUpdates.pinned;
+    delete finalUpdates.isGlobal;
+  } else if (finalUpdates.pinned !== undefined) {
+    if (finalUpdates.pinned) {
+      finalUpdates.isGlobal = true;
+      finalUpdates.messId = "global";
+    } else {
+      finalUpdates.isGlobal = false;
+      finalUpdates.messId = getActiveMessId();
+    }
   }
 
   const updatedNotice = {
     ...original,
-    ...updates,
+    ...finalUpdates,
     id: original.id
   };
 
   db.notices[index] = updatedNotice;
   saveDB();
 
-  logAudit(req.user!.id, req.user!.nickname, "UPDATE_NOTICE", original.title, updatedNotice.title, `Updated notice state`);
+  logAudit(user.id, user.nickname, "UPDATE_NOTICE", original.title, updatedNotice.title, `Updated notice state`);
   res.json({ success: true, notice: updatedNotice });
 });
 
@@ -2883,11 +2942,13 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
   }
 
   const notice = db.notices[index];
-  const isManagerOrSuper = req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
-  const isAuthor = notice.authorId === req.user!.id;
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
+  const isAuthor = notice.authorId === user.id;
 
-  if (!isManagerOrSuper && !isAuthor) {
-    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or the author can delete this notice." });
+  if (!isAdminOrSuper && !isAuthor) {
+    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, Admins, or the author can delete this notice." });
     return;
   }
 

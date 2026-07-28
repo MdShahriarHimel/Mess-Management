@@ -32,6 +32,10 @@ interface CreditConfig {
 interface UnifiedSettingsDashboardProps {
   loginCustomization?: any;
   setLoginCustomization?: React.Dispatch<React.SetStateAction<any>>;
+  dashboardVisibility?: any;
+  setDashboardVisibility?: React.Dispatch<React.SetStateAction<any>>;
+  homeCustomization?: any;
+  setHomeCustomization?: React.Dispatch<React.SetStateAction<any>>;
   currentUser: {
     id: string;
     email: string;
@@ -97,6 +101,10 @@ interface UnifiedSettingsDashboardProps {
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
   loginCustomization,
   setLoginCustomization,
+  dashboardVisibility,
+  setDashboardVisibility,
+  homeCustomization,
+  setHomeCustomization,
   currentUser,
   isDarkMode,
   setIsDarkMode,
@@ -156,6 +164,39 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Dashboard Overview local state
+  const [localVisibility, setLocalVisibility] = useState<any>({
+    showAuditLogs: true,
+    showCashDeposit: true,
+    showMealTracker: true,
+    showFoodMenu: true,
+    showNotices: true,
+    showAnalytics: true,
+    showDashboardOverview: true,
+    ...(dashboardVisibility || {})
+  });
+
+  const [localHomeCustomization, setLocalHomeCustomization] = useState<any>({
+    welcomeTitle: "Dashboard Overview",
+    welcomeSubtitle: "BENGAL BACHELOR COOPERATIVE ECOSYSTEM",
+    showBanner: true,
+    showNoticeBoard: true,
+    customNoticeTitle: "Hostel Notice Board",
+    ...(homeCustomization || {})
+  });
+
+  useEffect(() => {
+    if (dashboardVisibility) {
+      setLocalVisibility((prev: any) => ({ ...prev, ...dashboardVisibility }));
+    }
+  }, [dashboardVisibility]);
+
+  useEffect(() => {
+    if (homeCustomization) {
+      setLocalHomeCustomization((prev: any) => ({ ...prev, ...homeCustomization }));
+    }
+  }, [homeCustomization]);
 
   // Hybrid AI Food Knowledge Base States
   const [foodAnalytics, setFoodAnalytics] = useState<any>(null);
@@ -436,6 +477,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   // Tab definitions
   const tabs = [
+    { id: "dashboard-overview", label: "Dashboard Overview", role: "admin", icon: "LayoutDashboard" },
     { id: "branding", label: "ERP Identity", role: "ultimate-admin", icon: "Sparkles" },
     { id: "credit", label: "Credit Panel", role: "ultimate-admin", icon: "Heart" },
     { id: "theme-library", label: "Theme Library", role: "ultimate-admin", icon: "Palette" },
@@ -452,14 +494,15 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   // Filter tabs according to strict role-based separation rules
   const filteredTabs = tabs.filter(tab => {
-    // 1. Platform Owner has unrestricted access to Everything
-    if (isPlatformOwner) {
+    // 1. Platform Owner / Ultimate Admin has unrestricted access to Everything
+    if (isPlatformOwner || isUltimateAdmin) {
       return true;
     }
 
-    // 2. Admin can access specific 9 modules
-    if (currentUser.role === "ADMIN") {
+    // 2. Admin & Superuser can access allowed modules including Dashboard Overview
+    if (currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || currentUser.role === "ASSISTANT_SUPERUSER") {
       const allowedAdminTabs = [
+        "dashboard-overview", // Dashboard Overview Editor
         "branding", // ERP Identity
         "theme-library", // Theme Library
         "mess-appearance", // Mess Appearance
@@ -567,6 +610,151 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         {/* RIGHT CONTENT PANEL */}
         <div className="flex-1 min-w-0">
           
+          {/* DASHBOARD OVERVIEW EDITOR (Admin, Superuser, Ultimate Admin) */}
+          {activeSubTab === "dashboard-overview" && filteredTabs.some(t => t.id === "dashboard-overview") && (
+            <div className={`p-6 rounded-2xl border ${
+              isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+            } space-y-6 text-left`}>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/50 pb-4">
+                <div>
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
+                    <LucideIcons.LayoutDashboard size={18} className="text-cyan-400" />
+                    Dashboard Overview Editor
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Control welcome messaging, widget visibility, notice board size, and landing layout on the main Dashboard Overview.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    const success = await handleUpdateSettings({
+                      dashboardVisibility: localVisibility,
+                      homeCustomization: localHomeCustomization
+                    });
+                    if (success) {
+                      showStatus("success", "Dashboard Overview settings updated successfully!");
+                    } else {
+                      showStatus("error", "Failed to update Dashboard Overview settings.");
+                    }
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/10 shrink-0"
+                >
+                  <LucideIcons.Save size={14} />
+                  SAVE DASHBOARD OVERVIEW
+                </button>
+              </div>
+
+              {/* Master Dashboard Overview Toggle */}
+              <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 flex items-center justify-between gap-4">
+                <div>
+                  <span className="text-xs font-bold text-slate-200 block">Enable Dashboard Overview Page</span>
+                  <span className="text-[10px] text-slate-500">When enabled, members see full landing overview cards; when disabled, a restricted notice is shown.</span>
+                </div>
+                <button
+                  onClick={() => setLocalVisibility((prev: any) => ({ ...prev, showDashboardOverview: !prev.showDashboardOverview }))}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                    localVisibility.showDashboardOverview !== false ? "bg-cyan-500" : "bg-slate-700"
+                  }`}
+                >
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
+                    localVisibility.showDashboardOverview !== false ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Banner Text Customization */}
+              <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-4">
+                <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <LucideIcons.Type size={13} /> Welcome Banner Messaging
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Welcome Title</label>
+                    <input
+                      type="text"
+                      value={localHomeCustomization.welcomeTitle || ""}
+                      onChange={(e) => setLocalHomeCustomization((prev: any) => ({ ...prev, welcomeTitle: e.target.value }))}
+                      placeholder="e.g. Assalamu Alaikum, {nickname}!"
+                      className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Welcome Subtitle</label>
+                    <input
+                      type="text"
+                      value={localHomeCustomization.welcomeSubtitle || ""}
+                      onChange={(e) => setLocalHomeCustomization((prev: any) => ({ ...prev, welcomeSubtitle: e.target.value }))}
+                      placeholder="e.g. BENGAL BACHELOR COOPERATIVE ECOSYSTEM"
+                      className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notice Board Settings */}
+              <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-4">
+                <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <LucideIcons.Bell size={13} /> Hostel Notice Board Settings
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Notice Board Section Title</label>
+                    <input
+                      type="text"
+                      value={localHomeCustomization.customNoticeTitle || "Hostel Notice Board"}
+                      onChange={(e) => setLocalHomeCustomization((prev: any) => ({ ...prev, customNoticeTitle: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-900">
+                    <span className="text-xs font-medium text-slate-300">Show Notice Board Widget</span>
+                    <button
+                      onClick={() => setLocalHomeCustomization((prev: any) => ({ ...prev, showNoticeBoard: !prev.showNoticeBoard }))}
+                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        localHomeCustomization.showNoticeBoard !== false ? "bg-cyan-500" : "bg-slate-700"
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
+                        localHomeCustomization.showNoticeBoard !== false ? "translate-x-5" : "translate-x-0"
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dashboard Modules Visibility Toggles */}
+              <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-3">
+                <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <LucideIcons.Eye size={13} /> Dashboard Overview Modules & Widgets Visibility
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {[
+                    { key: "showMealTracker", label: "Meal Tracker Intake" },
+                    { key: "showAuditLogs", label: "Audit Logs & Activity" },
+                    { key: "showCashDeposit", label: "Cash Deposit Overview" },
+                    { key: "showFoodMenu", label: "Food Menu Summary" },
+                    { key: "showAnalytics", label: "Analytics Bar" },
+                    { key: "showNotices", label: "Notice Board" }
+                  ].map((item) => (
+                    <div key={item.key} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-900">
+                      <span className="text-xs font-medium text-slate-300">{item.label}</span>
+                      <button
+                        onClick={() => setLocalVisibility((prev: any) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                        className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                          localVisibility[item.key] !== false ? "bg-cyan-500" : "bg-slate-700"
+                        }`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
+                          localVisibility[item.key] !== false ? "translate-x-5" : "translate-x-0"
+                        }`} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 1. ERP BRANDING (Ultimate Admin only) */}
           {activeSubTab === "branding" && filteredTabs.some(t => t.id === "branding") && (
             <div className={`p-6 rounded-2xl border ${
