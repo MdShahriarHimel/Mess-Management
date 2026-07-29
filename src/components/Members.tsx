@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Member, UserRole, MemberStatus } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
+import { processProfilePhoto } from "../utils/imageOptimizer";
 
 
 const COLOR_PALETTES = [
@@ -277,54 +278,30 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                              currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
                              currentUser.role === UserRole.MANAGER;
 
-  // Handle Photo selection and base64 resizing
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo selection and optimized WebP resizing (Max 400x400, ~100KB max, preserves transparent PNG)
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = document.createElement('img');
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        const MAX_WIDTH = 200;
-        const scale = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
-
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const base64 = canvas.toDataURL("image/jpeg", 0.7);
-        setPhoto(base64);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimizedWebP = await processProfilePhoto(file);
+      setPhoto(optimizedWebP);
+    } catch (err) {
+      console.error("Profile photo processing error:", err);
+    }
   };
 
-  // Handle Edit Photo selection and base64 resizing
-  const handleEditPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Edit Photo selection and optimized WebP resizing (Max 400x400, ~100KB max, preserves transparent PNG)
+  const handleEditPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !editingMember) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = document.createElement('img');
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        const MAX_WIDTH = 200;
-        const scale = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
-
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const base64 = canvas.toDataURL("image/jpeg", 0.7);
-        setEditingMember({ ...editingMember, photo: base64 });
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimizedWebP = await processProfilePhoto(file);
+      setEditingMember(prev => prev ? { ...prev, photo: optimizedWebP } : null);
+    } catch (err) {
+      console.error("Profile photo processing error:", err);
+    }
   };
 
   const resetInviteForm = () => {

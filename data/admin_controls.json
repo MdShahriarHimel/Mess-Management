@@ -17,6 +17,24 @@
       "canManageMeals": false,
       "canAddMarkets": false,
       "canSuspendMembers": false
+    },
+    "idx_vs0wzmjo1oqcmkjj7bk79o": {
+      "allowedMesses": [],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false,
+      "canEditProfiles": false,
+      "canEditCycles": false
+    },
+    "nusratjahan2008njn@gmail.com": {
+      "allowedMesses": [],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false,
+      "canEditProfiles": false,
+      "canEditCycles": false
     }
   }
 }

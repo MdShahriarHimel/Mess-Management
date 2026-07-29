@@ -49,6 +49,12 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
   const [endDate, setEndDate] = useState("");
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
 
+  // Audit Mode states
+  const [auditMode, setAuditMode] = useState<boolean>(false);
+  const [auditModeExpiresAt, setAuditModeExpiresAt] = useState<string | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [isTogglingAuditMode, setIsTogglingAuditMode] = useState<boolean>(false);
+
   // Pagination states
   const [limit, setLimit] = useState(50);
   const [offset, setOffset] = useState(0);
@@ -68,6 +74,75 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
   };
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 20-minute countdown timer effect that survives page refresh
+  useEffect(() => {
+    if (!auditMode || !auditModeExpiresAt) {
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const expiryMs = new Date(auditModeExpiresAt).getTime();
+      const nowMs = Date.now();
+      const diffSec = Math.floor((expiryMs - nowMs) / 1000);
+
+      if (diffSec <= 0) {
+        setAuditMode(false);
+        setAuditModeExpiresAt(null);
+        setRemainingSeconds(0);
+        setLogs([]);
+        showToast("Audit Mode has expired. Viewing access is now disabled.", "error");
+      } else {
+        setRemainingSeconds(diffSec);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [auditMode, auditModeExpiresAt]);
+
+  const formatTimer = (totalSeconds: number) => {
+    if (totalSeconds <= 0) return "00:00";
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleToggleAuditMode = async (enabled: boolean) => {
+    setIsTogglingAuditMode(true);
+    try {
+      const response = await fetch("/api/settings/audit-mode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({ enabled, messId: selectedMess || activeMessId || "default" })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAuditMode(data.auditMode);
+        setAuditModeExpiresAt(data.auditModeExpiresAt);
+        if (data.auditMode) {
+          showToast("Audit Mode enabled for 20 minutes.", "success");
+          triggerFetchLogs();
+        } else {
+          setLogs([]);
+          showToast("Audit Mode disabled by Administrator.", "success");
+        }
+      } else {
+        const err = await response.json();
+        showToast(err.error || "Failed to toggle Audit Mode.", "error");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Network error toggling Audit Mode.", "error");
+    } finally {
+      setIsTogglingAuditMode(false);
+    }
+  };
 
   // Fetch audit logs with query params and pagination
   const fetchLogs = async (isAppend = false, signal?: AbortSignal) => {
@@ -93,19 +168,23 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
       });
       if (response.ok) {
         const data = await response.json();
-        const newLogs = data.auditLogs || [];
-        if (isAppend) {
-          setLogs(prev => [...prev, ...newLogs]);
-          setOffset(currentOffset);
-        } else {
-          setLogs(newLogs);
-          setOffset(0);
-        }
-        
-        if (newLogs.length < limit) {
+        const isModeActive = !!data.auditMode;
+        setAuditMode(isModeActive);
+        setAuditModeExpiresAt(data.auditModeExpiresAt || null);
+
+        if (!isModeActive) {
+          setLogs([]);
           setHasMore(false);
         } else {
-          setHasMore(true);
+          const newLogs = data.auditLogs || [];
+          if (isAppend) {
+            setLogs(prev => [...prev, ...newLogs]);
+            setOffset(currentOffset);
+          } else {
+            setLogs(newLogs);
+            setOffset(0);
+          }
+          setHasMore(newLogs.length >= limit);
         }
       } else {
         console.error("Failed to fetch logs");
@@ -402,6 +481,37 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {auditMode ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Audit Mode ON</span>
+              <span className="text-cyan-300 ml-1">[{formatTimer(remainingSeconds)}]</span>
+              {(isAdmin || isSuperUser) && (
+                <button
+                  onClick={() => handleToggleAuditMode(false)}
+                  disabled={isTogglingAuditMode}
+                  className="ml-2 px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-sans border border-rose-500/40 cursor-pointer"
+                >
+                  Turn OFF
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-rose-400" />
+              <span>Audit Mode OFF</span>
+              {(isAdmin || isSuperUser) && (
+                <button
+                  onClick={() => handleToggleAuditMode(true)}
+                  disabled={isTogglingAuditMode}
+                  className="ml-2 px-2.5 py-0.5 rounded bg-cyan-500 text-slate-950 hover:bg-cyan-400 text-[10px] font-sans font-bold cursor-pointer transition-all"
+                >
+                  Enable (20 min)
+                </button>
+              )}
+            </div>
+          )}
+
           <RefreshButton 
             module="auditLog" 
             onRefresh={async () => {
@@ -660,34 +770,62 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
         </div>
       </div>
 
-      {/* QUICK SEARCH BAR */}
-      <div className="relative max-w-lg print:hidden">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
-        <input
-          id="audit-search-input"
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Filter logs dynamically by operator nickname, action tag, or reason..."
-          className={`w-full pl-11 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
-            isDarkMode 
-              ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
-              : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
-          }`}
-        />
-      </div>
-
-      {/* AUDIT LIST PANEL TABLE */}
-      <div className={`p-5 rounded-2xl border ${
-        isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-      }`} id="audit-logs-panel">
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center gap-3">
-              <RefreshCw className="text-cyan-400 animate-spin" size={24} />
-              <span className="text-xs text-slate-500">Querying cryptographic ledger...</span>
+      {!auditMode ? (
+        <div className="p-12 text-center rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 my-6 print:hidden">
+          <div className="w-16 h-16 mx-auto rounded-full bg-slate-800/80 border border-slate-700 flex items-center justify-center text-rose-400 shadow-inner">
+            <ShieldAlert size={32} />
+          </div>
+          <div className="space-y-2 max-w-lg mx-auto">
+            <h3 className="text-base sm:text-lg font-bold font-display text-white">
+              Audit access is currently disabled by Administrator.
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Audit logs are disabled by default for every mess. An Administrator must explicitly enable 20-minute temporary Audit Mode access in the ERP Control Panel to view audit records.
+            </p>
+          </div>
+          {(isAdmin || isSuperUser) && (
+            <div className="pt-2">
+              <button
+                onClick={() => handleToggleAuditMode(true)}
+                disabled={isTogglingAuditMode}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 font-bold text-xs transition-all cursor-pointer shadow-lg shadow-cyan-500/10 flex items-center gap-2 mx-auto disabled:opacity-50"
+              >
+                <Shield size={16} />
+                {isTogglingAuditMode ? "Enabling..." : "Enable Audit Mode (20 min)"}
+              </button>
             </div>
-          ) : (
+          )}
+        </div>
+      ) : (
+        <>
+          {/* QUICK SEARCH BAR */}
+          <div className="relative max-w-lg print:hidden">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-cyan-500/50" size={18} />
+            <input
+              id="audit-search-input"
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Filter logs dynamically by operator nickname, action tag, or reason..."
+              className={`w-full pl-11 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                isDarkMode 
+                  ? "bg-slate-900/60 border-cyan-500/20 text-white placeholder-slate-500" 
+                  : "bg-white border-slate-200 text-slate-800 placeholder-slate-400"
+              }`}
+            />
+          </div>
+
+          {/* AUDIT LIST PANEL TABLE */}
+          <div className={`p-5 rounded-2xl border ${
+            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+          }`} id="audit-logs-panel">
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-3">
+                  <RefreshCw className="text-cyan-400 animate-spin" size={24} />
+                  <span className="text-xs text-slate-500">Querying cryptographic ledger...</span>
+                </div>
+              ) : (
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
@@ -802,6 +940,8 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* DETAIL INSPECTION MODAL (DRILLDOWN OVERLAY) */}
       {selectedLog && (

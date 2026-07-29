@@ -1,0 +1,14 @@
+{
+  "enabled": false,
+  "topic": "Superuser selection",
+  "subject": "options",
+  "voteType": "superuser",
+  "options": [],
+  "candidates": [],
+  "isFinal": false,
+  "votes": {
+    "SUPERUSER": {},
+    "ASSISTANT_SUPERUSER": {},
+    "CUSTOM": {}
+  }
+}

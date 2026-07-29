@@ -1,6 +1,6 @@
 {
-  "erpName": "Mess ERP",
-  "logoText": "Mess ERP",
+  "erpName": "আবাবিল মেস",
+  "logoText": "আবাবিল মেস",
   "logoIcon": "Sparkles",
   "brandColors": {
     "primary": "#22d3ee",
@@ -16,9 +16,9 @@
     "notices"
   ],
   "erpVersion": "v2.5.4",
-  "copyright": "Copyright © 2026 Mess ERP",
-  "supportInfo": "Ababil support team",
-  "developerInfo": "Bengal Bachelor Developers",
+  "copyright": "Copyright © 2026 Mess ERP (HIMEL)",
+  "supportInfo": "@himel",
+  "developerInfo": "HIMEL",
   "creditConfig": {
     "showCreditPanel": false,
     "text": "Crafted with 💖 by our mess community",
@@ -32,8 +32,8 @@
     "emojis": "💖,✨,🚀,🌟",
     "link": ""
   },
-  "globalAnnouncement": "Welcome to the central Mess ERP ecosystem!",
-  "welcomeMessage": "Welcome to Bengal Bachelor Cooperative Ecosystem",
+  "globalAnnouncement": "ঘুরে ঘুরে ফাংশনগুলো শিখে নিয়েন",
+  "welcomeMessage": "Learn Something good",
   "themeLibrary": [],
   "appearanceTemplates": [],
   "animationLibrary": [],
@@ -43,7 +43,7 @@
   },
   "globalUiComponents": {},
   "locks": {
-    "default": true,
+    "default": false,
     "mess-a": true,
     "mess-b": true,
     "mess-c": true
@@ -56,5 +56,10 @@
     "auditLog": "manual",
     "notification": "manual",
     "futureModules": "manual"
+  },
+  "backgroundAudio": {
+    "globalUrl": "",
+    "globalEnabled": false,
+    "messOverrides": {}
   }
 }

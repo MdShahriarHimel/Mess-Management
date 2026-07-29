@@ -166,19 +166,35 @@ export default function Dashboard({
   const [myMeals, setMyMeals] = useState<Record<string, number>>({});
   const [members, setMembers] = useState<Member[]>([]);
 
+  const [hasMoreNotices, setHasMoreNotices] = useState(false);
+  const [hasLoadedAllNotices, setHasLoadedAllNotices] = useState(false);
+  const [loadingMoreNotices, setLoadingMoreNotices] = useState(false);
+
   // Fetch notices
-  const fetchNotices = async () => {
+  const fetchNotices = async (loadAll = false) => {
     try {
-      const response = await fetch("/api/notices", {
+      const url = (loadAll || hasLoadedAllNotices) ? "/api/notices" : "/api/notices?limit=5";
+      const response = await fetch(url, {
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
         const data = await response.json();
         setNotices(data.notices || []);
+        setHasMoreNotices(data.hasMore || false);
+        if (loadAll) {
+          setHasLoadedAllNotices(true);
+        }
       }
     } catch (e) {
       console.error("Error fetching notices:", e);
     }
+  };
+
+  const handleLoadRemainingNotices = async () => {
+    if (loadingMoreNotices || hasLoadedAllNotices) return;
+    setLoadingMoreNotices(true);
+    await fetchNotices(true);
+    setLoadingMoreNotices(false);
   };
 
   const handleDeleteNotice = async (id: string) => {
@@ -685,7 +701,15 @@ export default function Dashboard({
                 </button>
               </div>
 
-              <div className="space-y-1.5 max-h-[135px] overflow-y-auto pr-1">
+              <div 
+                className="space-y-1.5 max-h-[135px] overflow-y-auto pr-1"
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  if (!hasLoadedAllNotices && hasMoreNotices && !loadingMoreNotices && el.scrollTop + el.clientHeight >= el.scrollHeight - 15) {
+                    handleLoadRemainingNotices();
+                  }
+                }}
+              >
                 {/* Pinned Global notices first */}
                 {pinnedNotices.map((notice) => (
                   <div 
@@ -761,6 +785,16 @@ export default function Dashboard({
                     </div>
                   </div>
                 ))}
+
+                {hasMoreNotices && !hasLoadedAllNotices && (
+                  <button 
+                    onClick={handleLoadRemainingNotices}
+                    disabled={loadingMoreNotices}
+                    className="w-full py-1.5 text-center text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold bg-cyan-950/20 hover:bg-cyan-950/40 rounded border border-cyan-800/30 cursor-pointer transition-all mt-1"
+                  >
+                    {loadingMoreNotices ? "Loading remaining notices..." : "View More Notices"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

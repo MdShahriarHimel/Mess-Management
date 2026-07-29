@@ -11,6 +11,7 @@ import { sql, eq } from "drizzle-orm";
 import { 
   loadDB, 
   writeAndPersistFile, 
+  ensurePersistentFile,
   DB_DIR, 
   generateUUID,
   loadCredentials,
@@ -51,6 +52,13 @@ export function loadPlatformControls() {
     try {
       const data = fs.readFileSync(filePath, "utf-8");
       cachedPlatformControls = JSON.parse(data);
+      if (cachedPlatformControls) {
+        if (cachedPlatformControls.maintenanceMode === "Full Lock" || cachedPlatformControls.platformStatus === "Database Upgrade") {
+          cachedPlatformControls.maintenanceMode = "Normal";
+          cachedPlatformControls.platformStatus = "Operational";
+          writeAndPersistFile("platform_controls.json", JSON.stringify(cachedPlatformControls, null, 2));
+        }
+      }
       // Migrate missing fields
       if (cachedPlatformControls && !cachedPlatformControls.geminiStats) {
         cachedPlatformControls.geminiStats = {
@@ -127,8 +135,9 @@ export function isPlatformOwner(email: string | undefined): boolean {
 }
 
 // Log a Founder action to a dedicated Audit Log JSON file
-export function logFounderAction(userId: string, email: string, action: string, module: string, result: string, ip?: string) {
+export async function logFounderAction(userId: string, email: string, action: string, module: string, result: string, ip?: string) {
   try {
+    await ensurePersistentFile("founder_audit_logs.json");
     const filePath = path.join(DB_DIR, "founder_audit_logs.json");
     let logs: any[] = [];
     if (fs.existsSync(filePath)) {
@@ -189,11 +198,15 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
     // Public/auth and status endpoints are allowed
     const allowedPaths = [
       "/api/founder/status",
+      "/api/founder/controls",
+      "/api/auth/",
+      "/api/settings/public",
       "/api/login",
       "/api/logout"
     ];
     // Check if path is allowed
-    const isAllowed = allowedPaths.some(p => req.path.startsWith(p));
+    const fullUrl = req.originalUrl || req.path;
+    const isAllowed = allowedPaths.some(p => fullUrl.startsWith(p) || req.path.startsWith(p) || fullUrl.startsWith(p.replace(/^\/api/, "")));
     if (isAllowed) {
       return next();
     }
@@ -601,8 +614,9 @@ router.get("/platform-analytics", platformOwnerMiddleware, async (req: Authentic
 });
 
 // 7. FOUNDER AUDIT LOG (Searchable)
-router.get("/audit-logs", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/audit-logs", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { query } = req.query;
+  await ensurePersistentFile("founder_audit_logs.json");
   const filePath = path.join(DB_DIR, "founder_audit_logs.json");
   let logs: any[] = [];
   if (fs.existsSync(filePath)) {

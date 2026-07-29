@@ -1,0 +1,34 @@
+{
+  "theme": "windows-10-modern",
+  "accentColor": "#0078d4",
+  "dashboardLayout": "bento",
+  "sidebarStyle": "expanded",
+  "cards": "glass",
+  "tables": "normal",
+  "charts": "recharts",
+  "widgets": [
+    "audit",
+    "meals",
+    "notices",
+    "finance"
+  ],
+  "glowEffects": {
+    "accentGlow": true,
+    "glowingCards": false,
+    "neonBorders": false
+  },
+  "animations": {
+    "enableEffect": false,
+    "effectType": "none",
+    "animationSpeed": "normal"
+  },
+  "glassEffect": true,
+  "roundedCorners": "rounded-2xl",
+  "shadows": "shadow-md",
+  "buttonStyle": "solid",
+  "fontSize": "normal",
+  "spacing": "normal",
+  "density": "normal",
+  "navigationStyle": "sidebar",
+  "cardLayout": "bento"
+}

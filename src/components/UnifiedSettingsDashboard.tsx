@@ -198,6 +198,63 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     }
   }, [homeCustomization]);
 
+  // Per-mess Audit Mode Control Panel state
+  const [messAuditStatus, setMessAuditStatus] = useState<Record<string, { auditMode: boolean; auditModeExpiresAt: string | null }>>({});
+  const [loadingAuditMesses, setLoadingAuditMesses] = useState<boolean>(false);
+
+  const fetchMessAuditStatuses = async () => {
+    setLoadingAuditMesses(true);
+    try {
+      const res = await fetch("/api/admin/messes", {
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const statusMap: Record<string, { auditMode: boolean; auditModeExpiresAt: string | null }> = {};
+        (data.messes || []).forEach((m: any) => {
+          statusMap[m.id] = {
+            auditMode: !!m.auditMode,
+            auditModeExpiresAt: m.auditModeExpiresAt || null
+          };
+        });
+        setMessAuditStatus(statusMap);
+      }
+    } catch (e) {
+      console.error("Failed to fetch mess audit statuses:", e);
+    } finally {
+      setLoadingAuditMesses(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMessAuditStatuses();
+  }, []);
+
+  const handleToggleMessAuditMode = async (messId: string, enable: boolean) => {
+    try {
+      const res = await fetch("/api/settings/audit-mode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({ enabled: enable, messId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessAuditStatus(prev => ({
+          ...prev,
+          [messId]: {
+            auditMode: data.auditMode,
+            auditModeExpiresAt: data.auditModeExpiresAt
+          }
+        }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Hybrid AI Food Knowledge Base States
   const [foodAnalytics, setFoodAnalytics] = useState<any>(null);
   const [foodList, setFoodList] = useState<any[]>([]);
@@ -752,6 +809,63 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   ))}
                 </div>
               </div>
+
+              {/* ERP Control Panel — Audit Mode Controls */}
+              <div className="p-5 rounded-xl bg-slate-950/40 border border-slate-800 space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <LucideIcons.ShieldAlert size={14} className="text-cyan-400" /> ERP Control Panel — Audit Mode Controls
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Audit logs are disabled by default for every mess. Administrators can toggle 20-minute temporary Audit Mode access per mess.
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchMessAuditStatuses}
+                    className="p-1.5 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    title="Refresh Mess Statuses"
+                  >
+                    <LucideIcons.RefreshCw size={14} className={loadingAuditMesses ? "animate-spin" : ""} />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(messes && messes.length > 0 ? messes : [{ id: "default", name: "Ababil Mess (Main)" }]).map((m: any) => {
+                    const status = messAuditStatus[m.id] || { auditMode: false, auditModeExpiresAt: null };
+                    const isActive = status.auditMode;
+
+                    return (
+                      <div key={m.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-900 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-200 block">{m.name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono block">ID: {m.id}</span>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className={`w-2 h-2 rounded-full ${isActive ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
+                            <span className={`text-[11px] font-semibold ${isActive ? "text-emerald-400" : "text-rose-400"}`}>
+                              Audit Mode: {isActive ? "ON (20-min active)" : "OFF (default)"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleToggleMessAuditMode(m.id, !isActive)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              isActive
+                                ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30"
+                                : "bg-cyan-500 hover:bg-cyan-400 text-slate-950"
+                            }`}
+                          >
+                            {isActive ? "Turn OFF" : "Turn ON"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
           )}
 

@@ -14,6 +14,7 @@ import { loadDB, saveDB, syncState,
   getActiveMessId,
   setActiveMessId,
   writeAndPersistFile,
+  ensurePersistentFile,
   deletePersistentFile,
   importBackupToPostgres,
   refreshDbCache,
@@ -64,13 +65,16 @@ const router = Router();
 // ---------------------------------------------------------
 // PUBLIC FILE SERVING
 // ---------------------------------------------------------
-router.get("/files/:filename", (req: Request, res: Response): void => {
+router.get("/files/:filename", async (req: Request, res: Response): Promise<void> => {
   const { filename } = req.params;
   if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
   const filePath = path.join(DB_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    await ensurePersistentFile(filename);
+  }
   if (fs.existsSync(filePath)) {
     try {
       const fileContent = fs.readFileSync(filePath, "utf-8");
@@ -830,7 +834,8 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
   }
 
   if (newMember.photo && newMember.photo.startsWith("data:")) {
-    const filename = `profile_pic_${newId}_${Date.now()}.jpg`;
+    const ext = newMember.photo.startsWith("data:image/webp") ? "webp" : "jpg";
+    const filename = `profile_pic_${newId}_${Date.now()}.${ext}`;
     writeAndPersistFile(filename, newMember.photo);
     newMember.photo = `/api/files/${filename}`;
   }
@@ -985,7 +990,8 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
         const prevFilename = original.photo.replace("/api/files/", "");
         deletePersistentFile(prevFilename);
       }
-      const filename = `profile_pic_${id}_${Date.now()}.jpg`;
+      const ext = updates.photo.startsWith("data:image/webp") ? "webp" : "jpg";
+      const filename = `profile_pic_${id}_${Date.now()}.${ext}`;
       writeAndPersistFile(filename, updates.photo);
       updates.photo = `/api/files/${filename}`;
     } else if (!updates.photo && original.photo) {
@@ -2835,7 +2841,21 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
     return (b.date || "").localeCompare(a.date || "");
   });
 
-  res.json({ notices: sortedNotices });
+  const limitQuery = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+  const offsetQuery = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+  
+  const total = sortedNotices.length;
+  let resultNotices = sortedNotices;
+
+  if (limitQuery !== undefined && !isNaN(limitQuery)) {
+    resultNotices = sortedNotices.slice(offsetQuery, offsetQuery + limitQuery);
+  }
+
+  res.json({ 
+    notices: resultNotices,
+    total,
+    hasMore: limitQuery !== undefined ? (offsetQuery + limitQuery < total) : false
+  });
 });
 
 router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
@@ -3020,6 +3040,25 @@ router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Respon
   const isAdmin = role === UserRole.ADMIN || isUltimateAdmin;
   const isSuperUser = role === UserRole.SUPERUSER || role === UserRole.ASSISTANT_SUPERUSER;
   
+  const currentSettings = loadSettings();
+  const now = Date.now();
+  const isAuditModeActive = !!(
+    currentSettings.auditMode &&
+    currentSettings.auditModeExpiresAt &&
+    new Date(currentSettings.auditModeExpiresAt).getTime() > now
+  );
+
+  if (!isAuditModeActive) {
+    res.json({
+      auditLogs: [],
+      auditMode: false,
+      auditModeExpiresAt: null,
+      message: "Audit access is currently disabled by Administrator.",
+      total: 0
+    });
+    return;
+  }
+
   const db = loadDB();
   let logs = db.auditLogs || [];
   
@@ -3106,7 +3145,12 @@ router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Respon
     }
   }
   
-  res.json({ auditLogs: logs, totalCount });
+  res.json({
+    auditLogs: logs,
+    auditMode: true,
+    auditModeExpiresAt: currentSettings.auditModeExpiresAt,
+    totalCount
+  });
 });
 
 router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
@@ -3818,6 +3862,8 @@ function loadSettings() {
     currencySymbol: "৳",
     enableManagerRating: true,
     auditRetentionDays: 30,
+    auditMode: false,
+    auditModeExpiresAt: null,
     mealTypes: [
       { id: "lunch", name: "Lunch", enabled: true },
       { id: "dinner", name: "Dinner", enabled: true },
@@ -3945,6 +3991,17 @@ function loadSettings() {
     creditConfig: { ...defaultSettings.creditConfig, ...(legacySettings.creditConfig || {}) },
     appearancePermissions: legacySettings.appearancePermissions || {}
   };
+
+  if (merged.auditMode && merged.auditModeExpiresAt) {
+    const expiryMs = new Date(merged.auditModeExpiresAt).getTime();
+    if (isNaN(expiryMs) || expiryMs <= Date.now()) {
+      merged.auditMode = false;
+      merged.auditModeExpiresAt = null;
+    }
+  } else {
+    merged.auditMode = false;
+    merged.auditModeExpiresAt = null;
+  }
 
   if (!merged.mealTypes || !Array.isArray(merged.mealTypes) || merged.mealTypes.length === 0) {
     merged.mealTypes = [
@@ -4514,14 +4571,85 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     currentSettings.translations = translations;
   }
 
+  if (req.body.auditMode !== undefined) {
+    if (req.body.auditMode) {
+      currentSettings.auditMode = true;
+      currentSettings.auditModeExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    } else {
+      currentSettings.auditMode = false;
+      currentSettings.auditModeExpiresAt = null;
+    }
+  }
+
   saveSettings(currentSettings);
   res.json({ success: true, settings: loadSettings() });
+});
+
+router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isAuthority = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER].includes(user.role) || isUltimateAdmin;
+  
+  if (!isAuthority) {
+    res.status(403).json({ error: "Only authorized personnel can control Audit Mode" });
+    return;
+  }
+
+  const { enabled, messId: targetMessId } = req.body;
+  const targetId = targetMessId || getActiveMessId();
+  
+  const file = targetId === "default"
+    ? path.join(DB_DIR, "settings.json")
+    : path.join(DB_DIR, `settings_${targetId}.json`);
+
+  let messSettings: any = {};
+  try {
+    if (fs.existsSync(file)) {
+      messSettings = JSON.parse(fs.readFileSync(file, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Error reading mess settings:", e);
+  }
+
+  if (enabled) {
+    messSettings.auditMode = true;
+    messSettings.auditModeExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+  } else {
+    messSettings.auditMode = false;
+    messSettings.auditModeExpiresAt = null;
+  }
+
+  const filename = targetId === "default" ? "settings.json" : `settings_${targetId}.json`;
+  writeAndPersistFile(filename, JSON.stringify(messSettings, null, 2));
+  settingsCache[targetId] = messSettings;
+  saveSettingsToPostgres(targetId, messSettings);
+
+  logAudit(
+    user.id,
+    user.nickname,
+    enabled ? "ENABLE_AUDIT_MODE" : "DISABLE_AUDIT_MODE",
+    "None",
+    `AuditMode: ${enabled}`,
+    `Audit mode ${enabled ? "enabled for 20 minutes" : "disabled"} for mess: ${targetId}`,
+    {
+      userRole: user.role,
+      browser: req.headers["user-agent"] as string,
+      ipAddress: req.ip as string
+    }
+  );
+
+  res.json({
+    success: true,
+    messId: targetId,
+    auditMode: messSettings.auditMode,
+    auditModeExpiresAt: messSettings.auditModeExpiresAt
+  });
 });
 
 // ---------------------------------------------------------
 // ELECTIONS & VOTING ENDPOINTS (INDIVIDUAL MESS SUPPORT)
 // ---------------------------------------------------------
-function loadElections() {
+async function loadElections() {
   const messId = getActiveMessId();
   const defaultElections = {
     enabled: false,
@@ -4537,9 +4665,11 @@ function loadElections() {
       CUSTOM: {} as Record<string, string> // voterId -> custom option
     }
   };
-  const file = messId === "default"
-    ? path.join(DB_DIR, "elections.json")
-    : path.join(DB_DIR, `elections_${messId}.json`);
+  const filename = messId === "default"
+    ? "elections.json"
+    : `elections_${messId}.json`;
+  await ensurePersistentFile(filename);
+  const file = path.join(DB_DIR, filename);
 
   try {
     if (fs.existsSync(file)) {
@@ -4564,11 +4694,11 @@ function saveElections(elections: any) {
   }
 }
 
-router.get("/elections", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  res.json(loadElections());
+router.get("/elections", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  res.json(await loadElections());
 });
 
-router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/elections/configure", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER];
   if (!allowedRoles.includes(req.user!.role)) {
     res.status(403).json({ error: "Only the Admin, Manager, and Super User can configure elections." });
@@ -4576,7 +4706,7 @@ router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   const { enabled, candidates, startDate, endDate, topic, subject, voteType, options, isFinal, resetVotes } = req.body;
-  const elections = loadElections();
+  const elections = await loadElections();
   
   if (enabled !== undefined) elections.enabled = !!enabled;
   if (candidates !== undefined) elections.candidates = candidates;
@@ -4632,7 +4762,7 @@ router.post("/elections/configure", authMiddleware, (req: AuthenticatedRequest, 
   res.json({ success: true, elections });
 });
 
-router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/elections/vote", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { roleType, candidateId } = req.body; // roleType: "SUPERUSER", "ASSISTANT_SUPERUSER" or "CUSTOM"
   const voterId = req.user!.id;
 
@@ -4641,7 +4771,7 @@ router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: 
     return;
   }
 
-  const elections = loadElections();
+  const elections = await loadElections();
   if (!elections.enabled) {
     res.status(403).json({ error: "Elections/polls are currently disabled or closed." });
     return;
@@ -4699,7 +4829,7 @@ router.post("/elections/vote", authMiddleware, (req: AuthenticatedRequest, res: 
   res.json({ success: true, elections });
 });
 
-router.post("/elections/resolve", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/elections/resolve", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER];
   if (!allowedRoles.includes(req.user!.role)) {
     res.status(403).json({ error: "Only the Admin, Manager, and Super User can resolve democratic elections." });
@@ -4712,7 +4842,7 @@ router.post("/elections/resolve", authMiddleware, (req: AuthenticatedRequest, re
     return;
   }
 
-  const elections = loadElections();
+  const elections = await loadElections();
 
   if (targetRole === "CUSTOM") {
     elections.isFinal = true;
@@ -5025,8 +5155,31 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
     }
   }
 
+  const messesWithAuditStatus = messes.map((m: any) => {
+    const file = m.id === "default"
+      ? path.join(DB_DIR, "settings.json")
+      : path.join(DB_DIR, `settings_${m.id}.json`);
+    let messSettings: any = {};
+    try {
+      if (fs.existsSync(file)) {
+        messSettings = JSON.parse(fs.readFileSync(file, "utf-8"));
+      }
+    } catch (e) {}
+    const now = Date.now();
+    const active = !!(
+      messSettings.auditMode &&
+      messSettings.auditModeExpiresAt &&
+      new Date(messSettings.auditModeExpiresAt).getTime() > now
+    );
+    return {
+      ...m,
+      auditMode: active,
+      auditModeExpiresAt: active ? messSettings.auditModeExpiresAt : null
+    };
+  });
+
   res.json({
-    messes,
+    messes: messesWithAuditStatus,
     activeMessId: getActiveMessId()
   });
 });

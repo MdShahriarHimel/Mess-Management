@@ -1,22 +1,42 @@
 {
   "messName": "Ababil mess",
-  "siteColor": "cyan",
+  "siteColor": "windows-10-modern",
   "fontSize": "normal",
   "fontStyle": "sans",
-  "logoText": "Ababil mess",
+  "logoText": "আবাবিল মেস",
   "dropdownOptions": [
     "Rent/ভাড়া",
     "বুয়া বিল",
     "WiFi",
     "Electricity + Water"
   ],
-  "translations": {},
+  "translations": {
+    "Rent/ভাড়া": "Mess Rent"
+  },
   "superUserCanEditBills": true,
   "superUserCanInviteMembers": true,
   "superUserCanArchiveMembers": true,
   "superUserCanEditMeals": true,
   "currencySymbol": "৳",
   "enableManagerRating": true,
+  "auditRetentionDays": 30,
+  "mealTypes": [
+    {
+      "id": "lunch",
+      "name": "Lunch",
+      "enabled": true
+    },
+    {
+      "id": "dinner",
+      "name": "Dinner",
+      "enabled": true
+    },
+    {
+      "id": "breakfast",
+      "name": "Breakfast",
+      "enabled": false
+    }
+  ],
   "balanceSheetGlow": "none",
   "customColors": {
     "cashDepositBg": "#f973161a",
@@ -26,13 +46,23 @@
     "sidebarBg": "#0f172a",
     "headerBg": "#0f172a",
     "cardBg": "#1e293b",
-    "accentColor": "#22d3ee"
+    "accentColor": "#0078d4",
+    "siteAccentColorRgb": "#22d3ee",
+    "typographyHighlightRgb": "#67e8f9",
+    "layoutScaleColorRgb": "#a78bfa",
+    "inputBorderColor": "#8adce3",
+    "inputTextColor": "#6cb6d4"
   },
   "messAnimations": {
     "enableEffect": false,
     "effectType": "none",
     "animationSpeed": "normal",
-    "accentGlow": true
+    "accentGlow": true,
+    "backgroundTheme": "deep-space",
+    "customBackgroundUrl": "",
+    "backgroundOpacity": 20,
+    "themeTemplate": "midnight",
+    "disableBackgroundAudio": true
   },
   "dashboardVisibility": {
     "showAuditLogs": true,
@@ -92,23 +122,29 @@
     "allowPreviousMealPlanner": true
   },
   "loginCustomization": {
-    "title": "Mess ERP",
-    "subtitle": "BENGAL BACHELOR ERP ENGINE",
-    "fontStyle": "sans",
+    "title": "আবাবিল মেস",
+    "subtitle": "সোনালী আবাসিক এলাকা, নয়াবাজার",
+    "fontStyle": "serif",
     "backgroundType": "theme",
     "backgroundTheme": "neon-shallows",
     "backgroundColor": "#020617",
     "backgroundImageUrl": "",
-    "showBrandingIcon": true,
+    "showBrandingIcon": false,
     "showGoogleLogin": true,
     "cardBg": "rgba(15, 23, 42, 0.6)",
     "textColor": "#ffffff",
     "accentColor": "#22d3ee",
-    "animationType": "pulse"
+    "animationType": "bounce",
+    "loginTheme": "cyberpunk",
+    "buttonTextLogin": "প্রবেশ করুন",
+    "titleFontSize": "3xl",
+    "subtitleFontSize": "",
+    "logoType": "image",
+    "customLogoUrl": "https://www.dreamstime.com/stock-illustration-calculator-house-icon-isolated-white-background-d-render-image70643653"
   },
   "homeCustomization": {
-    "welcomeTitle": "Dashboard Overview",
-    "welcomeSubtitle": "BENGAL BACHELOR COOPERATIVE ECOSYSTEM",
+    "welcomeTitle": "একটু ঘুরে দেখুন !!",
+    "welcomeSubtitle": "😊",
     "fontStyle": "sans",
     "backgroundType": "theme",
     "backgroundTheme": "neon-shallows",
@@ -118,7 +154,9 @@
     "textColor": "#ffffff",
     "accentColor": "#22d3ee",
     "showQuickActions": true,
-    "showBanner": true
+    "showBanner": true,
+    "showNoticeBoard": true,
+    "customNoticeTitle": "নোটিস !!"
   },
   "adminVisibility": {
     "showAdminCard": true,
@@ -126,7 +164,31 @@
     "showAdminEmail": false,
     "showAdminRole": true
   },
+  "creditConfig": {
+    "showCreditPanel": false,
+    "text": "Crafted with 💖 by our mess community",
+    "isBold": false,
+    "isItalic": false,
+    "isUnderline": false,
+    "alignment": "center",
+    "color": "#22d3ee",
+    "font": "sans",
+    "background": "#0f172a",
+    "emojis": "💖,✨,🚀,🌟",
+    "link": ""
+  },
+  "appearancePermissions": {
+    "idx_05hs5yfsf9vkec2jma2bb": [
+      "Theme"
+    ]
+  },
   "schemaVersion": 2,
   "createdAt": "2026-07-23T08:36:15.703Z",
-  "updatedAt": "2026-07-23T08:36:15.703Z"
+  "updatedAt": "2026-07-28T19:38:06.990Z",
+  "erpName": "আবাবিল মেস",
+  "disableBackgroundAudio": true,
+  "activeAudioSettings": {
+    "url": "",
+    "enabled": false
+  }
 }

@@ -129,8 +129,11 @@ let globalSettingsCache: any = {
   }
 };
 
+let isMonetizationSeeded = false;
+
 // Seed default monetization profiles and subscription plans
 export async function seedMonetizationModule() {
+  if (isMonetizationSeeded) return;
   try {
     console.log("[Monetization] Seeding defaults...");
     
@@ -180,11 +183,20 @@ export async function seedMonetizationModule() {
       }
     ];
 
-    for (const p of defaultProfiles) {
-      const existing = await db.select().from(monetizationProfiles).where(eq(monetizationProfiles.id, p.id));
-      if (existing.length === 0) {
-        await db.insert(monetizationProfiles).values(p);
-      }
+    // Query existing profiles and plans in parallel in a single batch
+    const [existingProfiles, existingPlans] = await Promise.all([
+      db.select().from(monetizationProfiles),
+      db.select().from(subscriptionPlans).orderBy(sql`priority ASC`)
+    ]);
+
+    const existingProfileIds = new Set(existingProfiles.map(p => p.id));
+    const missingProfiles = defaultProfiles.filter(p => !existingProfileIds.has(p.id));
+
+    if (missingProfiles.length > 0) {
+      await Promise.all(missingProfiles.map(p => db.insert(monetizationProfiles).values(p)));
+      profilesCache = await db.select().from(monetizationProfiles);
+    } else {
+      profilesCache = existingProfiles;
     }
 
     // Seed Plans
@@ -329,19 +341,23 @@ export async function seedMonetizationModule() {
       }
     ];
 
+    const existingPlanMap = new Map(existingPlans.map(p => [p.id, p]));
+    const planOps: Promise<any>[] = [];
+
     for (const plan of defaultPlans) {
-      const existing = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, plan.id));
-      if (existing.length === 0) {
-        await db.insert(subscriptionPlans).values(plan);
+      if (!existingPlanMap.has(plan.id)) {
+        planOps.push(db.insert(subscriptionPlans).values(plan));
       } else {
-        // Safe update of existing plans to include new fields
-        await db.update(subscriptionPlans).set(plan).where(eq(subscriptionPlans.id, plan.id));
+        planOps.push(db.update(subscriptionPlans).set(plan).where(eq(subscriptionPlans.id, plan.id)));
       }
     }
 
-    // Refresh memory cache
-    profilesCache = await db.select().from(monetizationProfiles);
-    plansCache = await db.select().from(subscriptionPlans).orderBy(sql`priority ASC`);
+    if (planOps.length > 0) {
+      await Promise.all(planOps);
+      plansCache = await db.select().from(subscriptionPlans).orderBy(sql`priority ASC`);
+    } else {
+      plansCache = existingPlans;
+    }
 
     // Seed global platform metadata file if not exists
     const GLOBAL_FILE = path.join(DB_DIR, "global_monetization.json");
@@ -403,13 +419,14 @@ export async function seedMonetizationModule() {
       { id: "ach_active_365", name: "365 Days Active Legend", description: "Remain registered in the system for one complete year.", icon: "Calendar", badge: "Year One Legend", rewardPoints: 200, requiredProgress: 365, activityType: "ACTIVE_DAYS", isActive: true, isVisible: true }
     ];
 
-    for (const ach of defaultAchievements) {
-      const existing = await db.select().from(achievements).where(eq(achievements.id, ach.id));
-      if (existing.length === 0) {
-        await db.insert(achievements).values(ach);
-      }
+    const existingAchievements = await db.select().from(achievements);
+    const existingAchIds = new Set(existingAchievements.map(a => a.id));
+    const missingAch = defaultAchievements.filter(ach => !existingAchIds.has(ach.id));
+    if (missingAch.length > 0) {
+      await Promise.all(missingAch.map(ach => db.insert(achievements).values(ach)));
     }
 
+    isMonetizationSeeded = true;
     console.log("[Monetization] Seeding complete.");
   } catch (err) {
     console.error("[Monetization] Seeding error:", err);
@@ -1368,15 +1385,17 @@ export async function reorderPlans(orderedIds: string[]) {
 // ISOLATED BACKUP AND RESTORE
 // ---------------------------------------------------------
 export async function exportMonetizationBackup() {
-  const profiles = await db.select().from(monetizationProfiles);
-  const messSettings = await db.select().from(messMonetizationSettings);
-  const plans = await db.select().from(subscriptionPlans);
-  const subs = await db.select().from(subscriptions);
-  const pts = await db.select().from(rewardPoints);
-  const hist = await db.select().from(rewardHistory);
-  const adSettings = await db.select().from(advertisementSettings);
-  const adViews = await db.select().from(advertisementViews);
-  const unlocks = await db.select().from(premiumUnlocks);
+  const [profiles, messSettings, plans, subs, pts, hist, adSettings, adViews, unlocks] = await Promise.all([
+    db.select().from(monetizationProfiles),
+    db.select().from(messMonetizationSettings),
+    db.select().from(subscriptionPlans),
+    db.select().from(subscriptions),
+    db.select().from(rewardPoints),
+    db.select().from(rewardHistory),
+    db.select().from(advertisementSettings),
+    db.select().from(advertisementViews),
+    db.select().from(premiumUnlocks)
+  ]);
 
   const payload = {
     exportedAt: new Date().toISOString(),

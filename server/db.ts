@@ -441,21 +441,23 @@ export async function refreshDbCache() {
 export async function initializeDbCache() {
   ensureDBDir();
   
-  // Restore all persistent files from PostgreSQL to local disk before doing anything else
+  // Restore ONLY immediate startup configuration files from PostgreSQL to local disk
   try {
-    const filesList = await db.select().from(persistentFilesTable);
-    console.log(`[Persistent Files] Found ${filesList.length} files in PostgreSQL. Restoring to local disk...`);
-    for (const file of filesList) {
+    const immediateFiles = await db.select().from(persistentFilesTable).where(
+      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%'`
+    );
+    console.log(`[Persistent Files Startup] Restoring ${immediateFiles.length} immediate startup config files...`);
+    for (const file of immediateFiles) {
       const localPath = path.join(DB_DIR, file.filename);
       const fileDir = path.dirname(localPath);
       if (!fs.existsSync(fileDir)) {
         fs.mkdirSync(fileDir, { recursive: true });
       }
       fs.writeFileSync(localPath, file.content, "utf-8");
-      console.log(`[Persistent Files] Restored ${file.filename} to local disk.`);
+      console.log(`[Persistent Files Startup] Restored immediate config file: ${file.filename}`);
     }
   } catch (err) {
-    console.error("[Persistent Files] Failed to restore files from PostgreSQL:", err);
+    console.error("[Persistent Files Startup] Failed to restore immediate files from PostgreSQL:", err);
   }
 
   const maxRetries = 10;
@@ -480,26 +482,38 @@ export async function initializeDbCache() {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[Database Connection] Attempt ${attempt} of ${maxRetries} to connect to PostgreSQL Cloud SQL...`);
-      membersList = await db.select().from(membersTable);
-      monthsList = await db.select().from(monthsTable);
-      mealsList = await db.select().from(mealsTable);
-      foodMenusList = await db.select().from(foodMenusTable);
-      marketEntriesList = await db.select().from(marketEntriesTable);
-      depositsList = await db.select().from(depositsTable);
-      billsList = await db.select().from(billsTable);
-      dutiesList = await db.select().from(dutiesTable);
-      managerHoldingsList = await db.select().from(managerHoldingsTable);
-      managerRatingsList = await db.select().from(managerRatingsTable);
-      noticesList = await db.select().from(noticesTable);
-      auditLogsList = await db.select().from(auditLogsTable);
-      
-      // Wrap in try-catch in case table doesn't exist yet before migration completes
-      try {
-        mealRequestsList = await db.select().from(mealRequestsTable);
-      } catch (err) {
-        console.warn("meal_requests table not accessible yet. It will be created via migration.", err);
-        mealRequestsList = [];
-      }
+      [
+        membersList,
+        monthsList,
+        mealsList,
+        foodMenusList,
+        marketEntriesList,
+        depositsList,
+        billsList,
+        dutiesList,
+        managerHoldingsList,
+        managerRatingsList,
+        noticesList,
+        auditLogsList,
+        mealRequestsList
+      ] = await Promise.all([
+        db.select().from(membersTable),
+        db.select().from(monthsTable),
+        db.select().from(mealsTable),
+        db.select().from(foodMenusTable),
+        db.select().from(marketEntriesTable),
+        db.select().from(depositsTable),
+        db.select().from(billsTable),
+        db.select().from(dutiesTable),
+        db.select().from(managerHoldingsTable),
+        db.select().from(managerRatingsTable),
+        db.select().from(noticesTable),
+        db.select().from(auditLogsTable),
+        db.select().from(mealRequestsTable).catch(err => {
+          console.warn("meal_requests table not accessible yet. It will be created via migration.", err);
+          return [];
+        })
+      ]);
       
       connected = true;
       console.log("[Database Connection] Successfully connected and retrieved data from PostgreSQL Cloud SQL!");
@@ -887,29 +901,60 @@ async function doActualSync(cache: DatabaseSchema) {
       } else {
         await db.delete(auditLogsTable);
       }
+      
+      const modifiedAuditLogs: any[] = [];
       for (const item of cache.auditLogs) {
         const mapped = {
-        id: item.id,
-        userId: item.userId,
-        userName: item.userName,
-        action: item.action,
-        oldValue: item.oldValue,
-        newValue: item.newValue,
-        timestamp: item.timestamp,
-        reason: item.reason,
-        date: item.date || null,
-        time: item.time || null,
-        userRole: item.userRole || null,
-        superUserId: item.superUserId || null,
-        messId: item.messId || null,
-        module: item.module || null,
-        actionType: item.actionType || null,
-        description: item.description || null,
-        browser: item.browser || null,
-        ipAddress: item.ipAddress || null,
-      };
-        if (!isItemModified('auditLogs', item.id, mapped)) continue;
-        await db.insert(auditLogsTable).values(mapped).onConflictDoUpdate({ target: auditLogsTable.id, set: mapped });
+          id: item.id,
+          userId: item.userId,
+          userName: item.userName,
+          action: item.action,
+          oldValue: item.oldValue,
+          newValue: item.newValue,
+          timestamp: item.timestamp,
+          reason: item.reason,
+          date: item.date || null,
+          time: item.time || null,
+          userRole: item.userRole || null,
+          superUserId: item.superUserId || null,
+          messId: item.messId || null,
+          module: item.module || null,
+          actionType: item.actionType || null,
+          description: item.description || null,
+          browser: item.browser || null,
+          ipAddress: item.ipAddress || null,
+        };
+        if (isItemModified('auditLogs', item.id, mapped)) {
+          modifiedAuditLogs.push(mapped);
+        }
+      }
+
+      if (modifiedAuditLogs.length > 0) {
+        for (let i = 0; i < modifiedAuditLogs.length; i += 500) {
+          const chunk = modifiedAuditLogs.slice(i, i + 500);
+          await db.insert(auditLogsTable).values(chunk).onConflictDoUpdate({
+            target: auditLogsTable.id,
+            set: {
+              userId: sql`excluded.user_id`,
+              userName: sql`excluded.user_name`,
+              action: sql`excluded.action`,
+              oldValue: sql`excluded.old_value`,
+              newValue: sql`excluded.new_value`,
+              timestamp: sql`excluded.timestamp`,
+              reason: sql`excluded.reason`,
+              date: sql`excluded.date`,
+              time: sql`excluded.time`,
+              userRole: sql`excluded.user_role`,
+              superUserId: sql`excluded.super_user_id`,
+              messId: sql`excluded.mess_id`,
+              module: sql`excluded.module`,
+              actionType: sql`excluded.action_type`,
+              description: sql`excluded.description`,
+              browser: sql`excluded.browser`,
+              ipAddress: sql`excluded.ip_address`
+            }
+          });
+        }
       }
     }
 
@@ -1018,7 +1063,7 @@ export function loadDB(): DatabaseSchema {
         const backupFilename = messId === "default"
           ? "database_backup.json"
           : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(dbCache, null, 2));
+        writeAndPersistFile(backupFilename, JSON.stringify(dbCache));
         syncCacheToPostgresDirectly(dbCache);
       } catch (err) {
         console.error("Error committing auto-deleted market entries:", err);
@@ -1067,7 +1112,7 @@ export function loadDB(): DatabaseSchema {
         const backupFilename = messId === "default"
           ? "database_backup.json"
           : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(dbCache, null, 2));
+        writeAndPersistFile(backupFilename, JSON.stringify(dbCache));
         syncCacheToPostgresDirectly(dbCache);
       } catch (err) {
         console.error("Error committing auto-deleted audit logs:", err);
@@ -1098,7 +1143,7 @@ export function saveDB() {
         ? "database_backup.json"
         : `database_backup_${messId}.json`;
         
-      const content = JSON.stringify(dbCache, null, 2);
+      const content = JSON.stringify(dbCache);
       if (content !== lastBackupCacheContent) {
         writeAndPersistFile(backupFilename, content);
         lastBackupCacheContent = content;
@@ -1287,6 +1332,63 @@ function deduceModuleAndActionType(action: string, extra?: any) {
   return { module, actionType };
 }
 
+function shouldLogAudit(action: string, reason: string = "", extra?: any): boolean {
+  const act = (action || "").toUpperCase();
+  const rsn = (reason || "").toUpperCase();
+  const mod = (extra?.module || "").toUpperCase();
+
+  // 1. Skip logging UI/Appearance/Customization
+  if (
+    act.includes("THEME") ||
+    act.includes("APPEARANCE") ||
+    act.includes("GLOW") ||
+    act.includes("ANIMATION") ||
+    act.includes("BACKGROUND") ||
+    act.includes("FONT") ||
+    act.includes("COSMETIC") ||
+    act.includes("PREFERENCES") ||
+    act.includes("LAYOUT") ||
+    act.includes("CUSTOMIZATION") ||
+    rsn.includes("THEME") ||
+    rsn.includes("GLOW") ||
+    rsn.includes("ANIMATION") ||
+    rsn.includes("BACKGROUND") ||
+    rsn.includes("FONT") ||
+    rsn.includes("LAYOUT") ||
+    rsn.includes("APPEARANCE") ||
+    rsn.includes("COSMETIC")
+  ) {
+    return false;
+  }
+
+  // 2. Log ONLY allowed categories:
+  // - Deposit
+  const isDeposit = act.includes("DEPOSIT") || mod === "DEPOSITS";
+
+  // - Market
+  const isMarket = act.includes("MARKET") || act.includes("BAZAAR") || act.includes("HOLDING") || mod === "MARKET";
+
+  // - Meal edits
+  const isMealEdit = act.includes("MEAL") || mod === "MEALS" || mod === "MEAL_CONFIG";
+
+  // - Settlement
+  const isSettlement = act.includes("SETTLEMENT") || act.includes("SETTLE") || act.includes("CLOSE_CYCLE") || act.includes("CLOSE_MONTH") || act.includes("DELETE_MONTH") || mod === "SETTLEMENT";
+
+  // - Permission changes
+  const isPermission = act.includes("PERMISSION") || act.includes("ROLE") || act.includes("MANAGER") || act.includes("ELECTION") || mod === "PERMISSIONS";
+
+  // - Password changes
+  const isPassword = act.includes("PASSWORD");
+
+  // - Member deletion
+  const isMemberDelete = act.includes("DELETE_MEMBER") || act.includes("REMOVE_MEMBER") || (act.includes("MEMBER") && (act.includes("DELETE") || act.includes("REMOVE"))) || rsn.includes("DELETE MEMBER") || rsn.includes("DELETED MEMBER");
+
+  // - Founder actions
+  const isFounder = act.includes("FOUNDER") || act.includes("PLATFORM_OWNER") || mod === "FOUNDER";
+
+  return isDeposit || isMarket || isMealEdit || isSettlement || isPermission || isPassword || isMemberDelete || isFounder;
+}
+
 // Log an action to Audit Log with optional metadata parameters for rich hierarchical indexing
 export function logAudit(
   userId: string,
@@ -1306,6 +1408,10 @@ export function logAudit(
     ipAddress?: string;
   }
 ) {
+  if (!shouldLogAudit(action, reason, extra)) {
+    return;
+  }
+
   const db = loadDB();
   const timestampStr = new Date().toISOString();
   const dateStr = timestampStr.split("T")[0];
@@ -1341,6 +1447,32 @@ export function logAudit(
 
   db.auditLogs.unshift(newAudit);
   saveDB();
+}
+
+// Helper to ensure a persistent file is restored from PostgreSQL to local disk on demand
+export async function ensurePersistentFile(filename: string): Promise<boolean> {
+  if (!filename) return false;
+  ensureDBDir();
+  const localPath = path.join(DB_DIR, filename);
+  if (fs.existsSync(localPath)) {
+    return true;
+  }
+  try {
+    const records = await db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, filename));
+    if (records.length > 0) {
+      const file = records[0];
+      const dir = path.dirname(localPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(localPath, file.content, "utf-8");
+      console.log(`[Persistent Files On-Demand] Restored ${filename} from PostgreSQL.`);
+      return true;
+    }
+  } catch (err) {
+    console.error(`[Persistent Files On-Demand] Restore failed for ${filename}:`, err);
+  }
+  return false;
 }
 
 // Helper to write file both locally and save it persistently in PostgreSQL

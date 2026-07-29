@@ -20,24 +20,53 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
   const [pinned, setPinned] = useState(false);
   const [isDirectToManager, setIsDirectToManager] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [hasLoadedAll, setHasLoadedAll] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchNotices = async () => {
+  const fetchNotices = async (loadAll = false) => {
     try {
-      const response = await fetch("/api/notices", {
+      const url = (loadAll || hasLoadedAll) ? "/api/notices" : "/api/notices?limit=5";
+      const response = await fetch(url, {
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
         const data = await response.json();
         setNotices(data.notices || []);
+        setHasMore(data.hasMore || false);
+        if (loadAll) {
+          setHasLoadedAll(true);
+        }
       }
     } catch (e) {
       console.error(e);
     }
   };
 
+  const handleLoadRemaining = async () => {
+    if (loadingMore || hasLoadedAll) return;
+    setLoadingMore(true);
+    await fetchNotices(true);
+    setLoadingMore(false);
+  };
+
   useEffect(() => {
-    fetchNotices();
+    fetchNotices(false);
   }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (hasLoadedAll || loadingMore || !hasMore) return;
+      const scrollHeight = document.documentElement.scrollHeight;
+      const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+      const clientHeight = document.documentElement.clientHeight;
+      if (scrollTop + clientHeight >= scrollHeight - 300) {
+        handleLoadRemaining();
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [hasLoadedAll, loadingMore, hasMore]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,6 +260,18 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
           </div>
         ))}
       </div>
+
+      {hasMore && !hasLoadedAll && (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={handleLoadRemaining}
+            disabled={loadingMore}
+            className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 hover:text-cyan-300 font-bold text-xs rounded-xl cursor-pointer transition-all flex items-center gap-2 shadow-sm"
+          >
+            {loadingMore ? "Loading remaining notices..." : "View More Notices"}
+          </button>
+        </div>
+      )}
 
       {/* CREATE BULLETIN MODAL */}
       {showAddModal && (

@@ -20,7 +20,7 @@
     "monetization": true,
     "advertisements": true,
     "rewardCenter": true,
-    "premiumStore": true,
+    "premiumStore": false,
     "aiFeatures": true,
     "themeEngine": true,
     "statistics": true,

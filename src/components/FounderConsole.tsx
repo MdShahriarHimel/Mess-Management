@@ -47,8 +47,34 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "logs" | "backup"
   >("dashboard");
 
+  const defaultControls = {
+    platformStatus: "Operational",
+    maintenanceMode: "Normal",
+    maintenanceReason: "",
+    maintenanceEstimatedCompletion: "",
+    maintenanceTimezone: "Asia/Dhaka",
+    maintenanceEmoji: "⚙️",
+    maintenanceWarningIcon: "AlertTriangle",
+    maintenanceThemeColor: "cyan",
+    maintenanceBannerImage: "",
+    featureFlags: {
+      monetization: true,
+      advertisements: true,
+      rewardCenter: true,
+      premiumStore: true,
+      aiFeatures: true,
+      themeEngine: true,
+      statistics: true,
+      experimentalFeatures: false,
+      futureModules: true
+    },
+    announcements: [],
+    owners: [],
+    geminiStats: null
+  };
+
   // Core configuration states
-  const [controls, setControls] = useState<any>(null);
+  const [controls, setControls] = useState<any>(defaultControls);
   const [loading, setLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
 
@@ -114,7 +140,18 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       const res = await fetch("/api/founder/controls", { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setControls(data);
+        if (data && typeof data === "object") {
+          setControls({
+            ...defaultControls,
+            ...data,
+            featureFlags: {
+              ...defaultControls.featureFlags,
+              ...(data.featureFlags || {})
+            },
+            announcements: data.announcements || [],
+            owners: data.owners || []
+          });
+        }
       } else {
         showBanner("Failed to load platform controls. Verify you are an owner.", "error");
       }
@@ -136,6 +173,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
 
   // Save general controls
   const handleSaveControls = async (updatedControls = controls) => {
+    if (!updatedControls) return;
     setSaveLoading(true);
     try {
       const res = await fetch("/api/founder/controls", {
@@ -145,7 +183,20 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       });
       if (res.ok) {
         const data = await res.json();
-        setControls(data.controls);
+        if (data?.controls) {
+          setControls((prev: any) => ({
+            ...defaultControls,
+            ...(prev || {}),
+            ...data.controls,
+            featureFlags: {
+              ...defaultControls.featureFlags,
+              ...(prev?.featureFlags || {}),
+              ...(data.controls?.featureFlags || {})
+            },
+            announcements: data.controls?.announcements || prev?.announcements || [],
+            owners: data.controls?.owners || prev?.owners || []
+          }));
+        }
         showBanner("Platform controls saved successfully!", "success");
         onRefreshPlatformStatus(); // Propagate status updates to parent App layout
       } else {

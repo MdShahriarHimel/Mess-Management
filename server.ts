@@ -22,32 +22,23 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Vercel Serverless background database synchronization flusher middleware
-app.use((req, res, next) => {
-  const originalSend = res.send;
-  const startTime = Date.now();
-  console.log(`[API] Request started: ${req.method} ${req.url}`);
-  (res as any).send = async function (body: any) {
-    console.log(`[API] Flusher entered for ${req.method} ${req.url}`);
-    console.log(`[API] pendingSyncPromises.length: ${pendingSyncPromises?.length || 0}`);
-
-    if (process.env.VERCEL && pendingSyncPromises && pendingSyncPromises.length > 0) {
-      console.log(`[Vercel Sync] Waiting for ${pendingSyncPromises.length} background DB sync promises...`);
-      try {
-        const syncStart = Date.now();
-        await Promise.all(pendingSyncPromises);
-        console.log(`[Vercel Sync] Time spent waiting: ${Date.now() - syncStart} ms`);
-      } catch (err) {
-        console.error("[Vercel Sync] Error flushing background database sync:", err);
+// Vercel Serverless background database synchronization flusher middleware (only active on Vercel)
+if (process.env.VERCEL) {
+  app.use((req, res, next) => {
+    const originalSend = res.send;
+    (res as any).send = async function (body: any) {
+      if (pendingSyncPromises && pendingSyncPromises.length > 0) {
+        try {
+          await Promise.all(pendingSyncPromises);
+        } catch (err) {
+          console.error("[Vercel Sync] Error flushing background database sync:", err);
+        }
       }
-    }
-
-    console.log(`[API] Flusher exited for ${req.method} ${req.url}`);
-    console.log(`[API] Response sent for ${req.method} ${req.url} (${Date.now() - startTime} ms)`);
-    return originalSend.call(this, body);
-  };
-  next();
-});
+      return originalSend.call(this, body);
+    };
+    next();
+  });
+}
 
 // Async database cache initialization
 let isDbInitialized = false;
@@ -57,11 +48,14 @@ export async function ensureDbInitialized() {
   if (isDbInitialized) return;
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
-      console.log("[Database] Initializing DB Cache...");
-      await initializeDbCache();
-      await seedMonetizationModule();
+      console.log("[Database] Initializing DB Cache in parallel...");
+      const startTime = Date.now();
+      await Promise.all([
+        initializeDbCache(),
+        seedMonetizationModule()
+      ]);
       isDbInitialized = true;
-      console.log("[Database] DB Cache initialized successfully.");
+      console.log(`[Database] DB Cache initialized successfully in ${Date.now() - startTime}ms.`);
     })();
   }
   return dbInitPromise;
@@ -87,15 +81,18 @@ app.use("/api", apiRouter);
 // Mount founder administration router
 app.use("/api/founder", founderRouter);
 
-// Health check route
+// Health check route with cached DB version to minimize redundant queries
+let cachedDbVersion: string | null = null;
 app.get("/api/health", async (req, res) => {
   try {
-    const dbResult = await pool.query("SELECT version();");
-    const version = dbResult.rows[0]?.version || "Unknown";
+    if (!cachedDbVersion) {
+      const dbResult = await pool.query("SELECT version();");
+      cachedDbVersion = dbResult.rows[0]?.version || "Unknown";
+    }
     res.json({
       status: "ok",
       database: "connected",
-      version: version
+      version: cachedDbVersion
     });
   } catch (err) {
     console.error("Database health check failed:", err);
@@ -104,6 +101,11 @@ app.get("/api/health", async (req, res) => {
       database: "disconnected"
     });
   }
+});
+
+// 404 fallback for any unmatched /api/* routes to avoid returning HTML index.html
+app.use("/api/*", (req, res) => {
+  res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.originalUrl}` });
 });
 
 // Configure serving of assets and SPA routing based on environment

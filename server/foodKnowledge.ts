@@ -129,6 +129,29 @@ function getSimilarity(a: string, b: string): number {
  * Programmatic fuzzy matching using spelling, phonetics, substrings and Levenshtein distance.
  */
 export function findFuzzyMatch(normalizedQuery: string): FoodItem | null {
+  if (!normalizedQuery) return null;
+
+  // 1. Token & sub-phrase matching against alias and food cache
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  for (let len = tokens.length; len >= 1; len--) {
+    for (let i = 0; i <= tokens.length - len; i++) {
+      const subPhrase = tokens.slice(i, i + len).join(" ");
+      if (subPhrase.length < 2) continue;
+
+      const subAliasId = aliasCache.get(subPhrase);
+      if (subAliasId) {
+        const food = foodCache.get(subAliasId);
+        if (food) return food;
+      }
+
+      for (const food of foodCache.values()) {
+        if (food.label.toLowerCase().trim() === subPhrase) {
+          return food;
+        }
+      }
+    }
+  }
+
   const qPhonetic = getPhoneticKey(normalizedQuery);
   
   let bestMatch: FoodItem | null = null;
@@ -143,15 +166,26 @@ export function findFuzzyMatch(normalizedQuery: string): FoodItem | null {
 
       const tPhonetic = getPhoneticKey(targetNormalized);
 
-      // 1. Exact phonetic key match (very high confidence)
+      // Exact phonetic key match (very high confidence)
       if (qPhonetic === tPhonetic && qPhonetic.length > 1) {
         return food;
       }
 
-      // 2. Substring matching for incomplete names / abbreviations
-      if (normalizedQuery.length >= 4 && targetNormalized.length >= 4) {
+      // Substring matching for incomplete names / abbreviations
+      if (normalizedQuery.length >= 3 && targetNormalized.length >= 3) {
         if (targetNormalized.includes(normalizedQuery) || normalizedQuery.includes(targetNormalized)) {
           const score = Math.min(normalizedQuery.length, targetNormalized.length) / Math.max(normalizedQuery.length, targetNormalized.length);
+          if (score > highestScore && score >= 0.6) {
+            highestScore = score;
+            bestMatch = food;
+          }
+        }
+      }
+
+      // Phonetic substring match
+      if (qPhonetic.length >= 3 && tPhonetic.length >= 3) {
+        if (tPhonetic.includes(qPhonetic) || qPhonetic.includes(tPhonetic)) {
+          const score = Math.min(qPhonetic.length, tPhonetic.length) / Math.max(qPhonetic.length, tPhonetic.length);
           if (score > highestScore && score >= 0.7) {
             highestScore = score;
             bestMatch = food;
@@ -159,27 +193,16 @@ export function findFuzzyMatch(normalizedQuery: string): FoodItem | null {
         }
       }
 
-      // 3. Phonetic substring match
-      if (qPhonetic.length >= 3 && tPhonetic.length >= 3) {
-        if (tPhonetic.includes(qPhonetic) || qPhonetic.includes(tPhonetic)) {
-          const score = Math.min(qPhonetic.length, tPhonetic.length) / Math.max(qPhonetic.length, tPhonetic.length);
-          if (score > highestScore && score >= 0.75) {
-            highestScore = score;
-            bestMatch = food;
-          }
-        }
-      }
-
-      // 4. Levenshtein similarity on string
+      // Levenshtein similarity on string
       const textSimilarity = getSimilarity(normalizedQuery, targetNormalized);
-      if (textSimilarity > highestScore && textSimilarity >= 0.82) {
+      if (textSimilarity > highestScore && textSimilarity >= 0.75) {
         highestScore = textSimilarity;
         bestMatch = food;
       }
 
-      // 5. Levenshtein similarity on phonetics
+      // Levenshtein similarity on phonetics
       const phoneticSimilarity = getSimilarity(qPhonetic, tPhonetic);
-      if (phoneticSimilarity > highestScore && phoneticSimilarity >= 0.85) {
+      if (phoneticSimilarity > highestScore && phoneticSimilarity >= 0.8) {
         highestScore = phoneticSimilarity;
         bestMatch = food;
       }
@@ -194,18 +217,32 @@ const INITIAL_FOOD_SEED = [
   { label: "পুঁই শাক", category: "Vegetables", aliases: ["pui shak", "পুঁইশাক", "pui saag", "pui", "পুঁই"] },
   { label: "চিংড়ি", category: "Fish", aliases: ["chingri", "চিংড়ি", "shrimp", "prawn", "চিংড়ি মাছ"] },
   { label: "রুই মাছ", category: "Fish", aliases: ["rui mach", "রুই", "rui fish", "রুই মাছের ঝোল"] },
-  { label: "মুরগির মাংস", category: "Chicken", aliases: ["chicken", "murgi", "মুরগি", "মুরগী", "চিকেন"] },
-  { label: "গরুর মাংস", category: "Beef", aliases: ["beef", "gorur mangso", "গরু", "বিফ"] },
+  { label: "ইলিশ মাছ", category: "Fish", aliases: ["ilish", "hilsa", "ইলিশ", "ইলিশ মাছের ঝোল", "সরিষা ইলিশ"] },
+  { label: "পাঙ্গাস মাছ", category: "Fish", aliases: ["pangas", "পাঙ্গাস", "পাংগাস"] },
+  { label: "তেলাপিয়া মাছ", category: "Fish", aliases: ["tilapia", "তেলাপিয়া", "তেলাপিয়া"] },
+  { label: "কাতলা মাছ", category: "Fish", aliases: ["katla", "কাতলা"] },
+  { label: "কই মাছ", category: "Fish", aliases: ["koi", "কই"] },
+  { label: "শোল মাছ", category: "Fish", aliases: ["shol", "শোল"] },
+  { label: "শিং মাছ", category: "Fish", aliases: ["shing", "শিং"] },
+  { label: "পাবদা মাছ", category: "Fish", aliases: ["pabda", "পাবদা"] },
+  { label: "মুরগির মাংস", category: "Chicken", aliases: ["chicken", "murgi", "মুরগি", "মুরগী", "চিকেন", "চিকেন রোস্ট", "চিকেন কারি"] },
+  { label: "গরুর মাংস", category: "Beef", aliases: ["beef", "gorur mangso", "গরু", "বিফ", "গরুর মাংস ভুনা"] },
   { label: "খাসির মাংস", category: "Mutton", aliases: ["mutton", "khasir mangso", "খাসি", "মটন"] },
   { label: "ডাল", category: "Lentils", aliases: ["dal", "daal", "মসুর ডাল", "মুগ ডাল", "ডাল চচ্চড়ি"] },
-  { label: "ডিম", category: "Eggs", aliases: ["egg", "dim", "ডিম ভাজি", "ডিম ভুনা", "সিদ্ধ ডিম"] },
-  { label: "ভাত", category: "Rice", aliases: ["bhat", "rice", "সাদা ভাত", "পোলাও", "খিচুড়ি"] },
+  { label: "ডিম", category: "Eggs", aliases: ["egg", "dim", "ডিম ভাজি", "ডিম ভুনা", "সিদ্ধ ডিম", "ডিম কারি"] },
+  { label: "ভাত", category: "Rice", aliases: ["bhat", "rice", "সাদা ভাত", "পোলাও", "খিচুড়ি", "বিরিয়ানি", "কাচ্চি"] },
   { label: "আলু", category: "Vegetables", aliases: ["alu", "potato", "aloo", "আলু ভাজি", "আলু ভর্তা"] },
-  { label: "বেগুন", category: "Vegetables", aliases: ["begun", "eggplant", "brinjal", "বেগুন ভাজি"] },
+  { label: "বেগুন", category: "Vegetables", aliases: ["begun", "eggplant", "brinjal", "বেগুন ভাজি", "বেগুন ভর্তা"] },
   { label: "পটল", category: "Vegetables", aliases: ["potol", "pointed gourd", "পটল ভাজি"] },
-  { label: "লাউ", category: "Vegetables", aliases: ["lau", "bottle gourd", "লাউ শাক"] },
+  { label: "লাউ", category: "Vegetables", aliases: ["lau", "bottle gourd", "লাউ শাক", "লাউ ডাল"] },
   { label: "টমেটো", category: "Vegetables", aliases: ["tomato", "tomato salad", "টমেটো সালাদ"] },
   { label: "সবজি", category: "Vegetables", aliases: ["sobji", "vegetable", "সবজী", "নিরামিষ"] },
+  { label: "ফুলকপি", category: "Vegetables", aliases: ["fulkopi", "cauliflower", "ফুলকপি ভাজি"] },
+  { label: "বাঁধাকপি", category: "Vegetables", aliases: ["badhakopi", "cabbage", "বাঁধাকপি ভাজি"] },
+  { label: "করলা", category: "Vegetables", aliases: ["korola", "bitter gourd", "করলা ভাজি"] },
+  { label: "ঢেঁড়স", category: "Vegetables", aliases: ["dheros", "bhindi", "okra", "ঢেঁড়স ভাজি"] },
+  { label: "শাক", category: "Vegetables", aliases: ["shak", "saag", "পালং শাক", "লাল শাক", "কলমি শাক"] },
+  { label: "সালাদ", category: "Vegetables", aliases: ["salad", "সালাদ"] },
 ];
 
 // Global rate-limit cooldown tracker to avoid spamming Gemini when 429 RESOURCE_EXHAUSTED is hit
@@ -219,17 +256,23 @@ export async function initializeFoodCache() {
 
   try {
     console.log("[Food Knowledge] Loading cache from database...");
-    let dbFoods = await db.select().from(foodKnowledgeBase);
+    let [dbFoods, dbAliases] = await Promise.all([
+      db.select().from(foodKnowledgeBase),
+      db.select().from(foodAliases)
+    ]);
 
     // Seed database if empty
     if (dbFoods.length === 0) {
       console.log("[Food Knowledge] Database is empty. Seeding default known foods...");
       const timestamp = new Date().toISOString();
+      const foodsToInsert: any[] = [];
+      const aliasesToInsert: any[] = [];
+
       for (const item of INITIAL_FOOD_SEED) {
         const foodId = "food_" + generateUUID();
         const aliasesJson = JSON.stringify(item.aliases);
 
-        await db.insert(foodKnowledgeBase).values({
+        foodsToInsert.push({
           id: foodId,
           label: item.label,
           category: item.category,
@@ -239,7 +282,6 @@ export async function initializeFoodCache() {
           frequency: 0,
         });
 
-        // Insert into aliases table
         const normalizedAliases = Array.from(new Set([
           item.label.toLowerCase().trim(),
           ...item.aliases.map(a => a.toLowerCase().trim())
@@ -247,23 +289,30 @@ export async function initializeFoodCache() {
 
         for (const alias of normalizedAliases) {
           if (alias) {
-            await db.insert(foodAliases).values({
+            aliasesToInsert.push({
               id: "alias_" + generateUUID(),
               alias,
               foodId,
-            }).onConflictDoNothing();
+            });
           }
         }
       }
-      // Re-read seeded tables
-      dbFoods = await db.select().from(foodKnowledgeBase);
+
+      if (foodsToInsert.length > 0) {
+        await db.insert(foodKnowledgeBase).values(foodsToInsert);
+      }
+      if (aliasesToInsert.length > 0) {
+        await db.insert(foodAliases).values(aliasesToInsert).onConflictDoNothing();
+      }
+
+      [dbFoods, dbAliases] = await Promise.all([
+        db.select().from(foodKnowledgeBase),
+        db.select().from(foodAliases)
+      ]);
     }
 
-    // Populate in-memory cache
     foodCache.clear();
     aliasCache.clear();
-
-    const dbAliases = await db.select().from(foodAliases);
 
     for (const food of dbFoods) {
       let parsedAliases: string[] = [];
@@ -332,33 +381,61 @@ export function extractFoodPhrases(text: string): { known: string[]; unknown: st
 
     let matchedAny = false;
 
-    // Greedy matching
-    for (const alias of sortedAliases) {
-      if (alias.length > 1 && remaining.includes(alias)) {
-        const foodId = aliasCache.get(alias);
-        if (foodId) {
-          const food = foodCache.get(foodId);
-          if (food) {
-            knownLabelsSet.add(food.label);
-            matchedAny = true;
+    // Priority 1: Check exact canonical labels
+    for (const food of foodCache.values()) {
+      if (food.label.toLowerCase().trim() === remaining) {
+        knownLabelsSet.add(food.label);
+        matchedAny = true;
+        break;
+      }
+    }
+
+    // Priority 2: Greedy matching against Food Alias Dictionary
+    if (!matchedAny) {
+      for (const alias of sortedAliases) {
+        if (alias.length > 1 && remaining.includes(alias)) {
+          const foodId = aliasCache.get(alias);
+          if (foodId) {
+            const food = foodCache.get(foodId);
+            if (food) {
+              knownLabelsSet.add(food.label);
+              matchedAny = true;
+            }
           }
+          remaining = remaining.replace(alias, "").replace(/\s+/g, " ").trim();
         }
-        // Remove matched alias portion from the remaining string to avoid double matching
-        remaining = remaining.replace(alias, "").replace(/\s+/g, " ").trim();
+      }
+    }
+
+    // Priority 3: Food Cache Fuzzy / Token / Phonetic matching
+    if (!matchedAny) {
+      const fuzzy = findFuzzyMatch(part);
+      if (fuzzy) {
+        knownLabelsSet.add(fuzzy.label);
+        matchedAny = true;
       }
     }
 
     // Clean up residual separators and preparation descriptions
     const cleanResidual = remaining
       .replace(/^(ভুনা|ঝোল|ভাজি|কারি|দোপিয়াজা|ভর্তা|সিদ্ধ|পোক্তা|ঝাল|কষা|চিকেন|ফ্রাই|মশলাদার)\s+/gi, "")
-      .replace(/\s+(ভুنا|ঝোল|ভাজি|কারি|দোপিয়াজা|ভর্তা|সিদ্ধ|পোক্তা|ঝাল|কষা|চিকেন|ফ্রাই|মশলাদার)$/gi, "")
+      .replace(/\s+(ভুনা|ঝোল|ভাজি|কারি|দোপিয়াজা|ভর্তা|সিদ্ধ|পোক্তা|ঝাল|কষা|চিকেন|ফ্রাই|মশলাদার)$/gi, "")
       .trim();
 
-    if (cleanResidual.length > 1 && !matchedAny) {
-      unknownPhrases.push(part); // Send the full original unrecognized part to Gemini to preserve complete context
-    } else if (cleanResidual.length > 2 && matchedAny) {
-      // If we matched some known things but have significant residue left, send the residue as unknown
-      unknownPhrases.push(cleanResidual);
+    if (!matchedAny && cleanResidual.length > 1) {
+      const residualFuzzy = findFuzzyMatch(cleanResidual);
+      if (residualFuzzy) {
+        knownLabelsSet.add(residualFuzzy.label);
+      } else {
+        unknownPhrases.push(part);
+      }
+    } else if (matchedAny && cleanResidual.length > 2) {
+      const residualFuzzy = findFuzzyMatch(cleanResidual);
+      if (residualFuzzy) {
+        knownLabelsSet.add(residualFuzzy.label);
+      } else {
+        unknownPhrases.push(cleanResidual);
+      }
     }
   }
 
@@ -562,12 +639,11 @@ Return a strict JSON array conforming to the schema.`;
 }
 
 /**
- * 5-Step Semantic Recognition Pipeline:
- * 1. Normalize Input (NFC normalize, lowercase, ignore punctuation)
- * 2. Alias Database Lookup
- * 3. Fuzzy Matching (phonetics, substrings, Levenshtein distance)
- * 4. Gemini AI (Last Resort semantic match)
- * 5. Self Learning (Save newly matched alias permanently)
+ * 4-Level Priority Semantic Food Recognition Pipeline:
+ * Priority 1: Local Food Knowledge (Exact Canonical Food Label Match)
+ * Priority 2: Food Alias Dictionary (Exact Alias Dictionary Mapping)
+ * Priority 3: Food Cache (Programmatic Fuzzy, Phonetic, Substring & Token Matching)
+ * Priority 4: Gemini API (Last Resort ONLY when no local match exists)
  */
 export async function resolveCanonicalFood(rawName: string): Promise<{ label: string; category: string; id: string }> {
   await initializeFoodCache();
@@ -581,7 +657,14 @@ export async function resolveCanonicalFood(rawName: string): Promise<{ label: st
     return { label: rawName, category: "Other", id: "" };
   }
 
-  // Step 2: Alias Database and exact Cache Lookup
+  // Priority 1: Local Food Knowledge (Check exact match against canonical labels)
+  for (const food of foodCache.values()) {
+    if (food.label.toLowerCase().trim() === normalized) {
+      return { label: food.label, category: food.category, id: food.id };
+    }
+  }
+
+  // Priority 2: Food Alias Dictionary (Check exact match against alias dictionary)
   const exactAliasFoodId = aliasCache.get(normalized);
   if (exactAliasFoodId) {
     const food = foodCache.get(exactAliasFoodId);
@@ -590,16 +673,10 @@ export async function resolveCanonicalFood(rawName: string): Promise<{ label: st
     }
   }
 
-  for (const food of foodCache.values()) {
-    if (food.label.toLowerCase().trim() === normalized) {
-      return { label: food.label, category: food.category, id: food.id };
-    }
-  }
-
-  // Step 3: Programmatic Fuzzy Matching (phonetics, substring, Levenshtein distance)
+  // Priority 3: Food Cache (Programmatic Fuzzy, Phonetic, Substring & Token Matching)
   const fuzzyMatch = findFuzzyMatch(normalized);
   if (fuzzyMatch) {
-    // Step 5: Self Learning - Automatically register this exact raw query as an alias so next time it is Step 2
+    // Auto-learn/register alias so subsequent lookups hit Priority 2 instantly
     try {
       await db.insert(foodAliases).values({
         id: "alias_" + generateUUID(),
@@ -607,10 +684,8 @@ export async function resolveCanonicalFood(rawName: string): Promise<{ label: st
         foodId: fuzzyMatch.id
       }).onConflictDoNothing();
       
-      // Update local cache
       aliasCache.set(normalized, fuzzyMatch.id);
       
-      // Also update food's aliases array in DB & cache if not already in there
       if (!fuzzyMatch.aliases.includes(normalized)) {
         fuzzyMatch.aliases.push(normalized);
         await db.update(foodKnowledgeBase)
@@ -623,7 +698,7 @@ export async function resolveCanonicalFood(rawName: string): Promise<{ label: st
     return { label: fuzzyMatch.label, category: fuzzyMatch.category, id: fuzzyMatch.id };
   }
 
-  // Step 4: Gemini AI (Last Resort semantic reasoning)
+  // Priority 4: Gemini API (Last Resort ONLY when no local match exists)
   if (Date.now() < geminiCooldownUntil) {
     return { label: rawName, category: "Other", id: "" };
   }
