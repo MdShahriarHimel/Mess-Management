@@ -10,14 +10,16 @@ import {
   RefreshCw, Globe, Terminal, ArrowRight, ShieldAlert, CheckCircle2,
   Trash2, Sliders, LayoutGrid
 } from "lucide-react";
-import { Member, AuditLog } from "../types.js";
+import { Member, AuditLog, RespectSenioritySettings } from "../types.js";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface AuditLogsProps {
   currentUser: Member;
   isDarkMode: boolean;
   members?: Member[];
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 interface MessOption {
@@ -26,7 +28,7 @@ interface MessOption {
   superUserId?: string;
 }
 
-export default function AuditLogs({ currentUser, isDarkMode, members = [] }: AuditLogsProps) {
+export default function AuditLogs({ currentUser, isDarkMode, members = [], respectSenioritySettings }: AuditLogsProps) {
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   // State variables
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -729,7 +731,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [] }: Aud
               >
                 <option value="">All Super Users</option>
                 {superUsersList.map(su => (
-                  <option key={su.id} value={su.id}>{su.name} (@{su.nickname})</option>
+                  <option key={su.id} value={su.id}>{su.name} (@{getRespectDisplayName(currentUser, su, respectSenioritySettings)})</option>
                 ))}
               </select>
             </div>

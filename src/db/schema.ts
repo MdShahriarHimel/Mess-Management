@@ -403,6 +403,7 @@ export const tenantSettings = pgTable("tenant_settings", {
   adminVisibility: text("admin_visibility").notNull(), // stringified object
   creditConfig: text("credit_config").notNull(), // stringified object
   appearancePermissions: text("appearance_permissions").notNull(), // stringified object
+  respectSenioritySettings: text("respect_seniority_settings").notNull().default('{"enabled":false,"logic":"AUTOMATIC_SENIORITY","defaultMaleTitle":"ভাই","defaultFemaleTitle":"আপু","manualOverride":false}'),
 });
 
 

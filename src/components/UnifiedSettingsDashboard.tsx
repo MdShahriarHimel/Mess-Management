@@ -4,6 +4,8 @@ import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
 import { ThemeEnginePanel } from "./ThemeEnginePanel";
 import { LoginEnginePanel } from "./LoginEnginePanel";
 import { MonetizationHub } from "./MonetizationHub";
+import { RespectSenioritySettings } from "../types";
+import { getRespectDisplayName } from "../utils/respectHelper";
 
 interface Member {
   id: string;
@@ -96,9 +98,13 @@ interface UnifiedSettingsDashboardProps {
   handleDeleteMonthCycle: (monthId: string) => Promise<void>;
   typographySettings?: any;
   setTypographySettings?: React.Dispatch<React.SetStateAction<any>>;
+  respectSenioritySettings?: RespectSenioritySettings;
+  setRespectSenioritySettings?: React.Dispatch<React.SetStateAction<RespectSenioritySettings>>;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
+  respectSenioritySettings: propRespectSenioritySettings,
+  setRespectSenioritySettings,
   loginCustomization,
   setLoginCustomization,
   dashboardVisibility,
@@ -161,6 +167,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   typographySettings = {},
   setTypographySettings = () => {}
 }) => {
+  const respectSenioritySettings = propRespectSenioritySettings;
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -254,6 +261,24 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       console.error(e);
     }
   };
+
+  // Respect & Seniority Settings State
+  const [respectSettings, setRespectSettings] = useState<RespectSenioritySettings>(() => {
+    return propRespectSenioritySettings || {
+      enabled: false,
+      logic: "AUTOMATIC_SENIORITY",
+      defaultMaleTitle: "ভাই",
+      defaultFemaleTitle: "আপু",
+      manualOverride: false
+    };
+  });
+  const [isSavingRespect, setIsSavingRespect] = useState(false);
+
+  useEffect(() => {
+    if (propRespectSenioritySettings) {
+      setRespectSettings(propRespectSenioritySettings);
+    }
+  }, [propRespectSenioritySettings]);
 
   // Hybrid AI Food Knowledge Base States
   const [foodAnalytics, setFoodAnalytics] = useState<any>(null);
@@ -458,7 +483,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
       if (success) {
         setAppearancePermissions(updatedPermissionsObj);
-        showStatus("success", `Updated permissions for ${selectedMember?.nickname || "member"}!`);
+        showStatus("success", `Updated permissions for ${getRespectDisplayName(currentUser, selectedMember, respectSenioritySettings) || "member"}!`);
       } else {
         showStatus("error", "Failed to update permissions matrix.");
       }
@@ -543,6 +568,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "user-appearance", label: "Personal Preferences", role: "any", icon: "User" },
     { id: "permissions", label: "Permission Matrix", role: "admin", icon: "Shield" },
     { id: "cycles", label: "Cycle & System Rules", role: "admin", icon: "Calendar" },
+    { id: "respect-seniority", label: "Respect & Seniority", role: "superuser-or-ultimate", icon: "Award" },
     { id: "translations", label: "Translation Matrix", role: "admin", icon: "Languages" },
     { id: "food-knowledge", label: "Food Dictionary & AI", role: "any", icon: "BookOpen" },
     { id: "monetization", label: "Monetization Hub", role: "ultimate-admin", icon: "DollarSign" },
@@ -556,8 +582,25 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       return true;
     }
 
-    // 2. Admin & Superuser can access allowed modules including Dashboard Overview
-    if (currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || currentUser.role === "ASSISTANT_SUPERUSER") {
+    // 2. Superuser can access allowed modules + respect-seniority (their own mess)
+    if (currentUser.role === "SUPERUSER" || currentUser.role === "ASSISTANT_SUPERUSER") {
+      const allowedAdminTabs = [
+        "dashboard-overview", // Dashboard Overview Editor
+        "branding", // ERP Identity
+        "theme-library", // Theme Library
+        "mess-appearance", // Mess Appearance
+        "user-appearance", // Personal Preferences
+        "permissions", // Permission Matrix
+        "cycles", // Cycle & System Rules
+        "respect-seniority", // Respect & Seniority Control
+        "translations", // Translation Matrix
+        "food-knowledge" // Food Dictionary & AI
+      ];
+      return allowedAdminTabs.includes(tab.id);
+    }
+
+    // 3. Normal Admin can access allowed modules EXCEPT respect-seniority
+    if (currentUser.role === "ADMIN") {
       const allowedAdminTabs = [
         "dashboard-overview", // Dashboard Overview Editor
         "branding", // ERP Identity
@@ -572,12 +615,12 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       return allowedAdminTabs.includes(tab.id);
     }
 
-    // 3. Members only access Personal Preferences
+    // 4. Members only access Personal Preferences
     if (currentUser.role === "MEMBER") {
       return tab.id === "user-appearance";
     }
 
-    // 4. Managers have NO ERP configuration.
+    // 5. Managers have NO ERP configuration.
     // If they somehow land here, they can only see Personal Preferences.
     return tab.id === "user-appearance";
   });
@@ -604,6 +647,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     if (name === "MonitorPlay") return <LucideIcons.MonitorPlay size={size} className={className} />;
     if (name === "CreditCard") return <LucideIcons.CreditCard size={size} className={className} />;
     if (name === "Zap") return <LucideIcons.Zap size={size} className={className} />;
+    if (name === "Award") return <LucideIcons.Award size={size} className={className} />;
     
     return <LucideIcons.Settings size={size} className={className} />;
   };
@@ -1614,7 +1658,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   >
                     {membersList.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.nickname} ({m.name}) — {m.role}
+                        {getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name}) — {m.role}
                       </option>
                     ))}
                   </select>
@@ -1623,7 +1667,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 {selectedMember && (
                   <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/20 space-y-3">
                     <h4 className="text-xs font-bold text-slate-300">
-                      Grant Specific Control Rights to: <span className="text-cyan-400">{selectedMember.nickname}</span>
+                      Grant Specific Control Rights to: <span className="text-cyan-400">{getRespectDisplayName(currentUser, selectedMember, respectSenioritySettings)}</span>
                     </h4>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1827,6 +1871,176 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* RESPECT & SENIORITY CONTROL */}
+          {activeSubTab === "respect-seniority" && filteredTabs.some(t => t.id === "respect-seniority") && (
+            <div className={`p-6 rounded-2xl border ${isDarkMode ? "bg-slate-900/60 border-slate-800 text-slate-100" : "bg-white border-slate-200 text-slate-800"} space-y-6 shadow-xl text-left`}>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/40 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <LucideIcons.Award className="w-5 h-5 text-amber-400" />
+                    <h2 className="text-base font-bold font-display uppercase tracking-wider text-amber-400">
+                      Respect & Seniority
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {isUltimateAdmin || isPlatformOwner
+                      ? "Configure global ERP system-wide default respect rules and seniority protocols."
+                      : "Configure mess-level respect rules and seniority protocols for your active mess."}
+                  </p>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-widest bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  {isUltimateAdmin || isPlatformOwner ? "Ultimate Admin (Global Defaults)" : "Super User (Mess Scope)"}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {/* 1. Respect System Toggle */}
+                <div className={`p-4 rounded-xl border flex items-center justify-between ${isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider block text-slate-200">
+                      Respect System
+                    </label>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      Enable honorific title system based on member seniority and rules (Default: OFF)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = { ...respectSettings, enabled: !respectSettings.enabled };
+                      setRespectSettings(updated);
+                    }}
+                    className={`w-12 h-6 rounded-full transition-colors relative flex items-center p-1 cursor-pointer ${
+                      respectSettings.enabled ? "bg-amber-500 justify-end" : "bg-slate-700 justify-start"
+                    }`}
+                  >
+                    <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+                  </button>
+                </div>
+
+                {/* 2. Respect Logic */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                    Respect Logic
+                  </label>
+                  <select
+                    value={respectSettings.logic}
+                    onChange={(e) => {
+                      const updated = { ...respectSettings, logic: e.target.value as "AUTOMATIC_SENIORITY" };
+                      setRespectSettings(updated);
+                    }}
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                      isDarkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-50 border-slate-200 text-slate-800"
+                    }`}
+                  >
+                    <option value="AUTOMATIC_SENIORITY">Automatic by Seniority Year</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400">
+                    Determines titles automatically based on member academic admission session / seniority year.
+                  </p>
+                </div>
+
+                {/* 3. Default Male Title */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                    Default Male Title
+                  </label>
+                  <input
+                    type="text"
+                    value={respectSettings.defaultMaleTitle}
+                    placeholder="e.g. ভাই"
+                    onChange={(e) => {
+                      const updated = { ...respectSettings, defaultMaleTitle: e.target.value };
+                      setRespectSettings(updated);
+                    }}
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                      isDarkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-50 border-slate-200 text-slate-800"
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    Honorific suffix appended to male senior members (Default: ভাই)
+                  </p>
+                </div>
+
+                {/* 4. Default Female Title */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                    Default Female Title
+                  </label>
+                  <input
+                    type="text"
+                    value={respectSettings.defaultFemaleTitle}
+                    placeholder="e.g. আপু"
+                    onChange={(e) => {
+                      const updated = { ...respectSettings, defaultFemaleTitle: e.target.value };
+                      setRespectSettings(updated);
+                    }}
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                      isDarkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-50 border-slate-200 text-slate-800"
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    Honorific suffix appended to female senior members (Default: আপু)
+                  </p>
+                </div>
+
+                {/* 5. Manual Override Toggle */}
+                <div className={`p-4 rounded-xl border flex items-center justify-between ${isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider block text-slate-200">
+                      Manual Override
+                    </label>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      Allow custom manual titles to override automatic title calculations (Default: OFF)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = { ...respectSettings, manualOverride: !respectSettings.manualOverride };
+                      setRespectSettings(updated);
+                    }}
+                    className={`w-12 h-6 rounded-full transition-colors relative flex items-center p-1 cursor-pointer ${
+                      respectSettings.manualOverride ? "bg-amber-500 justify-end" : "bg-slate-700 justify-start"
+                    }`}
+                  >
+                    <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+                  </button>
+                </div>
+
+                {/* Save Button */}
+                <div className="pt-4 border-t border-slate-800/40 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isSavingRespect}
+                    onClick={async () => {
+                      setIsSavingRespect(true);
+                      try {
+                        const success = await handleUpdateSettings({ respectSenioritySettings: respectSettings });
+                        if (success) {
+                          if (setRespectSenioritySettings) {
+                            setRespectSenioritySettings(respectSettings);
+                          }
+                          showStatus("success", "Respect & Seniority settings saved successfully!");
+                        } else {
+                          showStatus("error", "Failed to save settings. Check permissions.");
+                        }
+                      } catch (e) {
+                        showStatus("error", "Error saving Respect & Seniority settings.");
+                      } finally {
+                        setIsSavingRespect(false);
+                      }
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                  >
+                    <LucideIcons.Save size={14} />
+                    <span>{isSavingRespect ? "Saving..." : "Save Respect Settings"}</span>
+                  </button>
                 </div>
               </div>
             </div>

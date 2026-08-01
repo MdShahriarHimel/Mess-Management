@@ -7,7 +7,8 @@ import React, { useState, useEffect } from "react";
 import { 
   ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus 
 } from "lucide-react";
-import { Member, MarketEntry, Duty, UserRole, MessMonth } from "../types.js";
+import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -31,6 +32,7 @@ interface MarketLogsProps {
   marketForcedFlowStep?: string | null;
   onSetMarketForcedFlowStep?: (step: string | null) => void;
   months?: MessMonth[];
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 export default function MarketLogs({ 
@@ -45,7 +47,8 @@ export default function MarketLogs({
   onSetSubTab,
   marketForcedFlowStep,
   onSetMarketForcedFlowStep,
-  months = []
+  months = [],
+  respectSenioritySettings
 }: MarketLogsProps) {
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
@@ -764,7 +767,7 @@ export default function MarketLogs({
                                   {(buyer?.nickname || "??").slice(0, 2)}
                                 </div>
                               )}
-                              <span>{buyer?.nickname || "Manager"}</span>
+                              <span>{getRespectDisplayName(currentUser, buyer, respectSenioritySettings) || "Manager"}</span>
                             </div>
                           </td>
                           <td className="py-3.5 px-4 font-mono">{parsedDate}</td>
@@ -958,9 +961,9 @@ export default function MarketLogs({
                                           <div 
                                             key={d.id}
                                             className="text-[8px] leading-tight px-1 py-0.5 rounded bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-extrabold border border-cyan-500/10 truncate"
-                                            title={`${assignedMember?.nickname || "Unknown"}: ${d.task || "Market Duty"}`}
+                                            title={`${getRespectDisplayName(currentUser, assignedMember, respectSenioritySettings) || "Unknown"}: ${d.task || "Market Duty"}`}
                                           >
-                                            {assignedMember?.nickname || "Unknown"}
+                                            {getRespectDisplayName(currentUser, assignedMember, respectSenioritySettings) || "Unknown"}
                                           </div>
                                         );
                                       })}
@@ -1036,7 +1039,7 @@ export default function MarketLogs({
                               </div>
                             )}
                             <div>
-                              <span>{buyer?.nickname || "Unknown"}</span>
+                              <span>{getRespectDisplayName(currentUser, buyer, respectSenioritySettings) || "Unknown"}</span>
                               {m.isExtra && (
                                 <span className="block text-[8px] uppercase tracking-wider font-extrabold text-orange-500 mt-0.5">
                                   EXTRA SHOP
@@ -1163,7 +1166,7 @@ export default function MarketLogs({
                     }`}
                   >
                     {activeMembers.map(m => (
-                      <option key={m.id} value={m.id}>{m.nickname} ({m.name} - {m.email})</option>
+                      <option key={m.id} value={m.id}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name} - {m.email})</option>
                     ))}
                   </select>
                 </div>
@@ -1512,7 +1515,7 @@ export default function MarketLogs({
                           const m = members.find(mem => mem.id === duty.memberId);
                           return (
                             <div key={duty.id} className="flex justify-between items-center bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
-                              <span className="font-bold text-cyan-400">{m?.nickname || "Unknown"}</span>
+                              <span className="font-bold text-cyan-400">{getRespectDisplayName(currentUser, m, respectSenioritySettings) || "Unknown"}</span>
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] text-slate-500 truncate max-w-[100px]">{duty.task}</span>
                                 {canEditMarketDuty && (

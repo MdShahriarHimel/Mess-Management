@@ -3631,6 +3631,13 @@ function mapSettingsToRow(messId: string, settings: any) {
     adminVisibility: JSON.stringify(settings.adminVisibility || {}),
     creditConfig: JSON.stringify(settings.creditConfig || {}),
     appearancePermissions: JSON.stringify(metadataAppended),
+    respectSenioritySettings: JSON.stringify(settings.respectSenioritySettings || {
+      enabled: false,
+      logic: "AUTOMATIC_SENIORITY",
+      defaultMaleTitle: "ভাই",
+      defaultFemaleTitle: "আপু",
+      manualOverride: false
+    }),
   };
 }
 
@@ -3682,6 +3689,13 @@ function mapRowToSettings(row: any) {
     adminVisibility: safeParse(row.adminVisibility, {}),
     creditConfig: safeParse(row.creditConfig, {}),
     appearancePermissions: appearancePermissionsClean,
+    respectSenioritySettings: safeParse(row.respectSenioritySettings, {
+      enabled: false,
+      logic: "AUTOMATIC_SENIORITY",
+      defaultMaleTitle: "ভাই",
+      defaultFemaleTitle: "আপু",
+      manualOverride: false
+    }),
     schemaVersion,
     createdAt,
     updatedAt,
@@ -3830,6 +3844,7 @@ async function saveSettingsToPostgres(messId: string, settings: any) {
           adminVisibility: rowToSave.adminVisibility,
           creditConfig: rowToSave.creditConfig,
           appearancePermissions: rowToSave.appearancePermissions,
+          respectSenioritySettings: rowToSave.respectSenioritySettings,
         }
       });
     console.log(`[Settings] Successfully persisted settings to PostgreSQL for mess: ${messId}`);
@@ -4357,6 +4372,14 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     if (req.body.creditConfig !== undefined) {
       res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify Credit & Branding settings" });
       return;
+    }
+
+    // Check Respect & Seniority settings - Normal Admin cannot access, Super User may configure their mess, Ultimate Admin global
+    if (req.body.respectSenioritySettings !== undefined) {
+      if (role === UserRole.ADMIN) {
+        res.status(403).json({ error: "Normal Admins cannot access or modify Respect & Seniority settings" });
+        return;
+      }
     }
 
     // Check branding / logo text updates - STRICTLY Ultimate Admin only

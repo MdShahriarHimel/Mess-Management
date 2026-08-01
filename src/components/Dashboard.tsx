@@ -9,10 +9,11 @@ import {
   ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
   Vote, Award, Percent, Settings2, Sparkles, Trash2, ShoppingCart, Lock
 } from "lucide-react";
-import { Member, Notice, UserRole } from "../types.js";
+import { Member, Notice, UserRole, RespectSenioritySettings } from "../types.js";
 import { ColorPalettePicker } from "../App.js";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface DashboardProps {
   currentUser: Member;
@@ -55,6 +56,7 @@ interface DashboardProps {
   onVoteCycleProposal?: (proposalId: string, vote: "APPROVED" | "REJECTED") => void;
   onApplyCycleProposal?: (proposalId: string) => void;
   onDeleteCycleProposal?: (proposalId: string) => void;
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 export default function Dashboard({ 
@@ -72,6 +74,7 @@ export default function Dashboard({
   showResultsInDashboard = false,
   enableManagerRating = true,
   duties = [],
+  respectSenioritySettings,
   marketForcedFlowStep,
   onSetMarketForcedFlowStep,
   forcedMarketDate,
@@ -569,7 +572,7 @@ export default function Dashboard({
                         </div>
 
                         <div className="text-[11px] text-slate-500 font-semibold">
-                          Proposed by Super User: <span className="text-slate-300">{proposal.proposedBy?.name || proposal.proposedBy?.nickname}</span>
+                          Proposed by Super User: <span className="text-slate-300">{getRespectDisplayName(currentUser, proposal.proposedBy, respectSenioritySettings)}</span>
                         </div>
                       </div>
 
@@ -831,9 +834,9 @@ export default function Dashboard({
               </span>
               <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight flex flex-wrap items-center gap-2">
                 {homeCustomization?.welcomeTitle ? (
-                  homeCustomization.welcomeTitle.replace("{nickname}", currentUser.nickname)
+                  homeCustomization.welcomeTitle.replace("{nickname}", getRespectDisplayName(currentUser, currentUser, respectSenioritySettings))
                 ) : (
-                  `Assalamu Alaikum, ${currentUser.nickname}!`
+                  `Assalamu Alaikum, ${getRespectDisplayName(currentUser, currentUser, respectSenioritySettings)}!`
                 )}
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
                   {currentUser.role}
@@ -1239,7 +1242,7 @@ export default function Dashboard({
                               {currentUser.badge === "founder-badge" && <span className="text-xs" title="Founder">🎖️</span>}
                               {currentUser.badge === "premium-badge" && <span className="text-xs" title="Premium">💎</span>}
                             </h4>
-                            <p className="text-[9px] text-cyan-400 font-bold">@{currentUser.nickname}</p>
+                            <p className="text-[9px] text-cyan-400 font-bold">@{getRespectDisplayName(currentUser, currentUser, respectSenioritySettings)}</p>
                             <span className="inline-block text-[7px] font-black uppercase tracking-widest px-1 rounded border mt-0.5 border-slate-700 bg-slate-800/40 text-slate-300">
                               {localPrevTab === "admin" ? "ADMIN" : "MEMBER"}
                             </span>
@@ -1489,7 +1492,8 @@ export default function Dashboard({
                             const count = result.counts[cid] || 0;
                             const pct = result.totalRVotes > 0 ? Math.round((count / result.totalRVotes) * 100) : 0;
                             const isWinner = result.max > 0 && result.winnerIds.includes(cid);
-                            const nick = membersListProp.find(m => m.id === cid)?.nickname || "Unknown";
+                            const targetM = membersListProp.find(m => m.id === cid);
+                            const nick = getRespectDisplayName(currentUser, targetM, respectSenioritySettings) || "Unknown";
 
                             return (
                               <div 
@@ -1520,7 +1524,7 @@ export default function Dashboard({
                           <div>
                             <span className="text-slate-400">Elected: </span>
                             <span className="font-extrabold text-emerald-400">
-                              {result.winnerIds.map(id => membersListProp.find(m => m.id === id)?.nickname || "Unknown").join(" & ")}
+                              {result.winnerIds.map(id => getRespectDisplayName(currentUser, membersListProp.find(m => m.id === id), respectSenioritySettings) || "Unknown").join(" & ")}
                             </span>
                           </div>
                         </div>
@@ -1698,7 +1702,7 @@ export default function Dashboard({
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className={`text-xs font-bold truncate ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
-                          {m.name} <span className="text-[10px] text-slate-400 font-normal">({m.nickname})</span>
+                          {m.name} <span className="text-[10px] text-slate-400 font-normal">({getRespectDisplayName(currentUser, m, respectSenioritySettings)})</span>
                         </p>
                         <p className="text-[11px] text-orange-400 mt-1 font-medium flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>

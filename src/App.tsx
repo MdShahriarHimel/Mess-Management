@@ -37,7 +37,8 @@ import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 
 // Types
-import { Member, MessMonth, UserRole, CycleProposal } from "./types.js";
+import { Member, MessMonth, UserRole, CycleProposal, RespectSenioritySettings } from "./types.js";
+import { getRespectDisplayName } from "./utils/respectHelper.js";
 
 const COLOR_PALETTES = [
   { name: "Sunset Orange", hex: "#ea580c" },
@@ -1824,6 +1825,13 @@ export default function App() {
     link: ""
   });
   const [appearancePermissions, setAppearancePermissions] = useState<Record<string, string[]>>({});
+  const [respectSenioritySettings, setRespectSenioritySettings] = useState<RespectSenioritySettings>({
+    enabled: false,
+    logic: "AUTOMATIC_SENIORITY",
+    defaultMaleTitle: "ভাই",
+    defaultFemaleTitle: "আপু",
+    manualOverride: false
+  });
 
   // 3-Level settings and customization states
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<string>("mess-appearance");
@@ -1965,6 +1973,7 @@ export default function App() {
         if (data.adminVisibility !== undefined) setAdminVisibility(data.adminVisibility);
         if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
         if (data.creditConfig) setCreditConfig(prev => ({ ...prev, ...data.creditConfig }));
+        if (data.respectSenioritySettings) setRespectSenioritySettings(prev => ({ ...prev, ...data.respectSenioritySettings }));
         if (data.appearancePermissions) setAppearancePermissions(data.appearancePermissions);
         if (data.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(data.disableBackgroundAudio);
         if (data.activeAudioSettings) setActiveAudioSettings(data.activeAudioSettings);
@@ -2173,6 +2182,7 @@ export default function App() {
           if (s.adminVisibility !== undefined) setAdminVisibility(s.adminVisibility);
           if (s.typographySettings) setTypographySettings(s.typographySettings);
           if (s.creditConfig) setCreditConfig(s.creditConfig);
+          if (s.respectSenioritySettings) setRespectSenioritySettings(s.respectSenioritySettings);
           if (s.appearancePermissions) setAppearancePermissions(s.appearancePermissions);
           if (s.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(s.disableBackgroundAudio);
           if (s.activeAudioSettings) setActiveAudioSettings(s.activeAudioSettings);
@@ -4478,7 +4488,7 @@ export default function App() {
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{currentUser.nickname}</p>
+                  <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{getRespectDisplayName(currentUser, currentUser, respectSenioritySettings)}</p>
                   <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-1">{currentUser.role}</span>
                 </div>
               </div>
@@ -4598,7 +4608,7 @@ export default function App() {
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{currentUser.nickname}</p>
+              <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{getRespectDisplayName(currentUser, currentUser, respectSenioritySettings)}</p>
               <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-0.5">{currentUser.role}</span>
             </div>
             
@@ -4838,6 +4848,7 @@ export default function App() {
               onVoteCycleProposal={handleVoteCycleProposal}
               onApplyCycleProposal={handleApplyCycleProposal}
               onDeleteCycleProposal={handleDeleteCycleProposal}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -4851,6 +4862,7 @@ export default function App() {
               dropdownOptions={dropdownOptions}
               safeMode={safeMode}
               mealTypes={mealTypes}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -4863,6 +4875,7 @@ export default function App() {
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
               mealTypes={mealTypes}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -4893,6 +4906,7 @@ export default function App() {
               marketForcedFlowStep={marketForcedFlowStep}
               onSetMarketForcedFlowStep={setMarketForcedFlowStep}
               months={months}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -4924,6 +4938,7 @@ export default function App() {
               safeMode={safeMode}
               logoText={logoText}
               mealTypes={mealTypes}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -4939,6 +4954,7 @@ export default function App() {
               currentUser={currentUser}
               isDarkMode={activeIsDarkMode}
               members={membersList}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -4954,6 +4970,7 @@ export default function App() {
                 fetchMonthsAndMembers(sessionToken);
               }}
               currencySymbol={currencySymbol}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 
@@ -5019,6 +5036,8 @@ export default function App() {
                 setMessAnimations={setMessAnimations}
                 creditConfig={creditConfig}
                 setCreditConfig={setCreditConfig}
+                respectSenioritySettings={respectSenioritySettings}
+                setRespectSenioritySettings={setRespectSenioritySettings}
                 appearancePermissions={appearancePermissions}
                 setAppearancePermissions={setAppearancePermissions}
                 membersList={membersList}

@@ -9,9 +9,10 @@ import {
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
   ChevronDown, ChevronUp
 } from "lucide-react";
-import { Member, UserRole, MemberStatus } from "../types.js";
+import { Member, UserRole, MemberStatus, RespectSenioritySettings } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
 import { processProfilePhoto } from "../utils/imageOptimizer";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 
 const COLOR_PALETTES = [
@@ -100,9 +101,10 @@ interface MembersProps {
   dropdownOptions?: string[];
   safeMode?: boolean;
   mealTypes?: any[];
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
-export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [], safeMode = false, mealTypes }: MembersProps) {
+export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [], safeMode = false, mealTypes, respectSenioritySettings }: MembersProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
@@ -618,7 +620,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   )}
                 </h3>
                 <p className={`text-xs font-bold ${isDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
-                  @{member.nickname}
+                  @{getRespectDisplayName(currentUser, member, respectSenioritySettings)}
                 </p>
               </div>
               <span className={member.id === currentUser.id ? "text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl border transition-all animate-pulse border-cyan-400/40 bg-cyan-500/20 text-cyan-300" : getRoleStyle(displayRole)}>
@@ -955,7 +957,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <div className="flex justify-between items-start gap-1">
                             <div>
                               <h3 className="font-extrabold text-sm truncate text-slate-400 line-through decoration-slate-600">{member.name}</h3>
-                              <p className="text-xs text-slate-500 font-semibold">@{member.nickname}</p>
+                              <p className="text-xs text-slate-500 font-semibold">@{getRespectDisplayName(currentUser, member, respectSenioritySettings)}</p>
                             </div>
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-slate-900 text-slate-500">
                               {displayRole.replace("_", " ")}
@@ -1109,7 +1111,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                         {/* Core Details */}
                         <div className="flex-1 min-w-0">
                           <h3 className="font-extrabold text-sm truncate text-slate-400 line-through decoration-slate-600">{member.name}</h3>
-                          <p className="text-xs text-slate-500 font-semibold">@{member.nickname}</p>
+                          <p className="text-xs text-slate-500 font-semibold">@{getRespectDisplayName(currentUser, member, respectSenioritySettings)}</p>
 
                           <div className="mt-3.5 space-y-1.5 text-[11px] text-slate-500 font-mono">
                             <p className="truncate">Role: <span className="text-slate-400">{member.role}</span></p>
@@ -2192,7 +2194,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
               <div>
                 <h3 className="text-lg font-bold font-display text-cyan-400 uppercase tracking-wide flex items-center gap-1.5">
                   <UserCheck size={20} className="text-orange-500" />
-                  Mess Resident Ledger: {selectedMemberForMeals.nickname}
+                  Mess Resident Ledger: {getRespectDisplayName(currentUser, selectedMemberForMeals, respectSenioritySettings)}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Detailed financial balances, verified contact info, and active meal charts.
@@ -2231,7 +2233,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     )}
                     <div>
                       <h4 className="font-extrabold text-sm text-slate-200">{selectedMemberForMeals.name}</h4>
-                      <p className="text-xs text-cyan-400 font-bold">@{selectedMemberForMeals.nickname}</p>
+                      <p className="text-xs text-cyan-400 font-bold">@{getRespectDisplayName(currentUser, selectedMemberForMeals, respectSenioritySettings)}</p>
                     </div>
                     <div className="flex justify-center gap-1.5">
                       {(() => {

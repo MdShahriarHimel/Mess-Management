@@ -7,10 +7,11 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
   DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2, Search, Users, FileText
 } from "lucide-react";
-import { Member, Bill, BillStatus, UserRole, MessMonth } from "../types.js";
+import { Member, Bill, BillStatus, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
 import * as XLSX from "xlsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface FinanceSettlementProps {
   currentUser: Member;
@@ -35,6 +36,7 @@ interface FinanceSettlementProps {
   safeMode?: boolean;
   logoText?: string;
   mealTypes?: any[];
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 export default function FinanceSettlement({ 
@@ -50,7 +52,8 @@ export default function FinanceSettlement({
   balanceSheetGlow = "none",
   safeMode = false,
   logoText = "Ababil mess",
-  mealTypes
+  mealTypes,
+  respectSenioritySettings
 }: FinanceSettlementProps) {
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
@@ -1749,8 +1752,8 @@ export default function FinanceSettlement({
                       title="Click to view detailed accountings"
                     >
                       <td className="py-3.5 px-4 font-bold text-slate-300 flex items-center gap-2">
-                        {renderMemberPhotoBeforeName(m.memberId, m.nickname)}
-                        {m.nickname}
+                        {renderMemberPhotoBeforeName(m.memberId, getRespectDisplayName(currentUser, members.find(mem => mem.id === m.memberId), respectSenioritySettings) || m.nickname)}
+                        {getRespectDisplayName(currentUser, members.find(mem => mem.id === m.memberId), respectSenioritySettings) || m.nickname}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.deposit}</td>
                       <td className="py-3.5 px-4 text-right font-mono">{currencySymbol} {m.market}</td>
@@ -2025,7 +2028,7 @@ export default function FinanceSettlement({
                     >
                       <option value="">-- Select Member --</option>
                       {activeMembers.map(m => (
-                        <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                        <option key={m.id} value={m.id}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name})</option>
                       ))}
                     </select>
                   </div>
@@ -2206,8 +2209,8 @@ export default function FinanceSettlement({
                           <tr key={m.id} className="hover:bg-cyan-500/5 transition-colors">
                             {/* MEMBER */}
                             <td className="py-3.5 px-4 font-bold text-xs flex items-center gap-2">
-                              {renderMemberPhotoBeforeName(m.id, m.nickname)}
-                              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{m.nickname}</span>
+                              {renderMemberPhotoBeforeName(m.id, getRespectDisplayName(currentUser, m, respectSenioritySettings))}
+                              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)}</span>
                             </td>
 
                             {/* DYNAMIC BILL COLUMNS */}
@@ -2652,7 +2655,7 @@ export default function FinanceSettlement({
                 >
                   <option value="">-- Choose Member --</option>
                   {activeMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                    <option key={m.id} value={m.id}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name})</option>
                   ))}
                 </select>
               </div>

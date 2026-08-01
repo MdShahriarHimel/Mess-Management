@@ -7,7 +7,8 @@ import { useState, useEffect } from "react";
 import { 
   Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle 
 } from "lucide-react";
-import { Member, Meal, UserRole } from "../types.js";
+import { Member, Meal, UserRole, RespectSenioritySettings } from "../types.js";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface MealsTrackerProps {
   currentUser: Member;
@@ -26,6 +27,7 @@ interface MealsTrackerProps {
     allowPreviousMealPlanner?: boolean;
   };
   mealTypes?: any[];
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 let fetchCounter = 0;
@@ -37,7 +39,8 @@ export default function MealsTracker({
   isDarkMode, 
   onRefresh,
   dateRestrictions,
-  mealTypes
+  mealTypes,
+  respectSenioritySettings
 }: MealsTrackerProps) {
   const authToken = sessionStorage.getItem("mess_token") || localStorage.getItem("mess_token") || currentUser.id;
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
@@ -569,7 +572,7 @@ export default function MealsTracker({
                           )}
                           <div>
                             <p className="text-xs font-extrabold">{member.name}</p>
-                            <p className="text-[10px] text-slate-500">@{member.nickname}</p>
+                            <p className="text-[10px] text-slate-500">@{getRespectDisplayName(currentUser, member, respectSenioritySettings)}</p>
                           </div>
                         </div>
                       </td>

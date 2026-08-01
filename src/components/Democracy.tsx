@@ -1,17 +1,8 @@
 import React, { useState } from "react";
 import { Vote, Award, Check, UserCheck, ShieldAlert, ShieldCheck, ToggleLeft, ToggleRight, Trash2, Plus, RefreshCw, UserMinus } from "lucide-react";
 
-interface Member {
-  id: string;
-  name: string;
-  nickname: string;
-  role: string;
-  photo?: string | null;
-  assignedTask?: string;
-  phone?: string;
-  email?: string;
-  isActive?: boolean;
-}
+import { Member, UserRole, RespectSenioritySettings } from "../types.js";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface DemocracyProps {
   currentUser: Member;
@@ -36,6 +27,7 @@ interface DemocracyProps {
   sessionToken: string;
   onRefresh: () => void;
   currencySymbol?: string;
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 export default function Democracy({
@@ -45,7 +37,8 @@ export default function Democracy({
   elections,
   sessionToken,
   onRefresh,
-  currencySymbol = "৳"
+  currencySymbol = "৳",
+  respectSenioritySettings
 }: DemocracyProps) {
   const [loading, setLoading] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
@@ -85,7 +78,7 @@ export default function Democracy({
     const roleVotes = (elections.votes as any)[role] || {};
     return Object.entries(roleVotes)
       .filter(([_, cid]) => cid === candidateId)
-      .map(([voterId]) => members.find(m => m.id === voterId)?.nickname || "Unknown");
+      .map(([voterId]) => getRespectDisplayName(currentUser, members.find(m => m.id === voterId), respectSenioritySettings) || "Unknown");
   };
 
   // Handle Admin saving configuration
@@ -216,7 +209,7 @@ export default function Democracy({
       return;
     }
 
-    if (confirm(`Do you want to democratically promote "${winnerMember.nickname}" to ${targetRole}? This will upgrade their system privileges, clear current ballots for this role, and log this resolution in the Audit Trails.`)) {
+    if (confirm(`Do you want to democratically promote "${getRespectDisplayName(currentUser, winnerMember, respectSenioritySettings)}" to ${targetRole}? This will upgrade their system privileges, clear current ballots for this role, and log this resolution in the Audit Trails.`)) {
       setLoading(true);
       try {
         const response = await fetch("/api/elections/resolve", {
@@ -370,7 +363,7 @@ export default function Democracy({
                               <div className="flex items-center gap-3">
                                 {renderMemberPhoto(cid, m.name, "w-8 h-8")}
                                 <div>
-                                  <p className="font-bold text-slate-200">{m.nickname} <span className="font-normal text-[10px] text-slate-400">({m.name})</span></p>
+                                  <p className="font-bold text-slate-200">{getRespectDisplayName(currentUser, m, respectSenioritySettings)} <span className="font-normal text-[10px] text-slate-400">({m.name})</span></p>
                                   <p className="text-[9px] text-slate-500 uppercase font-mono">{m.role.replace(/_/g, " ")} • {m.assignedTask || "General Member"}</p>
                                 </div>
                               </div>
@@ -557,7 +550,7 @@ export default function Democracy({
                         <div className="flex items-center gap-3">
                           {renderMemberPhoto(cid, m.name, "w-12 h-12")}
                           <div>
-                            <p className="font-bold text-sm text-slate-200">{m.nickname}</p>
+                            <p className="font-bold text-sm text-slate-200">{getRespectDisplayName(currentUser, m, respectSenioritySettings)}</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">Full Name: {m.name}</p>
                             <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider mt-0.5">{m.assignedTask || "General Member"}</p>
                           </div>
@@ -641,7 +634,7 @@ export default function Democracy({
                         <div className="flex items-center gap-3">
                           {renderMemberPhoto(cid, m.name, "w-12 h-12")}
                           <div>
-                            <p className="font-bold text-sm text-slate-200">{m.nickname}</p>
+                            <p className="font-bold text-sm text-slate-200">{getRespectDisplayName(currentUser, m, respectSenioritySettings)}</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">Full Name: {m.name}</p>
                             <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider mt-0.5">{m.assignedTask || "General Member"}</p>
                           </div>

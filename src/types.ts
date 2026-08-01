@@ -3,6 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export interface RespectSenioritySettings {
+  enabled: boolean;
+  logic: "AUTOMATIC_SENIORITY";
+  defaultMaleTitle: string;
+  defaultFemaleTitle: string;
+  manualOverride: boolean;
+}
+
 export enum UserRole {
   ADMIN = "ADMIN",
   SUPERUSER = "SUPERUSER",
@@ -65,6 +73,13 @@ export interface Member {
   profileDecoration?: string | null;
   dashboardStyle?: string | null;
   backgroundEffect?: string | null;
+  institution?: string;
+  department?: string;
+  educationType?: string;
+  admissionSession?: string;
+  seniorityYear?: string;
+  gender?: string;
+  manualTitle?: string;
 }
 
 export interface MessMonth {
