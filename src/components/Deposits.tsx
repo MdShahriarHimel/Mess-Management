@@ -5,12 +5,13 @@
 
 import React, { useState, useEffect } from "react";
 import { DollarSign, Plus, X, Trash2 } from "lucide-react";
-import { Member, Deposit, UserRole } from "../types.js";
+import { Member, Deposit, UserRole, MessMonth } from "../types.js";
 
 interface DepositsProps {
   currentUser: Member;
   currentMonthId: string;
   members: Member[];
+  months?: MessMonth[];
   isDarkMode: boolean;
   onRefresh: () => void;
   currencySymbol?: string;
@@ -40,6 +41,7 @@ export default function Deposits({
   currentUser, 
   currentMonthId, 
   members, 
+  months,
   isDarkMode, 
   onRefresh,
   currencySymbol = "৳",
@@ -54,6 +56,10 @@ export default function Deposits({
   const [loading, setLoading] = useState(false);
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
+
+  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const activeMonthObj = months?.find(m => m.id === currentMonthId);
+  const isMonthLocked = activeMonthObj?.isLocked && !activeMonthObj?.manuallyUnlocked && !isUltimateAdmin;
 
   const fetchDeposits = async () => {
     if (!currentMonthId) return;
@@ -76,6 +82,10 @@ export default function Deposits({
 
   const handleAddDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isMonthLocked) {
+      alert("This month is locked. Unlock it before modifying deposits.");
+      return;
+    }
     if (!memberId || !amount) {
       alert("Please enter member and amount");
       return;
@@ -132,6 +142,10 @@ export default function Deposits({
   };
 
   const handleDelete = async (id: string) => {
+    if (isMonthLocked) {
+      alert("This month is locked. Unlock it before modifying deposits.");
+      return;
+    }
     if (!confirm("Remove this deposit record?")) return;
     try {
       const response = await fetch(`/api/deposits/${id}`, {
@@ -141,6 +155,9 @@ export default function Deposits({
       if (response.ok) {
         fetchDeposits();
         onRefresh();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || "Failed to delete deposit");
       }
     } catch (e) {
       console.error(e);
@@ -167,8 +184,19 @@ export default function Deposits({
 
         {isManagerOrAdmin && (
           <button
-            onClick={() => { setShowAddModal(true); }}
-            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+            onClick={() => {
+              if (isMonthLocked) {
+                alert("This month is locked. Unlock it before modifying deposits.");
+                return;
+              }
+              setShowAddModal(true);
+            }}
+            title={isMonthLocked ? "This month is locked. Unlock it before modifying deposits." : "Register Deposit"}
+            className={`px-4 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md ${
+              isMonthLocked
+                ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-60"
+                : "bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white cursor-pointer"
+            }`}
           >
             <Plus size={15} />
             REGISTER DEPOSIT
@@ -234,9 +262,19 @@ export default function Deposits({
                       <td className="py-3 px-4 text-right">
                         {isManagerOrAdmin && (
                           <button
-                            onClick={() => handleDelete(d.id)}
-                            className="p-1 text-rose-400 hover:bg-rose-500/10 rounded cursor-pointer"
-                            title="Delete deposit"
+                            onClick={() => {
+                              if (isMonthLocked) {
+                                alert("This month is locked. Unlock it before modifying deposits.");
+                                return;
+                              }
+                              handleDelete(d.id);
+                            }}
+                            className={`p-1 rounded ${
+                              isMonthLocked
+                                ? "text-slate-600 cursor-not-allowed"
+                                : "text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                            }`}
+                            title={isMonthLocked ? "This month is locked. Unlock it before modifying deposits." : "Delete deposit"}
                           >
                             <Trash2 size={12} />
                           </button>

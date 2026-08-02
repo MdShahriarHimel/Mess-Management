@@ -646,6 +646,8 @@ export default function FinanceSettlement({
 
   // Find selected month object
   const selectedMonth = months?.find(m => m.id === currentMonthId);
+  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isMonthLockedForDeposits = selectedMonth?.isLocked && !selectedMonth?.manuallyUnlocked && !isUltimateAdmin;
 
   // Permission check for editing the spreadsheet
   const canEditSpreadsheet = [
@@ -1179,6 +1181,10 @@ export default function FinanceSettlement({
 
   const handleAddIndividualDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (depositType !== "holding" && isMonthLockedForDeposits) {
+      alert("This month is locked. Unlock it before modifying deposits.");
+      return;
+    }
     if (!newDepAmount || !selectedMemberForAccountings) return;
 
     try {
@@ -1305,6 +1311,10 @@ export default function FinanceSettlement({
   };
 
   const handleDeleteDeposit = async (depId: string) => {
+    if (isMonthLockedForDeposits) {
+      alert("This month is locked. Unlock it before modifying deposits.");
+      return;
+    }
     const message = safeMode 
       ? "🛡️ [SAFE MODE ACTIVE] You are deleting a cash deposit entry. This will instantly change this member's paid balance and outstanding amount. Proceed?" 
       : "Are you sure you want to delete this deposit?";
@@ -2829,9 +2839,20 @@ export default function FinanceSettlement({
                             </div>
                             {isManagerOrAdmin && (
                               <button
-                                onClick={() => handleDeleteDeposit(dep.id)}
-                                className="text-rose-400 hover:text-rose-300 font-bold p-1 bg-rose-500/10 hover:bg-rose-500/20 rounded cursor-pointer transition-colors"
-                                title="Delete entry"
+                                disabled={isMonthLockedForDeposits}
+                                onClick={() => {
+                                  if (isMonthLockedForDeposits) {
+                                    alert("This month is locked. Unlock it before modifying deposits.");
+                                    return;
+                                  }
+                                  handleDeleteDeposit(dep.id);
+                                }}
+                                className={`font-bold p-1 rounded transition-colors ${
+                                  isMonthLockedForDeposits
+                                    ? "text-slate-600 cursor-not-allowed bg-slate-800/40"
+                                    : "text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 cursor-pointer"
+                                }`}
+                                title={isMonthLockedForDeposits ? "This month is locked. Unlock it before modifying deposits." : "Delete entry"}
                               >
                                 <X size={12} />
                               </button>

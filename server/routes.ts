@@ -2617,8 +2617,19 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
 
   const db = loadDB();
   const targetMonth = db.months.find(m => m.id === monthId);
-  if (targetMonth?.isLocked) {
-    res.status(403).json({ error: "Month is locked" });
+  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+
+  if (targetMonth?.isLocked && !targetMonth.manuallyUnlocked && !isUltimateAdmin) {
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "LOCKED_MODIFICATION_BLOCKED",
+      "None",
+      "None",
+      `Attempted CREATE_DEPOSIT on locked month ${targetMonth.name || monthId} (${monthId})`,
+      { module: "Deposit" }
+    );
+    res.status(403).json({ error: "This month is locked. Unlock it before modifying deposits." });
     return;
   }
 
@@ -2650,6 +2661,23 @@ router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Us
   }
 
   const original = db.deposits[index];
+  const targetMonth = db.months.find(m => m.id === original.monthId);
+  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+
+  if (targetMonth?.isLocked && !targetMonth.manuallyUnlocked && !isUltimateAdmin) {
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "LOCKED_MODIFICATION_BLOCKED",
+      "None",
+      "None",
+      `Attempted DELETE_DEPOSIT on locked month ${targetMonth.name || original.monthId} (${original.monthId})`,
+      { module: "Deposit" }
+    );
+    res.status(403).json({ error: "This month is locked. Unlock it before modifying deposits." });
+    return;
+  }
+
   db.deposits.splice(index, 1);
   saveDB();
 

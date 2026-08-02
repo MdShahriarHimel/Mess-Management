@@ -4976,6 +4976,7 @@ export default function App() {
               currentUser={currentUser}
               currentMonthId={currentMonthId}
               members={membersList}
+              months={months}
               isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               currencySymbol={currencySymbol}
