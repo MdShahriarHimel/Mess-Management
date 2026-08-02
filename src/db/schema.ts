@@ -50,6 +50,7 @@ export const months = pgTable("months", {
   startDate: text("start_date").notNull(),
   endDate: text("end_date").notNull(),
   isLocked: boolean("is_locked").notNull().default(false),
+  manuallyUnlocked: boolean("manually_unlocked").default(false),
   gracePeriodEnabled: boolean("grace_period_enabled").notNull().default(true),
 });
 

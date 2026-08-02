@@ -43,7 +43,7 @@
   },
   "globalUiComponents": {},
   "locks": {
-    "default": false,
+    "default": true,
     "mess-a": true,
     "mess-b": true,
     "mess-c": true
@@ -58,8 +58,13 @@
     "futureModules": "manual"
   },
   "backgroundAudio": {
-    "globalUrl": "",
-    "globalEnabled": false,
-    "messOverrides": {}
+    "globalUrl": "https://www.youtube.com/shorts/phLHC1c_AKg",
+    "globalEnabled": true,
+    "messOverrides": {
+      "default": {
+        "url": "https://www.youtube.com/shorts/phLHC1c_AKg",
+        "enabled": true
+      }
+    }
   }
 }

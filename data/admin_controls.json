@@ -16,10 +16,14 @@
       "canEditBills": false,
       "canManageMeals": false,
       "canAddMarkets": false,
-      "canSuspendMembers": false
+      "canSuspendMembers": false,
+      "canEditProfiles": false,
+      "canEditCycles": false
     },
     "idx_vs0wzmjo1oqcmkjj7bk79o": {
-      "allowedMesses": [],
+      "allowedMesses": [
+        "default"
+      ],
       "canEditBills": false,
       "canManageMeals": false,
       "canAddMarkets": false,
@@ -28,7 +32,20 @@
       "canEditCycles": false
     },
     "nusratjahan2008njn@gmail.com": {
-      "allowedMesses": [],
+      "allowedMesses": [
+        "default"
+      ],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false,
+      "canEditProfiles": false,
+      "canEditCycles": false
+    },
+    "idx_wj4g1s5yfjchs66v333yr": {
+      "allowedMesses": [
+        "default"
+      ],
       "canEditBills": false,
       "canManageMeals": false,
       "canAddMarkets": false,

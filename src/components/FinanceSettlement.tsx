@@ -240,11 +240,11 @@ export default function FinanceSettlement({
       ]);
       
       if (marRes.ok) {
-        const marData = await marRes.json();
+        const marData = await marRes.json().catch(() => ({}));
         setPdfMarkets(marData.markets || []);
       }
       if (logRes.ok) {
-        const logData = await logRes.json();
+        const logData = await logRes.json().catch(() => ({}));
         // Filter shift and partial manager logs
         const filtered = (logData.auditLogs || []).filter((l: any) => 
           l.action === "SHIFT_MANAGER" || l.action === "APPOINT_PARTIAL_MANAGER" || l.action === "DEMOTE_PREVIOUS_MANAGER"
@@ -252,7 +252,7 @@ export default function FinanceSettlement({
         setPdfShiftLogs(filtered);
       }
       if (ratRes.ok) {
-        const ratData = await ratRes.json();
+        const ratData = await ratRes.json().catch(() => ({}));
         setPdfRatings(ratData.ratings || []);
       }
     } catch (e) {
@@ -698,7 +698,7 @@ export default function FinanceSettlement({
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         const rawMeals = data.meals || [];
         setMeals(rawMeals);
 
@@ -733,7 +733,7 @@ export default function FinanceSettlement({
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setAllMarkets(data.markets || []);
       }
     } catch (e) {
@@ -827,7 +827,7 @@ export default function FinanceSettlement({
         onRefresh();
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to save spreadsheet changes");
       }
     } catch (e) {
@@ -1034,7 +1034,7 @@ export default function FinanceSettlement({
         setEditingBill(null);
         onRefresh();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to update bill");
       }
     } catch (e) {
@@ -1062,7 +1062,7 @@ export default function FinanceSettlement({
       if (response.ok) {
         onRefresh();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to delete bill");
       }
     } catch (e) {
@@ -1098,7 +1098,7 @@ export default function FinanceSettlement({
         setEditManagerMarketDesc("");
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to save manager holdings");
       }
     } catch (e) {
@@ -1123,7 +1123,7 @@ export default function FinanceSettlement({
       if (response.ok) {
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to delete entry");
       }
     } catch (e) {
@@ -1160,13 +1160,13 @@ export default function FinanceSettlement({
       ]);
 
       if (depRes.ok) {
-        const depData = await depRes.json();
+        const depData = await depRes.json().catch(() => ({}));
         const filteredDeps = (depData.deposits || []).filter((d: any) => d.memberId === memberId);
         setMemberDeposits(filteredDeps);
       }
 
       if (marRes.ok) {
-        const marData = await marRes.json();
+        const marData = await marRes.json().catch(() => ({}));
         const filteredMars = (marData.markets || []).filter((m: any) => m.memberId === memberId);
         setMemberMarkets(filteredMars);
       }
@@ -1208,7 +1208,7 @@ export default function FinanceSettlement({
           fetchMemberAccountings(selectedMemberForAccountings.memberId);
           onRefresh();
         } else {
-          const err = await response.json();
+          const err = await response.json().catch(() => ({}));
           alert(err.error || "Failed to save holding advance");
         }
       } else {
@@ -1231,7 +1231,7 @@ export default function FinanceSettlement({
           fetchMemberAccountings(selectedMemberForAccountings.memberId);
           onRefresh();
         } else {
-          const err = await response.json();
+          const err = await response.json().catch(() => ({}));
           alert(err.error || "Failed to add deposit");
         }
       }
@@ -1259,7 +1259,7 @@ export default function FinanceSettlement({
       if (response.ok) {
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to save holding advance");
       }
     } catch (e) {
@@ -1296,7 +1296,7 @@ export default function FinanceSettlement({
         fetchAllMarkets();
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to add market expense");
       }
     } catch (e) {
@@ -1320,7 +1320,7 @@ export default function FinanceSettlement({
         fetchMemberAccountings(selectedMemberForAccountings.memberId);
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to delete deposit");
       }
     } catch (e) {
@@ -1345,7 +1345,7 @@ export default function FinanceSettlement({
         fetchAllMarkets();
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to delete market entry");
       }
     } catch (e) {
@@ -1369,7 +1369,7 @@ export default function FinanceSettlement({
       if (response.ok) {
         onRefresh();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to update bill");
       }
     } catch (e) {
@@ -1411,7 +1411,7 @@ export default function FinanceSettlement({
         setBillCollectorId("");
         onRefresh();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to add bill");
       }
     } catch (e) {

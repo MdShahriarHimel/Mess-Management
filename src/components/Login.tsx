@@ -56,7 +56,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       try {
         const res = await fetch("/api/settings/public");
         if (res.ok) {
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (data.loginCustomization) {
             setLiveCustomization((prev: any) => ({
               ...data.loginCustomization,
@@ -103,7 +103,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email })
           });
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(data.error || "Failed to process request");
           }
@@ -136,7 +136,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, otp, newPassword })
           });
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(data.error || "Incorrect OTP code");
           }
@@ -177,7 +177,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         body: JSON.stringify({ email, password })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(data.error || "Something went wrong. Please try again.");
@@ -217,7 +217,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         throw new Error(errorData.error || "Failed to authenticate with server. Make sure you are an invited member.");
       }
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       onLoginSuccess(idToken, data.user, rememberMe);
     } catch (err: any) {
       console.error("[Auth] Google Sign-In Error:", err);

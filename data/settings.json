@@ -20,6 +20,8 @@
   "currencySymbol": "৳",
   "enableManagerRating": true,
   "auditRetentionDays": 30,
+  "auditMode": false,
+  "auditModeExpiresAt": null,
   "mealTypes": [
     {
       "id": "lunch",
@@ -184,11 +186,18 @@
   },
   "schemaVersion": 2,
   "createdAt": "2026-07-23T08:36:15.703Z",
-  "updatedAt": "2026-07-28T19:38:06.990Z",
+  "updatedAt": "2026-08-01T10:38:51.531Z",
   "erpName": "আবাবিল মেস",
   "disableBackgroundAudio": true,
   "activeAudioSettings": {
-    "url": "",
+    "url": "https://www.youtube.com/shorts/phLHC1c_AKg",
     "enabled": false
+  },
+  "respectSenioritySettings": {
+    "enabled": false,
+    "logic": "AUTOMATIC_SENIORITY",
+    "defaultMaleTitle": "ভাই",
+    "defaultFemaleTitle": "আপু",
+    "manualOverride": false
   }
 }

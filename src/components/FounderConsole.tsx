@@ -139,7 +139,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     try {
       const res = await fetch("/api/founder/controls", { headers: getHeaders() });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (data && typeof data === "object") {
           setControls({
             ...defaultControls,
@@ -182,7 +182,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
         body: JSON.stringify(updatedControls)
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (data?.controls) {
           setControls((prev: any) => ({
             ...defaultControls,
@@ -200,7 +200,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
         showBanner("Platform controls saved successfully!", "success");
         onRefreshPlatformStatus(); // Propagate status updates to parent App layout
       } else {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
         showBanner(errData.error || "Failed to save controls.", "error");
       }
     } catch (err) {
@@ -216,7 +216,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     try {
       const res = await fetch("/api/founder/db-status", { headers: getHeaders() });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setDbStatus(data);
         showBanner("Database and storage metrics loaded on-demand.", "success");
       } else {
@@ -235,7 +235,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     try {
       const res = await fetch("/api/founder/gemini-status", { headers: getHeaders() });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setGeminiStatus(data);
         showBanner("Gemini analytics refreshed successfully.", "success");
       } else {
@@ -254,7 +254,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     try {
       const res = await fetch("/api/founder/platform-analytics", { headers: getHeaders() });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setAnalytics(data);
         showBanner("Platform analytics compiled successfully.", "success");
       } else {
@@ -276,7 +276,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
         : "/api/founder/audit-logs";
       const res = await fetch(url, { headers: getHeaders() });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setAuditLogs(data);
       } else {
         showBanner("Failed to load audit logs.", "error");
@@ -293,7 +293,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
     try {
       const res = await fetch("/api/founder/security-dashboard", { headers: getHeaders() });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setSecurityData(data);
       } else {
         showBanner("Failed to load security dashboard metrics.", "error");
@@ -414,7 +414,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setControls({ ...controls, owners: data.owners });
         setNewOwnerEmail("");
@@ -456,7 +456,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setControls({ ...controls, owners: data.owners });
         setVerifyPassword("");
@@ -2062,7 +2062,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
                       headers: { "Authorization": "Bearer " + token }
                     });
                     if (!res.ok) {
-                      const err = await res.json();
+                      const err = await res.json().catch(() => ({}));
                       alert(err.error || "Export failed");
                       return;
                     }
@@ -2127,7 +2127,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
                         alert("Database successfully restored! Refreshing system...");
                         setTimeout(() => window.location.reload(), 1500);
                       } else {
-                        const err = await res.json();
+                        const err = await res.json().catch(() => ({}));
                         alert(err.error || "Failed to import backup");
                       }
                     } catch (error) {

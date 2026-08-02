@@ -49,7 +49,7 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
       });
 
       if (controlsResp.ok) {
-        const controlsData = await controlsResp.json();
+        const controlsData = await controlsResp.json().catch(() => ({}));
         
         // Use the multi-mess scan list from the endpoint or fallback
         const adminUsers = controlsData.admins || [];
@@ -144,11 +144,11 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setControls(data.controls || {});
         setMessage({ type: "success", text: "Admin controlling configurations saved successfully!" });
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         setMessage({ type: "error", text: err.error || "Failed to save configurations." });
       }
     } catch (e) {

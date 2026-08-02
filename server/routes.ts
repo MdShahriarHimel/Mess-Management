@@ -1308,11 +1308,7 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: Au
 });
 
 // Update Month config (lock, unlock, dates)
-router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
-  if (!checkAdminPermission(req, "canEditCycles")) {
-    res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
-    return;
-  }
+router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const updates: Partial<MessMonth> = req.body;
   const db = loadDB();
@@ -1323,14 +1319,98 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
     return;
   }
 
-  // Manager can only toggle grace period or edit end dates if Admin permits, let's allow Admin/Superuser to do anything, Manager can do partial updates
-  const isManager = req.user!.role === UserRole.MANAGER;
-  if (isManager) {
-    // Manager cannot lock or unlock months, only Admin can
+  const original = db.months[index];
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isSuperUser = req.user!.role === UserRole.SUPERUSER;
+  const settings = loadSettings();
+  const allowSuperUserUnlock = settings.allowSuperUserUnlock === true;
+
+  // 1. If original month is LOCKED:
+  if (original.isLocked) {
+    // Is user attempting to UNLOCK?
+    if (updates.isLocked === false) {
+      const isAdminOrManager = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.MANAGER;
+      const canUnlock = isUltimateAdmin || isAdminOrManager || (isSuperUser && allowSuperUserUnlock);
+      if (!canUnlock) {
+        res.status(403).json({ error: "🔒 Access denied. Only authorized users can unlock this cycle." });
+        return;
+      }
+
+      original.isLocked = false;
+      original.manuallyUnlocked = true;
+      db.months[index] = original;
+      saveDB();
+
+      const auditAction = isUltimateAdmin ? "MANUAL_UNLOCK" : "SUPER_USER_UNLOCK";
+      const auditMsg = isUltimateAdmin
+        ? `Ultimate Admin unlocked ${original.name}.`
+        : `Super User "${req.user!.nickname}" unlocked ${original.name}.`;
+
+      logAudit(
+        req.user!.id,
+        req.user!.nickname,
+        auditAction,
+        "Locked",
+        "Unlocked",
+        auditMsg,
+        {
+          module: "CYCLE",
+          actionType: auditAction,
+          description: auditMsg,
+          userRole: req.user!.role
+        }
+      );
+
+      res.json({ success: true, month: original, message: auditMsg });
+      return;
+    } else {
+      // Trying to edit content on a locked month. Must unlock first!
+      res.status(403).json({ error: "🔒 This cycle is locked and read-only. You must unlock it first to make changes." });
+      return;
+    }
+  }
+
+  // 2. If original month is UNLOCKED and user is trying to LOCK:
+  if (!original.isLocked && updates.isLocked === true) {
+    const canLock = isUltimateAdmin || isSuperUser || req.user!.role === UserRole.ADMIN;
+    if (!canLock) {
+      res.status(403).json({ error: "Access denied. You cannot lock this cycle." });
+      return;
+    }
+    original.isLocked = true;
+    original.manuallyUnlocked = false;
+    db.months[index] = original;
+    saveDB();
+
+    const lockUserType = isUltimateAdmin
+      ? "Ultimate Admin"
+      : (isSuperUser ? `Super User "${req.user!.nickname}"` : `${req.user!.role} "${req.user!.nickname}"`);
+    const auditMsg = `${lockUserType} locked ${original.name}.`;
+
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "MANUAL_LOCK",
+      "Unlocked",
+      "Locked",
+      auditMsg,
+      {
+        module: "CYCLE",
+        actionType: "MANUAL_LOCK",
+        description: auditMsg,
+        userRole: req.user!.role
+      }
+    );
+
+    res.json({ success: true, month: original, message: auditMsg });
+    return;
+  }
+
+  // 3. Normal updates to unlocked month (or Ultimate Admin editing locked month)
+  if (req.user!.role === UserRole.MANAGER) {
     delete updates.isLocked;
   }
 
-  const original = db.months[index];
   const updatedMonth = {
     ...original,
     ...updates,
@@ -1353,7 +1433,7 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
 });
 
 // Delete Month (Admin and Super User only)
-router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
     return;
@@ -1367,11 +1447,47 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (r
     return;
   }
 
-  const name = db.months[index].name;
+  const targetMonth = db.months[index];
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+
+  if (targetMonth.isLocked) {
+    const auditMsg = `Attempt by ${req.user!.nickname} (${req.user!.role}) to delete locked cycle "${targetMonth.name}" was rejected. Cycle must be unlocked first.`;
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "LOCKED_CYCLE_DELETE_ATTEMPT",
+      "Locked",
+      "Delete Rejected",
+      auditMsg,
+      {
+        module: "CYCLE",
+        actionType: "LOCKED_CYCLE_DELETE_ATTEMPT",
+        description: auditMsg,
+        userRole: req.user!.role
+      }
+    );
+    res.status(403).json({ error: "🔒 This cycle is locked and cannot be deleted. You must unlock the cycle first." });
+    return;
+  }
+
+  const name = targetMonth.name;
   db.months.splice(index, 1);
   saveDB();
 
-  logAudit(req.user!.id, req.user!.nickname, "DELETE_MONTH", "None", name, `Deleted month cycle ${name}`);
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    "DELETE_MONTH",
+    "Locked: " + targetMonth.isLocked,
+    "Deleted",
+    `Deleted month cycle ${name}`,
+    {
+      module: "CYCLE",
+      actionType: "DELETE_MONTH",
+      description: `Deleted month cycle ${name}`,
+      userRole: req.user!.role
+    }
+  );
   res.json({ success: true });
 });
 
@@ -2454,6 +2570,12 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
   }
 
   const original = db.marketEntries[index];
+  const targetMonth = db.months.find(m => m.id === original.monthId);
+  if (targetMonth?.isLocked) {
+    res.status(403).json({ error: "🔒 Month cycle is locked. Market entry cannot be deleted." });
+    return;
+  }
+
   const hasMarketPermission = checkAdminPermission(req, "canAddMarkets");
 
   // Apply standard member rules if the user is a normal member OR a restricted Admin acting as a member
@@ -3870,6 +3992,7 @@ function loadSettings() {
     logoText: messId === "default" ? "Ababil mess" : `Mess ${messId.toUpperCase()}`,
     dropdownOptions: ["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"],
     translations: {},
+    allowSuperUserUnlock: false,
     superUserCanEditBills: true,
     superUserCanInviteMembers: true,
     superUserCanArchiveMembers: true,
@@ -3975,7 +4098,14 @@ function loadSettings() {
       emojis: "💖,✨,🚀,🌟",
       link: ""
     },
-    appearancePermissions: {} as Record<string, string[]>
+    appearancePermissions: {} as Record<string, string[]>,
+    respectSenioritySettings: {
+      enabled: false,
+      logic: "AUTOMATIC_SENIORITY",
+      defaultMaleTitle: "ভাই",
+      defaultFemaleTitle: "আপু",
+      manualOverride: false
+    }
   };
 
   let legacySettings: any = {};
@@ -4004,6 +4134,7 @@ function loadSettings() {
     homeCustomization: { ...defaultSettings.homeCustomization, ...(legacySettings.homeCustomization || {}) },
     adminVisibility: { ...defaultSettings.adminVisibility, ...(legacySettings.adminVisibility || {}) },
     creditConfig: { ...defaultSettings.creditConfig, ...(legacySettings.creditConfig || {}) },
+    respectSenioritySettings: { ...defaultSettings.respectSenioritySettings, ...(legacySettings.respectSenioritySettings || {}) },
     appearancePermissions: legacySettings.appearancePermissions || {}
   };
 
@@ -4349,6 +4480,35 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   const currentSettings = loadSettings();
 
+  // Allow Super User Unlock setting restriction - STRICTLY Ultimate Admin only
+  if (req.body.allowSuperUserUnlock !== undefined) {
+    if (!isUltimateAdmin) {
+      res.status(403).json({ error: "Only the Ultimate Admin can modify cycle unlock permissions" });
+      return;
+    }
+    const oldVal = currentSettings.allowSuperUserUnlock === true;
+    const newVal = req.body.allowSuperUserUnlock === true;
+    currentSettings.allowSuperUserUnlock = newVal;
+    if (oldVal !== newVal) {
+      const statusStr = newVal ? "enabled" : "disabled";
+      const auditMsg = `Ultimate Admin ${statusStr}: Allow Super User to Unlock Locked Cycles.`;
+      logAudit(
+        req.user!.id,
+        req.user!.nickname,
+        "PERMISSION_TOGGLE_CHANGED",
+        String(oldVal),
+        String(newVal),
+        auditMsg,
+        {
+          module: "PERMISSIONS",
+          actionType: "PERMISSION_TOGGLE_CHANGED",
+          description: auditMsg,
+          userRole: req.user!.role
+        }
+      );
+    }
+  }
+
   // If NOT Ultimate Admin, check explicit appearance/branding permissions:
   if (!isUltimateAdmin) {
     const messId = getActiveMessId();
@@ -4487,7 +4647,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     auditRetentionDays,
     creditConfig,
     appearancePermissions,
-    disableBackgroundAudio
+    disableBackgroundAudio,
+    respectSenioritySettings
   } = req.body;
 
   if (disableBackgroundAudio !== undefined) {
@@ -4527,6 +4688,12 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (balanceSheetGlow !== undefined) currentSettings.balanceSheetGlow = balanceSheetGlow;
   if (adminVisibility !== undefined) currentSettings.adminVisibility = { ...currentSettings.adminVisibility, ...adminVisibility };
   if (typographySettings !== undefined) currentSettings.typographySettings = { ...currentSettings.typographySettings, ...typographySettings };
+  if (respectSenioritySettings !== undefined) {
+    currentSettings.respectSenioritySettings = {
+      ...(currentSettings.respectSenioritySettings || {}),
+      ...respectSenioritySettings
+    };
+  }
 
   // Write Credit & Branding
   if (creditConfig !== undefined) {

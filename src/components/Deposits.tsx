@@ -62,7 +62,7 @@ export default function Deposits({
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setDeposits(data.deposits || []);
       }
     } catch (e) {
@@ -121,7 +121,7 @@ export default function Deposits({
         fetchDeposits();
         onRefresh();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to save deposit");
       }
     } catch (e) {

@@ -418,7 +418,10 @@ export async function refreshDbCache() {
 
   dbCache = {
     members: membersList as any[],
-    months: monthsList as any[],
+    months: monthsList.map((m: any) => ({
+      ...m,
+      manuallyUnlocked: !!m.manuallyUnlocked
+    })) as any[],
     meals: [],
     foodMenus: foodMenusList as any[],
     marketEntries: marketEntriesList.map(item => ({
@@ -585,6 +588,8 @@ export async function initializeDbCache() {
       };
       console.log("[TRACE E - initializeDbCache()] Loaded members from PostgreSQL. Total:", membersList.length, "Sample members:", membersList.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
       console.log("Cache loaded successfully from PostgreSQL.");
+      // Trigger loadDB to run auto-transition check immediately on startup
+      loadDB();
     }
   } catch (error) {
     console.error("Failed to parse database records:", error);
@@ -701,6 +706,7 @@ async function doActualSync(cache: DatabaseSchema) {
           startDate: item.startDate,
           endDate: item.endDate,
           isLocked: item.isLocked,
+          manuallyUnlocked: item.manuallyUnlocked ?? false,
           gracePeriodEnabled: item.gracePeriodEnabled,
         };
         if (!isItemModified('months', item.id, mapped)) continue;
@@ -1033,6 +1039,115 @@ export function loadDB(): DatabaseSchema {
     
     if (!dbCache) {
       dbCache = getInitialSeedData();
+    }
+  }
+
+  // Helper to parse dates in Asia/Dhaka (+06:00) timezone
+  const parseDhakaDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date();
+    if (dateStr.includes("Z") || dateStr.includes("+") || (dateStr.includes("-") && dateStr.length > 19)) {
+      return new Date(dateStr);
+    }
+    const cleanStr = dateStr.length === 16 ? `${dateStr}:00` : dateStr;
+    return new Date(`${cleanStr}+06:00`);
+  };
+
+  // Automatic Month Transition Check
+  if (dbCache && dbCache.months && dbCache.months.length > 0) {
+    const now = new Date();
+    let wasMonthModified = false;
+
+    // Check for active (unlocked) months whose endDate has passed (excluding manually unlocked cycles)
+    const activeMonthsToClose = dbCache.months.filter(m => {
+      if (m.isLocked) return false;
+      if (m.manuallyUnlocked) return false;
+      const endDate = parseDhakaDate(m.endDate);
+      return !isNaN(endDate.getTime()) && now >= endDate;
+    });
+
+    for (const endedMonth of activeMonthsToClose) {
+      console.log(`[Auto-Transition] Month '${endedMonth.name}' cycle ended at ${endedMonth.endDate}. Closing cycle...`);
+      endedMonth.isLocked = true;
+      wasMonthModified = true;
+
+      logAudit(
+        "SYSTEM",
+        "System Engine",
+        "AUTOMATIC_CYCLE_LOCK",
+        "Unlocked",
+        "Locked",
+        `System automatically locked ${endedMonth.name}.`,
+        { module: "CYCLE", actionType: "AUTOMATIC_CYCLE_LOCK", description: `System automatically locked ${endedMonth.name}.` }
+      );
+
+      const endedEndDateStr = endedMonth.endDate;
+
+      // Check if a next month exists
+      let nextMonth = dbCache.months.find(m => {
+        if (m.id === endedMonth.id) return false;
+        return m.startDate >= endedEndDateStr || m.name.toLowerCase().includes("august");
+      });
+
+      if (nextMonth) {
+        nextMonth.isLocked = false;
+        console.log(`[Auto-Transition] Activated existing next month '${nextMonth.name}'.`);
+        logAudit(
+          "SYSTEM",
+          "System Engine",
+          "AUTOMATIC_MONTH_TRANSITION",
+          "Inactive",
+          "Active",
+          `System automatically transitioned to ${nextMonth.name}.`,
+          { module: "CYCLE", actionType: "AUTOMATIC_MONTH_TRANSITION", description: `System automatically transitioned to ${nextMonth.name}.` }
+        );
+      } else {
+        // Calculate next month name and dates starting EXACTLY at endedMonth.endDate
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        
+        const nextStartObj = parseDhakaDate(endedEndDateStr);
+        const nextEndObj = new Date(nextStartObj);
+        nextEndObj.setMonth(nextEndObj.getMonth() + 1);
+
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const formatISO = (d: Date) => {
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        };
+
+        const nextStartDateStr = endedEndDateStr.length === 16 ? `${endedEndDateStr}:00` : endedEndDateStr;
+        const nextEndDateStr = formatISO(nextEndObj);
+        const nextMonthName = `${monthNames[nextStartObj.getMonth()]} ${nextStartObj.getFullYear()}`;
+
+        // Double check if a month with nextMonthName already exists
+        const existingByName = dbCache.months.find(m => m.name.toLowerCase() === nextMonthName.toLowerCase());
+        if (existingByName) {
+          existingByName.isLocked = false;
+          console.log(`[Auto-Transition] Activated existing month by name '${existingByName.name}'.`);
+        } else {
+          const newMonth: MessMonth = {
+            id: generateUUID(),
+            name: nextMonthName,
+            startDate: nextStartDateStr,
+            endDate: nextEndDateStr,
+            isLocked: false,
+            gracePeriodEnabled: true
+          };
+          dbCache.months.push(newMonth);
+          console.log(`[Auto-Transition] Automatically created and activated next month '${newMonth.name}' (${newMonth.startDate} to ${newMonth.endDate}).`);
+        }
+      }
+    }
+
+    if (wasMonthModified) {
+      try {
+        const messId = getActiveMessId();
+        const backupFilename = messId === "default"
+          ? "database_backup.json"
+          : `database_backup_${messId}.json`;
+        writeAndPersistFile(backupFilename, JSON.stringify(dbCache));
+        syncCacheToPostgresDirectly(dbCache);
+      } catch (err) {
+        console.error("Error committing auto-transition month changes:", err);
+      }
     }
   }
 
@@ -1386,7 +1501,10 @@ function shouldLogAudit(action: string, reason: string = "", extra?: any): boole
   // - Founder actions
   const isFounder = act.includes("FOUNDER") || act.includes("PLATFORM_OWNER") || mod === "FOUNDER";
 
-  return isDeposit || isMarket || isMealEdit || isSettlement || isPermission || isPassword || isMemberDelete || isFounder;
+  // - Cycle / Lock / Unlock actions
+  const isCycleAction = act.includes("LOCK") || act.includes("UNLOCK") || act.includes("CYCLE") || act.includes("TRANSITION") || mod === "CYCLE";
+
+  return isDeposit || isMarket || isMealEdit || isSettlement || isPermission || isPassword || isMemberDelete || isFounder || isCycleAction;
 }
 
 // Log an action to Audit Log with optional metadata parameters for rich hierarchical indexing

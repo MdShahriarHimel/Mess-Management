@@ -1580,7 +1580,7 @@ export default function App() {
     try {
       const res = await fetch("/api/founder/status");
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setPlatformStatus(data.platformStatus || "Operational");
         setMaintenanceMode(data.maintenanceMode || "Normal");
         setMaintenanceDetails(data.maintenanceDetails || null);
@@ -1716,6 +1716,9 @@ export default function App() {
       }
     };
   }, [safeMode, currentUser]);
+
+  // Unlock permission for Super Users
+  const [allowSuperUserUnlock, setAllowSuperUserUnlock] = useState<boolean>(false);
 
   // Date restrictions config
   const [dateRestrictions, setDateRestrictions] = useState({
@@ -1919,7 +1922,7 @@ export default function App() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (data.messes) setMesses(data.messes);
         if (data.activeMessId) setActiveMessId(data.activeMessId);
       }
@@ -1934,7 +1937,7 @@ export default function App() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setElections(data);
       }
     } catch (e) {
@@ -1948,11 +1951,12 @@ export default function App() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (data.messName) {
           setMessName(data.messName);
           setNewMessName(data.messName);
         }
+        if (data.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(data.allowSuperUserUnlock);
         if (data.siteColor) setSiteColor(data.siteColor);
         if (data.fontSize) setFontSize(data.fontSize);
         if (data.fontStyle) setFontStyle(data.fontStyle);
@@ -1992,27 +1996,33 @@ export default function App() {
       // Level 1: Branding
       const resBranding = await fetch("/api/settings/branding", { headers });
       if (resBranding.ok) {
-        const data = await resBranding.json();
-        setErpBrandingState(data);
+        const data = await resBranding.json().catch(() => ({}));
+        if (data && data.appName !== undefined) {
+          setErpBrandingState(data);
+        }
       }
       
       // Level 2: Mess Appearance
       const resAppearance = await fetch("/api/settings/appearance", { headers });
       if (resAppearance.ok) {
-        const data = await resAppearance.json();
-        setMessAppearanceState(data);
+        const data = await resAppearance.json().catch(() => ({}));
+        if (data && data.messName !== undefined) {
+          setMessAppearanceState(data);
+        }
       }
 
       // Level 3: User Preferences
       const resPrefs = await fetch("/api/settings/preferences", { headers });
       if (resPrefs.ok) {
-        const data = await resPrefs.json();
-        setUserPreferencesState(data);
-        if (data.isDarkMode !== undefined) {
-          setIsDarkMode(data.isDarkMode);
-        }
-        if (data.fontSize !== undefined) {
-          setFontSize(data.fontSize);
+        const data = await resPrefs.json().catch(() => ({}));
+        if (data) {
+          setUserPreferencesState(data);
+          if (data.isDarkMode !== undefined) {
+            setIsDarkMode(data.isDarkMode);
+          }
+          if (data.fontSize !== undefined) {
+            setFontSize(data.fontSize);
+          }
         }
       }
     } catch (e) {
@@ -2031,16 +2041,18 @@ export default function App() {
         body: JSON.stringify(updates)
       });
       if (response.ok) {
-        const data = await response.json();
-        setErpBrandingState(data.branding);
-        if (data.branding.logoText) setLogoText(data.branding.logoText);
-        if (data.branding.creditConfig) setCreditConfig(data.branding.creditConfig);
+        const data = await response.json().catch(() => ({}));
+        if (data.branding) {
+          setErpBrandingState(data.branding);
+          if (data.branding.logoText) setLogoText(data.branding.logoText);
+          if (data.branding.creditConfig) setCreditConfig(data.branding.creditConfig);
+        }
         if (sessionToken) {
           fetchSettings(sessionToken);
         }
         return true;
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to update branding settings");
         return false;
       }
@@ -2062,20 +2074,22 @@ export default function App() {
         body: JSON.stringify(updates)
       });
       if (response.ok) {
-        const data = await response.json();
-        setMessAppearanceState(data.appearance);
-        if (data.appearance.theme) {
-          setSiteColor(data.appearance.theme === "default-erp" ? "cyan" : data.appearance.theme);
-        }
-        if (data.appearance.accentColor) {
-          setCustomColors(prev => ({ ...prev, accentColor: data.appearance.accentColor }));
-        }
-        if (data.appearance.fontSize) {
-          setFontSize(data.appearance.fontSize);
+        const data = await response.json().catch(() => ({}));
+        if (data.appearance) {
+          setMessAppearanceState(data.appearance);
+          if (data.appearance.theme) {
+            setSiteColor(data.appearance.theme === "default-erp" ? "cyan" : data.appearance.theme);
+          }
+          if (data.appearance.accentColor) {
+            setCustomColors(prev => ({ ...prev, accentColor: data.appearance.accentColor }));
+          }
+          if (data.appearance.fontSize) {
+            setFontSize(data.appearance.fontSize);
+          }
         }
         return true;
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to update appearance settings");
         return false;
       }
@@ -2097,17 +2111,19 @@ export default function App() {
         body: JSON.stringify(updates)
       });
       if (response.ok) {
-        const data = await response.json();
-        setUserPreferencesState(data.preferences);
-        if (data.preferences.isDarkMode !== undefined) {
-          setIsDarkMode(data.preferences.isDarkMode);
-        }
-        if (data.preferences.fontSize !== undefined) {
-          setFontSize(data.preferences.fontSize);
+        const data = await response.json().catch(() => ({}));
+        if (data.preferences) {
+          setUserPreferencesState(data.preferences);
+          if (data.preferences.isDarkMode !== undefined) {
+            setIsDarkMode(data.preferences.isDarkMode);
+          }
+          if (data.preferences.fontSize !== undefined) {
+            setFontSize(data.preferences.fontSize);
+          }
         }
         return true;
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to update personal preferences");
         return false;
       }
@@ -2129,11 +2145,11 @@ export default function App() {
         body: JSON.stringify({ targetMessId, locked })
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setErpBrandingState(prev => prev ? { ...prev, locks: data.locks } : prev);
         return true;
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to lock/unlock appearance features");
         return false;
       }
@@ -2155,7 +2171,7 @@ export default function App() {
         body: JSON.stringify(updates)
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (data.settings) {
           const s = data.settings;
           if (s.messName) {
@@ -2186,10 +2202,11 @@ export default function App() {
           if (s.appearancePermissions) setAppearancePermissions(s.appearancePermissions);
           if (s.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(s.disableBackgroundAudio);
           if (s.activeAudioSettings) setActiveAudioSettings(s.activeAudioSettings);
+          if (s.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(s.allowSuperUserUnlock);
         }
         return true;
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to update settings");
         return false;
       }
@@ -2233,11 +2250,11 @@ export default function App() {
         body: JSON.stringify(params)
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setElections(data.elections);
         alert("Democracy ballot configuration saved successfully!");
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to update election parameters");
       }
     } catch (err) {
@@ -2273,7 +2290,7 @@ export default function App() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setCurrentUser(data.user);
         setSessionToken(token);
       } else {
@@ -2299,7 +2316,7 @@ export default function App() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         const logs: any[] = data.auditLogs || [];
         const now = Date.now();
         const oneDayAgo = now - 24 * 60 * 60 * 1000;
@@ -2329,28 +2346,32 @@ export default function App() {
       const membersRes = await fetch("/api/members", { headers: authHeader });
 
       if (monthsRes.ok) {
-        const monthsData = await monthsRes.json();
+        const monthsData = await monthsRes.json().catch(() => ({}));
         const loadedMonths = monthsData.months || [];
         setMonths(loadedMonths);
-        if (loadedMonths.length > 0 && !currentMonthId) {
+
+        const defaults = getMonthDefaults(loadedMonths);
+        setNewMonthName(defaults.nameVal);
+        setNewMonthStart(defaults.startVal);
+        setNewMonthEnd(defaults.endVal);
+
+        if (loadedMonths.length > 0) {
           // Find month corresponding to current system time
           const now = new Date();
           const activeMonth = loadedMonths.find((m: MessMonth) => {
             const start = new Date(m.startDate);
             const end = new Date(m.endDate);
-            return now >= start && now <= end;
-          });
-          if (activeMonth) {
-            setCurrentMonthId(activeMonth.id);
-          } else {
-            // Fallback to the latest month
-            setCurrentMonthId(loadedMonths[loadedMonths.length - 1].id);
+            return now >= start && now <= end && !m.isLocked;
+          }) || loadedMonths.find((m: MessMonth) => !m.isLocked) || loadedMonths[loadedMonths.length - 1];
+
+          if (!currentMonthId || !loadedMonths.some((m: MessMonth) => m.id === currentMonthId)) {
+            if (activeMonth) setCurrentMonthId(activeMonth.id);
           }
         }
       }
 
       if (membersRes.ok) {
-        const membersData = await membersRes.json();
+        const membersData = await membersRes.json().catch(() => ({}));
         const mList = membersData.members || [];
         setMembersList(mList);
         await checkSuperUserRecentLogs(token, mList, isInitialLoad);
@@ -2360,7 +2381,7 @@ export default function App() {
       try {
         const propRes = await fetch("/api/cycle-proposals", { headers: authHeader });
         if (propRes.ok) {
-          const propData = await propRes.json();
+          const propData = await propRes.json().catch(() => ({}));
           setCycleProposals(propData.proposals || []);
         }
       } catch (err) {
@@ -2379,7 +2400,7 @@ export default function App() {
         headers: { "Authorization": `Bearer ${sessionToken}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setReportSummary(data);
       }
     } catch (e) {
@@ -2394,7 +2415,7 @@ export default function App() {
         headers: { "Authorization": `Bearer ${sessionToken}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setDutiesList(data.duties || []);
       }
     } catch (e) {
@@ -2407,7 +2428,7 @@ export default function App() {
       try {
         const response = await fetch("/api/settings/public");
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           if (data.loginCustomization) {
             setLoginCustomization(prev => ({ ...prev, ...data.loginCustomization }));
           }
@@ -2583,7 +2604,7 @@ export default function App() {
             headers: { "Authorization": `Bearer ${freshToken}` }
           });
           if (response.ok) {
-            const data = await response.json();
+            const data = await response.json().catch(() => ({}));
             if (isMounted) {
               setCurrentUser(data.user);
             }
@@ -2769,7 +2790,27 @@ export default function App() {
   };
 
   // Settings: Add month function
-  const getMonthDefaults = () => {
+  const getMonthDefaults = (monthsList: MessMonth[] = months) => {
+    if (monthsList && monthsList.length > 0) {
+      const sorted = [...monthsList].sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+      const lastMonth = sorted[sorted.length - 1];
+
+      // A cycle starts exactly at the previous cycle's configured end time
+      const startVal = lastMonth.endDate.substring(0, 16);
+
+      const startDateObj = new Date(lastMonth.endDate);
+      const endDateObj = new Date(startDateObj);
+      endDateObj.setMonth(endDateObj.getMonth() + 1);
+
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const endVal = `${endDateObj.getFullYear()}-${pad(endDateObj.getMonth() + 1)}-${pad(endDateObj.getDate())}T${pad(endDateObj.getHours())}:${pad(endDateObj.getMinutes())}`;
+
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const nameVal = `${monthNames[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`;
+
+      return { nameVal, startVal, endVal };
+    }
+
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -2777,7 +2818,7 @@ export default function App() {
     const startVal = `${year}-${pad(month + 1)}-01T00:00`;
     const lastDay = new Date(year, month + 1, 0);
     const endVal = `${year}-${pad(month + 1)}-${pad(lastDay.getDate())}T23:59`;
-    
+
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const nameVal = `${monthNames[month]} ${year}`;
     return { nameVal, startVal, endVal };
@@ -2787,7 +2828,7 @@ export default function App() {
     const monthNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
     const shortMonthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     const lower = name.toLowerCase();
-    
+
     let foundMonth = -1;
     for (let i = 0; i < monthNames.length; i++) {
       if (lower.includes(monthNames[i])) {
@@ -2803,15 +2844,32 @@ export default function App() {
         }
       }
     }
-    
+
     const yearMatch = name.match(/\b(20\d{2})\b/);
     const foundYear = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
-    
+
     if (foundMonth !== -1) {
       const pad = (n: number) => String(n).padStart(2, "0");
-      const startVal = `${foundYear}-${pad(foundMonth + 1)}-01T00:00`;
-      const lastDay = new Date(foundYear, foundMonth + 1, 0);
-      const endVal = `${foundYear}-${pad(foundMonth + 1)}-${pad(lastDay.getDate())}T23:59`;
+
+      let timeStr = "00:00";
+      let dayStr = "01";
+
+      if (months && months.length > 0) {
+        const sorted = [...months].sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+        const lastMonth = sorted[sorted.length - 1];
+        if (lastMonth.endDate && lastMonth.endDate.includes("T")) {
+          const parts = lastMonth.endDate.split("T");
+          timeStr = parts[1].substring(0, 5);
+          dayStr = parts[0].split("-")[2] || "01";
+        }
+      }
+
+      const startVal = `${foundYear}-${pad(foundMonth + 1)}-${dayStr}T${timeStr}`;
+      const startDateObj = new Date(`${foundYear}-${pad(foundMonth + 1)}-${dayStr}T${timeStr}`);
+      const endDateObj = new Date(startDateObj);
+      endDateObj.setMonth(endDateObj.getMonth() + 1);
+
+      const endVal = `${endDateObj.getFullYear()}-${pad(endDateObj.getMonth() + 1)}-${pad(endDateObj.getDate())}T${pad(endDateObj.getHours())}:${pad(endDateObj.getMinutes())}`;
       return { startVal, endVal };
     }
     return null;
@@ -2872,7 +2930,7 @@ export default function App() {
         setNewMonthEnd(defaults.endVal);
         fetchMonthsAndMembers(sessionToken);
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to submit cycle proposal");
       }
     } catch (e) {
@@ -2883,29 +2941,26 @@ export default function App() {
   const handleUpdateMonthCycle = async (monthId: string) => {
     if (!sessionToken || !editMonthName || !editMonthStart || !editMonthEnd) return;
     try {
-      const response = await fetch("/api/cycle-proposals", {
-        method: "POST",
+      const response = await fetch(`/api/months/${monthId}`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionToken}`
         },
         body: JSON.stringify({
-          type: "EDIT",
-          monthId,
           name: editMonthName,
           startDate: editMonthStart,
-          endDate: editMonthEnd,
-          gracePeriodEnabled: true
+          endDate: editMonthEnd
         })
       });
 
       if (response.ok) {
-        alert("Success: Cycle change proposal has been submitted! It requires 100% permission (approval) from all active members of your mess before it can be applied.");
+        alert("Success: Month cycle updated successfully!");
         setEditingMonthId(null);
-        fetchMonthsAndMembers(sessionToken);
+        await fetchMonthsAndMembers(sessionToken);
       } else {
-        const data = await response.json();
-        alert(data.error || "Failed to submit cycle proposal");
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || "Failed to update cycle");
       }
     } catch (e) {
       console.error(e);
@@ -2928,7 +2983,7 @@ export default function App() {
         alert(`Success: Your permission vote (${vote}) has been cast!`);
         fetchMonthsAndMembers(sessionToken);
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to cast permission vote");
       }
     } catch (e) {
@@ -2951,7 +3006,7 @@ export default function App() {
         fetchMonthsAndMembers(sessionToken);
         fetchReportSummary();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to apply cycle proposal");
       }
     } catch (e) {
@@ -2973,7 +3028,7 @@ export default function App() {
         alert("Success: Cycle change proposal deleted!");
         fetchMonthsAndMembers(sessionToken);
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to delete proposal");
       }
     } catch (e) {
@@ -2996,7 +3051,7 @@ export default function App() {
         fetchMonthsAndMembers(sessionToken);
         fetchReportSummary();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to delete cycle");
       }
     } catch (e) {
@@ -3005,7 +3060,7 @@ export default function App() {
   };
 
   // Toggle Lock
-  const handleToggleMonthLock = async (monthId: string, isLocked: boolean) => {
+  const handleToggleMonthLock = async (monthId: string, targetIsLocked: boolean) => {
     if (!sessionToken) return;
     try {
       const response = await fetch(`/api/months/${monthId}`, {
@@ -3014,12 +3069,18 @@ export default function App() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionToken}`
         },
-        body: JSON.stringify({ isLocked: !isLocked })
+        body: JSON.stringify({ isLocked: targetIsLocked })
       });
 
       if (response.ok) {
-        fetchMonthsAndMembers(sessionToken);
-        fetchReportSummary();
+        if (!targetIsLocked) {
+          setCurrentMonthId(monthId);
+        }
+        await fetchMonthsAndMembers(sessionToken);
+        await fetchReportSummary();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || "Failed to update cycle lock status");
       }
     } catch (e) {
       console.error(e);
@@ -3066,7 +3127,7 @@ export default function App() {
       if (!response.ok) {
         throw new Error("Failed to export backup");
       }
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -3103,7 +3164,7 @@ export default function App() {
             alert("Database Backup Restored Successfully! The page will now reload.");
             window.location.reload();
           } else {
-            const err = await response.json();
+            const err = await response.json().catch(() => ({}));
             alert(`Restore failed: ${err.error || "Unknown error"}`);
           }
         } catch (err) {
@@ -5052,7 +5113,10 @@ export default function App() {
                 handleUpdateAppearance={handleUpdateAppearance}
                 handleUpdatePreferences={handleUpdatePreferences}
                 handleToggleMessLock={handleToggleMessLock}
+                handleToggleMonthLock={handleToggleMonthLock}
                 handleUpdateSettings={handleUpdateSettings}
+                allowSuperUserUnlock={allowSuperUserUnlock}
+                setAllowSuperUserUnlock={setAllowSuperUserUnlock}
                 newMonthName={newMonthName}
                 setNewMonthName={handleNewMonthNameChange}
                 newMonthStart={newMonthStart}

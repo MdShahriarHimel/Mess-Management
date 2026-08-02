@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { 
   Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, 
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, GraduationCap, Award
 } from "lucide-react";
 import { Member, UserRole, MemberStatus, RespectSenioritySettings } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
@@ -164,6 +164,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   const isEditingSelf = editingMember?.id === currentUser.id;
   const isUltimateAdminActor = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isTargetUltimateAdmin = editingMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const canEditAcademicAndRespect = isUltimateAdminActor || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER;
   const disableRoleSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
   const disableStatusSelect = originalRole === UserRole.ADMIN && !isEditingSelf && !isUltimateAdminActor;
 
@@ -1582,6 +1583,139 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                     isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                   }`}
                 />
+              </div>
+
+              {/* Academic Information Section */}
+              <div className="space-y-3 border-t border-cyan-500/10 pt-4 mt-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold font-display text-cyan-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <GraduationCap size={15} /> Academic Information
+                  </h4>
+                  {!canEditAcademicAndRespect && (
+                    <span className="text-[9px] font-bold text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">
+                      Read-Only (Admin / Super User)
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Institution</label>
+                    <input
+                      type="text"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.institution || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, institution: e.target.value })}
+                      placeholder="e.g. University / College Name"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Department</label>
+                    <input
+                      type="text"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.department || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, department: e.target.value })}
+                      placeholder="e.g. Computer Science / BBA"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Education Type</label>
+                    <input
+                      type="text"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.educationType || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, educationType: e.target.value })}
+                      placeholder="e.g. Bachelor / Masters / Diploma"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Admission Session</label>
+                    <input
+                      type="text"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.admissionSession || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, admissionSession: e.target.value })}
+                      placeholder="e.g. 2019-2020 or 2021"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Respect Information Section */}
+              <div className="space-y-3 border-t border-cyan-500/10 pt-4 mt-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold font-display text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <Award size={15} /> Respect Information
+                  </h4>
+                  {!canEditAcademicAndRespect && (
+                    <span className="text-[9px] font-bold text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">
+                      Read-Only (Admin / Super User)
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Gender</label>
+                    <select
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.gender || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, gender: e.target.value })}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    >
+                      <option value="">-- Select Gender --</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Seniority Rank</label>
+                    <input
+                      type="text"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.seniorityYear || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, seniorityYear: e.target.value })}
+                      placeholder="e.g. 2019 or Rank Year"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Manual Title</label>
+                    <input
+                      type="text"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.manualTitle || ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, manualTitle: e.target.value })}
+                      placeholder="e.g. ভাই, আপু, Sir"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Profile Background GIF Customizer (Admin Only) */}

@@ -96,7 +96,7 @@ export default function Democracy({
       if (response.ok) {
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to update election configuration");
       }
     } catch (e) {
@@ -123,7 +123,7 @@ export default function Democracy({
         onRefresh();
         alert(`Successfully casted your secure choice for ${roleType === "CUSTOM" ? (elections.topic || "poll") : roleType}!`);
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to cast vote");
       }
     } catch (e) {
@@ -170,7 +170,7 @@ export default function Democracy({
             onRefresh();
             alert(`Successfully finalized the poll and published results!`);
           } else {
-            const err = await response.json();
+            const err = await response.json().catch(() => ({}));
             alert(err.error || "Failed to resolve poll");
           }
         } catch (e) {
@@ -224,7 +224,7 @@ export default function Democracy({
           onRefresh();
           alert(`Successfully promoted ${winnerMember.nickname} to ${targetRole}!`);
         } else {
-          const err = await response.json();
+          const err = await response.json().catch(() => ({}));
           alert(err.error || "Failed to resolve election");
         }
       } catch (e) {

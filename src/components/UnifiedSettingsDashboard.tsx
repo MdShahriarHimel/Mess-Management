@@ -74,6 +74,9 @@ interface UnifiedSettingsDashboardProps {
   handleUpdatePreferences: (updates: any) => Promise<boolean>;
   handleToggleMessLock: (messId: string, locked: boolean) => Promise<boolean>;
   handleUpdateSettings: (updates: any) => Promise<boolean>;
+  allowSuperUserUnlock?: boolean;
+  setAllowSuperUserUnlock?: React.Dispatch<React.SetStateAction<boolean>>;
+  handleToggleMonthLock?: (monthId: string, isLocked: boolean) => Promise<void>;
 
   newMonthName: string;
   setNewMonthName: (val: string) => void;
@@ -143,6 +146,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   handleUpdatePreferences,
   handleToggleMessLock,
   handleUpdateSettings,
+  allowSuperUserUnlock = false,
+  setAllowSuperUserUnlock,
+  handleToggleMonthLock,
 
   newMonthName,
   setNewMonthName,
@@ -216,7 +222,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         const statusMap: Record<string, { auditMode: boolean; auditModeExpiresAt: string | null }> = {};
         (data.messes || []).forEach((m: any) => {
           statusMap[m.id] = {
@@ -248,7 +254,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         body: JSON.stringify({ enabled: enable, messId })
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setMessAuditStatus(prev => ({
           ...prev,
           [messId]: {
@@ -309,11 +315,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         fetch("/api/food-knowledge/list", { headers })
       ]);
       if (analyticsRes.ok) {
-        const data = await analyticsRes.json();
+        const data = await analyticsRes.json().catch(() => ({}));
         setFoodAnalytics(data);
       }
       if (listRes.ok) {
-        const data = await listRes.json();
+        const data = await listRes.json().catch(() => ({}));
         setFoodList(data.list || []);
       }
     } catch (err) {
@@ -1716,6 +1722,46 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 </div>
               )}
 
+              {/* ERP SETTING: Allow Super User to Unlock Locked Cycles */}
+              <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5 pr-4">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                      <LucideIcons.KeyRound size={15} className="text-cyan-400" />
+                      Allow Super User to Unlock Locked Cycles
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      When OFF, only the Ultimate Admin can unlock archived cycles. When ON, Super Users are also permitted to unlock cycles.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!isUltimateAdmin}
+                    onClick={() => {
+                      if (!isUltimateAdmin) return;
+                      const newVal = !allowSuperUserUnlock;
+                      if (setAllowSuperUserUnlock) setAllowSuperUserUnlock(newVal);
+                      handleUpdateSettings({ allowSuperUserUnlock: newVal });
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      allowSuperUserUnlock ? "bg-cyan-500" : "bg-slate-700"
+                    } ${!isUltimateAdmin ? "opacity-50 cursor-not-allowed" : ""}`}
+                    title={isUltimateAdmin ? "Toggle Super User unlock permission" : "Only Ultimate Admin can change this setting"}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        allowSuperUserUnlock ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+                {!isUltimateAdmin && (
+                  <p className="text-[10px] text-amber-400/90 font-medium">
+                    🔒 Only Ultimate Admin can configure this rule.
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Create or Edit Cycle */}
                 {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
@@ -1817,59 +1863,141 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-300 uppercase">Available Active Cycles</h4>
                   <div className="divide-y divide-slate-800/60 max-h-60 overflow-y-auto pr-1">
-                    {monthsList.map(month => (
-                      <div key={month.id} className="flex items-center justify-between py-2 border-b border-slate-800/40 last:border-0">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-slate-200">{month.name}</span>
-                          <span className="text-[9px] text-slate-500 font-mono">
-                            {new Date(month.startDate).toLocaleDateString()} - {new Date(month.endDate).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setActiveMonthId(month.id)}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
-                              activeMonthId === month.id
-                                ? isDarkMode
-                                  ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
-                                  : "bg-cyan-50 border border-cyan-200 text-cyan-800"
-                                : isDarkMode
-                                  ? "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
-                                  : "bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            {activeMonthId === month.id ? "Selected" : "Activate"}
-                          </button>
-                          {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setEditingMonthId(month.id);
-                                  setEditMonthName(month.name);
-                                  setEditMonthStart(month.startDate ? month.startDate.substring(0, 16) : "");
-                                  setEditMonthEnd(month.endDate ? month.endDate.substring(0, 16) : "");
-                                }}
-                                className="p-1 text-slate-400 hover:text-cyan-400 transition-colors cursor-pointer rounded bg-slate-950 border border-slate-800"
-                                title="Edit Cycle"
-                              >
-                                <LucideIcons.Edit2 size={11} />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (confirm(`Are you sure you want to delete the cycle "${month.name}"?`)) {
-                                    handleDeleteMonthCycle(month.id);
+                    {monthsList.map(month => {
+                      const canUnlock = !month.isLocked || isUltimateAdmin || currentUser.role === "ADMIN" || currentUser.role === "MANAGER" || (currentUser.role === "SUPERUSER" && allowSuperUserUnlock);
+                      return (
+                        <div key={month.id} className="flex items-center justify-between py-2 border-b border-slate-800/40 last:border-0 gap-2">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-200">{month.name}</span>
+                              {month.isLocked ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1" title="Cycle is locked.">
+                                  <LucideIcons.Lock size={10} /> Locked
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                  <LucideIcons.Unlock size={10} /> Active
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-slate-500 font-mono">
+                              {new Date(month.startDate).toLocaleDateString()} - {new Date(month.endDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={async () => {
+                                if (month.isLocked) {
+                                  if (canUnlock) {
+                                    if (window.confirm(`Cycle "${month.name}" is currently locked. Would you like to UNLOCK and select this cycle as active?`)) {
+                                      if (handleToggleMonthLock) {
+                                        await handleToggleMonthLock(month.id, false);
+                                      }
+                                      setActiveMonthId(month.id);
+                                    }
+                                  } else {
+                                    alert(`Cycle "${month.name}" is locked. Only authorized administrators or superusers can unlock past cycles.`);
                                   }
-                                }}
-                                className="p-1 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer rounded bg-slate-950 border border-slate-800"
-                                title="Delete Cycle"
-                              >
-                                <LucideIcons.Trash2 size={11} />
-                              </button>
-                            </>
-                          )}
+                                } else {
+                                  setActiveMonthId(month.id);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
+                                activeMonthId === month.id
+                                  ? isDarkMode
+                                    ? "bg-cyan-950 border border-cyan-500/20 text-cyan-300"
+                                    : "bg-cyan-50 border border-cyan-200 text-cyan-800"
+                                  : month.isLocked
+                                    ? "bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200"
+                                    : isDarkMode
+                                      ? "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
+                                      : "bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900"
+                              }`}
+                              title={month.isLocked ? "Cycle is locked. Click to unlock and select." : "Select cycle"}
+                            >
+                              {activeMonthId === month.id ? "Selected" : month.isLocked ? "Activate (Locked)" : "Activate"}
+                            </button>
+
+                            {/* Lock / Unlock button */}
+                            {handleToggleMonthLock && (
+                              month.isLocked ? (
+                                <button
+                                  disabled={!canUnlock}
+                                  onClick={async () => {
+                                    if (window.confirm(`Are you sure you want to UNLOCK the cycle "${month.name}"?`)) {
+                                      await handleToggleMonthLock(month.id, false);
+                                      setActiveMonthId(month.id);
+                                    }
+                                  }}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                                    canUnlock
+                                      ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300 cursor-pointer"
+                                      : "bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed opacity-60"
+                                  }`}
+                                  title={canUnlock ? "Unlock this month cycle" : "Cycle is locked. Only authorized users can unlock it."}
+                                >
+                                  <LucideIcons.Unlock size={10} /> Unlock
+                                </button>
+                              ) : (
+                                (isUltimateAdmin || currentUser.role === "SUPERUSER" || currentUser.role === "ADMIN" || currentUser.role === "MANAGER") && (
+                                  <button
+                                    onClick={async () => {
+                                      if (window.confirm(`Are you sure you want to LOCK the cycle "${month.name}"?`)) {
+                                        await handleToggleMonthLock(month.id, true);
+                                      }
+                                    }}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-bold border bg-slate-950 hover:bg-amber-950/30 border-slate-800 hover:border-amber-500/30 text-slate-400 hover:text-amber-300 transition-all cursor-pointer flex items-center gap-1"
+                                    title="Lock this month cycle"
+                                  >
+                                    <LucideIcons.Lock size={10} /> Lock
+                                  </button>
+                                )
+                              )
+                            )}
+
+                            {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                              <>
+                                <button
+                                  disabled={month.isLocked}
+                                  onClick={() => {
+                                    if (month.isLocked) return;
+                                    setEditingMonthId(month.id);
+                                    setEditMonthName(month.name);
+                                    setEditMonthStart(month.startDate ? month.startDate.substring(0, 16) : "");
+                                    setEditMonthEnd(month.endDate ? month.endDate.substring(0, 16) : "");
+                                  }}
+                                  className={`p-1 transition-colors rounded bg-slate-950 border border-slate-800 ${
+                                    month.isLocked
+                                      ? "text-slate-600 cursor-not-allowed opacity-40"
+                                      : "text-slate-400 hover:text-cyan-400 cursor-pointer"
+                                  }`}
+                                  title={month.isLocked ? "Cycle is locked. Unlock the cycle to edit." : "Edit Cycle"}
+                                >
+                                  <LucideIcons.Edit2 size={11} />
+                                </button>
+                                <button
+                                  disabled={month.isLocked}
+                                  onClick={() => {
+                                    if (month.isLocked) return;
+                                    if (confirm(`Are you sure you want to delete the cycle "${month.name}"?`)) {
+                                      handleDeleteMonthCycle(month.id);
+                                    }
+                                  }}
+                                  className={`p-1 transition-colors rounded bg-slate-950 border border-slate-800 ${
+                                    month.isLocked
+                                      ? "text-slate-600 cursor-not-allowed opacity-40"
+                                      : "text-slate-400 hover:text-rose-400 cursor-pointer"
+                                  }`}
+                                  title={month.isLocked ? "Cycle is locked. Unlock the cycle to delete." : "Delete Cycle"}
+                                >
+                                  <LucideIcons.Trash2 size={11} />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>

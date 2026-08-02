@@ -1,5 +1,18 @@
 [
   {
+    "id": "idx_d1q5wmsd8je34o2g0pnxn",
+    "timestamp": "2026-08-01T11:02:56.909Z",
+    "date": "2026-08-01",
+    "time": "11:02:56",
+    "email": "test@example.com",
+    "messId": "default",
+    "action": "LOGIN_FAILURE",
+    "success": false,
+    "reason": "Failed login attempt (1/5)",
+    "ip": "127.0.0.1",
+    "userAgent": "curl/7.88.1"
+  },
+  {
     "id": "idx_kxarcha8b0899z5560c8cq",
     "timestamp": "2026-07-28T14:49:44.191Z",
     "date": "2026-07-28",

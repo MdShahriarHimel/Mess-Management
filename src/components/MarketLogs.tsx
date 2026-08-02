@@ -194,19 +194,19 @@ export default function MarketLogs({
       const holdRes = await fetch(`/api/holdings/${currentMonthId}`, { headers: authHeader });
       
       if (mRes.ok) {
-        const mData = await mRes.json();
+        const mData = await mRes.json().catch(() => ({}));
         setMarkets(mData.markets || []);
       }
       if (dRes.ok) {
-        const dData = await dRes.json();
+        const dData = await dRes.json().catch(() => ({}));
         setDuties(dData.duties || []);
       }
       if (depRes.ok) {
-        const depData = await depRes.json();
+        const depData = await depRes.json().catch(() => ({}));
         setDepositsList(depData.deposits || []);
       }
       if (holdRes.ok) {
-        const holdData = await holdRes.json();
+        const holdData = await holdRes.json().catch(() => ({}));
         setHoldingsList(holdData.holdings || []);
       }
     } catch (e) {
@@ -237,7 +237,7 @@ export default function MarketLogs({
           headers: { "Authorization": `Bearer ${currentUser.id}` }
         });
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           const menusList = data.menu || [];
           
           setMealsPlanning(prev => {
@@ -397,7 +397,7 @@ export default function MarketLogs({
           })
         });
         if (!menuResponse.ok) {
-          const errData = await menuResponse.json();
+          const errData = await menuResponse.json().catch(() => ({}));
           throw new Error(errData.error || `Failed to update food menu arrangements for ${d}.`);
         }
       }
@@ -422,7 +422,7 @@ export default function MarketLogs({
         })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || "Failed to submit log");
       }
@@ -487,7 +487,7 @@ export default function MarketLogs({
         fetchMarketsAndSchedules();
         onRefresh();
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to schedule");
       }
     } catch (err: any) {
@@ -592,7 +592,7 @@ export default function MarketLogs({
         fetchMarketsAndSchedules();
         onRefresh();
       } else {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to save managerial cost");
       }
     } catch (e) {

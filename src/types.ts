@@ -88,6 +88,7 @@ export interface MessMonth {
   startDate: string; // e.g. "2026-07-01T18:00:00" (starts at Dinner)
   endDate: string; // e.g. "2026-08-01T14:00:00" (ends at Lunch)
   isLocked: boolean;
+  manuallyUnlocked?: boolean;
   gracePeriodEnabled: boolean;
 }
 
@@ -223,6 +224,11 @@ export interface MealRequest {
   mealsData: string; // JSON string representing the updated meals for that date
   status: string; // "PENDING", "APPROVED", "REJECTED"
   timestamp: string;
+}
+
+export interface MessSettings {
+  allowSuperUserUnlock?: boolean;
+  [key: string]: any;
 }
 
 export interface CycleProposal {

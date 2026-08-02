@@ -103,8 +103,20 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
-// 404 fallback for any unmatched /api/* routes to avoid returning HTML index.html
-app.use("/api/*", (req, res) => {
+// API error handling middleware (returns JSON error response on server exception)
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.originalUrl?.startsWith("/api") || req.path?.startsWith("/api")) {
+    console.error(`[API Error] ${req.method} ${req.originalUrl}:`, err);
+    res.status(err.status || err.statusCode || 500).json({
+      error: err.message || "Internal Server Error"
+    });
+    return;
+  }
+  next(err);
+});
+
+// 404 fallback for any unmatched /api routes to avoid returning HTML index.html
+app.use("/api", (req, res) => {
   res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.originalUrl}` });
 });
 

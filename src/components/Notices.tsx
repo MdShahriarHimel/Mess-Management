@@ -31,7 +31,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
         headers: { "Authorization": `Bearer ${currentUser.id}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         setNotices(data.notices || []);
         setHasMore(data.hasMore || false);
         if (loadAll) {

@@ -185,29 +185,37 @@ export function platformOwnerMiddleware(req: AuthenticatedRequest, res: Response
 // ---------------------------------------------------------
 export function maintenanceMiddleware(req: any, res: any, next: any) {
   const controls = loadPlatformControls();
-  const userEmail = req.user?.email;
+  const fullUrl = req.originalUrl || req.path || "";
+  const pathStr = req.path || "";
+
+  // Always allow founder paths, login, logout, and auth
+  const isFounderPath = fullUrl.startsWith("/api/founder") || pathStr.startsWith("/founder") || pathStr.startsWith("/api/founder");
+  const isAuthPath = fullUrl.startsWith("/api/login") || fullUrl.startsWith("/api/logout") || fullUrl.startsWith("/api/auth") || pathStr.startsWith("/login") || pathStr.startsWith("/logout") || pathStr.startsWith("/auth");
+
+  // Attempt to decode user email from req.user or Authorization header
+  let userEmail = req.user?.email;
+  if (!userEmail && req.headers?.authorization) {
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith("Bearer ")) {
+        const token = authHeader.split(" ")[1];
+        if (!token.startsWith("ey")) {
+          const memberId = token.split(":")[0];
+          const db = loadDB();
+          const found = db.members.find((m: any) => m.id === memberId);
+          if (found) userEmail = found.email;
+        }
+      }
+    } catch (e) {
+      // ignore token parse errors in middleware
+    }
+  }
+
   const isOwner = isPlatformOwner(userEmail);
 
   // If Full Lock is active
   if (controls.maintenanceMode === "Full Lock") {
-    // Platform Owners can bypass Full Lock to access APIs and disable maintenance
-    if (isOwner) {
-      return next();
-    }
-
-    // Public/auth and status endpoints are allowed
-    const allowedPaths = [
-      "/api/founder/status",
-      "/api/founder/controls",
-      "/api/auth/",
-      "/api/settings/public",
-      "/api/login",
-      "/api/logout"
-    ];
-    // Check if path is allowed
-    const fullUrl = req.originalUrl || req.path;
-    const isAllowed = allowedPaths.some(p => fullUrl.startsWith(p) || req.path.startsWith(p) || fullUrl.startsWith(p.replace(/^\/api/, "")));
-    if (isAllowed) {
+    if (isOwner || isFounderPath || isAuthPath || fullUrl.startsWith("/api/settings/public")) {
       return next();
     }
 
@@ -229,21 +237,13 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
 
   // If Read Only mode is active
   if (controls.maintenanceMode === "Read Only") {
-    // Platform Owners can bypass Read Only
-    if (isOwner) {
+    if (isOwner || isFounderPath) {
       return next();
     }
 
-    // Block all write operations
+    // Block all write operations for non-owners and non-founder routes
     if (["POST", "PUT", "DELETE"].includes(req.method)) {
-      // Allow only login, logout and founder-console itself
-      const allowedWritePaths = [
-        "/api/login",
-        "/api/logout",
-        "/api/founder/"
-      ];
-      const isAllowedWrite = allowedWritePaths.some(p => req.path.startsWith(p));
-      if (!isAllowedWrite) {
+      if (!isAuthPath) {
         return res.status(403).json({
           error: "Platform is currently in Read-Only Mode. Modifications and transactions are forbidden during maintenance.",
           readOnly: true

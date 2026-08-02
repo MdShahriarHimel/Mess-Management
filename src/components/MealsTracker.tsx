@@ -86,7 +86,7 @@ export default function MealsTracker({
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         const pending = (data.requests || []).filter((r: any) => r.status === "PENDING");
         setPendingRequests(pending);
       }
@@ -105,7 +105,7 @@ export default function MealsTracker({
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         const rawMeals: Meal[] = data.meals || [];
         
         console.log(
@@ -172,8 +172,8 @@ export default function MealsTracker({
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
-        const data = await response.json();
-        const currentM = data.months.find((m: any) => m.id === currentMonthId);
+        const data = await response.json().catch(() => ({}));
+        const currentM = (data.months || []).find((m: any) => m.id === currentMonthId);
         if (currentM) {
           setIsLocked(currentM.isLocked);
         }
@@ -247,7 +247,7 @@ export default function MealsTracker({
         })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || "Failed to save meals");
       }
@@ -278,7 +278,7 @@ export default function MealsTracker({
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || "Failed to approve request");
       }
@@ -301,7 +301,7 @@ export default function MealsTracker({
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || "Failed to reject request");
       }
