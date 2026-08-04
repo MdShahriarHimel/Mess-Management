@@ -179,6 +179,13 @@ export async function importBackupToPostgres(backupData: DatabaseSchema) {
         profileDecoration: item.profileDecoration || null,
         dashboardStyle: item.dashboardStyle || null,
         backgroundEffect: item.backgroundEffect || null,
+        institution: item.institution || null,
+        department: item.department || null,
+        educationType: item.educationType || null,
+        admissionSession: item.admissionSession || null,
+        seniorityYear: item.seniorityYear || null,
+        gender: item.gender || null,
+        manualTitle: item.manualTitle || null,
       }));
       for (let i = 0; i < membersToInsert.length; i += 500) {
         await tx.insert(membersTable).values(membersToInsert.slice(i, i + 500));
@@ -485,6 +492,19 @@ export async function initializeDbCache() {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[Database Connection] Attempt ${attempt} of ${maxRetries} to connect to PostgreSQL Cloud SQL...`);
+      try {
+        await db.execute(sql`
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS institution text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS department text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS education_type text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS admission_session text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS seniority_year text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS gender text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS manual_title text;
+        `);
+      } catch (colErr) {
+        console.warn("Notice: Column migration for academic/respect fields on members table:", colErr);
+      }
       [
         membersList,
         monthsList,
@@ -689,6 +709,13 @@ async function doActualSync(cache: DatabaseSchema) {
           profileDecoration: item.profileDecoration || null,
           dashboardStyle: item.dashboardStyle || null,
           backgroundEffect: item.backgroundEffect || null,
+          institution: item.institution || null,
+          department: item.department || null,
+          educationType: item.educationType || null,
+          admissionSession: item.admissionSession || null,
+          seniorityYear: item.seniorityYear || null,
+          gender: item.gender || null,
+          manualTitle: item.manualTitle || null,
         };
         if (!isItemModified('members', item.id, mapped)) continue;
         await db.insert(membersTable).values(mapped).onConflictDoUpdate({

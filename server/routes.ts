@@ -815,7 +815,14 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
     status: MemberStatus.PENDING, // Starts as pending until they set a password
     notes: memberData.notes || "Invited to Mess ERP.",
     photo: memberData.photo || null,
-    assignedTask: memberData.assignedTask || ""
+    assignedTask: memberData.assignedTask || "",
+    institution: memberData.institution || "",
+    department: memberData.department || "",
+    educationType: memberData.educationType || "",
+    admissionSession: memberData.admissionSession || "",
+    seniorityYear: memberData.seniorityYear || "",
+    gender: memberData.gender || "",
+    manualTitle: memberData.manualTitle || "",
   };
 
   // Prevent Non-Admins/Non-Superusers from creating high privilege roles
@@ -1060,6 +1067,13 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
       profileDecoration: updatedMember.profileDecoration || null,
       dashboardStyle: updatedMember.dashboardStyle || null,
       backgroundEffect: updatedMember.backgroundEffect || null,
+      institution: updatedMember.institution || null,
+      department: updatedMember.department || null,
+      educationType: updatedMember.educationType || null,
+      admissionSession: updatedMember.admissionSession || null,
+      seniorityYear: updatedMember.seniorityYear || null,
+      gender: updatedMember.gender || null,
+      manualTitle: updatedMember.manualTitle || null,
     };
     
     console.log("[TRACE A - Immediately before Postgres UPDATE]", {

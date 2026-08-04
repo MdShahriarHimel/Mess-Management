@@ -164,7 +164,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   const isEditingSelf = editingMember?.id === currentUser.id;
   const isUltimateAdminActor = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isTargetUltimateAdmin = editingMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const canEditAcademicAndRespect = isUltimateAdminActor || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER;
+  const canEditAcademicAndRespect = isEditingSelf || isUltimateAdminActor || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER;
   const disableRoleSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
   const disableStatusSelect = originalRole === UserRole.ADMIN && !isEditingSelf && !isUltimateAdminActor;
 

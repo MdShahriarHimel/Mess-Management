@@ -42,6 +42,13 @@ export const members = pgTable("members", {
   profileDecoration: text("profile_decoration"),
   dashboardStyle: text("dashboard_style"),
   backgroundEffect: text("background_effect"),
+  institution: text("institution"),
+  department: text("department"),
+  educationType: text("education_type"),
+  admissionSession: text("admission_session"),
+  seniorityYear: text("seniority_year"),
+  gender: text("gender"),
+  manualTitle: text("manual_title"),
 });
 
 export const months = pgTable("months", {
