@@ -3374,8 +3374,9 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   });
 
   // Prevent divide-by-zero
-  // Meal rate = Total cost / Total Meal count
-  const mealRate = totalMeals > 0 ? (totalCost / totalMeals) : 0;
+  // Meal rate = (Manager's Monthly markets + Total markets) / Total Meal count
+  const totalMarketCost = managerMarketSpent + totalMarkets;
+  const mealRate = totalMeals > 0 ? (totalMarketCost / totalMeals) : 0;
 
   // Calculate detailed balances per member
   const memberSettlements = monthMembers.map(member => {
