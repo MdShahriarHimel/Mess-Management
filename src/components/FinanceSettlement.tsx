@@ -7,7 +7,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
   DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2, Search, Users, FileText
 } from "lucide-react";
-import { Member, Bill, BillStatus, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
+import { Member, Bill, BillStatus, UserRole, MessMonth, RespectSenioritySettings, RoomLabel } from "../types.js";
 import * as XLSX from "xlsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
@@ -58,6 +58,30 @@ export default function FinanceSettlement({
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
   const [showAddBillModal, setShowAddBillModal] = useState(false);
+  const [roomLabels, setRoomLabels] = useState<RoomLabel[]>([]);
+  const [isSavingOverrides, setIsSavingOverrides] = useState(false);
+  const [overrideSaveStatus, setOverrideSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/settings", {
+      headers: { "Authorization": `Bearer ${currentUser.id}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          if (Array.isArray(data.roomLabels)) {
+            setRoomLabels(data.roomLabels);
+          }
+          if (data.customBillOverrides && typeof data.customBillOverrides === "object") {
+            setCustomBillOverrides(prev => ({
+              ...data.customBillOverrides,
+              ...prev
+            }));
+          }
+        }
+      })
+      .catch(e => console.error("Error fetching settings in FinanceSettlement:", e));
+  }, [currentUser.id, refreshTriggers]);
 
   const renderMemberPhotoBeforeName = (memberId: string, name: string) => {
     const found = members.find(m => m.id === memberId);
@@ -178,6 +202,34 @@ export default function FinanceSettlement({
     });
   };
 
+  const handleSaveOverrides = async () => {
+    setIsSavingOverrides(true);
+    setOverrideSaveStatus(null);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({ customBillOverrides })
+      });
+
+      if (response.ok) {
+        localStorage.setItem("custom_bill_overrides", JSON.stringify(customBillOverrides));
+        setOverrideSaveStatus({ type: 'success', message: 'Individual member bill amounts saved successfully!' });
+        setTimeout(() => setOverrideSaveStatus(null), 4000);
+      } else {
+        setOverrideSaveStatus({ type: 'error', message: 'Failed to save individual bill amounts to server.' });
+      }
+    } catch (e) {
+      console.error("Error saving custom bill overrides:", e);
+      setOverrideSaveStatus({ type: 'error', message: 'Error saving individual member bill amounts.' });
+    } finally {
+      setIsSavingOverrides(false);
+    }
+  };
+
   const getMemberBillStats = (memberId: string) => {
     const stats: {
       Utility: { paid: number; total: number };
@@ -194,6 +246,7 @@ export default function FinanceSettlement({
     };
 
     const overrides = customBillOverrides[currentMonthId]?.[memberId] || {};
+    const memberObj = activeMembers.find(m => m.id === memberId);
 
     billColumns.forEach((col) => {
       let share = col.perMemberShare;
@@ -201,6 +254,13 @@ export default function FinanceSettlement({
         share = overrides[col.id];
       } else if (overrides[col.category] !== undefined && billColumns.filter(c => c.category === col.category).length === 1) {
         share = overrides[col.category];
+      } else if (col.category === "Rent") {
+        let matchedRoom = memberObj ? roomLabels.find(r => r.id === memberObj.roomLabelId || r.label === memberObj.roomLabel || r.id === memberObj.roomLabel) : undefined;
+        if (matchedRoom) {
+          share = matchedRoom.rent;
+        } else if (memberObj && memberObj.roomRent !== undefined && memberObj.roomRent !== null && memberObj.roomRent > 0) {
+          share = memberObj.roomRent;
+        }
       }
 
       const isPaid = col.status === BillStatus.PAID;
@@ -2154,45 +2214,69 @@ export default function FinanceSettlement({
 
           {/* MONTHLY SUMMARY TABLE CARD */}
           <div className={`p-5 rounded-3xl border ${
-            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
+            isDarkMode ? "bg-slate-900/80 border-cyan-500/20 text-white" : "bg-white border-slate-300 shadow-md text-slate-900"
           }`} id="finance-monthly-summary-card">
             
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-850 pb-3">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-purple-500/15 text-purple-500 flex items-center justify-center font-extrabold shadow-sm shrink-0">
+                <div className="w-7 h-7 rounded-full bg-purple-500/20 text-purple-600 dark:text-purple-300 flex items-center justify-center font-black shadow-sm shrink-0">
                   <Users size={14} />
                 </div>
-                <h3 className="text-xs font-black tracking-wider uppercase">MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT)</h3>
+                <h3 className="text-xs font-black tracking-wider uppercase text-slate-900 dark:text-cyan-300">MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT)</h3>
               </div>
-              <div className="text-[10px] font-bold text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-950/60 px-3 py-1 rounded-full border border-slate-200/50 dark:border-slate-850/50">
-                Mess: {logoText || "Ababil mess"} • {months.find(m => m.id === currentMonthId)?.name || "Active month Cycle"}
+              <div className="flex items-center gap-2 flex-wrap">
+                {isManagerOrAdmin && (
+                  <button
+                    type="button"
+                    disabled={isSavingOverrides}
+                    onClick={handleSaveOverrides}
+                    className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-purple-500/30 disabled:opacity-50 cursor-pointer active:scale-95"
+                  >
+                    <Save size={14} />
+                    <span>{isSavingOverrides ? "Saving..." : "SAVE INDIVIDUAL AMOUNTS"}</span>
+                  </button>
+                )}
+                <div className="text-xs font-black text-slate-900 bg-slate-100 dark:text-slate-100 dark:bg-slate-900 px-3 py-1 rounded-full border border-slate-300 dark:border-slate-700">
+                  Mess: {logoText || "Ababil mess"} • {months.find(m => m.id === currentMonthId)?.name || "Active month Cycle"}
+                </div>
               </div>
             </div>
+
+            {overrideSaveStatus && (
+              <div className={`mb-4 p-3 text-xs font-black rounded-xl flex items-center gap-2 transition-all ${
+                overrideSaveStatus.type === 'success' 
+                  ? 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-500/40' 
+                  : 'bg-rose-500/20 text-rose-900 dark:text-rose-300 border border-rose-500/40'
+              }`}>
+                <Check size={16} />
+                <span>{overrideSaveStatus.message}</span>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className={`border-b ${isDarkMode ? "border-slate-850 text-slate-400 bg-slate-950/20" : "border-slate-100 text-slate-500 bg-slate-50"} text-[10px] tracking-wider font-extrabold uppercase`}>
-                    <th className="py-3 px-4">MEMBER</th>
+                  <tr className={`border-b ${isDarkMode ? "border-slate-700 text-slate-100 bg-slate-950/80" : "border-slate-300 text-slate-950 bg-slate-100"} text-xs tracking-wider font-black uppercase`}>
+                    <th className="py-3 px-4 text-slate-950 dark:text-slate-100">MEMBER</th>
                     {billColumns.map((col) => (
-                      <th key={col.id} className="py-3 px-4 text-center whitespace-nowrap">
+                      <th key={col.id} className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">
                         <div className="uppercase">{col.title}</div>
                         {col.title.toLowerCase() !== col.category.toLowerCase() && col.title.toLowerCase() !== `${col.category.toLowerCase()} bill` && (
-                          <div className="text-[8px] font-extrabold text-cyan-400 tracking-normal mt-0.5">
+                          <div className="text-[9px] font-black text-cyan-800 dark:text-cyan-300 tracking-normal mt-0.5">
                             ({col.category})
                           </div>
                         )}
                       </th>
                     ))}
-                    <th className="py-3 px-4 text-center whitespace-nowrap">INDIVIDUAL MEALS</th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap">TOTAL</th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap">STATUS</th>
+                    <th className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">INDIVIDUAL MEALS</th>
+                    <th className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">TOTAL</th>
+                    <th className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">STATUS</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {activeMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={1 + billColumns.length + 3} className="py-6 text-center text-slate-500 font-semibold">No active members found.</td>
+                      <td colSpan={1 + billColumns.length + 3} className="py-6 text-center text-slate-900 dark:text-slate-200 font-extrabold">No active members found.</td>
                     </tr>
                   ) : (
                     activeMembers
@@ -2216,11 +2300,13 @@ export default function FinanceSettlement({
                         const isFullyPaid = Math.abs(totalPaid - totalExpected) < 0.01;
 
                         return (
-                          <tr key={m.id} className="hover:bg-cyan-500/5 transition-colors">
+                          <tr key={m.id} className="hover:bg-cyan-500/10 dark:hover:bg-cyan-500/15 transition-colors">
                             {/* MEMBER */}
-                            <td className="py-3.5 px-4 font-bold text-xs flex items-center gap-2">
-                              {renderMemberPhotoBeforeName(m.id, getRespectDisplayName(currentUser, m, respectSenioritySettings))}
-                              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)}</span>
+                            <td className="py-3.5 px-4 font-black text-xs text-slate-950 dark:text-white">
+                              <div className="flex items-center gap-2 whitespace-nowrap">
+                                {renderMemberPhotoBeforeName(m.id, getRespectDisplayName(currentUser, m, respectSenioritySettings))}
+                                <span className={isDarkMode ? "text-white font-extrabold" : "text-slate-950 font-black"}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)}</span>
+                              </div>
                             </td>
 
                             {/* DYNAMIC BILL COLUMNS */}
@@ -2230,7 +2316,7 @@ export default function FinanceSettlement({
                               const isColPaid = col.status === BillStatus.PAID;
 
                               return (
-                                <td key={col.id} className="py-3.5 px-4 text-center font-mono text-[11px]">
+                                <td key={col.id} className="py-3.5 px-4 text-center font-mono text-xs">
                                   {isManagerOrAdmin ? (
                                     <div className="flex flex-col items-center gap-1">
                                       <input
@@ -2239,14 +2325,14 @@ export default function FinanceSettlement({
                                         value={overrideVal ?? ""}
                                         placeholder={colStat.total.toFixed(0)}
                                         onChange={(e) => handleUpdateOverride(m.id, col.id, e.target.value)}
-                                        className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-cyan-400 focus:outline-none focus:border-cyan-400 placeholder-slate-400"
+                                        className="w-20 px-2 py-1 text-center bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-cyan-500/50 rounded-lg font-mono text-xs font-black text-slate-950 dark:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder:text-slate-900 dark:placeholder:text-cyan-200 placeholder:font-black placeholder:opacity-100 shadow-sm"
                                       />
-                                      <span className="text-[9px] text-slate-500 font-bold">
+                                      <span className="text-[10px] text-slate-900 dark:text-slate-200 font-black">
                                         Paid: ৳{colStat.paid.toFixed(0)}
                                       </span>
                                     </div>
                                   ) : (
-                                    <span className={isColPaid ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}>
+                                    <span className={isColPaid ? "text-emerald-800 dark:text-emerald-400 font-black text-xs" : "text-amber-800 dark:text-amber-400 font-black text-xs"}>
                                       ৳{colStat.total.toFixed(2)}
                                     </span>
                                   )}
@@ -2255,7 +2341,7 @@ export default function FinanceSettlement({
                             })}
 
                             {/* INDIVIDUAL MEALS */}
-                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
+                            <td className="py-3.5 px-4 text-center font-mono text-xs">
                               {isManagerOrAdmin ? (
                                 <div className="flex flex-col items-center gap-1">
                                   <input
@@ -2264,23 +2350,23 @@ export default function FinanceSettlement({
                                     value={customBillOverrides[currentMonthId]?.[m.id]?.Meals ?? ""}
                                     placeholder={defaultMealCost.toFixed(0)}
                                     onChange={(e) => handleUpdateOverride(m.id, "Meals", e.target.value)}
-                                    className="w-16 px-1 py-0.5 text-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-orange-400 focus:outline-none focus:border-orange-400 placeholder-slate-400 font-bold"
+                                    className="w-20 px-2 py-1 text-center bg-orange-50 dark:bg-slate-900 border-2 border-orange-300 dark:border-orange-500/50 rounded-lg font-mono text-xs font-black text-orange-950 dark:text-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder:text-orange-950 dark:placeholder:text-orange-300 placeholder:font-black placeholder:opacity-100 shadow-sm"
                                   />
-                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                                  <span className="text-[10px] text-slate-900 dark:text-slate-200 font-black uppercase tracking-wider">
                                     {mealsCount} meals (৳{(reportSummary?.mealRate || 0).toFixed(1)})
                                   </span>
                                 </div>
                               ) : (
                                 <div className="flex flex-col items-center">
-                                  <span className="font-extrabold text-orange-400">৳{effectiveMealCost.toFixed(2)}</span>
-                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{mealsCount} meals</span>
+                                  <span className="font-black text-orange-700 dark:text-orange-300 text-xs">৳{effectiveMealCost.toFixed(2)}</span>
+                                  <span className="text-[10px] text-slate-900 dark:text-slate-200 font-black uppercase tracking-wider">{mealsCount} meals</span>
                                 </div>
                               )}
                             </td>
 
                             {/* TOTAL */}
-                            <td className="py-3.5 px-4 text-center font-mono text-[11px]">
-                              <span className={isFullyPaid ? "text-emerald-500 font-black text-xs" : "text-amber-500 font-black text-xs"}>
+                            <td className="py-3.5 px-4 text-center font-mono text-xs">
+                              <span className={isFullyPaid ? "text-emerald-800 dark:text-emerald-300 font-black text-xs" : "text-amber-800 dark:text-amber-300 font-black text-xs"}>
                                 ৳{totalExpected.toFixed(2)}
                               </span>
                             </td>
@@ -2288,11 +2374,11 @@ export default function FinanceSettlement({
                             {/* STATUS */}
                             <td className="py-3.5 px-4 text-center">
                               {isFullyPaid ? (
-                                <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide bg-[#e6f4ea] text-[#137333] border border-[#c2e7cd]">
+                                <span className="inline-flex px-3 py-1 rounded-full text-xs font-black tracking-wide bg-emerald-100 text-emerald-950 dark:bg-emerald-500/20 dark:text-emerald-200 border border-emerald-400 dark:border-emerald-500/40 shadow-sm">
                                   Paid
                                 </span>
                               ) : (
-                                <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide bg-rose-50 text-rose-700 border border-rose-100">
+                                <span className="inline-flex px-3 py-1 rounded-full text-xs font-black tracking-wide bg-rose-100 text-rose-950 dark:bg-rose-500/20 dark:text-rose-200 border border-rose-400 dark:border-rose-500/40 shadow-sm">
                                   Unpaid
                                 </span>
                               )}
@@ -2326,19 +2412,19 @@ export default function FinanceSettlement({
               }, 0);
 
               return (
-                <div className={`mt-4 p-3.5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 border ${
-                  isDarkMode ? "bg-slate-950/40 border-slate-850" : "bg-slate-50 border-slate-200/40"
+                <div className={`mt-4 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 border-2 ${
+                  isDarkMode ? "bg-slate-900 border-slate-700" : "bg-slate-100 border-slate-300"
                 }`}>
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">TOTAL SUMMARY</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-950 dark:text-slate-100">TOTAL SUMMARY</span>
                   <div className="flex flex-wrap gap-4 justify-center">
                     <div className="flex items-center gap-1.5 text-xs">
-                      <span className="font-bold text-slate-400 uppercase">EXPECTED TOTAL:</span>
-                      <span className="font-black font-mono text-cyan-400">৳ {expectedTotalSum.toFixed(2)}</span>
+                      <span className="font-extrabold text-slate-900 dark:text-slate-300 uppercase">EXPECTED TOTAL:</span>
+                      <span className="font-black font-mono text-cyan-800 dark:text-cyan-300 text-sm">৳ {expectedTotalSum.toFixed(2)}</span>
                     </div>
-                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+                    <div className="h-4 w-px bg-slate-400 dark:bg-slate-700 hidden sm:block" />
                     <div className="flex items-center gap-1.5 text-xs">
-                      <span className="font-bold text-slate-400 uppercase">PAID TOTAL:</span>
-                      <span className="font-black font-mono text-emerald-400">৳ {paidTotalSum.toFixed(2)}</span>
+                      <span className="font-extrabold text-slate-900 dark:text-slate-300 uppercase">PAID TOTAL:</span>
+                      <span className="font-black font-mono text-emerald-800 dark:text-emerald-300 text-sm">৳ {paidTotalSum.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>

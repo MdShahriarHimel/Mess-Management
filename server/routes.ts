@@ -3769,6 +3769,8 @@ function mapSettingsToRow(messId: string, settings: any) {
     _createdAt: settings.createdAt,
     _updatedAt: settings.updatedAt,
     _lastMigratedAt: settings.lastMigratedAt,
+    _roomLabels: settings.roomLabels,
+    _customBillOverrides: settings.customBillOverrides,
   };
 
   return {
@@ -3823,12 +3825,22 @@ function mapRowToSettings(row: any) {
   const createdAt = appearancePermissionsRaw._createdAt;
   const updatedAt = appearancePermissionsRaw._updatedAt;
   const lastMigratedAt = appearancePermissionsRaw._lastMigratedAt;
+  const roomLabels = Array.isArray(appearancePermissionsRaw._roomLabels)
+    ? appearancePermissionsRaw._roomLabels
+    : [
+        { id: "room_a", label: "Room A (Large)", rent: 3000, description: "Master Large Room" },
+        { id: "room_b", label: "Room B (Medium)", rent: 2500, description: "Medium South Room" },
+        { id: "room_c", label: "Room C (Small)", rent: 2000, description: "Standard Small Room" },
+      ];
+  const customBillOverrides = appearancePermissionsRaw._customBillOverrides || {};
 
   const appearancePermissionsClean = { ...appearancePermissionsRaw };
   delete appearancePermissionsClean._schemaVersion;
   delete appearancePermissionsClean._createdAt;
   delete appearancePermissionsClean._updatedAt;
   delete appearancePermissionsClean._lastMigratedAt;
+  delete appearancePermissionsClean._roomLabels;
+  delete appearancePermissionsClean._customBillOverrides;
 
   return {
     messName: row.messName,
@@ -3864,6 +3876,8 @@ function mapRowToSettings(row: any) {
       defaultFemaleTitle: "আপু",
       manualOverride: false
     }),
+    roomLabels,
+    customBillOverrides,
     schemaVersion,
     createdAt,
     updatedAt,
@@ -4156,7 +4170,8 @@ function loadSettings() {
       { id: "room_a", label: "Room A (Large)", rent: 3000, description: "Master Large Room" },
       { id: "room_b", label: "Room B (Medium)", rent: 2500, description: "Medium South Room" },
       { id: "room_c", label: "Room C (Small)", rent: 2000, description: "Standard Small Room" },
-    ]
+    ],
+    customBillOverrides: {}
   };
 
   let legacySettings: any = {};
@@ -4186,7 +4201,8 @@ function loadSettings() {
     adminVisibility: { ...defaultSettings.adminVisibility, ...(legacySettings.adminVisibility || {}) },
     creditConfig: { ...defaultSettings.creditConfig, ...(legacySettings.creditConfig || {}) },
     respectSenioritySettings: { ...defaultSettings.respectSenioritySettings, ...(legacySettings.respectSenioritySettings || {}) },
-    roomLabels: legacySettings.roomLabels || defaultSettings.roomLabels,
+    roomLabels: Array.isArray(legacySettings.roomLabels) ? legacySettings.roomLabels : defaultSettings.roomLabels,
+    customBillOverrides: legacySettings.customBillOverrides || defaultSettings.customBillOverrides || {},
     appearancePermissions: legacySettings.appearancePermissions || {}
   };
 
@@ -4749,6 +4765,9 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
   if (roomLabels !== undefined) {
     currentSettings.roomLabels = roomLabels;
+  }
+  if (req.body.customBillOverrides !== undefined) {
+    currentSettings.customBillOverrides = req.body.customBillOverrides;
   }
 
   // Write Credit & Branding
