@@ -4,7 +4,7 @@ import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
 import { ThemeEnginePanel } from "./ThemeEnginePanel";
 import { LoginEnginePanel } from "./LoginEnginePanel";
 import { MonetizationHub } from "./MonetizationHub";
-import { RespectSenioritySettings } from "../types";
+import { RespectSenioritySettings, RoomLabel } from "../types";
 import { getRespectDisplayName } from "../utils/respectHelper";
 
 interface Member {
@@ -242,6 +242,27 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   useEffect(() => {
     fetchMessAuditStatuses();
   }, []);
+
+  // Room Rents & Labels Management State
+  const [roomList, setRoomList] = useState<RoomLabel[]>([]);
+  const [isSavingRooms, setIsSavingRooms] = useState<boolean>(false);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [roomLabelInput, setRoomLabelInput] = useState<string>("");
+  const [roomRentInput, setRoomRentInput] = useState<string>("");
+  const [roomDescInput, setRoomDescInput] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/settings", {
+      headers: { "Authorization": `Bearer ${currentUser.id}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.roomLabels)) {
+          setRoomList(data.roomLabels);
+        }
+      })
+      .catch(e => console.error("Error loading roomLabels:", e));
+  }, [currentUser.id]);
 
   const handleToggleMessAuditMode = async (messId: string, enable: boolean) => {
     try {
@@ -575,6 +596,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "permissions", label: "Permission Matrix", role: "admin", icon: "Shield" },
     { id: "cycles", label: "Cycle & System Rules", role: "admin", icon: "Calendar" },
     { id: "respect-seniority", label: "Respect & Seniority", role: "superuser-or-ultimate", icon: "Award" },
+    { id: "room-rents", label: "Room Rents & Labels", role: "admin", icon: "Home" },
     { id: "translations", label: "Translation Matrix", role: "admin", icon: "Languages" },
     { id: "food-knowledge", label: "Food Dictionary & AI", role: "any", icon: "BookOpen" },
     { id: "monetization", label: "Monetization Hub", role: "ultimate-admin", icon: "DollarSign" },
@@ -599,6 +621,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         "permissions", // Permission Matrix
         "cycles", // Cycle & System Rules
         "respect-seniority", // Respect & Seniority Control
+        "room-rents", // Room Rents & Size Labels
         "translations", // Translation Matrix
         "food-knowledge" // Food Dictionary & AI
       ];
@@ -615,6 +638,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         "user-appearance", // Personal Preferences
         "permissions", // Permission Matrix
         "cycles", // Cycle & System Rules
+        "room-rents", // Room Rents & Size Labels
         "translations", // Translation Matrix
         "food-knowledge" // Food Dictionary & AI
       ];
@@ -2170,6 +2194,246 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                     <span>{isSavingRespect ? "Saving..." : "Save Respect Settings"}</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ROOM RENTS & SIZE LABELS CONFIGURATION */}
+          {activeSubTab === "room-rents" && filteredTabs.some(t => t.id === "room-rents") && (
+            <div className={`p-6 rounded-2xl border ${
+              isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+            } space-y-6 text-left`}>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/40 pb-4">
+                <div>
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
+                    <LucideIcons.Home size={18} className="text-cyan-400" />
+                    Mess Room Size Labels & Rent Matrix
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Set up custom room labels (e.g. &ldquo;Room A&rdquo;, &ldquo;North-West Right&rdquo;, &ldquo;Room 101&rdquo;) and monthly rent based on room size. Assigning a room label to a member sets their default monthly rent.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={isSavingRooms}
+                  onClick={async () => {
+                    setIsSavingRooms(true);
+                    try {
+                      const success = await handleUpdateSettings({ roomLabels: roomList });
+                      if (success) {
+                        showStatus("success", "Room Rents & Size Labels saved successfully!");
+                      } else {
+                        showStatus("error", "Failed to save room labels. Check permissions.");
+                      }
+                    } catch (e) {
+                      showStatus("error", "Error saving room labels.");
+                    } finally {
+                      setIsSavingRooms(false);
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <LucideIcons.Save size={14} />
+                  <span>{isSavingRooms ? "Saving..." : "Save Room Configurations"}</span>
+                </button>
+              </div>
+
+              {/* Add / Edit Room Form */}
+              <div className={`p-4 rounded-xl border ${isDarkMode ? "bg-slate-950/60 border-slate-800" : "bg-slate-50 border-slate-200"} space-y-3`}>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                  <LucideIcons.PlusCircle size={14} />
+                  {editingRoomId ? "Edit Room Configuration" : "Add New Room Size / Label"}
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Room Label Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Room A (North-West)"
+                      value={roomLabelInput}
+                      onChange={(e) => setRoomLabelInput(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Monthly Rent Amount (৳) *</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 3500"
+                      value={roomRentInput}
+                      onChange={(e) => setRoomRentInput(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Description / Size Notes</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Master size, attached balcony"
+                      value={roomDescInput}
+                      onChange={(e) => setRoomDescInput(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  {editingRoomId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRoomId(null);
+                        setRoomLabelInput("");
+                        setRoomRentInput("");
+                        setRoomDescInput("");
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!roomLabelInput.trim()) {
+                        showStatus("error", "Room label name is required.");
+                        return;
+                      }
+                      const rentVal = parseFloat(roomRentInput) || 0;
+
+                      if (editingRoomId) {
+                        setRoomList(prev => prev.map(r => r.id === editingRoomId ? {
+                          ...r,
+                          label: roomLabelInput.trim(),
+                          rent: rentVal,
+                          description: roomDescInput.trim()
+                        } : r));
+                        showStatus("success", "Room label updated in list. Click 'Save Room Configurations' to persist.");
+                      } else {
+                        const newRoom: RoomLabel = {
+                          id: `room_${Date.now()}`,
+                          label: roomLabelInput.trim(),
+                          rent: rentVal,
+                          description: roomDescInput.trim()
+                        };
+                        setRoomList(prev => [...prev, newRoom]);
+                        showStatus("success", "New room label added to list. Click 'Save Room Configurations' to persist.");
+                      }
+
+                      setEditingRoomId(null);
+                      setRoomLabelInput("");
+                      setRoomRentInput("");
+                      setRoomDescInput("");
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
+                  >
+                    <LucideIcons.Check size={14} />
+                    <span>{editingRoomId ? "Update Room" : "Add Room Label"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Configured Rooms List */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span>Configured Mess Rooms ({roomList.length})</span>
+                  <span className="text-[10px] text-cyan-400 font-normal normal-case">
+                    Assign these labels in Mess Members profile edit modal
+                  </span>
+                </h4>
+
+                {roomList.length === 0 ? (
+                  <div className="p-8 text-center rounded-xl border border-dashed border-slate-800 text-slate-500 text-xs">
+                    No room size labels configured yet. Use the form above to define room labels and rents.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {roomList.map((room) => {
+                      const assignedMembersCount = (membersList || []).filter(
+                        m => m.roomLabelId === room.id || m.roomLabel === room.label
+                      ).length;
+
+                      return (
+                        <div
+                          key={room.id}
+                          className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
+                            editingRoomId === room.id
+                              ? "border-cyan-400 bg-cyan-950/20"
+                              : isDarkMode
+                              ? "bg-slate-900/60 border-slate-800 hover:border-slate-700"
+                              : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
+                                  <LucideIcons.DoorOpen size={15} className="text-cyan-400 shrink-0" />
+                                  <span>{room.label}</span>
+                                </h5>
+                                {room.description && (
+                                  <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                    {room.description}
+                                  </p>
+                                )}
+                              </div>
+                              <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-extrabold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                                ৳ {room.rent.toLocaleString()} / mo
+                              </span>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-800/40 flex items-center justify-between text-[11px]">
+                              <span className="text-slate-400 flex items-center gap-1">
+                                <LucideIcons.Users size={12} className="text-amber-400" />
+                                <span>Allocated to: <strong className="text-slate-200">{assignedMembersCount} member(s)</strong></span>
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-1.5 pt-3 mt-2 border-t border-slate-800/30">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRoomId(room.id);
+                                setRoomLabelInput(room.label);
+                                setRoomRentInput(String(room.rent));
+                                setRoomDescInput(room.description || "");
+                              }}
+                              className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 transition-colors flex items-center gap-1"
+                            >
+                              <LucideIcons.Edit2 size={12} /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRoomList(prev => prev.filter(r => r.id !== room.id));
+                                if (editingRoomId === room.id) {
+                                  setEditingRoomId(null);
+                                  setRoomLabelInput("");
+                                  setRoomRentInput("");
+                                  setRoomDescInput("");
+                                }
+                                showStatus("success", "Room removed. Click 'Save Room Configurations' to persist.");
+                              }}
+                              className="px-2 py-1 rounded-md text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors"
+                            >
+                              <LucideIcons.Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

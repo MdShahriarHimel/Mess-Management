@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { pgTable, text, boolean, doublePrecision, index, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, doublePrecision, index, integer, real } from "drizzle-orm/pg-core";
 
 export const members = pgTable("members", {
   id: text("id").primaryKey(), // Firebase Auth uid (or generated ID)
@@ -49,6 +49,9 @@ export const members = pgTable("members", {
   seniorityYear: text("seniority_year"),
   gender: text("gender"),
   manualTitle: text("manual_title"),
+  roomLabelId: text("room_label_id"),
+  roomLabel: text("room_label"),
+  roomRent: real("room_rent"),
 });
 
 export const months = pgTable("months", {

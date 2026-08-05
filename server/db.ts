@@ -186,6 +186,9 @@ export async function importBackupToPostgres(backupData: DatabaseSchema) {
         seniorityYear: item.seniorityYear || null,
         gender: item.gender || null,
         manualTitle: item.manualTitle || null,
+        roomLabelId: item.roomLabelId || null,
+        roomLabel: item.roomLabel || null,
+        roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
       }));
       for (let i = 0; i < membersToInsert.length; i += 500) {
         await tx.insert(membersTable).values(membersToInsert.slice(i, i + 500));
@@ -501,6 +504,9 @@ export async function initializeDbCache() {
           ALTER TABLE members ADD COLUMN IF NOT EXISTS seniority_year text;
           ALTER TABLE members ADD COLUMN IF NOT EXISTS gender text;
           ALTER TABLE members ADD COLUMN IF NOT EXISTS manual_title text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS room_label_id text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS room_label text;
+          ALTER TABLE members ADD COLUMN IF NOT EXISTS room_rent real;
         `);
       } catch (colErr) {
         console.warn("Notice: Column migration for academic/respect fields on members table:", colErr);
@@ -716,6 +722,9 @@ async function doActualSync(cache: DatabaseSchema) {
           seniorityYear: item.seniorityYear || null,
           gender: item.gender || null,
           manualTitle: item.manualTitle || null,
+          roomLabelId: item.roomLabelId || null,
+          roomLabel: item.roomLabel || null,
+          roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
         };
         if (!isItemModified('members', item.id, mapped)) continue;
         await db.insert(membersTable).values(mapped).onConflictDoUpdate({

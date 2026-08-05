@@ -1074,6 +1074,9 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
       seniorityYear: updatedMember.seniorityYear || null,
       gender: updatedMember.gender || null,
       manualTitle: updatedMember.manualTitle || null,
+      roomLabelId: updatedMember.roomLabelId || null,
+      roomLabel: updatedMember.roomLabel || null,
+      roomRent: updatedMember.roomRent !== undefined && updatedMember.roomRent !== null ? Number(updatedMember.roomRent) : null,
     };
     
     console.log("[TRACE A - Immediately before Postgres UPDATE]", {
@@ -4148,7 +4151,12 @@ function loadSettings() {
       defaultMaleTitle: "ভাই",
       defaultFemaleTitle: "আপু",
       manualOverride: false
-    }
+    },
+    roomLabels: [
+      { id: "room_a", label: "Room A (Large)", rent: 3000, description: "Master Large Room" },
+      { id: "room_b", label: "Room B (Medium)", rent: 2500, description: "Medium South Room" },
+      { id: "room_c", label: "Room C (Small)", rent: 2000, description: "Standard Small Room" },
+    ]
   };
 
   let legacySettings: any = {};
@@ -4178,6 +4186,7 @@ function loadSettings() {
     adminVisibility: { ...defaultSettings.adminVisibility, ...(legacySettings.adminVisibility || {}) },
     creditConfig: { ...defaultSettings.creditConfig, ...(legacySettings.creditConfig || {}) },
     respectSenioritySettings: { ...defaultSettings.respectSenioritySettings, ...(legacySettings.respectSenioritySettings || {}) },
+    roomLabels: legacySettings.roomLabels || defaultSettings.roomLabels,
     appearancePermissions: legacySettings.appearancePermissions || {}
   };
 
@@ -4691,7 +4700,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     creditConfig,
     appearancePermissions,
     disableBackgroundAudio,
-    respectSenioritySettings
+    respectSenioritySettings,
+    roomLabels
   } = req.body;
 
   if (disableBackgroundAudio !== undefined) {
@@ -4736,6 +4746,9 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       ...(currentSettings.respectSenioritySettings || {}),
       ...respectSenioritySettings
     };
+  }
+  if (roomLabels !== undefined) {
+    currentSettings.roomLabels = roomLabels;
   }
 
   // Write Credit & Branding

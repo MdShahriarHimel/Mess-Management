@@ -80,6 +80,16 @@ export interface Member {
   seniorityYear?: string;
   gender?: string;
   manualTitle?: string;
+  roomLabelId?: string;
+  roomLabel?: string;
+  roomRent?: number;
+}
+
+export interface RoomLabel {
+  id: string;
+  label: string;
+  rent: number;
+  description?: string;
 }
 
 export interface MessMonth {

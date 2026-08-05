@@ -7,9 +7,9 @@ import React, { useState } from "react";
 import { 
   Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, 
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
-  ChevronDown, ChevronUp, GraduationCap, Award
+  ChevronDown, ChevronUp, GraduationCap, Award, Home, DoorOpen
 } from "lucide-react";
-import { Member, UserRole, MemberStatus, RespectSenioritySettings } from "../types.js";
+import { Member, UserRole, MemberStatus, RespectSenioritySettings, RoomLabel } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
 import { processProfilePhoto } from "../utils/imageOptimizer";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
@@ -168,6 +168,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   const disableRoleSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
   const disableStatusSelect = originalRole === UserRole.ADMIN && !isEditingSelf && !isUltimateAdminActor;
 
+  const [roomLabels, setRoomLabels] = useState<RoomLabel[]>([]);
+
   React.useEffect(() => {
     fetch("/api/settings", {
       headers: { "Authorization": `Bearer ${currentUser.id}` }
@@ -177,6 +179,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
         if (data) {
           if (data.roleAnimations) setRoleAnimations(data.roleAnimations);
           if (data.adminVisibility) setAdminVisibility(data.adminVisibility);
+          if (Array.isArray(data.roomLabels)) setRoomLabels(data.roomLabels);
         }
       })
       .catch(e => console.error("Error fetching settings in Members:", e));
@@ -647,6 +650,17 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                   <Briefcase size={13} className={isDarkMode ? "text-cyan-400 shrink-0" : "text-cyan-600 shrink-0"} />
                   <span>{member.occupation || "Independent"}</span>
                 </p>
+                {member.roomLabel && (
+                  <p className="flex items-center justify-between text-[11px] font-sans font-bold text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded border border-cyan-500/20 mt-1">
+                    <span className="flex items-center gap-1.5 truncate">
+                      <DoorOpen size={13} className="shrink-0 text-cyan-400" />
+                      <span className="truncate">{member.roomLabel}</span>
+                    </span>
+                    <span className="font-mono text-emerald-400 shrink-0">
+                      ৳{member.roomRent || 0}
+                    </span>
+                  </p>
+                )}
               </div>
             ) : (
               <div className="mt-4 p-2 bg-cyan-500/10 rounded border border-cyan-500/20 text-center">
@@ -1718,6 +1732,87 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                 </div>
               </div>
 
+              {/* Room & Accommodation Allocation Section */}
+              <div className="space-y-3 border-t border-cyan-500/10 pt-4 mt-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold font-display text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <DoorOpen size={15} /> Room & Accommodation Allocation
+                  </h4>
+                  {!canEditAcademicAndRespect && (
+                    <span className="text-[9px] font-bold text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">
+                      Read-Only (Admin / Super User)
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">Assigned Room Size / Label</label>
+                    <select
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.roomLabelId || editingMember.roomLabel || ""}
+                      onChange={(e) => {
+                        const selectedVal = e.target.value;
+                        if (!selectedVal) {
+                          setEditingMember({
+                            ...editingMember,
+                            roomLabelId: "",
+                            roomLabel: "",
+                            roomRent: undefined
+                          });
+                          return;
+                        }
+                        const matchedRoom = roomLabels.find(r => r.id === selectedVal || r.label === selectedVal);
+                        if (matchedRoom) {
+                          setEditingMember({
+                            ...editingMember,
+                            roomLabelId: matchedRoom.id,
+                            roomLabel: matchedRoom.label,
+                            roomRent: matchedRoom.rent
+                          });
+                        } else {
+                          setEditingMember({
+                            ...editingMember,
+                            roomLabel: selectedVal,
+                            roomLabelId: ""
+                          });
+                        }
+                      }}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50" : isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                      }`}
+                    >
+                      <option value="">-- No Room Allocated --</option>
+                      {roomLabels.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.label} (Default Rent: ৳{r.rent.toLocaleString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">Default Monthly Rent (৳)</label>
+                    <input
+                      type="number"
+                      disabled={!canEditAcademicAndRespect}
+                      value={editingMember.roomRent !== undefined && editingMember.roomRent !== null ? editingMember.roomRent : ""}
+                      onChange={(e) => setEditingMember({ ...editingMember, roomRent: e.target.value ? parseFloat(e.target.value) : undefined })}
+                      placeholder="e.g. 3000"
+                      className={`w-full px-3 py-2 rounded-lg border text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                        !canEditAcademicAndRespect ? "opacity-60 cursor-not-allowed bg-slate-900/50 text-emerald-400" : isDarkMode ? "bg-slate-900 border-slate-800 text-emerald-400" : "bg-white border-slate-200 text-emerald-600"
+                      }`}
+                    />
+                  </div>
+                </div>
+                {editingMember.roomLabel && (
+                  <div className="flex items-center gap-2 text-[11px] text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1.5 rounded-lg">
+                    <Home size={13} className="shrink-0 text-cyan-400" />
+                    <span>Allocated: <strong>{editingMember.roomLabel}</strong> with default monthly rent of <strong>৳ {editingMember.roomRent || 0}</strong></span>
+                  </div>
+                )}
+              </div>
+
               {/* Profile Background GIF Customizer (Admin Only) */}
               {currentUser.role === UserRole.ADMIN && (
                 <div className="space-y-2 border-t border-slate-800/40 pt-4 mt-2">
@@ -2438,6 +2533,17 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0"></span>
                           <span className="font-sans text-[11px] uppercase tracking-wider">Duty:</span>
                           <span className="text-[11px]">{selectedMemberForMeals.assignedTask}</span>
+                        </div>
+                      )}
+                      {(selectedMemberForMeals.roomLabel || selectedMemberForMeals.roomRent) && (
+                        <div className="flex items-center justify-between text-cyan-300 font-bold bg-cyan-500/10 px-2.5 py-1.5 rounded-lg border border-cyan-500/20 mt-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <DoorOpen size={13} className="text-cyan-400 shrink-0" />
+                            <span className="font-sans text-[11px] truncate">{selectedMemberForMeals.roomLabel || "Assigned Room"}</span>
+                          </div>
+                          <span className="text-[11px] font-mono font-black text-emerald-400 shrink-0">
+                            ৳ {selectedMemberForMeals.roomRent ? selectedMemberForMeals.roomRent.toLocaleString() : 0}/mo
+                          </span>
                         </div>
                       )}
                     </div>
