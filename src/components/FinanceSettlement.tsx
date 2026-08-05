@@ -230,13 +230,88 @@ export default function FinanceSettlement({
     }
   };
 
+  const hasDutyForBill = (user: Member | null, col: { id: string; title: string; category: string }): boolean => {
+    if (!user) return false;
+
+    const isManagerOrAdmin = [
+      UserRole.ADMIN,
+      UserRole.SUPERUSER,
+      UserRole.ASSISTANT_SUPERUSER,
+      UserRole.MANAGER,
+      UserRole.PARTIAL_MANAGER
+    ].includes(user.role);
+
+    if (isManagerOrAdmin) return true;
+
+    const task = (user.assignedTask || "").toLowerCase().trim();
+    if (!task) return false;
+
+    const titleLower = col.title.toLowerCase();
+    const catLower = col.category.toLowerCase();
+    const idLower = col.id.toLowerCase();
+
+    // Check WiFi / Internet
+    if (titleLower.includes("wifi") || catLower.includes("utility") || idLower.includes("utility")) {
+      if (task.includes("wifi") || task.includes("internet") || task.includes("ওয়াইফাই")) return true;
+    }
+
+    // Check Worker / Maid / Bua
+    if (catLower.includes("worker") || titleLower.includes("worker") || titleLower.includes("maid") || titleLower.includes("cleaner") || titleLower.includes("bua")) {
+      if (task.includes("maid") || task.includes("bua") || task.includes("বুয়া") || task.includes("বুলবুল") || task.includes("worker") || task.includes("কাজ")) return true;
+    }
+
+    // Check Rent
+    if (catLower.includes("rent") || titleLower.includes("rent") || titleLower.includes("house")) {
+      if (task.includes("rent") || task.includes("ভাড়া") || task.includes("সিট") || task.includes("সীট") || task.includes("বাসা")) return true;
+    }
+
+    // Check Electricity / Utility
+    if (titleLower.includes("electricity") || titleLower.includes("electric") || titleLower.includes("utility") || titleLower.includes("water") || titleLower.includes("gas")) {
+      if (task.includes("electric") || task.includes("electricity") || task.includes("কারেন্ট") || task.includes("পানি") || task.includes("গ্যাস") || task.includes("utility")) return true;
+    }
+
+    if (titleLower.includes(task) || task.includes(titleLower) || catLower.includes(task) || task.includes(catLower)) {
+      return true;
+    }
+
+    const tokens = task.split(/[,+/\s]+/).filter(Boolean);
+    return tokens.some(token => token.length >= 2 && (titleLower.includes(token) || catLower.includes(token) || idLower.includes(token)));
+  };
+
+  const handleToggleMemberBillStatus = (memberId: string, colId: string, newStatus: "PAID" | "UNPAID") => {
+    setCustomBillOverrides((prev) => {
+      const updated = { ...prev };
+      if (!updated[currentMonthId]) {
+        updated[currentMonthId] = {};
+      }
+      if (!updated[currentMonthId][memberId]) {
+        updated[currentMonthId][memberId] = {};
+      }
+      const memberMap = { ...updated[currentMonthId][memberId] };
+      memberMap[`${colId}_status`] = newStatus;
+
+      const targetCol = billColumns.find(c => c.id === colId);
+      if (targetCol) {
+        memberMap[`${targetCol.category}_status`] = newStatus;
+      }
+
+      updated[currentMonthId] = {
+        ...updated[currentMonthId],
+        [memberId]: memberMap
+      };
+
+      localStorage.setItem("custom_bill_overrides", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const getMemberBillStats = (memberId: string) => {
     const stats: {
       Utility: { paid: number; total: number };
       Worker: { paid: number; total: number };
       Rent: { paid: number; total: number };
       Extra: { paid: number; total: number };
-      byBill: Record<string, { paid: number; total: number }>;
+      byBill: Record<string, { paid: number; total: number; isPaid: boolean }>;
     } = {
       Utility: { paid: 0, total: 0 },
       Worker: { paid: 0, total: 0 },
@@ -250,10 +325,10 @@ export default function FinanceSettlement({
 
     billColumns.forEach((col) => {
       let share = col.perMemberShare;
-      if (overrides[col.id] !== undefined) {
-        share = overrides[col.id];
-      } else if (overrides[col.category] !== undefined && billColumns.filter(c => c.category === col.category).length === 1) {
-        share = overrides[col.category];
+      if (overrides[col.id] !== undefined && typeof overrides[col.id] === 'number') {
+        share = overrides[col.id] as number;
+      } else if (overrides[col.category] !== undefined && typeof overrides[col.category] === 'number' && billColumns.filter(c => c.category === col.category).length === 1) {
+        share = overrides[col.category] as number;
       } else if (col.category === "Rent") {
         let matchedRoom = memberObj ? roomLabels.find(r => r.id === memberObj.roomLabelId || r.label === memberObj.roomLabel || r.id === memberObj.roomLabel) : undefined;
         if (matchedRoom) {
@@ -263,10 +338,14 @@ export default function FinanceSettlement({
         }
       }
 
-      const isPaid = col.status === BillStatus.PAID;
-      const paidAmount = isPaid ? share : 0;
+      const statusOverride = overrides[`${col.id}_status`] || overrides[`${col.category}_status`];
+      const isMemberPaid = statusOverride !== undefined
+        ? statusOverride === "PAID"
+        : col.status === BillStatus.PAID;
 
-      stats.byBill[col.id] = { total: share, paid: paidAmount };
+      const paidAmount = isMemberPaid ? share : 0;
+
+      stats.byBill[col.id] = { total: share, paid: paidAmount, isPaid: isMemberPaid };
 
       if (stats[col.category]) {
         stats[col.category].total += share;
@@ -2225,7 +2304,7 @@ export default function FinanceSettlement({
                 <h3 className="text-xs font-black tracking-wider uppercase text-slate-900 dark:text-cyan-300">MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT)</h3>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {isManagerOrAdmin && (
+                {(isManagerOrAdmin || billColumns.some(col => hasDutyForBill(currentUser, col))) && (
                   <button
                     type="button"
                     disabled={isSavingOverrides}
@@ -2253,13 +2332,13 @@ export default function FinanceSettlement({
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-x-auto custom-scrollbar w-full">
+              <table className="w-full text-left text-xs border-collapse min-w-[680px]">
                 <thead>
                   <tr className={`border-b ${isDarkMode ? "border-slate-700 text-slate-100 bg-slate-950/80" : "border-slate-300 text-slate-950 bg-slate-100"} text-xs tracking-wider font-black uppercase`}>
-                    <th className="py-3 px-4 text-slate-950 dark:text-slate-100">MEMBER</th>
+                    <th className="py-2.5 px-2.5 text-slate-950 dark:text-slate-100">MEMBER</th>
                     {billColumns.map((col) => (
-                      <th key={col.id} className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">
+                      <th key={col.id} className="py-2.5 px-2 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">
                         <div className="uppercase">{col.title}</div>
                         {col.title.toLowerCase() !== col.category.toLowerCase() && col.title.toLowerCase() !== `${col.category.toLowerCase()} bill` && (
                           <div className="text-[9px] font-black text-cyan-800 dark:text-cyan-300 tracking-normal mt-0.5">
@@ -2268,9 +2347,9 @@ export default function FinanceSettlement({
                         )}
                       </th>
                     ))}
-                    <th className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">INDIVIDUAL MEALS</th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">TOTAL</th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">STATUS</th>
+                    <th className="py-2.5 px-2 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">INDIVIDUAL MEALS</th>
+                    <th className="py-2.5 px-2 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">TOTAL</th>
+                    <th className="py-2.5 px-2 text-center whitespace-nowrap text-slate-950 dark:text-slate-100">STATUS</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -2295,14 +2374,21 @@ export default function FinanceSettlement({
                         const overrideMealCost = customBillOverrides[currentMonthId]?.[m.id]?.Meals;
                         const effectiveMealCost = overrideMealCost !== undefined ? overrideMealCost : defaultMealCost;
 
-                        const totalPaid = stats.Utility.paid + stats.Worker.paid + stats.Rent.paid + stats.Extra.paid + effectiveMealCost;
-                        const totalExpected = stats.Utility.total + stats.Worker.total + stats.Rent.total + stats.Extra.total + effectiveMealCost;
+                        let totalPaid = effectiveMealCost;
+                        let totalExpected = effectiveMealCost;
+
+                        billColumns.forEach((col) => {
+                          const colStat = stats.byBill[col.id] || { total: 0, paid: 0, isPaid: false };
+                          totalPaid += colStat.paid;
+                          totalExpected += colStat.total;
+                        });
+
                         const isFullyPaid = Math.abs(totalPaid - totalExpected) < 0.01;
 
                         return (
                           <tr key={m.id} className="hover:bg-cyan-500/10 dark:hover:bg-cyan-500/15 transition-colors">
                             {/* MEMBER */}
-                            <td className="py-3.5 px-4 font-black text-xs text-slate-950 dark:text-white">
+                            <td className="py-2.5 px-2.5 font-black text-xs text-slate-950 dark:text-white">
                               <div className="flex items-center gap-2 whitespace-nowrap">
                                 {renderMemberPhotoBeforeName(m.id, getRespectDisplayName(currentUser, m, respectSenioritySettings))}
                                 <span className={isDarkMode ? "text-white font-extrabold" : "text-slate-950 font-black"}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)}</span>
@@ -2311,31 +2397,64 @@ export default function FinanceSettlement({
 
                             {/* DYNAMIC BILL COLUMNS */}
                             {billColumns.map((col) => {
-                              const colStat = stats.byBill[col.id] || { total: 0, paid: 0 };
+                              const colStat = stats.byBill[col.id] || { total: 0, paid: 0, isPaid: false };
                               const overrideVal = customBillOverrides[currentMonthId]?.[m.id]?.[col.id] ?? (billColumns.filter(c => c.category === col.category).length === 1 ? customBillOverrides[currentMonthId]?.[m.id]?.[col.category] : undefined);
-                              const isColPaid = col.status === BillStatus.PAID;
+                              const canEditThisBill = isManagerOrAdmin || hasDutyForBill(currentUser, col);
+                              const isColPaid = colStat.isPaid;
 
                               return (
-                                <td key={col.id} className="py-3.5 px-4 text-center font-mono text-xs">
-                                  {isManagerOrAdmin ? (
-                                    <div className="flex flex-col items-center gap-1">
+                                <td key={col.id} className="py-2.5 px-2 text-center font-mono text-xs">
+                                  <div className="flex flex-col items-center gap-1">
+                                    {isManagerOrAdmin ? (
                                       <input
                                         type="number"
                                         step="any"
                                         value={overrideVal ?? ""}
                                         placeholder={colStat.total.toFixed(0)}
                                         onChange={(e) => handleUpdateOverride(m.id, col.id, e.target.value)}
-                                        className="w-20 px-2 py-1 text-center bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-cyan-500/50 rounded-lg font-mono text-xs font-black text-slate-950 dark:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder:text-slate-900 dark:placeholder:text-cyan-200 placeholder:font-black placeholder:opacity-100 shadow-sm"
+                                        className="w-16 sm:w-20 px-1 py-0.5 text-center bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-cyan-500/50 rounded-lg font-mono text-xs font-black text-slate-950 dark:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder:text-slate-900 dark:placeholder:text-cyan-200 placeholder:font-black placeholder:opacity-100 shadow-sm"
                                       />
-                                      <span className="text-[10px] text-slate-900 dark:text-slate-200 font-black">
-                                        Paid: ৳{colStat.paid.toFixed(0)}
+                                    ) : (
+                                      <span className="font-black text-slate-900 dark:text-slate-100 text-xs">
+                                        ৳{colStat.total.toFixed(0)}
                                       </span>
-                                    </div>
-                                  ) : (
-                                    <span className={isColPaid ? "text-emerald-800 dark:text-emerald-400 font-black text-xs" : "text-amber-800 dark:text-amber-400 font-black text-xs"}>
-                                      ৳{colStat.total.toFixed(2)}
-                                    </span>
-                                  )}
+                                    )}
+
+                                    {canEditThisBill ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleMemberBillStatus(m.id, col.id, isColPaid ? "UNPAID" : "PAID")}
+                                        className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border shadow-sm active:scale-95 flex items-center justify-center gap-1 ${
+                                          isColPaid
+                                            ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 dark:bg-emerald-500/30 dark:text-emerald-200 dark:border-emerald-500/50"
+                                            : "bg-rose-600 hover:bg-rose-700 text-white border-rose-700 dark:bg-rose-500/30 dark:text-rose-200 dark:border-rose-500/50"
+                                        }`}
+                                        title={`Click to mark ${isColPaid ? "Unpaid" : "Paid"}`}
+                                      >
+                                        {isColPaid ? (
+                                          <>
+                                            <Check size={11} strokeWidth={3} />
+                                            <span>Paid</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <X size={11} strokeWidth={3} />
+                                            <span>Unpaid</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <span
+                                        className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center justify-center gap-1 border ${
+                                          isColPaid
+                                            ? "bg-emerald-100 text-emerald-950 border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-500/40"
+                                            : "bg-rose-100 text-rose-950 border-rose-400 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-500/40"
+                                        }`}
+                                      >
+                                        {isColPaid ? "Paid" : "Unpaid"}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                               );
                             })}
@@ -2551,9 +2670,6 @@ export default function FinanceSettlement({
             <Coins className="text-cyan-400 animate-bounce" size={16} />
             Remaining Deposits
           </h3>
-          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-            Shows remaining balance of the total member deposits vs manager monthly market cost.
-          </p>
 
           <div className="space-y-3">
             <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
