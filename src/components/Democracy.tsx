@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Vote, Award, Check, UserCheck, ShieldAlert, ShieldCheck, ToggleLeft, ToggleRight, Trash2, Plus, RefreshCw, UserMinus } from "lucide-react";
 
 import { Member, UserRole, RespectSenioritySettings } from "../types.js";
@@ -106,6 +106,14 @@ export default function Democracy({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      onRefresh();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, [onRefresh]);
 
   // Handle member casting a vote
   const handleCastVote = async (roleType: "SUPERUSER" | "ASSISTANT_SUPERUSER" | "CUSTOM", candidateId: string) => {

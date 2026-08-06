@@ -13,6 +13,7 @@ import { Member, UserRole, MemberStatus, RespectSenioritySettings, RoomLabel } f
 import { ColorPalettePicker } from "../App.tsx";
 import { processProfilePhoto } from "../utils/imageOptimizer";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import { RefreshButton } from "./RefreshButton.tsx";
 
 
 const COLOR_PALETTES = [
@@ -142,6 +143,15 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
       fetchDeletedMembers();
     }
   }, [showDeletedMembers, members]);
+
+  React.useEffect(() => {
+    const handleGlobalRefresh = () => {
+      onRefresh();
+      fetchDeletedMembers();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, []);
 
   const handleUndoDelete = async (memberId: string) => {
     try {
@@ -771,16 +781,26 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
           <p className="text-xs text-slate-400">Total registered and invited members count: {visibleMembers.length}</p>
         </div>
 
-        {isAuthorizedToEdit && (
-          <button
-            id="invite-member-btn"
-            onClick={() => { resetInviteForm(); setShowInviteModal(true); }}
-            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-md"
-          >
-            <UserPlus size={15} />
-            INVITE NEW MEMBER
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <RefreshButton 
+            module="futureModules" 
+            onRefresh={async () => {
+              onRefresh();
+              await fetchDeletedMembers();
+            }} 
+          />
+
+          {isAuthorizedToEdit && (
+            <button
+              id="invite-member-btn"
+              onClick={() => { resetInviteForm(); setShowInviteModal(true); }}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-md"
+            >
+              <UserPlus size={15} />
+              INVITE NEW MEMBER
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search Input */}

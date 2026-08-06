@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { Member, Meal, UserRole, RespectSenioritySettings } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import { RefreshButton } from "./RefreshButton.tsx";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 
 interface MealsTrackerProps {
   currentUser: Member;
@@ -183,11 +185,22 @@ export default function MealsTracker({
     }
   };
 
+  const { refreshTriggers } = useAutoRefresh();
+
   useEffect(() => {
     fetchMealsForDate();
     checkMonthLock();
     fetchPendingRequests();
-  }, [currentMonthId, selectedDate, members, mealTypes]);
+  }, [currentMonthId, selectedDate, members, mealTypes, refreshTriggers.statistics]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchMealsForDate();
+      fetchPendingRequests();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, []);
 
   // Handle meal count selection
   const updateMealCell = (memberId: string, type: string, val: number | string) => {
@@ -449,8 +462,16 @@ export default function MealsTracker({
           </p>
         </div>
 
-        {/* Date Selector */}
-        <div className="flex items-center gap-1.5" id="meals-date-picker">
+        {/* Date Selector & Refresh */}
+        <div className="flex items-center gap-2">
+          <RefreshButton 
+            module="statistics" 
+            onRefresh={async () => {
+              await Promise.all([fetchMealsForDate(), fetchPendingRequests()]);
+              onRefresh();
+            }} 
+          />
+          <div className="flex items-center gap-1.5" id="meals-date-picker">
           <button
             onClick={() => {
               const d = new Date(selectedDate);
@@ -487,6 +508,7 @@ export default function MealsTracker({
           >
             <ChevronRight size={14} />
           </button>
+        </div>
         </div>
       </div>
 

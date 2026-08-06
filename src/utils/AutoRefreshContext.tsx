@@ -6,6 +6,7 @@ interface AutoRefreshContextType {
   refreshSettings: Record<RefreshModule, string>;
   refreshTriggers: Record<RefreshModule, number>;
   refreshModule: (module: RefreshModule) => void;
+  refreshAllModules: () => void;
   isModuleDisabled: (module: RefreshModule) => boolean;
 }
 
@@ -52,12 +53,22 @@ export const AutoRefreshProvider: React.FC<{ children: React.ReactNode; erpBrand
 
   // Manual Trigger helper
   const refreshModule = (module: RefreshModule) => {
-    if (refreshSettings[module] === "disabled") return;
     setRefreshTriggers((prev) => ({
       ...prev,
-      [module]: prev[module] + 1
+      [module]: (prev[module] || 0) + 1
     }));
     secondsSinceLastRefresh.current[module] = 0;
+  };
+
+  const refreshAllModules = () => {
+    setRefreshTriggers((prev) => {
+      const next = { ...prev };
+      (Object.keys(next) as RefreshModule[]).forEach((mod) => {
+        next[mod] = (prev[mod] || 0) + 1;
+        secondsSinceLastRefresh.current[mod] = 0;
+      });
+      return next;
+    });
   };
 
   const isModuleDisabled = (module: RefreshModule) => {
@@ -115,7 +126,7 @@ export const AutoRefreshProvider: React.FC<{ children: React.ReactNode; erpBrand
   }, [refreshSettings, refreshTriggers]);
 
   return (
-    <AutoRefreshContext.Provider value={{ refreshSettings, refreshTriggers, refreshModule, isModuleDisabled }}>
+    <AutoRefreshContext.Provider value={{ refreshSettings, refreshTriggers, refreshModule, refreshAllModules, isModuleDisabled }}>
       {children}
     </AutoRefreshContext.Provider>
   );

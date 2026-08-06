@@ -883,10 +883,19 @@ export default function FinanceSettlement({
   };
 
   useEffect(() => {
-    if (isModuleDisabled("revenue") && isModuleDisabled("statistics")) return;
     fetchMeals();
     fetchAllMarkets();
   }, [currentMonthId, refreshTriggers.revenue, refreshTriggers.statistics]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchMeals();
+      fetchAllMarkets();
+      onRefresh();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, []);
 
   const handleCellChange = (memberId: string, dateStr: string, rawVal: string) => {
     const parsed = rawVal === "" ? 0 : Number(rawVal);
@@ -2370,10 +2379,10 @@ export default function FinanceSettlement({
                         </button>
                         <button
                           type="submit"
-                          disabled={savingManagerHoldings}
+                          disabled={loading}
                           className="flex-1 py-1.5 rounded bg-orange-500 hover:bg-orange-400 text-[10px] font-bold text-white transition-all cursor-pointer disabled:opacity-50"
                         >
-                          {savingManagerHoldings ? "Saving..." : "Save Log"}
+                          {loading ? "Saving..." : "Save Log"}
                         </button>
                       </div>
                     </form>

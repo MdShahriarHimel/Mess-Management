@@ -275,12 +275,22 @@ export default function Dashboard({
   };
 
   useEffect(() => {
-    if (isModuleDisabled("dashboard")) return;
     fetchNotices();
     fetchRatings();
     fetchMyMeals();
     fetchMembers();
   }, [currentMonthId, currentUser, refreshTriggers.dashboard]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchNotices();
+      fetchRatings();
+      fetchMyMeals();
+      fetchMembers();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, []);
 
   const handleRateManager = async (score: number) => {
     setRatingError(null);
@@ -860,6 +870,7 @@ export default function Dashboard({
               <RefreshButton 
                 module="dashboard" 
                 onRefresh={async () => {
+                  if (triggerRefresh) triggerRefresh();
                   await Promise.all([
                     fetchNotices(),
                     fetchRatings(),

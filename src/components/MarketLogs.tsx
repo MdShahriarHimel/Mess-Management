@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import { RefreshButton } from "./RefreshButton.tsx";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -214,9 +216,19 @@ export default function MarketLogs({
     }
   };
 
+  const { refreshTriggers } = useAutoRefresh();
+
   useEffect(() => {
     fetchMarketsAndSchedules();
-  }, [currentMonthId]);
+  }, [currentMonthId, refreshTriggers.analytics]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchMarketsAndSchedules();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, []);
 
   useEffect(() => {
     if (marketForcedFlowStep === "submit_voucher") {
@@ -623,7 +635,15 @@ export default function MarketLogs({
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <RefreshButton 
+            module="analytics" 
+            onRefresh={async () => {
+              await fetchMarketsAndSchedules();
+              onRefresh();
+            }} 
+          />
+
           {subTab === "standard" ? (
             <>
               {canEditMarketDuty && (

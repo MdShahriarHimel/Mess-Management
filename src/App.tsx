@@ -2781,11 +2781,23 @@ export default function App() {
     fetchMonthsAndMembers(token);
   };
 
-  const handleRefreshAll = () => {
-    if (sessionToken) {
-      fetchMonthsAndMembers(sessionToken);
-      fetchReportSummary();
-      fetchDuties();
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
+
+  const handleRefreshAll = async () => {
+    setIsRefreshingAll(true);
+    try {
+      if (sessionToken) {
+        await Promise.all([
+          fetchMonthsAndMembers(sessionToken),
+          fetchReportSummary(),
+          fetchDuties()
+        ]);
+      }
+      window.dispatchEvent(new CustomEvent("app-global-refresh"));
+    } catch (e) {
+      console.error("Global refresh error:", e);
+    } finally {
+      setTimeout(() => setIsRefreshingAll(false), 700);
     }
   };
 
@@ -4460,9 +4472,19 @@ export default function App() {
               ← Back
             </button>
           )}
-          <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase">
-            {messName}
-          </span>
+          <button
+            onClick={() => {
+              setActiveTab("dashboard");
+              handleRefreshAll();
+            }}
+            title="Refresh All Data & Return to Dashboard"
+            className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all text-left"
+          >
+            <Sparkles size={14} className={`text-cyan-400 ${isRefreshingAll ? "animate-spin" : ""}`} />
+            <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase">
+              {messName}
+            </span>
+          </button>
           <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded uppercase">
             BDT
           </span>
@@ -4582,12 +4604,21 @@ export default function App() {
         }`}
       >
         <div className="p-6">
-          {/* Logo brand */}
-          <div className="flex items-center gap-2 mb-8">
-            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border ${
+          {/* Logo brand (Clickable Refresh & Return to Dashboard) */}
+          <button
+            onClick={() => {
+              setActiveTab("dashboard");
+              handleRefreshAll();
+            }}
+            title="Refresh All System Data & Return to Dashboard"
+            className="w-full flex items-center gap-2 mb-8 text-left group cursor-pointer hover:opacity-90 active:scale-98 transition-all"
+          >
+            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all ${
+              isRefreshingAll ? "animate-spin border-cyan-400 text-cyan-300" : ""
+            } ${
               activeIsDarkMode 
-                ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
-                : "bg-cyan-100 border-cyan-200 text-cyan-600"
+                ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400 group-hover:border-cyan-500/40" 
+                : "bg-cyan-100 border-cyan-200 text-cyan-600 group-hover:border-cyan-300"
             }`}>
               <Sparkles size={16} />
             </span>
@@ -4600,10 +4631,10 @@ export default function App() {
               <span className={`text-[8px] font-bold font-mono block tracking-wider mt-0.5 uppercase ${
                 activeIsDarkMode ? "text-slate-500" : "text-cyan-600/70"
               }`}>
-                Enterprise Dashboard
+                Enterprise Dashboard • Refresh
               </span>
             </div>
-          </div>
+          </button>
 
           {/* Navigation Menu */}
           <nav className="space-y-1.5">
@@ -4825,12 +4856,13 @@ export default function App() {
 
             <button
               onClick={handleRefreshAll}
+              disabled={isRefreshingAll}
               className={`p-2 rounded-lg border cursor-pointer transition-all ${
                 activeIsDarkMode ? "border-slate-800 hover:border-cyan-500/30 text-slate-400 hover:text-white" : "border-slate-200 text-slate-500"
               }`}
-              title="Refresh ledger details"
+              title="Refresh All System Data & Ledger"
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={14} className={isRefreshingAll ? "animate-spin text-cyan-400" : ""} />
             </button>
           </div>
         </div>

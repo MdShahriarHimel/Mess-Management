@@ -9,12 +9,8 @@ interface RefreshButtonProps {
 }
 
 export const RefreshButton: React.FC<RefreshButtonProps> = ({ module, onRefresh, className = "" }) => {
-  const { refreshModule, isModuleDisabled } = useAutoRefresh();
+  const { refreshModule } = useAutoRefresh();
   const [loading, setLoading] = useState(false);
-
-  if (isModuleDisabled(module)) {
-    return null; // Don't show refresh button if module is disabled
-  }
 
   const handleRefresh = async () => {
     if (loading) return;

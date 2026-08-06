@@ -4,8 +4,10 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Bell, Plus, Pin, Archive, Trash2, X, Check } from "lucide-react";
+import { Bell, Plus, Pin, Archive, Trash2, X, Check, AlertTriangle } from "lucide-react";
 import { Member, Notice, UserRole } from "../types.js";
+import { RefreshButton } from "./RefreshButton.tsx";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 
 interface NoticesProps {
   currentUser: Member;
@@ -15,6 +17,9 @@ interface NoticesProps {
 export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [pinned, setPinned] = useState(false);
@@ -50,8 +55,18 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
     setLoadingMore(false);
   };
 
+  const { refreshTriggers } = useAutoRefresh();
+
   useEffect(() => {
     fetchNotices(false);
+  }, [refreshTriggers.notification]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchNotices(true);
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
   }, []);
 
   useEffect(() => {
@@ -157,9 +172,50 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
     return true;
   });
 
+  const unpinnedNotices = filteredNotices.filter(n => !n.pinned && !n.isGlobal);
+  const unpinnedCount = unpinnedNotices.length;
+
+  const handleBulkDelete = async () => {
+    setDeletingAll(true);
+    try {
+      const response = await fetch("/api/notices/bulk-delete", {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${currentUser.id}` }
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setShowDeleteAllModal(false);
+        setToastMessage(`Successfully deleted ${data.count || 0} unpinned notice(s). Pinned messages of Manager & Super User were safely preserved.`);
+        setTimeout(() => setToastMessage(null), 5000);
+        await fetchNotices(true);
+      } else {
+        const err = await response.json().catch(() => ({}));
+        alert(err.error || "Failed to delete notices");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred during bulk deletion");
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-6" id="notices-mgmt-wrapper">
       
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="p-3.5 rounded-xl bg-cyan-950/90 border border-cyan-500/40 text-cyan-200 text-xs flex items-center justify-between shadow-lg animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <Check size={16} className="text-cyan-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-cyan-400 hover:text-white cursor-pointer ml-2">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Title */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
@@ -172,16 +228,41 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
           </p>
         </div>
 
-        <button
-          onClick={() => { 
-            setIsDirectToManager(currentUser.role === UserRole.MEMBER);
-            setShowAddModal(true); 
-          }}
-          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-        >
-          <Plus size={15} />
-          {currentUser.role === UserRole.MEMBER ? "SEND NOTICE TO MANAGER" : "CREATE BULLETIN"}
-        </button>
+        <div className="flex items-center gap-2">
+          <RefreshButton 
+            module="notification" 
+            onRefresh={async () => {
+              await fetchNotices(true);
+            }} 
+          />
+
+          {isManagerOrAdmin && (
+            <button
+              onClick={() => setShowDeleteAllModal(true)}
+              disabled={unpinnedCount === 0}
+              className={`px-3 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-sm active:scale-95 ${
+                unpinnedCount > 0 
+                  ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:border-rose-500/50" 
+                  : "bg-slate-800/50 text-slate-500 border border-slate-800 cursor-not-allowed opacity-60"
+              }`}
+              title={unpinnedCount > 0 ? "Delete all unpinned notices (Pinned messages are preserved)" : "No unpinned notices to delete"}
+            >
+              <Trash2 size={15} />
+              ALL DELETE ({unpinnedCount})
+            </button>
+          )}
+
+          <button
+            onClick={() => { 
+              setIsDirectToManager(currentUser.role === UserRole.MEMBER);
+              setShowAddModal(true); 
+            }}
+            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+          >
+            <Plus size={15} />
+            {currentUser.role === UserRole.MEMBER ? "SEND NOTICE TO MANAGER" : "CREATE BULLETIN"}
+          </button>
+        </div>
       </div>
 
       {/* Bulletins lists */}
@@ -365,6 +446,57 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* BULK DELETE CONFIRMATION MODAL */}
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-850 pb-3">
+              <h3 className="text-base font-bold font-display flex items-center gap-2 text-rose-400">
+                <Trash2 size={18} />
+                Delete All Unpinned Notices?
+              </h3>
+              <button onClick={() => setShowDeleteAllModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs leading-relaxed text-slate-300">
+              <p>
+                This will permanently delete all <strong className="text-rose-400 font-bold">{unpinnedCount}</strong> unpinned notice(s) currently on the board.
+              </p>
+              
+              <div className="p-3.5 bg-cyan-950/40 border border-cyan-500/30 rounded-xl text-cyan-200 flex items-start gap-2.5">
+                <Pin size={16} className="text-cyan-400 fill-cyan-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <strong className="block text-cyan-300 font-bold">Pinned Message Protection</strong>
+                  <span>
+                    Pinned messages created by Manager and Super User will <span className="text-cyan-300 font-bold underline">NOT</span> be deleted during bulk deletion unless unpinned or deleted individually by themselves.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-3 border-t border-slate-850">
+              <button
+                type="button"
+                onClick={() => setShowDeleteAllModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-850 hover:bg-slate-800 text-xs font-semibold text-slate-300 cursor-pointer"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={deletingAll || unpinnedCount === 0}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-md"
+              >
+                {deletingAll ? "DELETING..." : `DELETE ${unpinnedCount} UNPINNED`}
+              </button>
+            </div>
           </div>
         </div>
       )}

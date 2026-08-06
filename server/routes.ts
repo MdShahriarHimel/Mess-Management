@@ -3118,6 +3118,46 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   res.json({ success: true, notice: updatedNotice });
 });
 
+router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
+  const isManager = user.role === UserRole.MANAGER;
+
+  if (!isAdminOrSuper && !isManager) {
+    res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or Admins can perform bulk notice deletion." });
+    return;
+  }
+
+  const activeMessId = getActiveMessId();
+  const db = loadDB();
+  if (!db.notices) db.notices = [];
+
+  const initialCount = db.notices.length;
+
+  // Preserve ALL pinned and global notices. Only delete unpinned notices in current mess/scope.
+  db.notices = db.notices.filter(n => {
+    if (n.pinned || n.isGlobal) return true; // Pinned messages are preserved!
+
+    const isCurrentMess = !n.messId || n.messId === activeMessId;
+    const isAuthor = n.authorId === user.id;
+
+    if (isAdminOrSuper || isManager) {
+      if (isCurrentMess || isAuthor) {
+        return false; // Remove unpinned notice
+      }
+    }
+
+    return true;
+  });
+
+  const deletedCount = initialCount - db.notices.length;
+  saveDB();
+
+  logAudit(user.id, user.nickname, "BULK_DELETE_NOTICES", "Bulk Delete", `${deletedCount} notices`, `Bulk deleted ${deletedCount} unpinned notices (pinned notices preserved)`);
+  res.json({ success: true, count: deletedCount });
+});
+
 router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();

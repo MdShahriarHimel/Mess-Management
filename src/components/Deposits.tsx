@@ -6,6 +6,8 @@
 import React, { useState, useEffect } from "react";
 import { DollarSign, Plus, X, Trash2 } from "lucide-react";
 import { Member, Deposit, UserRole, MessMonth } from "../types.js";
+import { RefreshButton } from "./RefreshButton.tsx";
+import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 
 interface DepositsProps {
   currentUser: Member;
@@ -76,9 +78,19 @@ export default function Deposits({
     }
   };
 
+  const { refreshTriggers } = useAutoRefresh();
+
   useEffect(() => {
     fetchDeposits();
-  }, [currentMonthId]);
+  }, [currentMonthId, refreshTriggers.revenue]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchDeposits();
+    };
+    window.addEventListener("app-global-refresh", handleGlobalRefresh);
+    return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
+  }, []);
 
   const handleAddDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,26 +194,36 @@ export default function Deposits({
           </p>
         </div>
 
-        {isManagerOrAdmin && (
-          <button
-            onClick={() => {
-              if (isMonthLocked) {
-                alert("This month is locked. Unlock it before modifying deposits.");
-                return;
-              }
-              setShowAddModal(true);
-            }}
-            title={isMonthLocked ? "This month is locked. Unlock it before modifying deposits." : "Register Deposit"}
-            className={`px-4 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md ${
-              isMonthLocked
-                ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-60"
-                : "bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white cursor-pointer"
-            }`}
-          >
-            <Plus size={15} />
-            REGISTER DEPOSIT
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <RefreshButton 
+            module="revenue" 
+            onRefresh={async () => {
+              await fetchDeposits();
+              onRefresh();
+            }} 
+          />
+
+          {isManagerOrAdmin && (
+            <button
+              onClick={() => {
+                if (isMonthLocked) {
+                  alert("This month is locked. Unlock it before modifying deposits.");
+                  return;
+                }
+                setShowAddModal(true);
+              }}
+              title={isMonthLocked ? "This month is locked. Unlock it before modifying deposits." : "Register Deposit"}
+              className={`px-4 py-2 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md ${
+                isMonthLocked
+                  ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-60"
+                  : "bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white cursor-pointer"
+              }`}
+            >
+              <Plus size={15} />
+              REGISTER DEPOSIT
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats row */}
