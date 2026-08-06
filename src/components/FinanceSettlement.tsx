@@ -2133,163 +2133,272 @@ export default function FinanceSettlement({
       </div>
 
       {/* 2. UTILITY BILLS & UTILITY PAYMENTS STATUS */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in" id="finance-bills-holdings">
+      <div className="space-y-6 animate-fade-in" id="finance-bills-holdings">
         
-        {/* 2. MINIMALIST BILLING UI: ADD NEW BILL, SEARCH & MONTHLY SUMMARY TABLE */}
-        <div className="lg:col-span-8 xl:col-span-9 space-y-6" id="finance-utility-minimalist-panel">
+        {/* TOP SECTION: ADD NEW BILL / SEARCH & REMAINING DEPOSITS */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* ADD NEW BILL CARD */}
-          {isManagerOrAdmin && (
-            <div className={`p-5 rounded-3xl border ${
-              isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
-            }`} id="finance-add-new-bill-inline">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-extrabold shadow-sm shrink-0">
-                  <Plus size={14} className="stroke-[3px]" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black tracking-wider uppercase">ADD NEW BILL</h3>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Quickly add member wise utility, worker, rent & extra bills.</p>
-                </div>
-              </div>
-
-              {/* Note Callout */}
-              <div className="mt-3 mb-4 p-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 rounded-2xl text-[10px] font-semibold leading-relaxed flex items-center gap-2">
-                <AlertCircle size={14} className="shrink-0 text-cyan-500" />
-                <span>Note: Bill amounts cannot exceed the per member limits set in bill settings.</span>
-              </div>
-
-              <form onSubmit={handleAddBill} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                  
-                  {/* SELECT MEMBER */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">SELECT MEMBER:</label>
-                    <select
-                      required
-                      value={billCollectorId}
-                      onChange={(e) => setBillCollectorId(e.target.value)}
-                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
-                        isDarkMode 
-                          ? "bg-slate-950 border-slate-800 text-white" 
-                          : "bg-slate-50 border-slate-200 text-slate-800"
-                      }`}
-                    >
-                      <option value="">-- Select Member --</option>
-                      {activeMembers.map(m => (
-                        <option key={m.id} value={m.id}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name})</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* BILL TYPE */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">BILL TYPE:</label>
-                    <select
-                      required
-                      value={billType}
-                      onChange={(e) => setBillType(e.target.value)}
-                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
-                        isDarkMode 
-                          ? "bg-slate-950 border-slate-800 text-white" 
-                          : "bg-slate-50 border-slate-200 text-slate-800"
-                      }`}
-                    >
-                      <option value="Utility">Utility</option>
-                      <option value="Worker">Worker</option>
-                      <option value="Rent">Rent</option>
-                      <option value="Extra">Extra</option>
-                    </select>
-                  </div>
-
-                  {/* BILL DETAILS / NAME */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">DETAILS (OPTIONAL):</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. WiFi, Electricity..."
-                      value={billName}
-                      onChange={(e) => setBillName(e.target.value)}
-                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
-                        isDarkMode 
-                          ? "bg-slate-950 border-slate-800 text-white" 
-                          : "bg-slate-50 border-slate-200 text-slate-800"
-                      }`}
-                    />
-                  </div>
-
-                  {/* AMOUNT */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">AMOUNT:</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      required
-                      placeholder="0.00"
-                      value={billAmount}
-                      onChange={(e) => setBillAmount(e.target.value)}
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
-                        isDarkMode 
-                          ? "bg-slate-950 border-slate-800 text-white" 
-                          : "bg-slate-50 border-slate-200 text-slate-800"
-                      }`}
-                    />
-                  </div>
-
-                  {/* DATE */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">DATE:</label>
-                    <input
-                      type="date"
-                      required
-                      value={billDate}
-                      onChange={(e) => setBillDate(e.target.value)}
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
-                        isDarkMode 
-                          ? "bg-slate-950 border-slate-800 text-white" 
-                          : "bg-slate-50 border-slate-200 text-slate-800"
-                      }`}
-                    />
-                  </div>
-
-                </div>
-
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-600 text-white font-extrabold text-xs tracking-widest uppercase rounded-2xl transition-all shadow-[0_4px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_4px_16px_rgba(16,185,129,0.3)] cursor-pointer active:scale-[0.98]"
-                >
-                  {loading ? "ADDING BILL..." : "ADD BILL"}
-                </button>
-
-              </form>
-            </div>
-          )}
-
-          {/* SEARCH AND ACTIONS CARD */}
-          <div className={`p-4 rounded-3xl border flex flex-col md:flex-row gap-3 items-center justify-between ${
-            isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200/60 shadow-sm"
-          }`} id="finance-bills-actions-bar">
+          {/* LEFT: ADD NEW BILL & SEARCH */}
+          <div className="lg:col-span-8 xl:col-span-9 space-y-6" id="finance-utility-minimalist-panel">
             
-            {/* Search Box */}
-            <div className="relative w-full md:max-w-md">
-              <Search className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
-              <input
-                type="text"
-                placeholder="Search bills by member..."
-                value={billSearchQuery}
-                onChange={(e) => setBillSearchQuery(e.target.value)}
-                className={`w-full pl-9 pr-4 py-2.5 rounded-full text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 border transition-all ${
-                  isDarkMode 
-                    ? "bg-slate-950 border-slate-850 text-white" 
-                    : "bg-slate-50 border-slate-200 text-slate-800"
-                }`}
-              />
+            {/* ADD NEW BILL CARD */}
+            {isManagerOrAdmin && (
+              <div className={`p-5 rounded-3xl border ${
+                isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
+              }`} id="finance-add-new-bill-inline">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-extrabold shadow-sm shrink-0">
+                    <Plus size={14} className="stroke-[3px]" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black tracking-wider uppercase">ADD NEW BILL</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Quickly add member wise utility, worker, rent & extra bills.</p>
+                  </div>
+                </div>
+
+                {/* Note Callout */}
+                <div className="mt-3 mb-4 p-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 rounded-2xl text-[10px] font-semibold leading-relaxed flex items-center gap-2">
+                  <AlertCircle size={14} className="shrink-0 text-cyan-500" />
+                  <span>Note: Bill amounts cannot exceed the per member limits set in bill settings.</span>
+                </div>
+
+                <form onSubmit={handleAddBill} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    
+                    {/* SELECT MEMBER */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">SELECT MEMBER:</label>
+                      <select
+                        required
+                        value={billCollectorId}
+                        onChange={(e) => setBillCollectorId(e.target.value)}
+                        className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                          isDarkMode 
+                            ? "bg-slate-950 border-slate-800 text-white" 
+                            : "bg-slate-50 border-slate-200 text-slate-800"
+                        }`}
+                      >
+                        <option value="">-- Select Member --</option>
+                        {activeMembers.map(m => (
+                          <option key={m.id} value={m.id}>{getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* BILL TYPE */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">BILL TYPE:</label>
+                      <select
+                        required
+                        value={billType}
+                        onChange={(e) => setBillType(e.target.value)}
+                        className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                          isDarkMode 
+                            ? "bg-slate-950 border-slate-800 text-white" 
+                            : "bg-slate-50 border-slate-200 text-slate-800"
+                        }`}
+                      >
+                        <option value="Utility">Utility</option>
+                        <option value="Worker">Worker</option>
+                        <option value="Rent">Rent</option>
+                        <option value="Extra">Extra</option>
+                      </select>
+                    </div>
+
+                    {/* BILL DETAILS / NAME */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">DETAILS (OPTIONAL):</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. WiFi, Electricity..."
+                        value={billName}
+                        onChange={(e) => setBillName(e.target.value)}
+                        className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                          isDarkMode 
+                            ? "bg-slate-950 border-slate-800 text-white" 
+                            : "bg-slate-50 border-slate-200 text-slate-800"
+                        }`}
+                      />
+                    </div>
+
+                    {/* AMOUNT */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">AMOUNT:</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        placeholder="0.00"
+                        value={billAmount}
+                        onChange={(e) => setBillAmount(e.target.value)}
+                        className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                          isDarkMode 
+                            ? "bg-slate-950 border-slate-800 text-white" 
+                            : "bg-slate-50 border-slate-200 text-slate-800"
+                        }`}
+                      />
+                    </div>
+
+                    {/* DATE */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">DATE:</label>
+                      <input
+                        type="date"
+                        required
+                        value={billDate}
+                        onChange={(e) => setBillDate(e.target.value)}
+                        className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all border ${
+                          isDarkMode 
+                            ? "bg-slate-950 border-slate-800 text-white" 
+                            : "bg-slate-50 border-slate-200 text-slate-800"
+                        }`}
+                      />
+                    </div>
+
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-600 text-white font-extrabold text-xs tracking-widest uppercase rounded-2xl transition-all shadow-[0_4px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_4px_16px_rgba(16,185,129,0.3)] cursor-pointer active:scale-[0.98]"
+                  >
+                    {loading ? "ADDING BILL..." : "ADD BILL"}
+                  </button>
+
+                </form>
+              </div>
+            )}
+
+            {/* SEARCH AND ACTIONS CARD */}
+            <div className={`p-4 rounded-3xl border flex flex-col md:flex-row gap-3 items-center justify-between ${
+              isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200/60 shadow-sm"
+            }`} id="finance-bills-actions-bar">
+              
+              {/* Search Box */}
+              <div className="relative w-full md:max-w-md">
+                <Search className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
+                <input
+                  type="text"
+                  placeholder="Search bills by member..."
+                  value={billSearchQuery}
+                  onChange={(e) => setBillSearchQuery(e.target.value)}
+                  className={`w-full pl-9 pr-4 py-2.5 rounded-full text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 border transition-all ${
+                    isDarkMode 
+                      ? "bg-slate-950 border-slate-850 text-white" 
+                      : "bg-slate-50 border-slate-200 text-slate-800"
+                  }`}
+                />
+              </div>
+
             </div>
 
           </div>
+
+          {/* RIGHT: STATS SUMMARY BOX / REMAINING DEPOSITS SUMMARY */}
+          <div className={`p-5 rounded-2xl border lg:col-span-4 xl:col-span-3 h-fit ${
+            isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+          }`} id="finance-holding-overview">
+            <h3 className="text-sm font-bold font-display text-cyan-300 mb-3 flex items-center gap-1.5">
+              <Coins className="text-cyan-400 animate-bounce" size={16} />
+              Remaining Deposits
+            </h3>
+
+            <div className="space-y-3">
+              <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-medium">Total Deposits Pool</span>
+                <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalDeposits || 0}</span>
+              </div>
+              <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-medium">Manager Monthly Market</span>
+                <span className="font-extrabold font-mono text-orange-400">৳ {reportSummary?.managerMarketSpent || 0}</span>
+              </div>
+
+              {(() => {
+                const totalD = reportSummary?.totalDeposits || 0;
+                const totalM = reportSummary?.managerMarketSpent || 0;
+                const remaining = totalD - totalM;
+                const isNegative = remaining < 0;
+
+                return (
+                  <div className={`p-3 rounded-xl border text-center ${
+                    isNegative 
+                      ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
+                      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                  }`}>
+                    <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Remaining Deposits</span>
+                    <span className="text-lg font-black font-mono">৳ {remaining}</span>
+                  </div>
+                );
+              })()}
+
+              {/* Manager Special Edit Section */}
+              {(currentUser?.role === UserRole.MANAGER || currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
+                <div className="mt-4 pt-4 border-t border-cyan-500/10 space-y-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 block">Manager Special Panel</span>
+                  {isEditingManagerHoldings ? (
+                    <form onSubmit={handleSaveManagerHoldings} className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-slate-400 block">Manager Monthly Market (৳)</label>
+                        <input
+                          type="number"
+                          required
+                          value={editManagerMarketSpent}
+                          onChange={(e) => setEditManagerMarketSpent(e.target.value)}
+                          placeholder="e.g. 1500"
+                          className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-slate-400 block">Manager Market Description</label>
+                        <textarea
+                          value={editManagerMarketDesc}
+                          onChange={(e) => setEditManagerMarketDesc(e.target.value)}
+                          placeholder="e.g. Rice, oil, and spices for the month..."
+                          rows={2}
+                          className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingManagerHoldings(false)}
+                          className="flex-1 py-1.5 rounded bg-slate-800 hover:bg-slate-750 text-[10px] font-bold text-slate-300 transition-all cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={savingManagerHoldings}
+                          className="flex-1 py-1.5 rounded bg-orange-500 hover:bg-orange-400 text-[10px] font-bold text-white transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {savingManagerHoldings ? "Saving..." : "Save Log"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setEditManagerMarketSpent(String(reportSummary?.managerMarketSpent || 0));
+                        setEditManagerMarketDesc(reportSummary?.managerMarketDesc || "");
+                        setIsEditingManagerHoldings(true);
+                      }}
+                      className="w-full py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>Add Manager Market Log</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* BOTTOM SECTION: FULL-WIDTH MONTHLY SUMMARY & REGISTERED BILLS DIRECTORY */}
+        <div className="space-y-6 w-full">
 
           {/* MONTHLY SUMMARY TABLE CARD */}
           <div className={`p-5 rounded-3xl border ${
@@ -2660,105 +2769,6 @@ export default function FinanceSettlement({
             </div>
           </div>
 
-        </div>
-
-        {/* STATS SUMMARY BOX / REMAINING DEPOSITS SUMMARY */}
-        <div className={`p-5 rounded-2xl border lg:col-span-4 xl:col-span-3 h-fit ${
-          isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
-        }`} id="finance-holding-overview">
-          <h3 className="text-sm font-bold font-display text-cyan-300 mb-3 flex items-center gap-1.5">
-            <Coins className="text-cyan-400 animate-bounce" size={16} />
-            Remaining Deposits
-          </h3>
-
-          <div className="space-y-3">
-            <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
-              <span className="text-slate-400 font-medium">Total Deposits Pool</span>
-              <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalDeposits || 0}</span>
-            </div>
-            <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
-              <span className="text-slate-400 font-medium">Manager Monthly Market</span>
-              <span className="font-extrabold font-mono text-orange-400">৳ {reportSummary?.managerMarketSpent || 0}</span>
-            </div>
-
-            {(() => {
-              const totalD = reportSummary?.totalDeposits || 0;
-              const totalM = reportSummary?.managerMarketSpent || 0;
-              const remaining = totalD - totalM;
-              const isNegative = remaining < 0;
-
-              return (
-                <div className={`p-3 rounded-xl border text-center ${
-                  isNegative 
-                    ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
-                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                }`}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Remaining Deposits</span>
-                  <span className="text-lg font-black font-mono">৳ {remaining}</span>
-                </div>
-              );
-            })()}
-
-            {/* Manager Special Edit Section */}
-            {(currentUser?.role === UserRole.MANAGER || currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
-              <div className="mt-4 pt-4 border-t border-cyan-500/10 space-y-3">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 block">Manager Special Panel</span>
-                {isEditingManagerHoldings ? (
-                  <form onSubmit={handleSaveManagerHoldings} className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-medium text-slate-400 block">Manager Monthly Market (৳)</label>
-                      <input
-                        type="number"
-                        required
-                        value={editManagerMarketSpent}
-                        onChange={(e) => setEditManagerMarketSpent(e.target.value)}
-                        placeholder="e.g. 1500"
-                        className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-medium text-slate-400 block">Manager Market Description</label>
-                      <textarea
-                        value={editManagerMarketDesc}
-                        onChange={(e) => setEditManagerMarketDesc(e.target.value)}
-                        placeholder="e.g. Rice, oil, and spices for the month..."
-                        rows={2}
-                        className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingManagerHoldings(false)}
-                        className="flex-1 py-1.5 rounded bg-slate-800 hover:bg-slate-750 text-[10px] font-bold text-slate-300 transition-all cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="flex-1 py-1.5 rounded bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-[10px] transition-all cursor-pointer"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setEditManagerMarketSpent("");
-                      setEditManagerMarketDesc("");
-                      setIsEditingManagerHoldings(true);
-                    }}
-                    className="w-full py-2 bg-slate-950/40 hover:bg-slate-950/60 border border-cyan-500/20 hover:border-cyan-500/40 rounded-xl text-[10px] font-extrabold text-cyan-400 tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Plus size={12} />
-                    ADD MANAGER MARKET LOG
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
         </div>
 
       </div>
