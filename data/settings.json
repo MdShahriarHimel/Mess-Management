@@ -3,7 +3,7 @@
   "siteColor": "windows-10-modern",
   "fontSize": "normal",
   "fontStyle": "sans",
-  "logoText": "আবাবিল মেস",
+  "logoText": "Mess ERP",
   "dropdownOptions": [
     "Rent/ভাড়া",
     "বুয়া বিল",
@@ -13,6 +13,7 @@
   "translations": {
     "Rent/ভাড়া": "Mess Rent"
   },
+  "allowSuperUserUnlock": false,
   "superUserCanEditBills": true,
   "superUserCanInviteMembers": true,
   "superUserCanArchiveMembers": true,
@@ -64,7 +65,7 @@
     "customBackgroundUrl": "",
     "backgroundOpacity": 20,
     "themeTemplate": "midnight",
-    "disableBackgroundAudio": true
+    "disableBackgroundAudio": false
   },
   "dashboardVisibility": {
     "showAuditLogs": true,
@@ -145,8 +146,8 @@
     "customLogoUrl": "https://www.dreamstime.com/stock-illustration-calculator-house-icon-isolated-white-background-d-render-image70643653"
   },
   "homeCustomization": {
-    "welcomeTitle": "একটু ঘুরে দেখুন !!",
-    "welcomeSubtitle": "😊",
+    "welcomeTitle": "",
+    "welcomeSubtitle": "আশা করি দৈনন্দিন এর বাজার ও দুপুর-রাতের মেনু  শীঘ্রই আপডেট করে দিবেন😊",
     "fontStyle": "sans",
     "backgroundType": "theme",
     "backgroundTheme": "neon-shallows",
@@ -184,20 +185,125 @@
       "Theme"
     ]
   },
-  "schemaVersion": 2,
-  "createdAt": "2026-07-23T08:36:15.703Z",
-  "updatedAt": "2026-08-01T10:38:51.531Z",
-  "erpName": "আবাবিল মেস",
-  "disableBackgroundAudio": true,
-  "activeAudioSettings": {
-    "url": "https://www.youtube.com/shorts/phLHC1c_AKg",
-    "enabled": false
-  },
   "respectSenioritySettings": {
-    "enabled": false,
+    "enabled": true,
     "logic": "AUTOMATIC_SENIORITY",
     "defaultMaleTitle": "ভাই",
     "defaultFemaleTitle": "আপু",
     "manualOverride": false
+  },
+  "roomLabels": [
+    {
+      "id": "room_a",
+      "label": "Room A (Large)",
+      "rent": 3000,
+      "description": "Master Large Room"
+    },
+    {
+      "id": "room_b",
+      "label": "Room B (Medium)",
+      "rent": 2500,
+      "description": "Medium South Room"
+    },
+    {
+      "id": "room_c",
+      "label": "Room C (Small)",
+      "rent": 2000,
+      "description": "Standard Small Room"
+    }
+  ],
+  "customBillOverrides": {
+    "month-uuid-202607": {
+      "VqcmcyWcXCgqRIu2XoL5UycAnhl1": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "idx_6zhrbg7ib2qspfm17lhcki": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "xUsfNEEHOcaWBvpJYFPvmnMRnyp2": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "qI1FTflzTwOQPgwAyReM7i8ZVjk2": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "idx_84e4eu3878vf1ux9guvvvm": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "0WFurNLaYUOuy28nTqJxpufePtm2": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "68vZPzINxgNUlJGapcYlfdQwwVR2": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "UkK2sJbFdRfarWwIPSGbMD3fsag1": {
+        "idx_gkjxrigak3smqvr59dppbj": 124
+      },
+      "B846zoR80ueVCTDbAoN9mxJKyZL2": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "idx_05hs5yfsf9vkec2jma2bb": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "idx_kzf5e3s2tdmar20p4fzc8": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "idx_cipwrilfk0d2ea5t3jhg81": {
+        "idx_gkjxrigak3smqvr59dppbj": 125
+      },
+      "Mqzqoo0sAHYNTjMDtODdNt7GCQW2": {
+        "idx_gkjxrigak3smqvr59dppbj": 0,
+        "idx_f7g1rji127k50348f34t6a": 0,
+        "idx_bm2digolk8u7pvjcf0oh2n": 0
+      }
+    },
+    "idx_ih57qdvt0popvk75ob1wf": {
+      "idx_84e4eu3878vf1ux9guvvvm": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "B846zoR80ueVCTDbAoN9mxJKyZL2": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "idx_05hs5yfsf9vkec2jma2bb": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_5jmbtk6b150knzfciog9te_status": "PAID",
+        "Worker_status": "PAID"
+      },
+      "idx_cipwrilfk0d2ea5t3jhg81": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "8dPqTuu0WJgo2gsRt6o0IW7kvKy1": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "UkK2sJbFdRfarWwIPSGbMD3fsag1": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "qI1FTflzTwOQPgwAyReM7i8ZVjk2": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "0WFurNLaYUOuy28nTqJxpufePtm2": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "idx_6zhrbg7ib2qspfm17lhcki": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "68vZPzINxgNUlJGapcYlfdQwwVR2": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "xUsfNEEHOcaWBvpJYFPvmnMRnyp2": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      },
+      "VqcmcyWcXCgqRIu2XoL5UycAnhl1": {
+        "idx_5jmbtk6b150knzfciog9te": 400
+      }
+    }
+  },
+  "schemaVersion": 2,
+  "createdAt": "2026-07-23T08:36:15.703Z",
+  "updatedAt": "2026-08-10T11:07:04.498Z",
+  "erpName": "Mess ERP",
+  "disableBackgroundAudio": false,
+  "activeAudioSettings": {
+    "url": "https://youtu.be/r7qovpFAGrQ?list=RDApXoWvfEYVU",
+    "enabled": true
   }
 }

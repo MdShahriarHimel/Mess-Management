@@ -3559,7 +3559,12 @@ export function loadErpBranding() {
   try {
     if (fs.existsSync(BRANDING_FILE)) {
       const data = fs.readFileSync(BRANDING_FILE, "utf-8");
-      return { ...defaultBranding, ...JSON.parse(data) };
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return { ...defaultBranding, ...parsed };
+        }
+      }
     }
   } catch (e) {
     console.error("Error loading ERP branding:", e);
@@ -3613,7 +3618,12 @@ export function loadMessAppearance(messId: string) {
   try {
     if (fs.existsSync(file)) {
       const data = fs.readFileSync(file, "utf-8");
-      return { ...defaultAppearance, ...JSON.parse(data) };
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return { ...defaultAppearance, ...parsed };
+        }
+      }
     }
   } catch (e) {
     console.error(`Error loading Mess Appearance for ${messId}:`, e);
@@ -3649,9 +3659,11 @@ export function loadUserPreferences(userId: string) {
   try {
     if (fs.existsSync(USER_PREFS_FILE)) {
       const data = fs.readFileSync(USER_PREFS_FILE, "utf-8");
-      const allPrefs = JSON.parse(data);
-      if (allPrefs[userId]) {
-        return { ...defaultPrefs, ...allPrefs[userId] };
+      if (data && data.trim()) {
+        const allPrefs = JSON.parse(data);
+        if (allPrefs && allPrefs[userId]) {
+          return { ...defaultPrefs, ...allPrefs[userId] };
+        }
       }
     }
   } catch (e) {
@@ -4289,21 +4301,20 @@ function loadSettings() {
 
   // Background Audio Integration
   const bgAudio = (branding as any).backgroundAudio || { globalUrl: "", globalEnabled: false, messOverrides: {} };
-  let activeAudioUrl = bgAudio.globalUrl || "";
-  let activeAudioEnabled = bgAudio.globalEnabled || false;
+  let activeAudioUrl = (bgAudio.globalUrl || "").trim();
+  let activeAudioEnabled = bgAudio.globalEnabled !== false && !!activeAudioUrl;
 
   if (bgAudio.messOverrides && bgAudio.messOverrides[messId]) {
     const override = bgAudio.messOverrides[messId];
-    if (override.url !== undefined) activeAudioUrl = override.url;
-    if (override.enabled !== undefined) activeAudioEnabled = override.enabled;
+    if (override.url !== undefined && override.url.trim() !== "") {
+      activeAudioUrl = override.url.trim();
+    }
+    if (override.enabled !== undefined) {
+      activeAudioEnabled = override.enabled;
+    }
   }
 
-  const disableAudio = merged.disableBackgroundAudio === true || (merged.messAnimations as any)?.disableBackgroundAudio === true;
-  if (disableAudio) {
-    activeAudioEnabled = false;
-  }
-
-  (merged as any).disableBackgroundAudio = disableAudio;
+  (merged as any).disableBackgroundAudio = !activeAudioEnabled;
   (merged as any).activeAudioSettings = {
     url: activeAudioUrl,
     enabled: activeAudioEnabled
@@ -4979,7 +4990,12 @@ async function loadElections() {
   try {
     if (fs.existsSync(file)) {
       const data = fs.readFileSync(file, "utf-8");
-      return { ...defaultElections, ...JSON.parse(data) };
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return { ...defaultElections, ...parsed };
+        }
+      }
     }
   } catch (e) {
     console.error(e);
@@ -5280,7 +5296,12 @@ function loadAdminControls() {
   try {
     if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
       const data = fs.readFileSync(ADMIN_CONTROLS_FILE, "utf-8");
-      return { ...defaultControls, ...JSON.parse(data) };
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return { ...defaultControls, ...parsed };
+        }
+      }
     }
   } catch (e) {
     console.error("Error loading admin controls:", e);
@@ -5427,7 +5448,12 @@ function loadMesses() {
   try {
     if (fs.existsSync(MESSES_FILE)) {
       const data = fs.readFileSync(MESSES_FILE, "utf-8");
-      return { ...defaultMesses, ...JSON.parse(data) };
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return { ...defaultMesses, ...parsed };
+        }
+      }
     }
   } catch (e) {
     console.error(e);

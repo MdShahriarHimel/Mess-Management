@@ -1077,34 +1077,85 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               {/* Background Audio Settings Dashboard (Ultimate Admin Only) */}
               {isUltimateAdmin && (
                 <div className="mt-6 p-4 rounded-xl border border-dashed border-slate-800 bg-slate-950/20 space-y-4">
-                  <div>
-                    <h4 className="text-xs font-bold text-cyan-400 uppercase flex items-center gap-1.5">
-                      <LucideIcons.Music size={12} />
-                      Global & Multi-Tenant Background Audio Control Panel
-                    </h4>
-                    <p className="text-[10px] text-slate-500 leading-normal mt-1">
-                      Configure background music for the entire ERP system. Supports local audio files, direct stream links, and YouTube video URLs.
-                    </p>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold text-cyan-400 uppercase flex items-center gap-1.5">
+                        <LucideIcons.Music size={14} />
+                        Global & Multi-Tenant Background Audio Control Panel
+                      </h4>
+                      <p className="text-[10px] text-slate-500 leading-normal mt-1">
+                        Configure central background audio for all users and mess tenants. Supports direct MP3/WAV, YouTube / YouTube Music links, Google Drive share links, and Dropbox streams.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSaveBrandingFields}
+                      className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/20 transition-all"
+                    >
+                      <LucideIcons.Save size={13} />
+                      Save Audio Configuration
+                    </button>
+                  </div>
+
+                  {/* Supported Format Badges */}
+                  <div className="flex flex-wrap gap-1.5 text-[9px] font-semibold">
+                    <span className="px-2 py-0.5 rounded bg-red-950/60 border border-red-800/40 text-red-300 flex items-center gap-1">
+                      <LucideIcons.Youtube size={10} /> YouTube / Shorts
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-blue-950/60 border border-blue-800/40 text-blue-300 flex items-center gap-1">
+                      <LucideIcons.HardDrive size={10} /> Google Drive Share Link
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-indigo-950/60 border border-indigo-800/40 text-indigo-300 flex items-center gap-1">
+                      <LucideIcons.Cloud size={10} /> Dropbox Link
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/40 text-emerald-300 flex items-center gap-1">
+                      <LucideIcons.Radio size={10} /> Direct Stream / MP3 / WAV
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-orange-400 uppercase block">Global Default Audio URL</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. https://example.com/audio.mp3 or youtube link"
-                        value={localGlobalAudioUrl}
-                        onChange={(e) => setLocalGlobalAudioUrl(e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600"
-                      />
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          placeholder="e.g. https://www.youtube.com/watch?v=... or Google Drive link"
+                          value={localGlobalAudioUrl}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocalGlobalAudioUrl(val);
+                            if (val.trim() && !localGlobalAudioEnabled) {
+                              setLocalGlobalAudioEnabled(true);
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600 pr-16"
+                        />
+                        {localGlobalAudioUrl.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                window.open(localGlobalAudioUrl.trim(), '_blank');
+                              } catch (e) {
+                                console.error(e);
+                              }
+                            }}
+                            className="absolute right-1.5 px-2 py-1 text-[9px] font-bold rounded bg-slate-800 text-cyan-300 hover:bg-slate-700 cursor-pointer"
+                            title="Test / Open Link in new tab"
+                          >
+                            Test Link
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950/40 border border-slate-900">
                       <div className="space-y-0.5">
                         <span className="text-[11px] font-bold text-slate-200 block">Default Global Audio Enabled</span>
-                        <span className="text-[9px] text-slate-500">Enable audio by default when users enter the platform.</span>
+                        <span className="text-[9px] text-slate-500">Master toggle for audio streaming across all mess accounts.</span>
                       </div>
                       <button
+                        type="button"
                         onClick={() => setLocalGlobalAudioEnabled(!localGlobalAudioEnabled)}
                         className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                           localGlobalAudioEnabled ? "bg-cyan-500" : "bg-slate-700"
@@ -1147,6 +1198,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             <div className="flex justify-end items-center gap-2">
                               <span className="text-[10px] text-slate-500">Audio Overlay:</span>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setLocalMessAudioOverrides(prev => ({
                                     ...prev,

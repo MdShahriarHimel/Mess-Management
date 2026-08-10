@@ -1639,8 +1639,11 @@ export function writeAndPersistFile(filename: string, content: string) {
       fs.mkdirSync(dir, { recursive: true });
     }
     
-    // Async file write so we don't block the Node event loop!
-    fs.promises.writeFile(localPath, content, "utf-8").then(() => {
+    // Write atomically to avoid zero-byte file windows during concurrent reads
+    const tmpPath = `${localPath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
+    fs.promises.writeFile(tmpPath, content, "utf-8").then(() => {
+      return fs.promises.rename(tmpPath, localPath);
+    }).then(() => {
       // Save to Postgres asynchronously in the background
       const dbPromise = db.insert(persistentFilesTable).values({
         filename,
@@ -1656,6 +1659,7 @@ export function writeAndPersistFile(filename: string, content: string) {
       trackPromise(dbPromise);
     }).catch(err => {
       console.error(`[Persistent Files] Local write failed for ${filename}:`, err);
+      fs.promises.unlink(tmpPath).catch(() => {});
     });
 
   } catch (e) {

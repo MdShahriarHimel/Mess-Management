@@ -1997,7 +1997,7 @@ export default function App() {
       const resBranding = await fetch("/api/settings/branding", { headers });
       if (resBranding.ok) {
         const data = await resBranding.json().catch(() => ({}));
-        if (data && data.appName !== undefined) {
+        if (data && (data.erpName !== undefined || data.backgroundAudio !== undefined || data.logoText !== undefined)) {
           setErpBrandingState(data);
         }
       }
@@ -2006,7 +2006,7 @@ export default function App() {
       const resAppearance = await fetch("/api/settings/appearance", { headers });
       if (resAppearance.ok) {
         const data = await resAppearance.json().catch(() => ({}));
-        if (data && data.messName !== undefined) {
+        if (data && (data.theme !== undefined || data.accentColor !== undefined || data.cards !== undefined)) {
           setMessAppearanceState(data);
         }
       }
