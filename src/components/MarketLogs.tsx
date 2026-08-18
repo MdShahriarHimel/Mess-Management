@@ -948,7 +948,7 @@ export default function MarketLogs({
                                       handleDayCellClick(cell.dateStr);
                                     }
                                   }}
-                                  className={`aspect-square flex flex-col justify-between p-1 relative transition-all group ${
+                                  className={`min-h-[48px] sm:min-h-[52px] flex flex-col justify-between p-1 relative transition-all group ${
                                     cell.inCycle 
                                       ? `cursor-pointer ${
                                           isDarkMode 
@@ -977,18 +977,19 @@ export default function MarketLogs({
                                     <div className="space-y-0.5 mt-auto w-full overflow-hidden">
                                       {dayDuties.map(d => {
                                         const assignedMember = members.find(m => m.id === d.memberId);
+                                        const nickName = assignedMember?.nickname?.trim() || assignedMember?.name?.trim()?.split(" ")[0] || "Unknown";
                                         return (
                                           <div 
                                             key={d.id}
-                                            className="text-[8px] leading-tight px-1 py-0.5 rounded bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-extrabold border border-cyan-500/10 truncate"
-                                            title={`${getRespectDisplayName(currentUser, assignedMember, respectSenioritySettings) || "Unknown"}: ${d.task || "Market Duty"}`}
+                                            className="text-[9px] sm:text-[10px] leading-tight px-1 py-0.5 rounded bg-cyan-500/20 dark:bg-cyan-500/30 text-cyan-700 dark:text-cyan-300 font-black border border-cyan-500/30 truncate text-center tracking-tight shadow-sm"
+                                            title={`${assignedMember?.name || nickName}: ${d.task || "Market Duty"}`}
                                           >
-                                            {getRespectDisplayName(currentUser, assignedMember, respectSenioritySettings) || "Unknown"}
+                                            {nickName}
                                           </div>
                                         );
                                       })}
                                       {canEditMarketDuty && dayDuties.length === 0 && (
-                                        <div className="opacity-0 group-hover:opacity-100 transition-all text-[8px] text-cyan-500 font-extrabold text-center py-0.5 border border-dashed border-cyan-500/20 rounded">
+                                        <div className="opacity-0 group-hover:opacity-100 transition-all text-[8px] sm:text-[9px] text-cyan-500 font-extrabold text-center py-0.5 border border-dashed border-cyan-500/20 rounded">
                                           + ASSIGN
                                         </div>
                                       )}
