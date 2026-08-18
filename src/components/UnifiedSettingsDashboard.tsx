@@ -1014,18 +1014,40 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">Logo Brand Icon</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-orange-400 uppercase block">Logo Brand Icon</label>
+                    <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                      Preview: 
+                      <span className="text-cyan-400 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
+                        {localLogoIcon === "Home" && "🏠 Home"}
+                        {localLogoIcon === "Building" && "🏢 Building"}
+                        {(localLogoIcon === "Building2" || localLogoIcon === "Apartment") && "🏬 Apartment"}
+                        {localLogoIcon === "Hotel" && "🏨 Hostel"}
+                        {localLogoIcon === "Landmark" && "🏛️ Landmark"}
+                        {localLogoIcon === "Sparkles" && "✨ Sparkles"}
+                        {localLogoIcon === "Shield" && "🛡️ Shield"}
+                        {localLogoIcon === "Crown" && "👑 Crown"}
+                        {localLogoIcon === "Flame" && "🔥 Flame"}
+                        {localLogoIcon === "Cpu" && "💻 CPU"}
+                      </span>
+                    </span>
+                  </div>
                   <select
                     disabled={!isUltimateAdmin}
                     value={localLogoIcon}
                     onChange={(e) => setLocalLogoIcon(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
                   >
+                    <option value="Home">Home 🏠</option>
+                    <option value="Building">Building 🏢</option>
+                    <option value="Building2">Apartment / Residence 🏬</option>
+                    <option value="Hotel">Hostel / Mess Living 🏨</option>
+                    <option value="Landmark">Ecosystem Landmark 🏛️</option>
                     <option value="Sparkles">Sparkles ✨</option>
                     <option value="Shield">Shield 🛡️</option>
-                    <option value="Cpu">CPU 💻</option>
-                    <option value="Flame">Flame 🔥</option>
                     <option value="Crown">Crown 👑</option>
+                    <option value="Flame">Flame 🔥</option>
+                    <option value="Cpu">CPU 💻</option>
                   </select>
                 </div>
 

@@ -1573,6 +1573,7 @@ export default function App() {
       o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
     )
   );
+  const [dismissedGlobalAnnouncement, setDismissedGlobalAnnouncement] = useState(false);
   const [activeAnnouncements, setActiveAnnouncements] = useState<any[]>([]);
   const [dismissedAnnIds, setDismissedAnnIds] = useState<string[]>([]);
 
@@ -1840,6 +1841,26 @@ export default function App() {
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<string>("mess-appearance");
   const [erpBrandingState, setErpBrandingState] = useState<any>(null);
   const [messAppearanceState, setMessAppearanceState] = useState<any>(null);
+
+  // Branding Icon Helper
+  const CurrentBrandIcon = (() => {
+    const iconName = erpBrandingState?.logoIcon;
+    switch (iconName) {
+      case "Home": return Home;
+      case "Building": return LucideIcons.Building;
+      case "Building2":
+      case "Apartment": return LucideIcons.Building2;
+      case "Hotel": return LucideIcons.Hotel;
+      case "Landmark": return LucideIcons.Landmark;
+      case "Shield": return Shield;
+      case "Cpu": return LucideIcons.Cpu;
+      case "Flame": return LucideIcons.Flame;
+      case "Crown": return LucideIcons.Crown;
+      case "Sparkles":
+      default:
+        return Sparkles;
+    }
+  })();
   const [userPreferencesState, setUserPreferencesState] = useState<any>({
     isDarkMode: false,
     accentColor: "#22d3ee",
@@ -4480,13 +4501,13 @@ export default function App() {
             title="Refresh All Data & Return to Dashboard"
             className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all text-left"
           >
-            <Sparkles size={14} className={`text-cyan-400 ${isRefreshingAll ? "animate-spin" : ""}`} />
+            <CurrentBrandIcon size={14} className={`text-cyan-400 ${isRefreshingAll ? "animate-spin" : ""}`} />
             <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase">
-              {messName}
+              {erpBrandingState?.logoText || messName}
             </span>
           </button>
           <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded uppercase">
-            BDT
+            {erpBrandingState?.erpVersion || "v2.5.4"}
           </span>
         </div>
 
@@ -4620,18 +4641,18 @@ export default function App() {
                 ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400 group-hover:border-cyan-500/40" 
                 : "bg-cyan-100 border-cyan-200 text-cyan-600 group-hover:border-cyan-300"
             }`}>
-              <Sparkles size={16} />
+              <CurrentBrandIcon size={16} />
             </span>
-            <div>
-              <h1 className={`font-extrabold text-base tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-none uppercase ${
+            <div className="min-w-0 flex-1">
+              <h1 className={`font-extrabold text-base tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-none uppercase truncate ${
                 activeIsDarkMode ? "from-cyan-400 to-cyan-500" : "from-cyan-700 to-cyan-900"
               }`}>
-                {messName}
+                {erpBrandingState?.logoText || messName}
               </h1>
-              <span className={`text-[8px] font-bold font-mono block tracking-wider mt-0.5 uppercase ${
+              <span className={`text-[8px] font-bold font-mono block tracking-wider mt-0.5 uppercase truncate ${
                 activeIsDarkMode ? "text-slate-500" : "text-cyan-600/70"
               }`}>
-                Enterprise Dashboard • Refresh
+                {erpBrandingState?.erpName || "Enterprise"} • {erpBrandingState?.erpVersion || "v2.5.4"}
               </span>
             </div>
           </button>
@@ -4714,6 +4735,15 @@ export default function App() {
               <LogOut size={14} />
             </button>
           </div>
+
+          {/* Level 1 ERP Identity Info Badges */}
+          <div className={`pt-2 border-t text-[9px] space-y-0.5 leading-tight ${
+            activeIsDarkMode ? "border-slate-800/40 text-slate-500" : "border-cyan-100 text-cyan-800/60"
+          }`}>
+            <p className="font-semibold truncate">{erpBrandingState?.copyright || "Copyright © 2026 Mess ERP"}</p>
+            <p className="truncate">Dev: <span className="font-medium">{erpBrandingState?.developerInfo || "Bengal Bachelor Developers"}</span></p>
+            <p className="truncate">Support: <span className="font-medium">{erpBrandingState?.supportInfo || "Ababil support team"}</span></p>
+          </div>
         </div>
       </aside>
 
@@ -4721,6 +4751,39 @@ export default function App() {
           MAIN SCROLLABLE CONTENT BODY
           --------------------------------------------------------- */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full space-y-6">
+
+        {/* Central Global Announcement from Level 1 ERP Identity */}
+        {erpBrandingState?.globalAnnouncement && !dismissedGlobalAnnouncement && (
+          <div 
+            id="erp-global-announcement-banner"
+            className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs font-sans transition-all animate-fadeIn ${
+              activeIsDarkMode 
+                ? "bg-gradient-to-r from-cyan-950/40 to-slate-900/60 border-cyan-500/30 text-cyan-200" 
+                : "bg-gradient-to-r from-cyan-50 to-white border-cyan-200 text-cyan-900 shadow-sm"
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 shrink-0">
+                <CurrentBrandIcon size={14} />
+              </span>
+              <div className="min-w-0">
+                <span className="font-bold text-[10px] tracking-wider uppercase opacity-75 block">
+                  {erpBrandingState?.erpName || "Mess ERP"} Global Broadcast
+                </span>
+                <p className="font-medium text-xs truncate md:whitespace-normal">{erpBrandingState.globalAnnouncement}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDismissedGlobalAnnouncement(true)}
+              className={`p-1 rounded-lg cursor-pointer transition-colors shrink-0 ${
+                activeIsDarkMode ? "hover:bg-white/10 text-slate-400 hover:text-white" : "hover:bg-cyan-100 text-cyan-700"
+              }`}
+              title="Dismiss announcement"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
         
         {/* Dynamic Platform Announcement Banners (Top Position) */}
         {activeAnnouncements
@@ -4925,7 +4988,10 @@ export default function App() {
               triggerRefresh={handleRefreshAll}
               months={months}
               onChangeMonth={setCurrentMonthId}
-              homeCustomization={homeCustomization}
+              homeCustomization={{
+                ...homeCustomization,
+                welcomeSubtitle: homeCustomization?.welcomeSubtitle || erpBrandingState?.welcomeMessage
+              }}
               elections={elections}
               membersListProp={membersList}
               showResultsInDashboard={showResultsInDashboard}
