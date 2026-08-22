@@ -28,27 +28,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Install Node Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build Web Assets & Sync Capacitor
+      - name: Build Web Assets & Copy to Android
         run: |
           mkdir -p dist
           cp index.html dist/index.html
           npx cap copy android
 
-      - name: Accept Android Licenses & Grant Execute Permission
-        run: |
-          yes | sdkmanager --licenses || true
-          chmod +x android/gradlew
-
       - name: Build Debug APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
