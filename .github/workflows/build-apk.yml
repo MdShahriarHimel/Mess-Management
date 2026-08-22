@@ -1,9 +1,7 @@
-name: Build Android APK
+﻿name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
     branches: [ main, master ]
   workflow_dispatch:
 
@@ -16,39 +14,31 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Setup Java JDK 21
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android Build Tools and Platform
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Install Node Dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Build Web Assets & Copy to Android
+      - name: Build Debug APK
+        working-directory: android-app
         run: |
-          mkdir -p dist
-          cp index.html dist/index.html
-          npx cap copy android
+          chmod +x gradlew 2>/dev/null || true
+          gradle assembleDebug --stacktrace
 
-      - name: Build Debug APK with Gradle
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
-
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Mess-Management-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
