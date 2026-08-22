@@ -118,9 +118,14 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       }
     };
 
+    (window as any).onNativeGoogleLoginFallback = () => {
+      console.log("[Native Auth] Falling back to Web Google Auth");
+      handleGoogleLogin(true);
+    };
+
     (window as any).onNativeGoogleLoginError = (errMsg: string) => {
-      setLoading(false);
-      setError(errMsg);
+      console.warn("[Native Auth] Native auth failed, falling back to Web Auth:", errMsg);
+      handleGoogleLogin(true);
     };
 
     (window as any).onNativeGoogleLoginCancel = () => {
@@ -253,12 +258,12 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (forceWeb = false) => {
     setError(null);
     setSuccess(null);
 
-    // If inside Android app, launch native Google Account Chooser (Google Play Services)
-    if ((window as any).AndroidAuthBridge && typeof (window as any).AndroidAuthBridge.launchGoogleSignIn === "function") {
+    // If inside Android app and not forced to web, try native Google Account Chooser
+    if (!forceWeb && (window as any).AndroidAuthBridge && typeof (window as any).AndroidAuthBridge.launchGoogleSignIn === "function") {
       setLoading(true);
       (window as any).AndroidAuthBridge.launchGoogleSignIn();
       return;
