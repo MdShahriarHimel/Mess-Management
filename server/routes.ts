@@ -293,6 +293,54 @@ router.get("/auth/me", authMiddleware, (req: AuthenticatedRequest, res: Response
   res.json({ user: req.user });
 });
 
+// Native Google Sign-In endpoint for Android app
+router.post("/auth/google-native", (req: Request, res: Response): void => {
+  const { email, name, photo } = req.body;
+  if (!email) {
+    res.status(400).json({ error: "Email is required" });
+    return;
+  }
+
+  const db = loadDB();
+  const normalizedEmail = String(email).trim().toLowerCase();
+  let member = db.members.find(m => m.email.toLowerCase() === normalizedEmail);
+
+  if (!member) {
+    if (db.members.length === 0 || normalizedEmail === "mdshahriarhimel@gmail.com") {
+      const newMember: Member = {
+        id: generateUUID(),
+        name: name || "Founder Admin",
+        email: normalizedEmail,
+        role: UserRole.ADMIN,
+        status: MemberStatus.ACTIVE,
+        photo: photo || undefined,
+        joinedAt: new Date().toISOString().split("T")[0]
+      };
+      db.members.push(newMember);
+      saveDB();
+      member = newMember;
+    } else {
+      res.status(403).json({ error: "Your email has not been invited to the Mess. Please ask your Admin to invite you." });
+      return;
+    }
+  }
+
+  if (member.status === MemberStatus.SUSPENDED) {
+    res.status(403).json({ error: "Account suspended: Contact Admin" });
+    return;
+  }
+
+  if (member.status === MemberStatus.PENDING) {
+    member.status = MemberStatus.ACTIVE;
+    if (name && !member.name) member.name = name;
+    if (photo && !member.photo) member.photo = photo;
+    saveDB();
+  }
+
+  const token = generateSessionToken(member.id);
+  res.json({ token, user: member });
+});
+
 // Login
 
 router.get("/sync-status", (req: Request, res: Response) => {

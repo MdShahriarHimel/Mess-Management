@@ -70,7 +70,63 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       }
     };
     fetchPublicSettings();
-  }, [customization]);
+
+    // Register Native Android Google Sign-In Callbacks
+    (window as any).onNativeGoogleLoginSuccess = async (email: string, displayName: string, photoUrl: string, idToken: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        if (idToken) {
+          try {
+            const { signInWithCredential, GoogleAuthProvider } = await import("firebase/auth");
+            const { auth } = await import("../lib/firebase.ts");
+            const credential = GoogleAuthProvider.credential(idToken);
+            const result = await signInWithCredential(auth, credential);
+            const token = await result.user.getIdToken();
+            const response = await fetch("/api/auth/me", {
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (response.ok) {
+              const data = await response.json().catch(() => ({}));
+              onLoginSuccess(token, data.user, rememberMe);
+              return;
+            }
+          } catch (fbErr) {
+            console.warn("[Native Auth] Firebase token fallback to backend auth:", fbErr);
+          }
+        }
+
+        // Direct native backend auth with verified device Google account
+        const res = await fetch("/api/auth/google-native", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, name: displayName, photo: photoUrl })
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to authenticate with server. Make sure you are an invited member.");
+        }
+
+        const data = await res.json().catch(() => ({}));
+        onLoginSuccess(data.token, data.user, rememberMe);
+      } catch (err: any) {
+        console.error("[Native Auth] Error:", err);
+        setError(err.message || "Failed to log in with selected Google account.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    (window as any).onNativeGoogleLoginError = (errMsg: string) => {
+      setLoading(false);
+      setError(errMsg);
+    };
+
+    (window as any).onNativeGoogleLoginCancel = () => {
+      setLoading(false);
+    };
+  }, [customization, rememberMe, onLoginSuccess]);
 
   const title = liveCustomization?.title || "Mess ERP";
   const subtitle = liveCustomization?.subtitle || "BENGAL BACHELOR ERP ENGINE";
@@ -200,6 +256,14 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
   const handleGoogleLogin = async () => {
     setError(null);
     setSuccess(null);
+
+    // If inside Android app, launch native Google Account Chooser (Google Play Services)
+    if ((window as any).AndroidAuthBridge && typeof (window as any).AndroidAuthBridge.launchGoogleSignIn === "function") {
+      setLoading(true);
+      (window as any).AndroidAuthBridge.launchGoogleSignIn();
+      return;
+    }
+
     setLoading(true);
     try {
       const { signInWithPopup } = await import("firebase/auth");
