@@ -15,7 +15,11 @@ android {
     }
 
     signingConfigs {
-        debug {
+        release {
+            storeFile file("release.keystore")
+            storePassword "messmanagement123"
+            keyAlias "messmanagement"
+            keyPassword "messmanagement123"
             v1SigningEnabled true
             v2SigningEnabled true
         }
@@ -27,11 +31,12 @@ android {
     }
 
     buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
+        }
+        debug {
+            signingConfig signingConfigs.release
         }
     }
 }
