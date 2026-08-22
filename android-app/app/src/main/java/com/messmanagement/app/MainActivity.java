@@ -1,4 +1,4 @@
-﻿package com.messmanagement.app;
+package com.messmanagement.app;
 
 import android.app.Activity;
 import android.os.Bundle;
