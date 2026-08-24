@@ -76,6 +76,8 @@ interface UnifiedSettingsDashboardProps {
   handleUpdateSettings: (updates: any) => Promise<boolean>;
   allowSuperUserUnlock?: boolean;
   setAllowSuperUserUnlock?: React.Dispatch<React.SetStateAction<boolean>>;
+  memberHistoryWindowMonths?: number;
+  setMemberHistoryWindowMonths?: React.Dispatch<React.SetStateAction<number>>;
   handleToggleMonthLock?: (monthId: string, isLocked: boolean) => Promise<void>;
 
   newMonthName: string;
@@ -148,6 +150,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   handleUpdateSettings,
   allowSuperUserUnlock = false,
   setAllowSuperUserUnlock,
+  memberHistoryWindowMonths = 0,
+  setMemberHistoryWindowMonths,
   handleToggleMonthLock,
 
   newMonthName,
@@ -1860,6 +1864,88 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 )}
               </div>
 
+              {/* ERP SETTING: Member Visible History Window (Previous Months Dropdown) */}
+              <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/40 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5 pr-2">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                      <LucideIcons.History size={15} className="text-cyan-400" />
+                      Member Previous Months History Window
+                    </label>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Control how many past monthly cycles regular members can browse in the cycle dropdown. Admins & Super Users always retain access to all historical cycles.
+                    </p>
+                  </div>
+                  {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={memberHistoryWindowMonths}
+                        onChange={async (e) => {
+                          const val = Number(e.target.value) || 0;
+                          if (setMemberHistoryWindowMonths) setMemberHistoryWindowMonths(val);
+                          await handleUpdateSettings({ memberHistoryWindowMonths: val });
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer"
+                      >
+                        <option value={0}>All Past Months (Unlimited / Default)</option>
+                        <option value={1}>Current + 1 Previous Month</option>
+                        <option value={2}>Current + 2 Previous Months</option>
+                        <option value={3}>Current + 3 Previous Months (1 Quarter)</option>
+                        <option value={6}>Current + 6 Previous Months (Half Year)</option>
+                        <option value={12}>Current + 12 Previous Months (1 Full Year)</option>
+                        <option value={24}>Current + 24 Previous Months (2 Years)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Presets */}
+                {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mr-1">Quick Select:</span>
+                    {[
+                      { label: "All Months", value: 0 },
+                      { label: "1 Month", value: 1 },
+                      { label: "2 Months", value: 2 },
+                      { label: "3 Months", value: 3 },
+                      { label: "6 Months", value: 6 },
+                      { label: "12 Months (1 Yr)", value: 12 }
+                    ].map(preset => {
+                      const isActive = (memberHistoryWindowMonths || 0) === preset.value;
+                      return (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          onClick={async () => {
+                            if (setMemberHistoryWindowMonths) setMemberHistoryWindowMonths(preset.value);
+                            await handleUpdateSettings({ memberHistoryWindowMonths: preset.value });
+                          }}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded-md border transition-all cursor-pointer ${
+                            isActive
+                              ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm shadow-cyan-500/10"
+                              : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800 hover:text-slate-200"
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Active Rule Indicator */}
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px]">
+                  <LucideIcons.Eye size={13} className="text-cyan-400 shrink-0" />
+                  <span className="text-slate-400">
+                    Active Rule: <strong className="text-cyan-300 font-semibold">{
+                      !memberHistoryWindowMonths || memberHistoryWindowMonths === 0
+                        ? "Regular members can view all recorded past months."
+                        : `Regular members can view the active month + up to ${memberHistoryWindowMonths} previous month${memberHistoryWindowMonths > 1 ? "s" : ""}.`
+                    }</strong>
+                  </span>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Create or Edit Cycle */}
                 {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
@@ -3198,6 +3284,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               currentUser={currentUser}
               isDarkMode={isDarkMode}
               showStatus={showStatus}
+              sessionToken={sessionToken}
             />
           )}
 

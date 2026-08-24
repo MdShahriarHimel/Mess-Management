@@ -1720,6 +1720,8 @@ export default function App() {
 
   // Unlock permission for Super Users
   const [allowSuperUserUnlock, setAllowSuperUserUnlock] = useState<boolean>(false);
+  // Member previous months history visible window (0 = Unlimited / All months)
+  const [memberHistoryWindowMonths, setMemberHistoryWindowMonths] = useState<number>(0);
 
   // Date restrictions config
   const [dateRestrictions, setDateRestrictions] = useState({
@@ -1978,6 +1980,7 @@ export default function App() {
           setNewMessName(data.messName);
         }
         if (data.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(data.allowSuperUserUnlock);
+        if (data.memberHistoryWindowMonths !== undefined) setMemberHistoryWindowMonths(Number(data.memberHistoryWindowMonths) || 0);
         if (data.siteColor) setSiteColor(data.siteColor);
         if (data.fontSize) setFontSize(data.fontSize);
         if (data.fontStyle) setFontStyle(data.fontStyle);
@@ -2224,6 +2227,7 @@ export default function App() {
           if (s.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(s.disableBackgroundAudio);
           if (s.activeAudioSettings) setActiveAudioSettings(s.activeAudioSettings);
           if (s.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(s.allowSuperUserUnlock);
+          if (s.memberHistoryWindowMonths !== undefined) setMemberHistoryWindowMonths(Number(s.memberHistoryWindowMonths) || 0);
         }
         return true;
       } else {
@@ -2729,6 +2733,38 @@ export default function App() {
   };
 
   const getSelectableMonths = () => {
+    if (!currentUser) return months;
+    const isPrivileged = currentUser.role === UserRole.ADMIN ||
+      currentUser.role === UserRole.SUPERUSER ||
+      currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
+      currentUser.role === UserRole.MANAGER ||
+      isPlatformOwner;
+
+    // Privileged authorities always have access to all historical cycles
+    if (isPrivileged) {
+      return months;
+    }
+
+    // Regular members: if history window restriction is active (> 0)
+    if (memberHistoryWindowMonths && memberHistoryWindowMonths > 0 && months.length > 0) {
+      const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      const now = new Date();
+      let currentIdx = sorted.findIndex(m => {
+        const start = new Date(m.startDate);
+        const end = new Date(m.endDate);
+        return now >= start && now <= end;
+      });
+      if (currentIdx === -1) {
+        currentIdx = sorted.findIndex(m => m.id === currentMonthId);
+        if (currentIdx === -1) {
+          currentIdx = sorted.length - 1;
+        }
+      }
+
+      const earliestIdx = Math.max(0, currentIdx - memberHistoryWindowMonths);
+      return sorted.slice(earliestIdx);
+    }
+
     return months;
   };
 
@@ -5216,6 +5252,8 @@ export default function App() {
                 handleUpdateSettings={handleUpdateSettings}
                 allowSuperUserUnlock={allowSuperUserUnlock}
                 setAllowSuperUserUnlock={setAllowSuperUserUnlock}
+                memberHistoryWindowMonths={memberHistoryWindowMonths}
+                setMemberHistoryWindowMonths={setMemberHistoryWindowMonths}
                 newMonthName={newMonthName}
                 setNewMonthName={handleNewMonthNameChange}
                 newMonthStart={newMonthStart}

@@ -12,11 +12,21 @@ interface MonetizationHubProps {
   isDarkMode: boolean;
   showStatus: (type: "success" | "error", text: string) => void;
   activeSettingsSubTab?: string;
+  sessionToken?: string;
 }
 
-export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSettingsSubTab }: MonetizationHubProps) {
+export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSettingsSubTab, sessionToken }: MonetizationHubProps) {
   const isUltimateAdmin = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && currentUser?.role === "ADMIN";
   const isFounder = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+
+  // Auth Header Helper
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = sessionToken || localStorage.getItem("mess_token") || sessionStorage.getItem("mess_token") || localStorage.getItem("sessionToken") || currentUser?.id || "";
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+  };
 
   // State
   const [loading, setLoading] = useState(true);
@@ -188,7 +198,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
   // Load monetization state
   const loadState = async () => {
     try {
-      const headers = { "Content-Type": "application/json" };
+      const headers = getAuthHeaders();
       const res = await fetch("/api/monetization/status", { headers });
       const data = await res.json();
       setMonetizationState(data);
@@ -302,7 +312,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/ads/global-config", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           enabled: globalAdsEnabled,
           config: {
@@ -320,7 +330,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", "Global platform-wide ad configuration successfully applied!");
         loadState();
       } else {
-        showStatus("error", "Failed to save global ad configuration.");
+        const errData = await res.json().catch(() => ({}));
+        showStatus("error", errData.error || "Failed to save global ad configuration.");
       }
     } catch (err) {
       showStatus("error", "Failed to save global ad config: communication error.");
@@ -406,7 +417,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
   // Load reward state lazily (no polling, no unnecessary queries)
   const loadRewardState = async () => {
     try {
-      const headers = { "Content-Type": "application/json" };
+      const headers = getAuthHeaders();
       // 1. Fetch reward config
       const configRes = await fetch("/api/monetization/reward-config", { headers });
       if (configRes.ok) {
@@ -456,7 +467,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/award-daily-login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (!res.ok) {
@@ -475,7 +486,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/claim-achievement", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ achievementId })
       });
       const data = await res.json();
@@ -495,7 +506,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/reward-config", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(updatedConfig)
       });
       const data = await res.json();
@@ -519,7 +530,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
       
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(achievementForm)
       });
       const data = await res.json();
@@ -550,7 +561,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch(`/api/monetization/achievements-admin/${id}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" }
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (!res.ok) {
@@ -568,7 +579,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/manual-reward", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(manualAdjustmentForm)
       });
       const data = await res.json();
@@ -606,7 +617,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/settings", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           enabled: masterSwitch,
           profileId: selectedProfileId,
@@ -622,7 +633,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", "Per-Mess monetization settings updated successfully!");
         loadState();
       } else {
-        showStatus("error", "Failed to update monetization settings.");
+        const errData = await res.json().catch(() => ({}));
+        showStatus("error", errData.error || "Failed to update monetization settings.");
       }
     } catch (err) {
       showStatus("error", "Failed to contact database backend.");
@@ -634,7 +646,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/ads/settings", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           rewardedVideoEnabled: rewardedEnabled,
           bannerEnabled: bannerEnabled,
@@ -652,7 +664,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", "Advertisement rules successfully synchronized!");
         loadState();
       } else {
-        showStatus("error", "Failed to update ads parameters.");
+        const errData = await res.json().catch(() => ({}));
+        showStatus("error", errData.error || "Failed to update ads parameters.");
       }
     } catch (err) {
       showStatus("error", "Failed to save ads config.");
@@ -668,7 +681,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/profiles", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           name: customProfileName,
           modules: {
@@ -689,7 +702,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         setCustomProfileName("");
         loadState();
       } else {
-        showStatus("error", "Failed to create profile.");
+        const errData = await res.json().catch(() => ({}));
+        showStatus("error", errData.error || "Failed to create profile.");
       }
     } catch (err) {
       showStatus("error", "Server communication failure.");
@@ -701,14 +715,15 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/subscribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ planId, durationMonths: 1 })
       });
       if (res.ok) {
         showStatus("success", `Subscribed mess successfully to "${planId}"!`);
         loadState();
       } else {
-        showStatus("error", "Subscription checkout failed.");
+        const errData = await res.json().catch(() => ({}));
+        showStatus("error", errData.error || "Subscription checkout failed.");
       }
     } catch (err) {
       showStatus("error", "Database sync failed.");
@@ -724,7 +739,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/plans", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(planForm),
       });
       if (res.ok) {
@@ -732,7 +747,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         setIsCreatingPlan(false);
         loadState();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Failed to create plan.");
       }
     } catch (err) {
@@ -746,7 +761,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch(`/api/monetization/plans/${editingPlanId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(planForm),
       });
       if (res.ok) {
@@ -754,7 +769,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         setEditingPlanId(null);
         loadState();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Failed to update plan.");
       }
     } catch (err) {
@@ -767,13 +782,13 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch(`/api/monetization/plans/${id}/duplicate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         showStatus("success", "Subscription plan duplicated successfully!");
         loadState();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Failed to duplicate plan.");
       }
     } catch (err) {
@@ -787,13 +802,13 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch(`/api/monetization/plans/${id}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         showStatus("success", "Subscription plan deleted!");
         loadState();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Failed to delete plan.");
       }
     } catch (err) {
@@ -817,14 +832,15 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/plans/reorder", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ orderedIds: reordered.map((p: any) => p.id) }),
       });
       if (res.ok) {
         showStatus("success", "Plans reordered successfully!");
         loadState();
       } else {
-        showStatus("error", "Failed to reorder plans.");
+        const data = await res.json().catch(() => ({}));
+        showStatus("error", data.error || "Failed to reorder plans.");
       }
     } catch (err) {
       showStatus("error", "Server communication failure.");
@@ -840,7 +856,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/subscribe/assign", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(assignForm),
       });
       if (res.ok) {
@@ -856,7 +872,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         });
         loadState();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Failed to assign license.");
       }
     } catch (err) {
@@ -896,7 +912,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/ads/view", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ adType: "REWARDED", watchDurationPercentage: 100, provider: adProvider })
       });
       if (res.ok) {
@@ -905,7 +921,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", `Ad watched successfully! Awarded +${data.pointsAwarded || adPointsPerView} points!`);
         loadState();
       } else {
-        showStatus("error", "Failed to register ad completion.");
+        const data = await res.json().catch(() => ({}));
+        showStatus("error", data.error || "Failed to register ad completion.");
       }
     } catch (e) {
       console.error(e);
@@ -926,7 +943,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/unlock", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           itemType: item.type,
           itemId: item.id,
@@ -937,7 +954,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", `Unlocked aesthetic "${item.name}"! Configured on profile.`);
         loadState();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Unlock transaction failed.");
       }
     } catch (err) {
@@ -950,7 +967,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/cosmetics/equip", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           cosmeticType: itemType,
           cosmeticValue: itemId
@@ -962,7 +979,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         // Notify App.tsx to reload the user profile dynamically
         window.dispatchEvent(new CustomEvent("refresh-current-user"));
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showStatus("error", data.error || "Equip process failed.");
       }
     } catch (err) {
@@ -975,7 +992,7 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
     try {
       const res = await fetch("/api/monetization/founder/settings", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           globalMonetizationEnabled: founderGlobalEnabled,
           globalMaintenance: founderMaintenance,
@@ -988,7 +1005,8 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
         showStatus("success", "Founder platform-wide configurations updated!");
         loadState();
       } else {
-        showStatus("error", "Founder authorization failure.");
+        const data = await res.json().catch(() => ({}));
+        showStatus("error", data.error || "Founder authorization failure.");
       }
     } catch (err) {
       showStatus("error", "Database sync failed.");
@@ -998,7 +1016,9 @@ export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSet
   // Export Monetization backup
   const handleExportMonetization = async () => {
     try {
-      const res = await fetch("/api/monetization/backup/export");
+      const res = await fetch("/api/monetization/backup/export", {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);

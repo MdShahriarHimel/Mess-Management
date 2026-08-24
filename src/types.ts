@@ -238,6 +238,7 @@ export interface MealRequest {
 
 export interface MessSettings {
   allowSuperUserUnlock?: boolean;
+  memberHistoryWindowMonths?: number;
   [key: string]: any;
 }
 

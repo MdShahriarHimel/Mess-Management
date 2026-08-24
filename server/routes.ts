@@ -4153,6 +4153,7 @@ function loadSettings() {
     dropdownOptions: ["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"],
     translations: {},
     allowSuperUserUnlock: false,
+    memberHistoryWindowMonths: 0,
     superUserCanEditBills: true,
     superUserCanInviteMembers: true,
     superUserCanArchiveMembers: true,
@@ -4862,6 +4863,29 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       ...respectSenioritySettings
     };
   }
+  if (req.body.memberHistoryWindowMonths !== undefined) {
+    const oldVal = currentSettings.memberHistoryWindowMonths !== undefined ? currentSettings.memberHistoryWindowMonths : 0;
+    const newVal = Math.max(0, parseInt(String(req.body.memberHistoryWindowMonths), 10) || 0);
+    currentSettings.memberHistoryWindowMonths = newVal;
+    if (oldVal !== newVal) {
+      const desc = `Updated member historical cycle visible window to: ${newVal === 0 ? "Unlimited (All Past Months)" : `Last ${newVal} month(s)`}`;
+      logAudit(
+        req.user!.id,
+        req.user!.nickname,
+        "SETTINGS_UPDATED",
+        String(oldVal),
+        String(newVal),
+        desc,
+        {
+          module: "CYCLES",
+          actionType: "HISTORY_WINDOW_UPDATED",
+          description: desc,
+          userRole: req.user!.role
+        }
+      );
+    }
+  }
+
   if (roomLabels !== undefined) {
     currentSettings.roomLabels = roomLabels;
   }
@@ -5909,8 +5933,8 @@ router.get("/monetization/settings", authMiddleware, async (req: AuthenticatedRe
 });
 
 router.put("/monetization/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  if (!checkIsUltimateAdmin(req)) {
-    res.status(403).json({ error: "Only the Ultimate Admin can modify monetization profiles." });
+  if (!checkIsAdminOrSuper(req)) {
+    res.status(403).json({ error: "Only admins can modify monetization settings." });
     return;
   }
   const messId = getActiveMessId();
@@ -6095,8 +6119,8 @@ router.get("/monetization/ads/settings", authMiddleware, async (req: Authenticat
 });
 
 router.put("/monetization/ads/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  if (!checkIsUltimateAdmin(req)) {
-    res.status(403).json({ error: "Only the Ultimate Admin can customize global advertising settings." });
+  if (!checkIsAdminOrSuper(req)) {
+    res.status(403).json({ error: "Only admins can customize mess advertising settings." });
     return;
   }
   const messId = getActiveMessId();
