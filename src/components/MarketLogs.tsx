@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus 
+  ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus,
+  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight
 } from "lucide-react";
 import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
@@ -56,6 +57,15 @@ export default function MarketLogs({
   const [duties, setDuties] = useState<Duty[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [viewMonthId, setViewMonthId] = useState<string>(currentMonthId);
+  const [isCreatingNextCycle, setIsCreatingNextCycle] = useState(false);
+
+  // Sync viewed cycle when global month switches
+  useEffect(() => {
+    if (currentMonthId && (!viewMonthId || !months.some(m => m.id === viewMonthId))) {
+      setViewMonthId(currentMonthId);
+    }
+  }, [currentMonthId, months]);
   
   // Market expense form states
   const [memberId, setMemberId] = useState(currentUser.id);
@@ -99,12 +109,36 @@ export default function MarketLogs({
   };
 
   const getCycleDates = () => {
-    const activeMonth = months.find(m => m.id === currentMonthId);
+    const activeMonth = months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId);
     if (activeMonth?.startDate && activeMonth?.endDate) {
+      const rawStart = activeMonth.startDate.split("T")[0];
+      const rawEnd = activeMonth.endDate.split("T")[0];
+
+      const startDateObj = new Date(rawStart);
+      const endDateObj = new Date(rawEnd);
+
+      let effectiveEndStr = rawEnd;
+
+      // If endDate is the 1st of the next month (due to grace period or 24-hour overlap),
+      // Day 1 of next month belongs exclusively to next month, not the previous month.
+      // Normalize effectiveEndStr to the last day of the cycle's calendar month.
+      if (endDateObj.getDate() === 1 && 
+          (endDateObj.getFullYear() > startDateObj.getFullYear() || endDateObj.getMonth() > startDateObj.getMonth())) {
+        const lastDayOfCycle = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), 0);
+        if (lastDayOfCycle >= startDateObj) {
+          const y = lastDayOfCycle.getFullYear();
+          const m = String(lastDayOfCycle.getMonth() + 1).padStart(2, "0");
+          const d = String(lastDayOfCycle.getDate()).padStart(2, "0");
+          effectiveEndStr = `${y}-${m}-${d}`;
+        }
+      }
+
       return {
-        startDate: activeMonth.startDate.split("T")[0],
-        endDate: activeMonth.endDate.split("T")[0],
-        name: activeMonth.name
+        startDate: rawStart,
+        endDate: effectiveEndStr,
+        name: activeMonth.name,
+        id: activeMonth.id,
+        isLocked: activeMonth.isLocked
       };
     }
     // Fallback to current calendar month
@@ -117,8 +151,93 @@ export default function MarketLogs({
     return {
       startDate: firstDay,
       endDate: lastDay,
-      name: now.toLocaleString("en-US", { month: "long" })
+      name: now.toLocaleString("en-US", { month: "long" }),
+      id: currentMonthId,
+      isLocked: false
     };
+  };
+
+  // Helper to calculate next month cycle info from current viewed or active cycle
+  const getNextMonthInfo = () => {
+    const active = months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId);
+    let nextStart: Date;
+    let nextEnd: Date;
+    let nextName: string;
+
+    if (active && active.startDate) {
+      const start = new Date(active.startDate.split("T")[0]);
+      // Next month starts strictly on the 1st of the following calendar month
+      nextStart = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+      nextEnd = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 0);
+      nextName = nextStart.toLocaleString("en-US", { month: "long", year: "numeric" });
+    } else {
+      const now = new Date();
+      nextStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      nextEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+      nextName = nextStart.toLocaleString("en-US", { month: "long", year: "numeric" });
+    }
+
+    const nextStartStr = `${nextStart.getFullYear()}-${String(nextStart.getMonth() + 1).padStart(2, "0")}-01`;
+    const nextEndStr = `${nextEnd.getFullYear()}-${String(nextEnd.getMonth() + 1).padStart(2, "0")}-${String(nextEnd.getDate()).padStart(2, "0")}`;
+
+    // Check if an existing cycle in months list covers this next period
+    const existingNextMonth = months.find(m => 
+      (m.startDate && m.startDate.split("T")[0] === nextStartStr) ||
+      (m.name && m.name.toLowerCase().includes(nextName.split(" ")[0].toLowerCase()))
+    );
+
+    return {
+      name: nextName,
+      startDate: nextStartStr,
+      endDate: nextEndStr,
+      existingMonth: existingNextMonth
+    };
+  };
+
+  const handleCreateAndSwitchToNextMonth = async () => {
+    const nextInfo = getNextMonthInfo();
+    if (nextInfo.existingMonth) {
+      setViewMonthId(nextInfo.existingMonth.id);
+      return;
+    }
+
+    if (!canEditMarketDuty) {
+      alert("Only Managers and Admins can create next month's duty planning cycle.");
+      return;
+    }
+
+    setIsCreatingNextCycle(true);
+    try {
+      const response = await fetch("/api/months", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({
+          name: nextInfo.name,
+          startDate: nextInfo.startDate,
+          endDate: nextInfo.endDate,
+          gracePeriodEnabled: true
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const newMonth = data.month;
+        if (newMonth && newMonth.id) {
+          setViewMonthId(newMonth.id);
+        }
+        onRefresh();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        alert(errData.error || "Failed to create next month cycle");
+      }
+    } catch (e: any) {
+      alert(e.message || "Failed to initialize next month cycle");
+    } finally {
+      setIsCreatingNextCycle(false);
+    }
   };
 
   // Auto-select first assigned date on mount/member change
@@ -184,16 +303,17 @@ export default function MarketLogs({
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 
-  // Fetch market entries
-  const fetchMarketsAndSchedules = async () => {
-    if (!currentMonthId) return;
+  // Fetch market entries and duties for the active/viewed cycle
+  const fetchMarketsAndSchedules = async (targetId?: string) => {
+    const activeId = targetId || viewMonthId || currentMonthId;
+    if (!activeId) return;
     try {
       const authHeader = { "Authorization": `Bearer ${currentUser.id}` };
       
-      const mRes = await fetch(`/api/markets/${currentMonthId}`, { headers: authHeader });
-      const dRes = await fetch(`/api/duties/${currentMonthId}`, { headers: authHeader });
-      const depRes = await fetch(`/api/deposits/${currentMonthId}`, { headers: authHeader });
-      const holdRes = await fetch(`/api/holdings/${currentMonthId}`, { headers: authHeader });
+      const mRes = await fetch(`/api/markets/${activeId}`, { headers: authHeader });
+      const dRes = await fetch(`/api/duties/${activeId}`, { headers: authHeader });
+      const depRes = await fetch(`/api/deposits/${activeId}`, { headers: authHeader });
+      const holdRes = await fetch(`/api/holdings/${activeId}`, { headers: authHeader });
       
       if (mRes.ok) {
         const mData = await mRes.json().catch(() => ({}));
@@ -219,8 +339,8 @@ export default function MarketLogs({
   const { refreshTriggers } = useAutoRefresh();
 
   useEffect(() => {
-    fetchMarketsAndSchedules();
-  }, [currentMonthId, refreshTriggers.analytics]);
+    fetchMarketsAndSchedules(viewMonthId || currentMonthId);
+  }, [viewMonthId, currentMonthId, refreshTriggers.analytics]);
 
   useEffect(() => {
     const handleGlobalRefresh = () => {
@@ -458,7 +578,9 @@ export default function MarketLogs({
       return;
     }
 
-    // Validate date restrictions for scheduling
+    const targetMonthId = viewMonthId || currentMonthId;
+
+    // Validate date restrictions for scheduling (Manager/Admin planning roster bypasses general receipt lock)
     const todayStr = new Date().toISOString().split("T")[0];
     const isFutureSchedule = scheduleDate > todayStr;
     const isPastSchedule = scheduleDate < todayStr;
@@ -466,11 +588,11 @@ export default function MarketLogs({
     const allowFuture = dateRestrictions?.allowFutureMarket ?? true;
     const allowPast = dateRestrictions?.allowPreviousMarket ?? true;
 
-    if (isFutureSchedule && !allowFuture) {
+    if (isFutureSchedule && !allowFuture && !canEditMarketDuty) {
       alert("Action Blocked: Future date entries are locked by administrators for market duties.");
       return;
     }
-    if (isPastSchedule && !allowPast) {
+    if (isPastSchedule && !allowPast && !canEditMarketDuty) {
       alert("Action Blocked: Past date entries are locked by administrators for market duties.");
       return;
     }
@@ -485,7 +607,7 @@ export default function MarketLogs({
           "Authorization": `Bearer ${currentUser.id}`
         },
         body: JSON.stringify({
-          monthId: currentMonthId,
+          monthId: targetMonthId,
           memberId: scheduleMemberId,
           name: `Market duty: ${scheduleDate}`,
           task: scheduleTask
@@ -496,7 +618,7 @@ export default function MarketLogs({
         setShowScheduleModal(false);
         setScheduleMemberId("");
         setScheduleDate("");
-        fetchMarketsAndSchedules();
+        fetchMarketsAndSchedules(targetMonthId);
         onRefresh();
       } else {
         const data = await response.json().catch(() => ({}));
@@ -816,17 +938,29 @@ export default function MarketLogs({
           </div>
         </div>
       ) : (
-        /* Grid Layout: Left is Assigned Schedules, Right is Expense list */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in" id="market-dashboard-grid">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in" id="market-dashboard-grid">
         
-        {/* Market schedule Calendar */}
-        <div className={`p-5 rounded-2xl border ${
-          isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+        {/* Market schedule Calendar - Expanded width for PC & Phone readability */}
+        <div className={`xl:col-span-7 p-4 sm:p-6 rounded-2xl border transition-all ${
+          isDarkMode ? "bg-slate-900/50 border-cyan-500/10 text-white shadow-xl" : "bg-white border-slate-200 shadow-md text-slate-800"
         }`} id="market-schedule-panel">
-          <h3 className="text-sm font-bold font-display mb-4 flex items-center gap-1.5 border-b border-slate-800/40 pb-2.5">
-            <Calendar size={16} className="text-cyan-400" />
-            Market Duty Calendar
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-slate-800/40 pb-3">
+            <h3 className="text-base font-bold font-display flex items-center gap-2 text-cyan-400">
+              <Calendar size={18} />
+              Market Duty & Expense Calendar
+            </h3>
+            {/* Visual Status Legend */}
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+              <div className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 px-2 py-0.5 rounded-md">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Market Pushed (সবুজ = বাজার সম্পন্ন)</span>
+              </div>
+              <div className="flex items-center gap-1 bg-cyan-500/15 border border-cyan-500/40 text-cyan-400 px-2 py-0.5 rounded-md">
+                <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                <span>Assigned Duty</span>
+              </div>
+            </div>
+          </div>
 
           {(() => {
             const { startDate: startStr, endDate: endStr, name: cycleName } = getCycleDates();
@@ -849,23 +983,141 @@ export default function MarketLogs({
               }
             }
 
+            // Sorted list of months by startDate ascending
+            const sortedMonths = [...months].sort((a, b) => {
+              const aTime = a.startDate ? new Date(a.startDate).getTime() : 0;
+              const bTime = b.startDate ? new Date(b.startDate).getTime() : 0;
+              return aTime - bTime;
+            });
+
+            const currentViewingId = viewMonthId || currentMonthId;
+            const currentIndex = sortedMonths.findIndex(m => m.id === currentViewingId);
+            const prevIndex = currentIndex > 0 ? currentIndex - 1 : -1;
+            const nextIndex = currentIndex !== -1 && currentIndex < sortedMonths.length - 1 ? currentIndex + 1 : -1;
+            const nextMonthInfo = getNextMonthInfo();
+            const isViewingNonActiveCycle = viewMonthId && viewMonthId !== currentMonthId;
+            const activeCycleObj = months.find(m => m.id === currentMonthId);
+
             return (
-              <div className="space-y-6">
-                {/* Cycle info sub-header */}
-                <div className={`p-3 rounded-xl border text-xs space-y-1 ${
-                  isDarkMode ? "bg-slate-950/40 border-slate-900/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-600"
+              <div className="space-y-4">
+                {/* Cycle Switcher & Next Month Planning Navigation */}
+                <div className={`p-3 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 ${
+                  isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-slate-50 border-slate-200"
                 }`}>
-                  <div className="flex justify-between font-bold">
-                    <span>📆 Month Cycle:</span>
-                    <span className="text-cyan-500 dark:text-cyan-400">{cycleName}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={prevIndex === -1}
+                        onClick={() => { if (prevIndex !== -1) setViewMonthId(sortedMonths[prevIndex].id); }}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-slate-800 cursor-pointer transition-all"
+                        title="Previous Month Cycle"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      
+                      <select
+                        value={currentViewingId}
+                        onChange={(e) => setViewMonthId(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-cyan-400 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer max-w-[220px] truncate"
+                      >
+                        {sortedMonths.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} {m.id === currentMonthId ? "★ (Active)" : ""}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        disabled={nextIndex === -1}
+                        onClick={() => { if (nextIndex !== -1) setViewMonthId(sortedMonths[nextIndex].id); }}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-slate-800 cursor-pointer transition-all"
+                        title="Next Month Cycle"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                    {isViewingNonActiveCycle && (
+                      <button
+                        type="button"
+                        onClick={() => setViewMonthId(currentMonthId)}
+                        className="text-[11px] font-bold text-slate-400 hover:text-cyan-400 underline ml-1 cursor-pointer transition-all"
+                      >
+                        Go to Active ({activeCycleObj?.name || "Current"})
+                      </button>
+                    )}
                   </div>
-                  <div className="text-[10px] font-mono text-slate-500">
-                    Active: {new Date(startStr).toLocaleDateString()} to {new Date(endStr).toLocaleDateString()}
+
+                  {/* Manager / Admin Next Month Planning Action */}
+                  {canEditMarketDuty && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      {nextMonthInfo.existingMonth ? (
+                        viewMonthId !== nextMonthInfo.existingMonth.id && (
+                          <button
+                            type="button"
+                            onClick={() => setViewMonthId(nextMonthInfo.existingMonth!.id)}
+                            className="w-full md:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                          >
+                            <CalendarPlus size={14} className="text-cyan-400" />
+                            <span>Plan Next Month ({nextMonthInfo.existingMonth.name})</span>
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isCreatingNextCycle}
+                          onClick={handleCreateAndSwitchToNextMonth}
+                          className="w-full md:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md"
+                        >
+                          <Sparkles size={14} />
+                          <span>{isCreatingNextCycle ? "Setting up..." : `+ Plan Next Month (${nextMonthInfo.name})`}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Planning Mode Banner if viewing future or non-active cycle */}
+                {isViewingNonActiveCycle && (
+                  <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-cyan-200 animate-fade-in">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0"></span>
+                      <span>
+                        <strong>Duty Planning Mode:</strong> Scheduling market duties for <strong>{cycleName}</strong>. Click any day box to assign members!
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setViewMonthId(currentMonthId)}
+                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-cyan-300 text-[11px] font-bold border border-cyan-500/30 cursor-pointer shrink-0"
+                    >
+                      Back to Active Month
+                    </button>
+                  </div>
+                )}
+
+                {/* Cycle info sub-header */}
+                <div className={`p-3 rounded-xl border text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 ${
+                  isDarkMode ? "bg-slate-950/60 border-slate-800/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
+                }`}>
+                  <div className="flex items-center gap-2 font-bold">
+                    <span className="text-slate-400">📆 Viewed Cycle:</span>
+                    <span className="text-cyan-400 font-extrabold text-sm">{cycleName}</span>
+                    {viewMonthId === currentMonthId && (
+                      <span className="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                        ACTIVE CYCLE
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-400 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-800">
+                    {new Date(startStr).toLocaleDateString()} &rarr; {new Date(endStr).toLocaleDateString()}
                   </div>
                 </div>
 
                 {/* Staged Calendars */}
-                <div className="space-y-6">
+                <div className="space-y-8">
                   {calendarMonths.map(cal => {
                     const firstDayIndex = new Date(cal.year, cal.month, 1).getDay();
                     const daysInMonth = new Date(cal.year, cal.month + 1, 0).getDate();
@@ -881,123 +1133,201 @@ export default function MarketLogs({
                     }
 
                     return (
-                      <div key={`${cal.year}-${cal.month}`} className="relative pt-5">
-                        {/* Hanging rings effect matching the reference picture */}
+                      <div key={`${cal.year}-${cal.month}`} className="relative pt-4">
+                        {/* Hanging rings visual accent */}
                         <div className="absolute top-0 left-1/4 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
-                          <div className={`w-3.5 h-7 rounded-full shadow-md border ${
+                          <div className={`w-3.5 h-6 rounded-full shadow-md border ${
                             isDarkMode ? "bg-gradient-to-b from-slate-700 to-slate-900 border-slate-950" : "bg-gradient-to-b from-slate-300 to-slate-500 border-slate-400"
                           }`}></div>
-                          <div className="w-2 h-2 bg-slate-950 rounded-full border border-slate-850 -mt-2.5 shadow-inner"></div>
+                          <div className="w-2 h-2 bg-slate-950 rounded-full border border-slate-850 -mt-2 shadow-inner"></div>
                         </div>
                         <div className="absolute top-0 left-3/4 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
-                          <div className={`w-3.5 h-7 rounded-full shadow-md border ${
+                          <div className={`w-3.5 h-6 rounded-full shadow-md border ${
                             isDarkMode ? "bg-gradient-to-b from-slate-700 to-slate-900 border-slate-950" : "bg-gradient-to-b from-slate-300 to-slate-500 border-slate-400"
                           }`}></div>
-                          <div className="w-2 h-2 bg-slate-950 rounded-full border border-slate-850 -mt-2.5 shadow-inner"></div>
+                          <div className="w-2 h-2 bg-slate-950 rounded-full border border-slate-850 -mt-2 shadow-inner"></div>
                         </div>
 
-                        <div className={`rounded-2xl border overflow-hidden shadow-md ${
-                          isDarkMode ? "bg-slate-950 border-slate-850" : "bg-white border-slate-200"
+                        {/* Calendar Container with responsive horizontal scroll protection */}
+                        <div className={`rounded-2xl border overflow-hidden shadow-lg ${
+                          isDarkMode ? "bg-slate-950 border-slate-800" : "bg-white border-slate-200"
                         }`}>
-                          {/* Bold Red top block for the month/year */}
-                          <div className="bg-red-650 dark:bg-rose-700 py-3 px-4 text-center relative border-b border-rose-700/30">
-                            <h4 className="font-extrabold tracking-widest text-white text-sm font-display uppercase">
+                          {/* Crimson Red Top Header */}
+                          <div className="bg-red-650 dark:bg-rose-700 py-3.5 px-4 text-center relative border-b border-rose-700/30">
+                            <h4 className="font-extrabold tracking-widest text-white text-sm sm:text-base font-display uppercase">
                               {cal.name} {cal.year}
                             </h4>
                           </div>
 
-                          {/* Weekday headers */}
-                          <div className={`grid grid-cols-7 text-center text-[10px] font-black py-1.5 border-b uppercase tracking-wider ${
-                            isDarkMode ? "bg-slate-900/60 border-slate-850 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
-                          }`}>
-                            <div className="text-red-500">SUN</div>
-                            <div>MON</div>
-                            <div>TUE</div>
-                            <div>WED</div>
-                            <div>THU</div>
-                            <div>FRI</div>
-                            <div className="text-red-500">SAT</div>
-                          </div>
+                          {/* Scroll wrapper ensuring full name readability on mobile devices */}
+                          <div className="overflow-x-auto">
+                            <div className="min-w-[340px] sm:min-w-full">
+                              {/* Weekday headers */}
+                              <div className={`grid grid-cols-7 text-center text-[10px] sm:text-xs font-black py-2 border-b uppercase tracking-wider ${
+                                isDarkMode ? "bg-slate-900/80 border-slate-800 text-slate-300" : "bg-slate-100 border-slate-200 text-slate-600"
+                              }`}>
+                                <div className="text-rose-500 font-extrabold">SUN</div>
+                                <div>MON</div>
+                                <div>TUE</div>
+                                <div>WED</div>
+                                <div>THU</div>
+                                <div>FRI</div>
+                                <div className="text-rose-500 font-extrabold">SAT</div>
+                              </div>
 
-                          {/* Days Grid */}
-                          <div className={`grid grid-cols-7 gap-[1px] p-[1px] ${
-                            isDarkMode ? "bg-slate-850" : "bg-slate-200"
-                          }`}>
-                            {cells.map(cell => {
-                              if (cell.isBlank) {
-                                  return (
-                                    <div 
-                                      key={cell.key} 
-                                      className={`aspect-square ${isDarkMode ? "bg-slate-950/25" : "bg-slate-50/50"}`} 
-                                    />
+                              {/* Days Grid */}
+                              <div className={`grid grid-cols-7 gap-[1.5px] p-[1.5px] ${
+                                isDarkMode ? "bg-slate-850" : "bg-slate-200"
+                              }`}>
+                                {cells.map(cell => {
+                                  if (cell.isBlank) {
+                                      return (
+                                        <div 
+                                          key={cell.key} 
+                                          className={`min-h-[58px] sm:min-h-[70px] md:min-h-[78px] ${isDarkMode ? "bg-slate-950/30" : "bg-slate-50/50"}`} 
+                                        />
+                                      );
+                                  }
+
+                                  const dayDuties = duties.filter(d => {
+                                    const isMarket = d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar");
+                                    return isMarket && d.name.includes(cell.dateStr);
+                                  });
+
+                                  // Market entries logged/pushed for this specific day or covered by this day
+                                  const dayMarkets = markets.filter(m => 
+                                    m.date === cell.dateStr || 
+                                    (m.coveredDates && Array.isArray(m.coveredDates) && m.coveredDates.includes(cell.dateStr))
                                   );
-                              }
+                                  const hasMarketPushed = dayMarkets.length > 0;
+                                  const totalDaySpent = dayMarkets.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
-                              const dayDuties = duties.filter(d => {
-                                const isMarket = d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar");
-                                return isMarket && d.name.includes(cell.dateStr);
-                              });
+                                  const isToday = new Date().toISOString().split("T")[0] === cell.dateStr;
+                                  const isWeekend = new Date(cell.dateStr).getDay() === 0 || new Date(cell.dateStr).getDay() === 6;
 
-                              const isToday = new Date().toISOString().split("T")[0] === cell.dateStr;
+                                  // Background and border styling
+                                  let cellBgClass = "";
+                                  if (!cell.inCycle) {
+                                    cellBgClass = isDarkMode ? "bg-slate-950/40 text-slate-600 opacity-25 select-none" : "bg-slate-100 text-slate-400 opacity-30 select-none";
+                                  } else if (hasMarketPushed) {
+                                    // GREEN BOX WHEN MARKET IS PUSHED
+                                    cellBgClass = isDarkMode 
+                                      ? "bg-emerald-950/60 hover:bg-emerald-900/60 border-2 border-emerald-500/80 text-white shadow-sm shadow-emerald-950/40 cursor-pointer" 
+                                      : "bg-emerald-50 hover:bg-emerald-100/90 border-2 border-emerald-500 text-emerald-950 shadow-sm cursor-pointer";
+                                  } else {
+                                    // Standard active cell
+                                    cellBgClass = isDarkMode 
+                                      ? "bg-slate-900 hover:bg-slate-800 text-white border border-slate-800/80 cursor-pointer" 
+                                      : "bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 cursor-pointer";
+                                  }
 
-                              return (
-                                <div
-                                  key={cell.key}
-                                  onClick={() => {
-                                    if (cell.inCycle) {
-                                      handleDayCellClick(cell.dateStr);
-                                    }
-                                  }}
-                                  className={`min-h-[48px] sm:min-h-[52px] flex flex-col justify-between p-1 relative transition-all group ${
-                                    cell.inCycle 
-                                      ? `cursor-pointer ${
-                                          isDarkMode 
-                                            ? "bg-slate-900 hover:bg-slate-800 text-white" 
-                                            : "bg-white hover:bg-slate-100 text-slate-800"
-                                        }`
-                                      : `opacity-30 select-none ${
-                                          isDarkMode ? "bg-slate-950 text-slate-600" : "bg-slate-100 text-slate-400"
-                                        }`
-                                  } ${isToday ? "ring-2 ring-cyan-500 ring-inset" : ""}`}
-                                >
-                                  <span className={`text-[11px] font-bold ${
-                                    cell.inCycle 
-                                      ? isToday 
-                                        ? "text-cyan-400 font-extrabold" 
-                                        : (new Date(cell.dateStr).getDay() === 0 || new Date(cell.dateStr).getDay() === 6)
-                                          ? "text-red-500 dark:text-red-400"
-                                          : "text-slate-500 dark:text-slate-400"
-                                      : "text-slate-600 dark:text-slate-700"
-                                  }`}>
-                                    {cell.dayNum}
-                                  </span>
+                                  return (
+                                    <div
+                                      key={cell.key}
+                                      onClick={() => {
+                                        if (cell.inCycle) {
+                                          handleDayCellClick(cell.dateStr);
+                                        }
+                                      }}
+                                      className={`min-h-[58px] sm:min-h-[70px] md:min-h-[78px] flex flex-col justify-between p-1.5 relative transition-all group rounded-sm ${cellBgClass} ${
+                                        isToday ? "ring-2 ring-cyan-400 ring-inset" : ""
+                                      }`}
+                                      title={
+                                        hasMarketPushed 
+                                          ? `Date: ${cell.dateStr} | Market Pushed: ৳${totalDaySpent.toFixed(2)}`
+                                          : `Date: ${cell.dateStr}`
+                                      }
+                                    >
+                                      {/* Date Header: Day Number */}
+                                      <div className="flex items-center justify-between w-full">
+                                        <span className={`text-[11px] sm:text-xs font-black ${
+                                          cell.inCycle 
+                                            ? hasMarketPushed
+                                              ? "text-emerald-400 dark:text-emerald-300 font-black"
+                                              : isToday 
+                                                ? "text-cyan-400 font-black" 
+                                                : isWeekend
+                                                  ? "text-rose-500 dark:text-rose-400 font-bold"
+                                                  : "text-slate-400 dark:text-slate-300 font-bold"
+                                            : "text-slate-600 dark:text-slate-700"
+                                        }`}>
+                                          {cell.dayNum}
+                                        </span>
 
-                                  {/* Assigned badges */}
-                                  {cell.inCycle && (
-                                    <div className="space-y-0.5 mt-auto w-full overflow-hidden">
-                                      {dayDuties.map(d => {
-                                        const assignedMember = members.find(m => m.id === d.memberId);
-                                        const nickName = assignedMember?.nickname?.trim() || assignedMember?.name?.trim()?.split(" ")[0] || "Unknown";
-                                        return (
-                                          <div 
-                                            key={d.id}
-                                            className="text-[9px] sm:text-[10px] leading-tight px-1 py-0.5 rounded bg-cyan-500/20 dark:bg-cyan-500/30 text-cyan-700 dark:text-cyan-300 font-black border border-cyan-500/30 truncate text-center tracking-tight shadow-sm"
-                                            title={`${assignedMember?.name || nickName}: ${d.task || "Market Duty"}`}
-                                          >
-                                            {nickName}
-                                          </div>
-                                        );
-                                      })}
-                                      {canEditMarketDuty && dayDuties.length === 0 && (
-                                        <div className="opacity-0 group-hover:opacity-100 transition-all text-[8px] sm:text-[9px] text-cyan-500 font-extrabold text-center py-0.5 border border-dashed border-cyan-500/20 rounded">
-                                          + ASSIGN
+                                        {/* Subtle green dot indicator for market completion */}
+                                        {cell.inCycle && hasMarketPushed && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title={`Market done for this day (৳${totalDaySpent.toFixed(2)})`} />
+                                        )}
+                                      </div>
+
+                                      {/* Assigned & Pushed Member Badges - Expanded for Full Visibility */}
+                                      {cell.inCycle && (
+                                        <div className="space-y-1 mt-1 w-full">
+                                          {/* If market was pushed, show buyer or duty holder with Green badge */}
+                                          {hasMarketPushed ? (
+                                            <>
+                                              {/* Show buyers who logged the market */}
+                                              {dayMarkets.map(m => {
+                                                const buyerMember = members.find(mem => mem.id === m.memberId);
+                                                const buyerName = buyerMember?.nickname?.trim() || buyerMember?.name?.trim()?.split(" ")[0] || "Buyer";
+                                                return (
+                                                  <div
+                                                    key={m.id}
+                                                    className="text-[9.5px] sm:text-[10.5px] md:text-xs font-black leading-tight px-1.5 py-0.5 rounded-md bg-emerald-500/30 dark:bg-emerald-500/40 text-emerald-950 dark:text-emerald-100 border border-emerald-500/60 shadow-sm text-center break-words"
+                                                    title={`Market done by: ${buyerMember?.name || buyerName} (৳${m.amount})`}
+                                                  >
+                                                    {buyerName}
+                                                  </div>
+                                                );
+                                              })}
+                                              {/* If duties assigned on this day, indicate duty fulfilled */}
+                                              {dayDuties.length > 0 && dayDuties.map(d => {
+                                                const assignedMember = members.find(mem => mem.id === d.memberId);
+                                                const nickName = assignedMember?.nickname?.trim() || assignedMember?.name?.trim()?.split(" ")[0] || "Duty";
+                                                // Avoid duplicate display if buyer is already shown
+                                                const alreadyShown = dayMarkets.some(m => m.memberId === d.memberId);
+                                                if (alreadyShown) return null;
+                                                return (
+                                                  <div
+                                                    key={d.id}
+                                                    className="text-[9px] sm:text-[10px] font-bold leading-tight px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-center break-words"
+                                                    title={`Assigned Duty: ${assignedMember?.name || nickName}`}
+                                                  >
+                                                    {nickName}
+                                                  </div>
+                                                );
+                                              })}
+                                            </>
+                                          ) : (
+                                            /* Normal scheduled duty badge when market is not yet pushed */
+                                            <>
+                                              {dayDuties.map(d => {
+                                                const assignedMember = members.find(mem => mem.id === d.memberId);
+                                                const nickName = assignedMember?.nickname?.trim() || assignedMember?.name?.trim()?.split(" ")[0] || "Unknown";
+                                                return (
+                                                  <div 
+                                                    key={d.id}
+                                                    className="text-[9.5px] sm:text-[10.5px] md:text-xs leading-tight px-1.5 py-0.5 rounded-md bg-cyan-500/20 dark:bg-cyan-500/30 text-cyan-800 dark:text-cyan-200 font-extrabold border border-cyan-500/30 shadow-sm text-center break-words tracking-tight"
+                                                    title={`${assignedMember?.name || nickName}: ${d.task || "Market Duty"}`}
+                                                  >
+                                                    {nickName}
+                                                  </div>
+                                                );
+                                              })}
+                                              {canEditMarketDuty && dayDuties.length === 0 && (
+                                                <div className="opacity-0 group-hover:opacity-100 transition-all text-[8.5px] sm:text-[9.5px] text-cyan-400 font-black text-center py-0.5 border border-dashed border-cyan-500/30 rounded bg-cyan-500/5">
+                                                  + ASSIGN
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
                                         </div>
                                       )}
                                     </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1006,8 +1336,9 @@ export default function MarketLogs({
                 </div>
 
                 {/* Guide text */}
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 text-center italic leading-relaxed">
-                  💡 Click on any active date to assign, view, or remove market duties.
+                <div className="text-[11px] text-slate-400 dark:text-slate-400 text-center italic leading-relaxed flex items-center justify-center gap-1.5">
+                  <span>💡</span>
+                  <span>Click on any active date box to manage duty assignments or view market expenses.</span>
                 </div>
               </div>
             );
@@ -1015,8 +1346,8 @@ export default function MarketLogs({
         </div>
 
         {/* Expense logs list */}
-        <div className={`lg:col-span-2 p-5 rounded-2xl border ${
-          isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
+        <div className={`xl:col-span-5 p-4 sm:p-6 rounded-2xl border transition-all ${
+          isDarkMode ? "bg-slate-900/50 border-cyan-500/10 text-white shadow-xl" : "bg-white border-slate-200 shadow-md text-slate-800"
         }`} id="market-expenses-panel">
           <h3 className="text-sm font-bold font-display mb-4 flex items-center gap-1.5">
             <ShoppingCart size={16} className="text-cyan-400" />
@@ -1514,6 +1845,13 @@ export default function MarketLogs({
             </div>
 
             <form onSubmit={handleAddSchedule} className="space-y-4">
+              {/* Planning cycle indicator */}
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-medium">Planning Cycle:</span>
+                <span className="font-extrabold text-cyan-400 font-mono">
+                  {(months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId))?.name || "Active Cycle"}
+                </span>
+              </div>
               
               {scheduleDate && (
                 <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">

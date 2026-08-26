@@ -310,11 +310,18 @@ router.post("/auth/google-native", (req: Request, res: Response): void => {
       const newMember: Member = {
         id: generateUUID(),
         name: name || "Founder Admin",
+        nickname: (name || "Admin").split(" ")[0],
         email: normalizedEmail,
+        phone: "",
+        whatsapp: "",
+        bloodGroup: "",
+        occupation: "",
+        joiningDate: new Date().toISOString().split("T")[0],
+        leavingDate: null,
         role: UserRole.ADMIN,
         status: MemberStatus.ACTIVE,
-        photo: photo || undefined,
-        joinedAt: new Date().toISOString().split("T")[0]
+        notes: "Native Android Google Login",
+        photo: photo || null,
       };
       db.members.push(newMember);
       saveDB();
@@ -1343,8 +1350,8 @@ router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response)
   res.json({ months: db.months });
 });
 
-// Create new month (Admin and Super User only)
-router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+// Create new month (Admin, Super User, and Manager)
+router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
     return;
