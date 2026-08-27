@@ -317,7 +317,21 @@ export default function MarketLogs({
       
       if (mRes.ok) {
         const mData = await mRes.json().catch(() => ({}));
-        setMarkets(mData.markets || []);
+        const rawMarkets: MarketEntry[] = mData.markets || [];
+        const sortedMarkets = [...rawMarkets].sort((a, b) => {
+          const getEffectiveDate = (entry: MarketEntry) => {
+            if (entry.coveredDates && Array.isArray(entry.coveredDates) && entry.coveredDates.length > 0) {
+              return [...entry.coveredDates].sort().reverse()[0];
+            }
+            return entry.date || "";
+          };
+          const dateA = getEffectiveDate(a);
+          const dateB = getEffectiveDate(b);
+          const dateCmp = dateB.localeCompare(dateA);
+          if (dateCmp !== 0) return dateCmp;
+          return (b.id || "").localeCompare(a.id || "");
+        });
+        setMarkets(sortedMarkets);
       }
       if (dRes.ok) {
         const dData = await dRes.json().catch(() => ({}));
@@ -1372,7 +1386,19 @@ export default function MarketLogs({
                     <td colSpan={6} className="py-6 text-center text-slate-500">No market expenses logged yet.</td>
                   </tr>
                 ) : (
-                  markets.map((m) => {
+                  [...markets].sort((a, b) => {
+                    const getEffectiveDate = (entry: MarketEntry) => {
+                      if (entry.coveredDates && Array.isArray(entry.coveredDates) && entry.coveredDates.length > 0) {
+                        return [...entry.coveredDates].sort().reverse()[0];
+                      }
+                      return entry.date || "";
+                    };
+                    const dateA = getEffectiveDate(a);
+                    const dateB = getEffectiveDate(b);
+                    const dateCmp = dateB.localeCompare(dateA);
+                    if (dateCmp !== 0) return dateCmp;
+                    return (b.id || "").localeCompare(a.id || "");
+                  }).map((m) => {
                     const buyer = members.find(u => u.id === m.memberId);
                     return (
                       <tr key={m.id} className="hover:bg-cyan-500/5">

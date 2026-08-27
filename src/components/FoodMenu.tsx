@@ -61,10 +61,12 @@ export default function FoodMenu({
       });
       if (response.ok) {
         const data = await response.json();
-        setAllMenus(data.menu || []);
+        const rawMenus = (data.menu || []) as MenuType[];
+        const sortedMenus = [...rawMenus].sort((a, b) => b.date.localeCompare(a.date));
+        setAllMenus(sortedMenus);
         
         // Find for current date
-        const todayMenu = (data.menu || []).find((m: MenuType) => m.date === selectedDate);
+        const todayMenu = sortedMenus.find((m: MenuType) => m.date === selectedDate);
         if (todayMenu) {
           setLunchVegetable(todayMenu.lunchVegetable);
           setLunchMain(todayMenu.lunchMain);
@@ -486,51 +488,132 @@ export default function FoodMenu({
               Menu Planning History
             </h3>
             
-            <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-2" id="menu-history-list">
+            <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-2" id="menu-history-list">
               {allMenus.length === 0 ? (
                 <p className="text-xs text-slate-500 italic text-center py-4">No previous menus recorded.</p>
               ) : (
-                allMenus.map((menuItem) => (
-                  <div 
-                    key={menuItem.id} 
-                    className={`flex flex-col gap-1 text-xs p-3 rounded-lg border ${
-                      isDarkMode 
-                        ? "bg-slate-950/20 border-slate-900" 
-                        : "bg-slate-50 border-slate-200"
-                    }`}
-                  >
-                    <div className={`font-mono font-bold border-b pb-1 flex justify-between items-center ${
-                      isDarkMode ? "text-cyan-300 border-slate-900" : "text-cyan-600 border-slate-200"
-                    }`}>
-                      <span>{menuItem.date}</span>
-                      <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-400 font-sans tracking-widest">PUBLISHED</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      <div>
-                        <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Lunch (দুপুর)</p>
-                        <p className={`font-semibold leading-tight ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
-                          {menuItem.lunchMain || "N/A"}
-                        </p>
-                        {menuItem.lunchVegetable && (
-                          <p className={`text-[10px] font-mono italic mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
-                            + {menuItem.lunchVegetable}
-                          </p>
-                        )}
+                allMenus.map((menuItem) => {
+                  const todayStr = new Date().toISOString().split("T")[0];
+                  const isToday = menuItem.date === todayStr;
+                  const isSelected = menuItem.date === selectedDate;
+
+                  return (
+                    <div 
+                      key={menuItem.id} 
+                      onClick={() => {
+                        setSelectedDate(menuItem.date);
+                      }}
+                      className={`flex flex-col gap-1.5 text-xs p-3.5 rounded-xl border transition-all duration-200 cursor-pointer ${
+                        isToday
+                          ? isDarkMode
+                            ? "bg-gradient-to-br from-cyan-950/70 via-slate-900/90 to-emerald-950/50 border-cyan-400/70 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-400/40 hover:border-cyan-300 hover:scale-[1.01]"
+                            : "bg-gradient-to-br from-cyan-50 via-white to-emerald-50 border-cyan-500 shadow-md shadow-cyan-500/15 ring-1 ring-cyan-400/50 hover:border-cyan-600 hover:scale-[1.01]"
+                          : isSelected
+                            ? isDarkMode
+                              ? "bg-slate-900/90 border-cyan-500/50 ring-1 ring-cyan-500/20"
+                              : "bg-cyan-50/50 border-cyan-400 shadow-sm"
+                            : isDarkMode 
+                              ? "bg-slate-950/30 border-slate-900 hover:bg-slate-900/50 hover:border-slate-800" 
+                              : "bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className={`font-mono font-bold border-b pb-1.5 flex justify-between items-center ${
+                        isToday
+                          ? isDarkMode ? "text-cyan-300 border-cyan-500/30" : "text-cyan-700 border-cyan-200"
+                          : isDarkMode ? "text-slate-300 border-slate-850" : "text-slate-700 border-slate-200"
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`${isToday ? "font-extrabold text-cyan-400 text-[13px]" : "text-xs"}`}>
+                            {menuItem.date}
+                          </span>
+                          
+                          {/* Highlight badge for Today */}
+                          {isToday && (
+                            <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 font-black text-[9px] uppercase tracking-wider flex items-center gap-1 shadow-sm animate-pulse">
+                              <Sparkles size={10} className="text-slate-950" />
+                              TODAY (আজকে)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {isToday && (
+                            <span className="text-[9px] text-cyan-400 font-sans font-semibold hidden sm:inline">
+                              Active Day
+                            </span>
+                          )}
+                          <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-sans tracking-wider ${
+                            isToday 
+                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-black"
+                              : "bg-orange-500/10 text-orange-400"
+                          }`}>
+                            PUBLISHED
+                          </span>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Dinner (রাত)</p>
-                        <p className={`font-semibold leading-tight ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
-                          {menuItem.dinnerMain || "N/A"}
-                        </p>
-                        {menuItem.dinnerVegetable && (
-                          <p className={`text-[10px] font-mono italic mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
-                            + {menuItem.dinnerVegetable}
+
+                      <div className="grid grid-cols-2 gap-3 mt-1">
+                        {/* Lunch Column */}
+                        <div className={`p-2 rounded-lg ${
+                          isToday 
+                            ? isDarkMode ? "bg-cyan-950/40 border border-cyan-500/20" : "bg-cyan-50/70 border border-cyan-200/60"
+                            : ""
+                        }`}>
+                          <p className={`text-[9px] uppercase tracking-wider font-extrabold ${
+                            isToday ? "text-amber-400 dark:text-amber-300" : "text-slate-500"
+                          }`}>
+                            Lunch (দুপুর)
                           </p>
-                        )}
+                          <p className={`font-bold leading-tight mt-0.5 ${
+                            isToday 
+                              ? isDarkMode ? "text-cyan-100 text-[13px]" : "text-cyan-950 text-[13px]"
+                              : isDarkMode ? "text-slate-200" : "text-slate-800"
+                          }`}>
+                            {menuItem.lunchMain || "N/A"}
+                          </p>
+                          {menuItem.lunchVegetable && (
+                            <p className={`text-[10.5px] font-medium mt-0.5 ${
+                              isToday 
+                                ? isDarkMode ? "text-cyan-300/90 font-mono" : "text-cyan-800 font-mono"
+                                : isDarkMode ? "text-slate-400 font-mono italic" : "text-slate-500 font-mono italic"
+                            }`}>
+                              + {menuItem.lunchVegetable}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Dinner Column */}
+                        <div className={`p-2 rounded-lg ${
+                          isToday 
+                            ? isDarkMode ? "bg-emerald-950/40 border border-emerald-500/20" : "bg-emerald-50/70 border border-emerald-200/60"
+                            : ""
+                        }`}>
+                          <p className={`text-[9px] uppercase tracking-wider font-extrabold ${
+                            isToday ? "text-emerald-400 dark:text-emerald-300" : "text-slate-500"
+                          }`}>
+                            Dinner (রাত)
+                          </p>
+                          <p className={`font-bold leading-tight mt-0.5 ${
+                            isToday 
+                              ? isDarkMode ? "text-emerald-100 text-[13px]" : "text-emerald-950 text-[13px]"
+                              : isDarkMode ? "text-slate-200" : "text-slate-800"
+                          }`}>
+                            {menuItem.dinnerMain || "N/A"}
+                          </p>
+                          {menuItem.dinnerVegetable && (
+                            <p className={`text-[10.5px] font-medium mt-0.5 ${
+                              isToday 
+                                ? isDarkMode ? "text-emerald-300/90 font-mono" : "text-emerald-800 font-mono"
+                                : isDarkMode ? "text-slate-400 font-mono italic" : "text-slate-500 font-mono italic"
+                            }`}>
+                              + {menuItem.dinnerVegetable}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

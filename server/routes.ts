@@ -2051,7 +2051,7 @@ router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MAN
 router.get("/foodmenu/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
-  const menu = db.foodMenus.filter(m => m.monthId === monthId);
+  const menu = db.foodMenus.filter(m => m.monthId === monthId).sort((a, b) => b.date.localeCompare(a.date));
   res.json({ menu });
 });
 
@@ -2485,7 +2485,21 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
 router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
-  const markets = db.marketEntries.filter(m => m.monthId === monthId);
+  const markets = db.marketEntries
+    .filter(m => m.monthId === monthId)
+    .sort((a, b) => {
+      const getEntryDate = (entry: any) => {
+        if (entry.coveredDates && Array.isArray(entry.coveredDates) && entry.coveredDates.length > 0) {
+          return [...entry.coveredDates].sort().reverse()[0];
+        }
+        return entry.date || "";
+      };
+      const dateA = getEntryDate(a);
+      const dateB = getEntryDate(b);
+      const dateComparison = dateB.localeCompare(dateA);
+      if (dateComparison !== 0) return dateComparison;
+      return (b.id || "").localeCompare(a.id || "");
+    });
   res.json({ markets });
 });
 
