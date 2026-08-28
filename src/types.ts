@@ -256,4 +256,31 @@ export interface CycleProposal {
   status: "PENDING" | "APPROVED" | "REJECTED" | "APPLIED";
 }
 
+export type RuleType = "MESS" | "PERSONAL";
+export type RuleSeverity = "CRITICAL" | "STRICT" | "STANDARD" | "RECOMMENDATION";
+
+export interface MessRule {
+  id: string;
+  messId?: string;
+  type: RuleType; // "MESS" = Mess Rules, "PERSONAL" = Personal Rules & Regulations
+  title: string;
+  titleBn?: string;
+  description: string;
+  descriptionBn?: string;
+  category: string;
+  severity: RuleSeverity;
+  penalty?: string;
+  pinned?: boolean;
+  isActive: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  agreedMembers?: string[]; // Array of member IDs who acknowledged/agreed
+}
+
 

@@ -793,7 +793,8 @@ export default function FinanceSettlement({
     UserRole.ADMIN,
     UserRole.SUPERUSER,
     UserRole.ASSISTANT_SUPERUSER,
-    UserRole.MANAGER
+    UserRole.MANAGER,
+    UserRole.PARTIAL_MANAGER
   ].includes(currentUser.role);
 
   const getDatesList = () => {

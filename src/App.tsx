@@ -9,7 +9,7 @@ import { onAuthStateChanged, onIdTokenChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
-  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award, Save, Lock
+  FileSpreadsheet, Bell, Shield, Settings, Sun, Moon, LogOut, Menu, X, Calendar, Download, RefreshCw, Trash2, Plus, Upload, Vote, Award, Save, Lock, BookOpen
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 
@@ -24,6 +24,7 @@ import Deposits from "./components/Deposits.tsx";
 import FinanceSettlement from "./components/FinanceSettlement.tsx";
 import AuditLogs from "./components/AuditLogs.tsx";
 import Notices from "./components/Notices.tsx";
+import Rules from "./components/Rules.tsx";
 import Democracy from "./components/Democracy.tsx";
 import { AdminControlsPanel } from "./components/AdminControlsPanel.tsx";
 import RgbColorPicker from "./components/RgbColorPicker.tsx";
@@ -3263,6 +3264,7 @@ export default function App() {
         "Settlement Sheet": "ফাইনাল হিসাব",
         "Democracy Ballot": "গণতান্ত্রিক ব্যালট",
         "Notices": "নোটিশ বোর্ড",
+        "Rules": "মেস নিয়মাবলী",
         "Audit Log": "অডিট লগ",
         "Security Settings": "সিকিউরিটি সেটিংস",
         "Personal Preferences": "ব্যক্তিগত সেটিংস",
@@ -3453,6 +3455,7 @@ export default function App() {
     { id: "finance", label: t("Settlement Sheet"), icon: <FileSpreadsheet size={16} /> },
     { id: "democracy", label: t("Democracy Ballot"), icon: <Vote size={16} /> },
     { id: "notices", label: t("Notices"), icon: <Bell size={16} /> },
+    { id: "rules", label: t("Rules"), icon: <BookOpen size={16} /> },
     { id: "audit", label: t("Audit Log"), icon: <Shield size={16} /> },
     { id: "security", label: t("Security Settings"), icon: <Lock size={16} /> },
     { 
@@ -3498,6 +3501,7 @@ export default function App() {
       const canViewMealsIntake = currentUser && (
         currentUser.role === UserRole.ADMIN ||
         currentUser.role === UserRole.MANAGER ||
+        currentUser.role === UserRole.PARTIAL_MANAGER ||
         currentUser.role === UserRole.SUPERUSER ||
         currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
         isPlatformOwner
@@ -5142,6 +5146,15 @@ export default function App() {
             <Notices 
               currentUser={currentUser}
               isDarkMode={activeIsDarkMode}
+            />
+          )}
+
+          {activeTab === "rules" && (
+            <Rules 
+              currentUser={currentUser}
+              isDarkMode={activeIsDarkMode}
+              members={membersList}
+              isPlatformOwner={isPlatformOwner}
             />
           )}
 

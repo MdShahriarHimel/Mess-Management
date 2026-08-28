@@ -315,7 +315,7 @@ export default function Dashboard({
     }
   };
 
-  const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER;
+  const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.PARTIAL_MANAGER || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER;
   const activeNotices = notices.filter(n => {
     if (n.archived) return false;
     if (n.isDirectToManager) {
@@ -1732,6 +1732,7 @@ export default function Dashboard({
             const canViewMealsIntake = currentUser && [
               UserRole.ADMIN,
               UserRole.MANAGER,
+              UserRole.PARTIAL_MANAGER,
               UserRole.SUPERUSER,
               UserRole.ASSISTANT_SUPERUSER
             ].includes(currentUser.role as UserRole);
@@ -1802,6 +1803,7 @@ export default function Dashboard({
               const canViewMealsIntake = currentUser && [
                 UserRole.ADMIN,
                 UserRole.MANAGER,
+                UserRole.PARTIAL_MANAGER,
                 UserRole.SUPERUSER,
                 UserRole.ASSISTANT_SUPERUSER
               ].includes(currentUser.role as UserRole);

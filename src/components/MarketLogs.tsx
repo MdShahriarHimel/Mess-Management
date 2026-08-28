@@ -694,8 +694,8 @@ export default function MarketLogs({
 
   const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
   const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isManager = currentUser.role === UserRole.MANAGER;
-  const canEditMarketDuty = isUltimateAdmin || isManager;
+  const isManager = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.PARTIAL_MANAGER;
+  const canEditMarketDuty = isUltimateAdmin || isManager || [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.ADMIN].includes(currentUser.role);
 
   const handleDeleteManagerialExpense = async (id: string) => {
     if (!confirm("Are you sure you want to permanently delete this manager expense entry?")) return;

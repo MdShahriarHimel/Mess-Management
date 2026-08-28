@@ -18,6 +18,7 @@ import { loadDB, saveDB, syncState,
   deletePersistentFile,
   importBackupToPostgres,
   refreshDbCache,
+  getDefaultMessRules,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
@@ -57,7 +58,8 @@ import {
   ManagerRating, 
   Notice, 
   AuditLog,
-  CycleProposal
+  CycleProposal,
+  MessRule
 } from "../src/types.js";
 
 const router = Router();
@@ -1350,8 +1352,8 @@ router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response)
   res.json({ months: db.months });
 });
 
-// Create new month (Admin, Super User, and Manager)
-router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+// Create new month (Admin, Super User, Manager, and Partial Manager)
+router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
     return;
@@ -1380,7 +1382,7 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
 });
 
 // Update Month config (lock, unlock, dates)
-router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const updates: Partial<MessMonth> = req.body;
   const db = loadDB();
@@ -1401,7 +1403,7 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
   if (original.isLocked) {
     // Is user attempting to UNLOCK?
     if (updates.isLocked === false) {
-      const isAdminOrManager = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.MANAGER;
+      const isAdminOrManager = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
       const canUnlock = isUltimateAdmin || isAdminOrManager || (isSuperUser && allowSuperUserUnlock);
       if (!canUnlock) {
         res.status(403).json({ error: "🔒 Access denied. Only authorized users can unlock this cycle." });
@@ -1479,7 +1481,7 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
   }
 
   // 3. Normal updates to unlocked month (or Ultimate Admin editing locked month)
-  if (req.user!.role === UserRole.MANAGER) {
+  if (req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER) {
     delete updates.isLocked;
   }
 
@@ -1880,8 +1882,8 @@ router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, 
   res.json({ meals });
 });
 
-// Bulk Enter/Edit meals for a month (Only Manager, Admin, Super User, Assistant Super User)
-router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// Bulk Enter/Edit meals for a month (Only Manager, Partial Manager, Admin, Super User, Assistant Super User)
+router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, meals } = req.body; // meals: Array of meals to save/upsert
 
   if (!monthId || !Array.isArray(meals)) {
@@ -1916,10 +1918,11 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
     return;
   }
 
-  // Direct edit is strictly reserved for Ultimate Admin and Manager
+  // Direct edit is strictly reserved for Ultimate Admin, Manager, and Partial Manager
   const isDirectEdit = ([
     UserRole.ADMIN,
-    UserRole.MANAGER
+    UserRole.MANAGER,
+    UserRole.PARTIAL_MANAGER
   ].includes(req.user!.role) || (req.user!.email && req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com")) && hasManageMealsPermission;
 
   if (!isDirectEdit) {
@@ -1974,8 +1977,8 @@ router.get("/meal-requests/:monthId", authMiddleware, (req: AuthenticatedRequest
   res.json({ requests: reqs });
 });
 
-// Approve a meal request (Manager & Admins)
-router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER, UserRole.SUPERUSER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// Approve a meal request (Manager, Partial Manager & Admins)
+router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.SUPERUSER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const dbConfig = loadDB();
   if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
@@ -2022,8 +2025,8 @@ router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MA
   res.json({ success: true, message: "Meal request approved and changes successfully applied!" });
 });
 
-// Reject a meal request (Manager only)
-router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+// Reject a meal request (Manager & Admins)
+router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();
   if (!db.mealRequests) db.mealRequests = [];
@@ -2564,8 +2567,8 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   // Determine role permissions
-  const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER;
-  const isManager = req.user!.role === UserRole.MANAGER;
+  const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
+  const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
 
   // Normal members or restricted Admins acting as members must be strictly checked
   const actsAsMember = (req.user!.role === UserRole.MEMBER) || (req.user!.role === UserRole.ADMIN && !hasMarketPermission);
@@ -2645,7 +2648,7 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
 });
 
 // Delete Market Entry
-router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.MEMBER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.MEMBER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();
   const index = db.marketEntries.findIndex(e => e.id === id);
@@ -2694,7 +2697,7 @@ router.get("/deposits/:monthId", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ deposits });
 });
 
-router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { monthId, memberId, amount, date } = req.body;
   if (!monthId || !memberId || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, and Amount are required" });
@@ -2736,7 +2739,7 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
 });
 
 // Delete Deposit
-router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();
   const index = db.deposits.findIndex(d => d.id === id);
@@ -2781,7 +2784,7 @@ router.get("/bills/:monthId", authMiddleware, (req: AuthenticatedRequest, res: R
   res.json({ bills });
 });
 
-router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canEditBills")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
     return;
@@ -2866,7 +2869,7 @@ router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
 });
 
 // Delete Bill
-router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   if (!checkAdminPermission(req, "canEditBills")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
     return;
@@ -2898,7 +2901,7 @@ router.get("/duties/:monthId", authMiddleware, (req: AuthenticatedRequest, res: 
   res.json({ duties });
 });
 
-router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { monthId, memberId, name, task } = req.body;
   if (!monthId || !memberId || !name) {
     res.status(400).json({ error: "Month ID, Member ID, and Duty Name are required" });
@@ -2907,8 +2910,9 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
 
   if (name.toLowerCase().includes("market") || (task && task.toLowerCase().includes("market"))) {
     const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-    const isManager = req.user!.role === UserRole.MANAGER;
-    if (!isUltimateAdmin && !isManager) {
+    const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
+    const isPrivileged = isUltimateAdmin || isManager || [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.ADMIN].includes(req.user!.role);
+    if (!isPrivileged) {
       res.status(403).json({ error: "Only the Ultimate Admin and Managers can assign or manage Market duties." });
       return;
     }
@@ -2930,7 +2934,7 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
   res.json({ success: true, duty: newDuty });
 });
 
-router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
   const { id } = req.params;
   const db = loadDB();
   const index = db.duties.findIndex(d => d.id === id);
@@ -2943,8 +2947,9 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
   const original = db.duties[index];
   if (original.name.toLowerCase().includes("market") || (original.task && original.task.toLowerCase().includes("market"))) {
     const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-    const isManager = req.user!.role === UserRole.MANAGER;
-    if (!isUltimateAdmin && !isManager) {
+    const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
+    const isPrivileged = isUltimateAdmin || isManager || [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.ADMIN].includes(req.user!.role);
+    if (!isPrivileged) {
       res.status(403).json({ error: "Only the Ultimate Admin and Managers can assign or manage Market duties." });
       return;
     }
@@ -2969,7 +2974,7 @@ router.get("/holdings/:monthId", authMiddleware, (req: AuthenticatedRequest, res
 
 router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.ADMIN].includes(req.user!.role);
+  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN].includes(req.user!.role);
   if (!isUltimateAdmin && !isManagerOrAdmin) {
     res.status(403).json({ error: "Access denied. Only managers and the ultimate Admin can edit holdings." });
     return;
@@ -3020,7 +3025,7 @@ router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Respon
 
 router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.ADMIN].includes(req.user!.role);
+  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN].includes(req.user!.role);
   if (!isUltimateAdmin && !isManagerOrAdmin) {
     res.status(403).json({ error: "Access denied. Only managers and the ultimate Admin can delete holdings." });
     return;
@@ -3064,7 +3069,7 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
     const isAuthor = n.authorId === user.id;
 
     if (n.isDirectToManager) {
-      const isManagerOrAdmin = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER;
+      const isManagerOrAdmin = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER;
       if (!isManagerOrAdmin && !isAuthor) return false;
     }
 
@@ -3104,7 +3109,7 @@ router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Respons
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
-  const isManager = user.role === UserRole.MANAGER;
+  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER;
 
   if (!isAdminOrSuper && !isManager && !isDirectToManager) {
     res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or Admins can post general notices." });
@@ -3152,7 +3157,7 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
-  const isManager = user.role === UserRole.MANAGER;
+  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER;
   const isAuthor = original.authorId === user.id;
 
   if (!isAdminOrSuper && !isManager && !isAuthor) {
@@ -3191,7 +3196,7 @@ router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
-  const isManager = user.role === UserRole.MANAGER;
+  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER;
 
   if (!isAdminOrSuper && !isManager) {
     res.status(403).json({ error: "Forbidden: Only Managers, Super Users, or Admins can perform bulk notice deletion." });
@@ -3252,6 +3257,199 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
   saveDB();
 
   res.json({ success: true });
+});
+
+// ---------------------------------------------------------
+// MESS & PERSONAL RULES API
+// ---------------------------------------------------------
+router.get("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const db = loadDB();
+  const activeMessId = getActiveMessId();
+  if (!db.messRules || db.messRules.length === 0) {
+    db.messRules = getDefaultMessRules(activeMessId);
+    saveDB();
+  }
+  
+  // Filter scoped to this active mess or global
+  const messRules = (db.messRules || []).filter(r => !r.messId || r.messId === "default" || r.messId === activeMessId);
+  
+  // Sort rules: pinned first, then order, then createdAt
+  messRules.sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    if ((a.order ?? 999) !== (b.order ?? 999)) return (a.order ?? 999) - (b.order ?? 999);
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
+
+  res.json({ rules: messRules });
+});
+
+router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || isUltimateAdmin;
+
+  if (!canManage) {
+    res.status(403).json({ error: "Forbidden: Only Superusers, Admins, or Managers can configure rules for this mess." });
+    return;
+  }
+
+  const { title, titleBn, description, descriptionBn, type, category, severity, penalty, pinned, isActive, order } = req.body;
+  if (!title || !description) {
+    res.status(400).json({ error: "Rule title and description are required." });
+    return;
+  }
+
+  const activeMessId = getActiveMessId();
+  const db = loadDB();
+  if (!db.messRules) db.messRules = [];
+
+  const newRule: MessRule = {
+    id: generateUUID(),
+    messId: activeMessId,
+    type: type === "PERSONAL" ? "PERSONAL" : "MESS",
+    title: title.trim(),
+    titleBn: titleBn ? titleBn.trim() : undefined,
+    description: description.trim(),
+    descriptionBn: descriptionBn ? descriptionBn.trim() : undefined,
+    category: category || (type === "PERSONAL" ? "Personal Conduct" : "General"),
+    severity: ["CRITICAL", "STRICT", "STANDARD", "RECOMMENDATION"].includes(severity) ? severity : "STANDARD",
+    penalty: penalty ? penalty.trim() : undefined,
+    pinned: !!pinned,
+    isActive: isActive !== undefined ? !!isActive : true,
+    order: Number(order) || (db.messRules.length + 1),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: {
+      id: user.id,
+      name: user.nickname || user.name,
+      role: user.role
+    },
+    agreedMembers: []
+  };
+
+  db.messRules.push(newRule);
+  saveDB();
+
+  logAudit(user.id, user.nickname, "CREATE_RULE", "None", JSON.stringify(newRule), `Created new ${newRule.type} rule: "${newRule.title}"`);
+  res.json({ success: true, rule: newRule });
+});
+
+router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || isUltimateAdmin;
+
+  if (!canManage) {
+    res.status(403).json({ error: "Forbidden: Only Superusers, Admins, or Managers can update rules." });
+    return;
+  }
+
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.messRules) db.messRules = [];
+
+  const index = db.messRules.findIndex(r => r.id === id);
+  if (index === -1) {
+    res.status(404).json({ error: "Rule not found." });
+    return;
+  }
+
+  const existing = db.messRules[index];
+  const { title, titleBn, description, descriptionBn, type, category, severity, penalty, pinned, isActive, order } = req.body;
+
+  const updated: MessRule = {
+    ...existing,
+    title: title !== undefined ? title.trim() : existing.title,
+    titleBn: titleBn !== undefined ? (titleBn ? titleBn.trim() : undefined) : existing.titleBn,
+    description: description !== undefined ? description.trim() : existing.description,
+    descriptionBn: descriptionBn !== undefined ? (descriptionBn ? descriptionBn.trim() : undefined) : existing.descriptionBn,
+    type: type !== undefined ? (type === "PERSONAL" ? "PERSONAL" : "MESS") : existing.type,
+    category: category !== undefined ? category : existing.category,
+    severity: severity !== undefined && ["CRITICAL", "STRICT", "STANDARD", "RECOMMENDATION"].includes(severity) ? severity : existing.severity,
+    penalty: penalty !== undefined ? (penalty ? penalty.trim() : undefined) : existing.penalty,
+    pinned: pinned !== undefined ? !!pinned : existing.pinned,
+    isActive: isActive !== undefined ? !!isActive : existing.isActive,
+    order: order !== undefined ? Number(order) : existing.order,
+    updatedAt: new Date().toISOString()
+  };
+
+  db.messRules[index] = updated;
+  saveDB();
+
+  logAudit(user.id, user.nickname, "UPDATE_RULE", JSON.stringify(existing), JSON.stringify(updated), `Updated ${updated.type} rule: "${updated.title}"`);
+  res.json({ success: true, rule: updated });
+});
+
+router.delete("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const canDelete = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || isUltimateAdmin;
+
+  if (!canDelete) {
+    res.status(403).json({ error: "Forbidden: Only Superusers, Admins, or Managers can delete rules." });
+    return;
+  }
+
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.messRules) db.messRules = [];
+
+  const index = db.messRules.findIndex(r => r.id === id);
+  if (index === -1) {
+    res.status(404).json({ error: "Rule not found." });
+    return;
+  }
+
+  const deleted = db.messRules.splice(index, 1)[0];
+  saveDB();
+
+  logAudit(user.id, user.nickname, "DELETE_RULE", JSON.stringify(deleted), "None", `Deleted ${deleted.type} rule: "${deleted.title}"`);
+  res.json({ success: true });
+});
+
+router.post("/rules/:id/agree", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const user = req.user!;
+  const { id } = req.params;
+  const db = loadDB();
+  if (!db.messRules) db.messRules = [];
+
+  const rule = db.messRules.find(r => r.id === id);
+  if (!rule) {
+    res.status(404).json({ error: "Rule not found." });
+    return;
+  }
+
+  if (!rule.agreedMembers) rule.agreedMembers = [];
+
+  const alreadyAgreed = rule.agreedMembers.includes(user.id);
+  if (alreadyAgreed) {
+    rule.agreedMembers = rule.agreedMembers.filter(uid => uid !== user.id);
+  } else {
+    rule.agreedMembers.push(user.id);
+  }
+
+  saveDB();
+  res.json({ success: true, agreed: !alreadyAgreed, agreedMembers: rule.agreedMembers });
+});
+
+router.post("/rules/seed-defaults", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  const user = req.user!;
+  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
+
+  if (!canManage) {
+    res.status(403).json({ error: "Forbidden: Only Superusers or Admins can reset or seed rules." });
+    return;
+  }
+
+  const activeMessId = getActiveMessId();
+  const db = loadDB();
+  db.messRules = getDefaultMessRules(activeMessId);
+  saveDB();
+
+  logAudit(user.id, user.nickname, "SEED_DEFAULT_RULES", "None", `${db.messRules.length} rules`, "Seeded default mess & personal rules package");
+  res.json({ success: true, rules: db.messRules });
 });
 
 // ---------------------------------------------------------
@@ -4997,7 +5195,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isAuthority = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER].includes(user.role) || isUltimateAdmin;
+  const isAuthority = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER].includes(user.role) || isUltimateAdmin;
   
   if (!isAuthority) {
     res.status(403).json({ error: "Only authorized personnel can control Audit Mode" });
@@ -5113,7 +5311,7 @@ router.get("/elections", authMiddleware, async (req: AuthenticatedRequest, res: 
 });
 
 router.post("/elections/configure", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER];
+  const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER];
   if (!allowedRoles.includes(req.user!.role)) {
     res.status(403).json({ error: "Only the Admin, Manager, and Super User can configure elections." });
     return;
@@ -5244,7 +5442,7 @@ router.post("/elections/vote", authMiddleware, async (req: AuthenticatedRequest,
 });
 
 router.post("/elections/resolve", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERUSER];
+  const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER];
   if (!allowedRoles.includes(req.user!.role)) {
     res.status(403).json({ error: "Only the Admin, Manager, and Super User can resolve democratic elections." });
     return;
@@ -5312,8 +5510,8 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
   const { targetMemberId, isPartial, shiftReason } = req.body;
   const db = loadDB();
 
-  // Validate requester has authorization (Only MANAGER, ADMIN, SUPERUSER, or ASSISTANT_SUPERUSER can shift managership)
-  const allowedRoles = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER];
+  // Validate requester has authorization (Only MANAGER, PARTIAL_MANAGER, ADMIN, SUPERUSER, or ASSISTANT_SUPERUSER can shift managership)
+  const allowedRoles = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER];
   if (!allowedRoles.includes(req.user!.role)) {
     res.status(403).json({ error: "Only the active Manager, Admin, or Super Users can shift managership roles." });
     return;

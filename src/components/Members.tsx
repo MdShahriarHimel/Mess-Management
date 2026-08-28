@@ -292,7 +292,8 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
   const isAuthorizedToEdit = currentUser.role === UserRole.ADMIN || 
                              currentUser.role === UserRole.SUPERUSER || 
                              currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
-                             currentUser.role === UserRole.MANAGER;
+                             currentUser.role === UserRole.MANAGER ||
+                             currentUser.role === UserRole.PARTIAL_MANAGER;
 
   // Handle Photo selection and optimized WebP resizing (Max 400x400, ~100KB max, preserves transparent PNG)
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1483,7 +1484,7 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                 </div>
               </div>
 
-               {([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER].includes(currentUser.role)) && (
+               {([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER].includes(currentUser.role)) && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">

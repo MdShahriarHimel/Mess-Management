@@ -66,7 +66,8 @@ import {
   Notice, 
   AuditLog,
   MealRequest,
-  CycleProposal
+  CycleProposal,
+  MessRule
 } from "../src/types.js";
 
 export const DB_DIR = process.env.VERCEL ? "/tmp/data" : path.join(process.cwd(), "data");
@@ -100,6 +101,7 @@ interface DatabaseSchema {
   mealRequests: MealRequest[];
   deletedMembers?: { member: Member; deletedAt: string; deletedBy: string }[];
   cycleProposals?: CycleProposal[];
+  messRules?: MessRule[];
 }
 
 interface CredentialsSchema {
@@ -1078,6 +1080,11 @@ export function loadDB(): DatabaseSchema {
     }
   }
 
+  if (dbCache && !dbCache.messRules) {
+    const messId = getActiveMessId();
+    dbCache.messRules = getDefaultMessRules(messId);
+  }
+
   // Helper to parse dates in Asia/Dhaka (+06:00) timezone
   const parseDhakaDate = (dateStr: string): Date => {
     if (!dateStr) return new Date();
@@ -1400,8 +1407,249 @@ function getInitialSeedData(): DatabaseSchema {
     managerRatings: [],
     notices: [],
     auditLogs: [audit],
-    mealRequests: []
+    mealRequests: [],
+    messRules: getDefaultMessRules("default")
   };
+}
+
+export function getDefaultMessRules(messId: string = "default"): MessRule[] {
+  return [
+    {
+      id: "rule-mess-1",
+      messId,
+      type: "MESS",
+      title: "Meal Turn On/Off Schedule & Deadlines",
+      titleBn: "মিল অন/অফ করার সময়সীমা ও নিয়ম",
+      description: "Lunch meal cutoff is 08:00 AM in the morning, and Dinner meal cutoff is 04:00 PM in the afternoon. Any meal changes requested after the cutoff will not be accepted without manager approval.",
+      descriptionBn: "দুপুরের মিল অফ/অন করার শেষ সময় সকাল ৮:০০ টা এবং রাতের মিলের জন্য বিকাল ৪:০০ টা। নির্ধারিত সময়ের পর মিল পরিবর্তন ম্যানেজার অনুমতি ছাড়া গ্রহণযোগ্য হবে না।",
+      category: "Dining & Meal",
+      severity: "CRITICAL",
+      penalty: "বিল অনুযায়ী মিল চার্জ ধার্য হবে (Meal charge will be billed)",
+      pinned: true,
+      isActive: true,
+      order: 1,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-mess-2",
+      messId,
+      type: "MESS",
+      title: "Monthly Deposit & Utility Deadline",
+      titleBn: "মাসিক ডিপোজিট ও ইউটিলিটি বিল পরিশোধ",
+      description: "All members must deposit the required mess advance money and utility dues strictly by the 5th of every active month cycle to keep market operations smooth.",
+      descriptionBn: "প্রতি মাসের ৫ তারিখের মধ্যে নির্ধারিত মেস ডিপোজিট ও ইউটিলিটি বিল পরিশোধ করতে হবে যাতে নিয়মিত বাজার সচল থাকে।",
+      category: "Bills & Payments",
+      severity: "STRICT",
+      penalty: "দেরি হলে দৈনিক ৫০ টাকা বিলম্ব ফি (Tk 50/day late fine)",
+      pinned: true,
+      isActive: true,
+      order: 2,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-mess-3",
+      messId,
+      type: "MESS",
+      title: "Market Duty Schedule & Fresh Purchasing",
+      titleBn: "বাজারের শিডিউল ও তাজা মালামাল ক্রয়",
+      description: "Assigned members on market duty must purchase fresh items responsibly and upload receipt/voucher details promptly to the system.",
+      descriptionBn: "বাজারের শিডিউল অনুযায়ী দায়িত্বপ্রাপ্ত সদস্যকে যথাসময়ে তাজা বাজার করতে হবে এবং ভাউচার ও খরচের হিসাব যুক্ত করতে হবে।",
+      category: "Market & Duties",
+      severity: "STRICT",
+      penalty: "অনুপস্থিতির ক্ষেত্রে বিকল্প ব্যবস্থা ও জরিমানা (Proxy duty or penalty)",
+      pinned: false,
+      isActive: true,
+      order: 3,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-mess-4",
+      messId,
+      type: "MESS",
+      title: "Night Gate Hours & Noise Level Regulation",
+      titleBn: "রাত্রিকালীন গেট ও নীরবতা বজায় রাখা",
+      description: "Strict quiet hours are enforced from 11:30 PM to 07:00 AM. Loud music, shouting, or late-night room gathering that disturbs others is prohibited.",
+      descriptionBn: "রাত ১১:৩০ টা থেকে সকাল ৭:০০ টা পর্যন্ত নীরবতা বজায় রাখতে হবে। উচ্চশব্দে গান বাজানো বা আড্ডা সম্পূর্ণ নিষিদ্ধ।",
+      category: "Quiet Hours & Noise",
+      severity: "CRITICAL",
+      penalty: "ম্যানেজার কর্তৃক মৌখিক সতর্কবার্তা (Manager warning)",
+      pinned: false,
+      isActive: true,
+      order: 4,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-mess-5",
+      messId,
+      type: "MESS",
+      title: "Guest & Overnight Stay Policy",
+      titleBn: "মেহমান ও অতিথি আসার নীতিমালা",
+      description: "Prior notification to the Mess Manager is mandatory before bringing overnight guests. Guest meals must be logged in advance.",
+      descriptionBn: "মেহমান আনার আগে ম্যানেজারের অনুমতি ও মিল এন্ট্রি বাধ্যতামূলক। রুমমেটদের স্বাচ্ছন্দ্য বজায় রাখতে হবে।",
+      category: "Guest Policy",
+      severity: "STANDARD",
+      penalty: "অতিরিক্ত মিল চার্জ ও মেহমান ফি (Extra guest meal charge)",
+      pinned: false,
+      isActive: true,
+      order: 5,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-mess-6",
+      messId,
+      type: "MESS",
+      title: "Dining Table & Sink Hygiene",
+      titleBn: "ডাইনিং টেবিল ও বেসিনের পরিচ্ছন্নতা",
+      description: "Members must clean their own plates after meals and leave the dining table tidy. Discarding food leftovers into wash basins is strictly forbidden.",
+      descriptionBn: "খাওয়ার পর নিজস্ব প্লেট ও ডাইনিং স্পেস পরিষ্কার করতে হবে। বেসিনে ভাতের মাড় বা খাবারের উচ্ছিষ্ট ফেলা সম্পূর্ণ নিষেধ।",
+      category: "Hygiene & Cleanliness",
+      severity: "STRICT",
+      penalty: "বেসিন ক্লিনিং ফি বা দায়িত্ব (Cleaning fee)",
+      pinned: false,
+      isActive: true,
+      order: 6,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-mess-7",
+      messId,
+      type: "MESS",
+      title: "Gas Stove, Kitchen & Fire Safety",
+      titleBn: "গ্যাস স্টোভ, রান্নাঘর ও অগ্নি নিরাপত্তা",
+      description: "Always ensure the gas stove burner and kitchen lights are completely turned off immediately after cooking.",
+      descriptionBn: "রান্না শেষে গ্যাসের চুলা এবং কিচেনের লাইট নিশ্চিতভাবে বন্ধ করতে হবে। কোনো অসতর্কতা কাম্য নয়।",
+      category: "Safety & Security",
+      severity: "CRITICAL",
+      penalty: "জরুরি সতর্কবার্তা ও কঠোর পদক্ষেপ (Strict action)",
+      pinned: false,
+      isActive: true,
+      order: 7,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    // PERSONAL RULES
+    {
+      id: "rule-pers-1",
+      messId,
+      type: "PERSONAL",
+      title: "Washroom Cleanliness & Proper Water Usage",
+      titleBn: "ওয়াশরুম পরিচ্ছন্নতা ও পরিমিত পানি ব্যবহার",
+      description: "Ensure the bathroom is flushed thoroughly and left dry & clean after each use. Keep personal toiletries in assigned shelves.",
+      descriptionBn: "টয়লেট বা ওয়াশরুম ব্যবহারের পর পর্যাপ্ত পানি ঢালুন ও পরিষ্কার রাখুন। নিজস্ব সাবান ও শ্যাম্পু নির্দিষ্ট স্থানে গুছিয়ে রাখুন।",
+      category: "Personal Hygiene",
+      severity: "CRITICAL",
+      penalty: "ওয়াশরুম পরিষ্কারের দায়িত্ব (Bathroom duty)",
+      pinned: true,
+      isActive: true,
+      order: 1,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-pers-2",
+      messId,
+      type: "PERSONAL",
+      title: "Respect for Roommate Privacy & Personal Belongings",
+      titleBn: "রুমমেটের গোপনীয়তা ও ব্যক্তিগত সামগ্রীর সম্মান",
+      description: "Do not borrow, use, or move someone else's personal items, clothing, laptop, or food without explicit verbal permission.",
+      descriptionBn: "অন্যের অনুমতি ছাড়া রুমমেটের কাপড়, ল্যাপটপ, চার্জার বা ব্যক্তিগত জিনিসপত্র স্পর্শ বা ব্যবহার করবেন না।",
+      category: "Room & Privacy",
+      severity: "CRITICAL",
+      penalty: "মৌখিক জবাবদিহিতা ও ক্ষমা প্রার্থনা (Accountability)",
+      pinned: true,
+      isActive: true,
+      order: 2,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-pers-3",
+      messId,
+      type: "PERSONAL",
+      title: "Late Night Phone Calls & Headphone Protocol",
+      titleBn: "দেরিতে ফোনে কথা বলা ও হেডফোন ব্যবহার",
+      description: "Use headphones when watching media or gaming in shared rooms. Take private phone calls outside the room or in the balcony at night.",
+      descriptionBn: "ভিডিও বা গান শোনার সময় হেডফোন ব্যবহার করুন। রাত ১০ টার পর বড় বা দীর্ঘ ফোন কল ব্যালকনি বা বাইরে গিয়ে করুন।",
+      category: "Personal Conduct",
+      severity: "STRICT",
+      penalty: "রুমের শিষ্টাচার ভঙ্গজনিত সতর্কবার্তা (Notice)",
+      pinned: false,
+      isActive: true,
+      order: 3,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-pers-4",
+      messId,
+      type: "PERSONAL",
+      title: "High-Power Appliances & Energy Conservation",
+      titleBn: "ভারী বৈদ্যুতিক যন্ত্রপাতি ও বিদ্যুৎ সাশ্রয়",
+      description: "Unplug mobile and laptop chargers when not in use. Electric heaters, irons, or heavy appliances require prior superuser consent.",
+      descriptionBn: "প্রয়োজন ছাড়া ফ্যান ও লাইট বন্ধ রাখুন। রুম হিটার বা অতিরিক্ত পাওয়ারের যন্ত্র ব্যবহারে পূর্বানুমতি বাধ্যতামূলক।",
+      category: "Appliances & Electricity",
+      severity: "STANDARD",
+      penalty: "অতিরিক্ত বিদ্যুৎ বিল সংযোজন (Extra bill addition)",
+      pinned: false,
+      isActive: true,
+      order: 4,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-pers-5",
+      messId,
+      type: "PERSONAL",
+      title: "Study Table Harmony & Sleeping Hours Lighting",
+      titleBn: "পড়াশোনার পরিবেশ ও রাতে লাইটের ব্যবহার",
+      description: "When roommates are sleeping, use focused desk lamps instead of main room lights so sleep is never disturbed.",
+      descriptionBn: "রাতে রুমমেট ঘুমানোর সময় মেইন লাইট নিভিয়ে টেবিল ল্যাম্প ব্যবহার করুন যাতে কারো ঘুমের ব্যাঘাত না ঘটে।",
+      category: "Room & Privacy",
+      severity: "STANDARD",
+      penalty: "পারস্পরিক সম্প্রীতি রক্ষা (Mutual harmony)",
+      pinned: false,
+      isActive: true,
+      order: 5,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    },
+    {
+      id: "rule-pers-6",
+      messId,
+      type: "PERSONAL",
+      title: "Constructive Discussion & Conflict Resolution",
+      titleBn: "গঠনমূলক আলোচনা ও পারস্পরিক শ্রদ্ধাবোধ",
+      description: "Handle disagreements with patience, empathy, and constructive communication. Seek manager mediation if consensus cannot be reached.",
+      descriptionBn: "যেকোনো মতবিরোধে রাগ বা কটু কথা পরিহার করে সৌহার্দ্যপূর্ণ আলোচনা করুন বা ম্যানেজারের পরামর্শ নিন।",
+      category: "Personal Conduct",
+      severity: "RECOMMENDATION",
+      penalty: "মেস ভাতৃত্ব রক্ষা (Mess brotherhood)",
+      pinned: false,
+      isActive: true,
+      order: 6,
+      createdAt: new Date().toISOString(),
+      createdBy: { id: "system", name: "Mess Management", role: "SUPERUSER" },
+      agreedMembers: []
+    }
+  ];
 }
 
 function getSuperUserForMess(messId: string): string {
