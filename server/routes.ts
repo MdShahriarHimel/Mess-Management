@@ -3287,10 +3287,10 @@ router.get("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response) 
 router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || isUltimateAdmin;
+  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canManage) {
-    res.status(403).json({ error: "Forbidden: Only Superusers, Admins, or Managers can configure rules for this mess." });
+    res.status(403).json({ error: "Forbidden: Only Super Users or Admins can configure and add rules for this mess." });
     return;
   }
 
@@ -3307,12 +3307,12 @@ router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response)
   const newRule: MessRule = {
     id: generateUUID(),
     messId: activeMessId,
-    type: type === "PERSONAL" ? "PERSONAL" : "MESS",
+    type: type === "PERSONAL" ? "PERSONAL" : (type === "MANUAL" ? "MANUAL" : "MESS"),
     title: title.trim(),
     titleBn: titleBn ? titleBn.trim() : undefined,
     description: description.trim(),
     descriptionBn: descriptionBn ? descriptionBn.trim() : undefined,
-    category: category || (type === "PERSONAL" ? "Personal Conduct" : "General"),
+    category: category || (type === "PERSONAL" ? "Personal Conduct" : (type === "MANUAL" ? "Website Guidelines" : "General")),
     severity: ["CRITICAL", "STRICT", "STANDARD", "RECOMMENDATION"].includes(severity) ? severity : "STANDARD",
     penalty: penalty ? penalty.trim() : undefined,
     pinned: !!pinned,
@@ -3338,10 +3338,10 @@ router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response)
 router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || isUltimateAdmin;
+  const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canManage) {
-    res.status(403).json({ error: "Forbidden: Only Superusers, Admins, or Managers can update rules." });
+    res.status(403).json({ error: "Forbidden: Only Super Users or Admins can update rules." });
     return;
   }
 
@@ -3364,7 +3364,7 @@ router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
     titleBn: titleBn !== undefined ? (titleBn ? titleBn.trim() : undefined) : existing.titleBn,
     description: description !== undefined ? description.trim() : existing.description,
     descriptionBn: descriptionBn !== undefined ? (descriptionBn ? descriptionBn.trim() : undefined) : existing.descriptionBn,
-    type: type !== undefined ? (type === "PERSONAL" ? "PERSONAL" : "MESS") : existing.type,
+    type: type !== undefined ? (type === "PERSONAL" ? "PERSONAL" : (type === "MANUAL" ? "MANUAL" : "MESS")) : existing.type,
     category: category !== undefined ? category : existing.category,
     severity: severity !== undefined && ["CRITICAL", "STRICT", "STANDARD", "RECOMMENDATION"].includes(severity) ? severity : existing.severity,
     penalty: penalty !== undefined ? (penalty ? penalty.trim() : undefined) : existing.penalty,
@@ -3384,10 +3384,10 @@ router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
 router.delete("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
   const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const canDelete = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER || isUltimateAdmin;
+  const canDelete = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canDelete) {
-    res.status(403).json({ error: "Forbidden: Only Superusers, Admins, or Managers can delete rules." });
+    res.status(403).json({ error: "Forbidden: Only Super Users or Admins can delete rules." });
     return;
   }
 

@@ -256,7 +256,7 @@ export interface CycleProposal {
   status: "PENDING" | "APPROVED" | "REJECTED" | "APPLIED";
 }
 
-export type RuleType = "MESS" | "PERSONAL";
+export type RuleType = "MESS" | "PERSONAL" | "MANUAL";
 export type RuleSeverity = "CRITICAL" | "STRICT" | "STANDARD" | "RECOMMENDATION";
 
 export interface MessRule {
