@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
   Bell, Calendar, Coffee, ShieldAlert, Star, Users, DollarSign,
   ArrowRight, Heart, FileText, Pin, Clock, CheckCircle2, UserCheck,
-  Vote, Award, Percent, Settings2, Sparkles, Trash2, ShoppingCart, Lock
+  Vote, Award, Percent, Settings2, Sparkles, Trash2, ShoppingCart, Lock,
+  Plus, Check, X
 } from "lucide-react";
 import { Member, Notice, UserRole, RespectSenioritySettings } from "../types.js";
 import { ColorPalettePicker } from "../App.js";
@@ -24,6 +25,7 @@ interface DashboardProps {
   triggerRefresh: () => void;
   months?: any[];
   onChangeMonth?: (monthId: string) => void;
+  dropdownOptions?: string[];
   homeCustomization?: {
     welcomeTitle?: string;
     welcomeSubtitle?: string;
@@ -81,6 +83,7 @@ export default function Dashboard({
   onSetForcedMarketDate,
   dashboardVisibility,
   mealTypes,
+  dropdownOptions = ["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"],
   cycleProposals = [],
   onVoteCycleProposal,
   onApplyCycleProposal,
@@ -343,6 +346,45 @@ export default function Dashboard({
     const isToday = d.name.includes(todayStr);
     return isUser && isMarket && isToday;
   });
+
+  const canManageDuties = currentUser && [
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.PARTIAL_MANAGER,
+    UserRole.SUPERUSER,
+    UserRole.ASSISTANT_SUPERUSER
+  ].includes(currentUser.role as UserRole);
+
+  // Month-specific duties for the currently selected/active month
+  const activeMonthDuties = useMemo(() => {
+    return (duties || []).filter((d: any) => d.monthId === currentMonthId);
+  }, [duties, currentMonthId]);
+
+  // Work duties for this month (excluding market duty dates)
+  const activeWorkDuties = useMemo(() => {
+    return activeMonthDuties.filter((d: any) => !d.name?.toLowerCase()?.startsWith("market duty:"));
+  }, [activeMonthDuties]);
+
+  // Current user's duty for this active month
+  const currentUserDuty = useMemo(() => {
+    return activeWorkDuties.find((d: any) => d.memberId === currentUser.id);
+  }, [activeWorkDuties, currentUser.id]);
+
+  // Active participating members with assigned work duties in this month
+  const assignedMembersForMonth = useMemo(() => {
+    return activeWorkDuties.map((duty: any) => {
+      const member = members.find((m: any) => m.id === duty.memberId);
+      return {
+        dutyId: duty.id,
+        memberId: duty.memberId,
+        name: member?.name || "Unknown Member",
+        nickname: member?.nickname || "",
+        member,
+        assignedTask: duty.name,
+        taskDetails: duty.task || ""
+      };
+    }).filter((item: any) => item.member && (item.member.status === "ACTIVE" || item.member.status === "AWAY"));
+  }, [activeWorkDuties, members]);
 
   if (dashboardVisibility && dashboardVisibility.showDashboardOverview === false) {
     return (
@@ -855,14 +897,14 @@ export default function Dashboard({
               <p className={`text-xs mt-1 max-w-xl ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                 {homeCustomization?.welcomeSubtitle || "Welcome to the Mess ERP Hub. Check details, submit your market expenses, track meals, and manage monthly balances with ease."}
               </p>
-              {currentUser.assignedTask ? (
+              {currentUserDuty ? (
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs text-orange-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                  <span><strong>Work Assigned:</strong> {currentUser.assignedTask}</span>
+                  <span><strong>Work Assigned:</strong> {currentUserDuty.name}{currentUserDuty.task ? ` (${currentUserDuty.task})` : ""}</span>
                 </div>
               ) : (
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-500/5 border border-slate-500/10 text-xs text-slate-400">
-                  <span>No specific mess duties assigned currently.</span>
+                  <span>No specific mess duties assigned currently for this month cycle.</span>
                 </div>
               )}
             </div>
@@ -1688,40 +1730,38 @@ export default function Dashboard({
               Mess Duty Roster & Work Assignments
             </h3>
             <p className="text-xs text-slate-400 mb-4">
-              Current duties assigned by the superuser, authorities, or manager:
+              Current duties assigned by the superuser, authorities, or manager for this month cycle:
             </p>
 
-            {members.filter(m => (m.status === "ACTIVE" || m.status === "AWAY") && m.assignedTask && m.assignedTask.trim() !== "").length === 0 ? (
+            {assignedMembersForMonth.length === 0 ? (
               <div className={`text-center py-6 border border-dashed rounded-xl text-xs text-slate-500 ${
                 isDarkMode ? "border-slate-800 bg-slate-950/20" : "border-slate-200 bg-slate-50"
               }`}>
-                No specific duties assigned to any member at the moment.
+                No specific duties assigned to any member for this month cycle.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {members
-                  .filter(m => (m.status === "ACTIVE" || m.status === "AWAY") && m.assignedTask && m.assignedTask.trim() !== "")
-                  .map((m) => (
-                    <div 
-                      key={m.id}
-                      className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
-                        isDarkMode ? "bg-slate-950/50 border-slate-850 hover:border-cyan-500/25" : "bg-slate-50 border-slate-100 hover:border-slate-200"
-                      }`}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/15 flex items-center justify-center text-cyan-400 font-black text-xs shrink-0 uppercase">
-                        {m.nickname ? m.nickname.substring(0, 2) : m.name.substring(0, 2)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-xs font-bold truncate ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
-                          {m.name} <span className="text-[10px] text-slate-400 font-normal">({getRespectDisplayName(currentUser, m, respectSenioritySettings)})</span>
-                        </p>
-                        <p className="text-[11px] text-orange-400 mt-1 font-medium flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>
-                          <span className="truncate font-semibold">{m.assignedTask}</span>
-                        </p>
-                      </div>
+                {assignedMembersForMonth.map((item) => (
+                  <div 
+                    key={item.dutyId || item.memberId}
+                    className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
+                      isDarkMode ? "bg-slate-950/50 border-slate-850 hover:border-cyan-500/25" : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/15 flex items-center justify-center text-cyan-400 font-black text-xs shrink-0 uppercase">
+                      {item.nickname ? item.nickname.substring(0, 2) : item.name.substring(0, 2)}
                     </div>
-                  ))}
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs font-bold truncate ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+                        {item.name} <span className="text-[10px] text-slate-400 font-normal">({getRespectDisplayName(currentUser, item.member, respectSenioritySettings)})</span>
+                      </p>
+                      <p className="text-[11px] text-orange-400 mt-1 font-medium flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>
+                        <span className="truncate font-semibold">{item.assignedTask}{item.taskDetails ? ` (${item.taskDetails})` : ""}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

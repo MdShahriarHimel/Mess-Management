@@ -936,7 +936,7 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
   const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isSelf = req.user!.id === id;
   const isMessAdmin = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
-  const isManager = req.user!.role === UserRole.MANAGER;
+  const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
 
   // Ultimate admin account protection
   if (isTargetUltimateAdmin && !isActorUltimateAdmin) {
@@ -2957,6 +2957,171 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
 
   logAudit(req.user!.id, req.user!.nickname, "ASSIGN_DUTY", "None", name, `Assigned duty ${name} to user ID ${memberId}`);
   res.json({ success: true, duty: newDuty });
+});
+
+// Single work duty assignment (e.g. Rent, Electricity, WiFi, Maid, or custom)
+router.post("/duties/work-duty", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { monthId, memberId, name, task } = req.body;
+  if (!monthId || !memberId) {
+    res.status(400).json({ error: "Month ID and Member ID are required" });
+    return;
+  }
+
+  const db = loadDB();
+  // Find any existing work duty (non-market duty) for this member in this month
+  const existingIdx = db.duties.findIndex(d => 
+    d.monthId === monthId && 
+    d.memberId === memberId && 
+    !d.name.toLowerCase().startsWith("market duty:")
+  );
+
+  const cleanName = (name || "").trim();
+
+  if (!cleanName || cleanName === "-- No Work Assigned --" || cleanName === "No Work Assigned") {
+    // If empty or explicitly cleared, remove existing work duty
+    if (existingIdx !== -1) {
+      const removed = db.duties.splice(existingIdx, 1)[0];
+      saveDB();
+      logAudit(req.user!.id, req.user!.nickname, "REMOVE_WORK_DUTY", JSON.stringify(removed), "None", `Cleared work duty for member ID ${memberId} in month ${monthId}`);
+    }
+    res.json({ success: true, cleared: true });
+    return;
+  }
+
+  if (existingIdx !== -1) {
+    db.duties[existingIdx].name = cleanName;
+    db.duties[existingIdx].task = task || "";
+    saveDB();
+    logAudit(req.user!.id, req.user!.nickname, "UPDATE_WORK_DUTY", "None", cleanName, `Updated work duty to ${cleanName} for member ID ${memberId} in month ${monthId}`);
+    res.json({ success: true, duty: db.duties[existingIdx] });
+  } else {
+    const newDuty: Duty = {
+      id: generateUUID(),
+      monthId,
+      memberId,
+      name: cleanName,
+      task: task || ""
+    };
+    db.duties.push(newDuty);
+    saveDB();
+    logAudit(req.user!.id, req.user!.nickname, "ASSIGN_WORK_DUTY", "None", cleanName, `Assigned work duty ${cleanName} to member ID ${memberId} in month ${monthId}`);
+    res.json({ success: true, duty: newDuty });
+  }
+});
+
+// Batch work duty assignment for a month
+router.post("/duties/batch-work-duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { monthId, assignments } = req.body;
+  if (!monthId || !Array.isArray(assignments)) {
+    res.status(400).json({ error: "Month ID and assignments array are required" });
+    return;
+  }
+
+  const db = loadDB();
+
+  for (const item of assignments) {
+    if (!item.memberId) continue;
+    const cleanName = (item.name || "").trim();
+    const existingIdx = db.duties.findIndex(d => 
+      d.monthId === monthId && 
+      d.memberId === item.memberId && 
+      !d.name.toLowerCase().startsWith("market duty:")
+    );
+
+    if (!cleanName || cleanName === "-- No Work Assigned --" || cleanName === "No Work Assigned") {
+      if (existingIdx !== -1) {
+        db.duties.splice(existingIdx, 1);
+      }
+    } else {
+      if (existingIdx !== -1) {
+        db.duties[existingIdx].name = cleanName;
+        db.duties[existingIdx].task = item.task || "";
+      } else {
+        db.duties.push({
+          id: generateUUID(),
+          monthId,
+          memberId: item.memberId,
+          name: cleanName,
+          task: item.task || ""
+        });
+      }
+    }
+  }
+
+  saveDB();
+  logAudit(req.user!.id, req.user!.nickname, "BATCH_UPDATE_WORK_DUTIES", "Multiple", "Batch", `Updated work duties roster for month ID ${monthId}`);
+  
+  const monthDuties = db.duties.filter(d => d.monthId === monthId);
+  res.json({ success: true, duties: monthDuties });
+});
+
+// Copy work duties from previous month
+router.post("/duties/copy-previous", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+  const { targetMonthId, sourceMonthId } = req.body;
+  if (!targetMonthId) {
+    res.status(400).json({ error: "Target Month ID is required" });
+    return;
+  }
+
+  const db = loadDB();
+
+  // Find source month
+  let effectiveSourceId = sourceMonthId;
+  if (!effectiveSourceId) {
+    const sortedMonths = [...db.months].sort((a, b) => {
+      const aTime = a.startDate ? new Date(a.startDate).getTime() : 0;
+      const bTime = b.startDate ? new Date(b.startDate).getTime() : 0;
+      return aTime - bTime;
+    });
+    const targetIdx = sortedMonths.findIndex(m => m.id === targetMonthId);
+    if (targetIdx > 0) {
+      effectiveSourceId = sortedMonths[targetIdx - 1].id;
+    }
+  }
+
+  if (!effectiveSourceId) {
+    res.status(400).json({ error: "No previous month cycle found to copy duties from" });
+    return;
+  }
+
+  const sourceWorkDuties = db.duties.filter(d => 
+    d.monthId === effectiveSourceId && 
+    !d.name.toLowerCase().startsWith("market duty:")
+  );
+
+  if (sourceWorkDuties.length === 0) {
+    res.status(400).json({ error: "No work duties found in previous month to copy" });
+    return;
+  }
+
+  let copiedCount = 0;
+  for (const src of sourceWorkDuties) {
+    const existingIdx = db.duties.findIndex(d => 
+      d.monthId === targetMonthId && 
+      d.memberId === src.memberId && 
+      !d.name.toLowerCase().startsWith("market duty:")
+    );
+
+    if (existingIdx !== -1) {
+      db.duties[existingIdx].name = src.name;
+      db.duties[existingIdx].task = src.task || "";
+    } else {
+      db.duties.push({
+        id: generateUUID(),
+        monthId: targetMonthId,
+        memberId: src.memberId,
+        name: src.name,
+        task: src.task || ""
+      });
+    }
+    copiedCount++;
+  }
+
+  saveDB();
+  logAudit(req.user!.id, req.user!.nickname, "COPY_PREVIOUS_DUTIES", effectiveSourceId, targetMonthId, `Copied ${copiedCount} work duties from month ${effectiveSourceId} to ${targetMonthId}`);
+
+  const updatedDuties = db.duties.filter(d => d.monthId === targetMonthId);
+  res.json({ success: true, copiedCount, duties: updatedDuties });
 });
 
 router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {

@@ -103,15 +103,28 @@ interface MembersProps {
   safeMode?: boolean;
   mealTypes?: any[];
   respectSenioritySettings?: RespectSenioritySettings;
+  months?: any[];
 }
 
-export default function Members({ currentUser, members, isDarkMode, onRefresh, currentMonthId, dropdownOptions = [], safeMode = false, mealTypes, respectSenioritySettings }: MembersProps) {
+export default function Members({ 
+  currentUser, 
+  members, 
+  isDarkMode, 
+  onRefresh, 
+  currentMonthId, 
+  dropdownOptions = [], 
+  safeMode = false, 
+  mealTypes, 
+  respectSenioritySettings,
+  months = []
+}: MembersProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [originalRole, setOriginalRole] = useState<UserRole | null>(null);
   const [shiftReason, setShiftReason] = useState("");
+  const [dutyTargetMonthId, setDutyTargetMonthId] = useState<string>(currentMonthId);
   const [roleAnimations, setRoleAnimations] = useState<any>(null);
   const [adminVisibility, setAdminVisibility] = useState<any>({
     showAdminCard: false,
@@ -421,6 +434,27 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || "Failed to update member");
+      }
+
+      // Sync duty assignment to the selected month's duty roster
+      if (editingMember.assignedTask !== undefined) {
+        try {
+          await fetch("/api/duties/work-duty", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${currentUser.id}`
+            },
+            body: JSON.stringify({
+              monthId: dutyTargetMonthId || currentMonthId,
+              memberId: editingMember.id,
+              name: editingMember.assignedTask || "",
+              task: editingMember.notes || ""
+            })
+          });
+        } catch (dutyErr) {
+          console.warn("Could not sync duty to duties table:", dutyErr);
+        }
       }
 
       setEditingMember(null);
@@ -1625,8 +1659,29 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Assigned Work / Task (Duty)</label>
+              <div className="space-y-2 p-3 rounded-xl border bg-slate-500/5 border-slate-500/15">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Assigned Work / Task (Duty)</label>
+                  {isAuthorizedToEdit && months.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">Cycle:</span>
+                      <select
+                        value={dutyTargetMonthId}
+                        onChange={(e) => setDutyTargetMonthId(e.target.value)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                          isDarkMode ? "bg-slate-900 border-slate-700 text-cyan-400" : "bg-white border-slate-300 text-cyan-600"
+                        }`}
+                      >
+                        {months.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} {m.id === currentMonthId ? "(Current)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
                 {isAuthorizedToEdit ? (
                   <select
                     value={editingMember.assignedTask || ""}

@@ -5106,6 +5106,7 @@ export default function App() {
               onApplyCycleProposal={handleApplyCycleProposal}
               onDeleteCycleProposal={handleDeleteCycleProposal}
               respectSenioritySettings={respectSenioritySettings}
+              dropdownOptions={dropdownOptions}
             />
           )}
 
@@ -5120,6 +5121,7 @@ export default function App() {
               safeMode={safeMode}
               mealTypes={mealTypes}
               respectSenioritySettings={respectSenioritySettings}
+              months={months}
             />
           )}
 
