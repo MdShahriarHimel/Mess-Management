@@ -3703,7 +3703,7 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   const mealRate = totalMeals > 0 ? (totalMarketCost / totalMeals) : 0;
 
   // Calculate detailed balances per member
-  const memberSettlements = monthMembers.map(member => {
+  const allMemberSettlements = monthMembers.map(member => {
     const memberDep = monthDeposits.filter(d => d.memberId === member.id).reduce((s, d) => s + d.amount, 0);
     const memberHoldingMarketSpent = monthHoldings.filter(h => h.memberId === member.id).reduce((s, h) => s + (h.marketSpent || 0), 0);
     const memberMar = monthMarkets.filter(m => m.memberId === member.id).reduce((s, m) => s + m.amount, 0);
@@ -3746,6 +3746,22 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
       return: Math.round(returnVal * 100) / 100,
       holdingPaid
     };
+  });
+
+  // Filter out system administrative accounts (ADMIN, SUPERUSER, ASSISTANT_SUPERUSER) who did not contribute or participate in this month's finances
+  const memberSettlements = allMemberSettlements.filter(s => {
+    const isAdministrativeRole = [
+      UserRole.ADMIN,
+      UserRole.SUPERUSER,
+      UserRole.ASSISTANT_SUPERUSER
+    ].includes(s.role as UserRole);
+
+    if (isAdministrativeRole) {
+      const hasContribution = (s.mealsCount > 0) || (s.deposit > 0) || (s.market > 0) || (s.holdingPaid > 0) || (s.mealCost > 0) || (s.balance !== 0);
+      return hasContribution;
+    }
+
+    return true;
   });
 
   res.json({

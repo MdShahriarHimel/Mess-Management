@@ -56,11 +56,55 @@ export default function FinanceSettlement({
   respectSenioritySettings
 }: FinanceSettlementProps) {
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
   const [showAddBillModal, setShowAddBillModal] = useState(false);
   const [roomLabels, setRoomLabels] = useState<RoomLabel[]>([]);
   const [isSavingOverrides, setIsSavingOverrides] = useState(false);
   const [overrideSaveStatus, setOverrideSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const [customBillOverrides, setCustomBillOverrides] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
+    try {
+      const saved = localStorage.getItem("custom_bill_overrides");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  // Calculate active participating members for this mess month
+  // (Admins/Superusers/Assistant Superusers are ONLY members if they have financial contribution/meal count/deposit/market/bills)
+  const activeMembers = useMemo(() => {
+    return members.filter(m => {
+      if (m.status !== "ACTIVE" && m.status !== "AWAY") return false;
+
+      const isAdministrativeRole = [
+        UserRole.ADMIN,
+        UserRole.SUPERUSER,
+        UserRole.ASSISTANT_SUPERUSER
+      ].includes(m.role);
+
+      if (!isAdministrativeRole) return true;
+
+      // Check if admin has any financial activity in reportSummary
+      const settlement = (reportSummary?.memberSettlements || []).find((s: any) => s.memberId === m.id);
+      if (settlement) {
+        const hasFinancialContribution = (settlement.mealsCount > 0) || 
+          (settlement.deposit > 0) || 
+          (settlement.market > 0) || 
+          (settlement.holdingPaid > 0) || 
+          (settlement.mealCost > 0) || 
+          (settlement.balance !== 0);
+        if (hasFinancialContribution) return true;
+      }
+
+      // Check if admin has custom bill amounts assigned
+      const overrides = customBillOverrides[currentMonthId]?.[m.id];
+      if (overrides && Object.values(overrides).some(v => typeof v === "number" && v > 0)) {
+        return true;
+      }
+
+      return false;
+    });
+  }, [members, reportSummary?.memberSettlements, customBillOverrides, currentMonthId]);
 
   // Mess Settings State & PDF Header Customization
   const [messSettings, setMessSettings] = useState<any>(null);
@@ -171,15 +215,6 @@ export default function FinanceSettlement({
       { id: "Extra", title: "EXTRA BILL", category: "Extra" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0 }
     ];
   }, [reportSummary?.bills, activeMembers.length]);
-
-  const [customBillOverrides, setCustomBillOverrides] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
-    try {
-      const saved = localStorage.getItem("custom_bill_overrides");
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) {
-      return {};
-    }
-  });
 
   const handleUpdateOverride = (memberId: string, category: string, value: string) => {
     const numeric = value === "" ? undefined : Number(value);
@@ -509,7 +544,19 @@ export default function FinanceSettlement({
       "Refund / Return Status"
     ];
     
-    const rows = reportSummary.memberSettlements.map((m: any) => [
+    const filteredSettlements = (reportSummary.memberSettlements || []).filter((m: any) => {
+      const isAdministrative = [
+        UserRole.ADMIN,
+        UserRole.SUPERUSER,
+        UserRole.ASSISTANT_SUPERUSER
+      ].includes(m.role);
+      if (isAdministrative) {
+        return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
+      }
+      return true;
+    });
+    
+    const rows = filteredSettlements.map((m: any) => [
       m.nickname,
       m.deposit,
       m.market,
@@ -523,8 +570,8 @@ export default function FinanceSettlement({
     const totalMarkets = reportSummary.totalMarkets || 0;
     const totalMeals = reportSummary.totalMeals || 0;
     const mealRate = reportSummary.mealRate || 0;
-    const sumMealCost = (reportSummary.memberSettlements || []).reduce((sum: number, m: any) => sum + (m.mealCost || 0), 0);
-    const sumBalance = (reportSummary.memberSettlements || []).reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
+    const sumMealCost = filteredSettlements.reduce((sum: number, m: any) => sum + (m.mealCost || 0), 0);
+    const sumBalance = filteredSettlements.reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
     
     const summaryRow = [
       "TOTALS / SUMMARY",
@@ -636,7 +683,7 @@ export default function FinanceSettlement({
       `
       : "";
 
-    // Build Duties / Assigned tasks
+    // Build Duties / Assigned tasks (Strictly for active participating mess members/borders)
     const dutiesHtml = `
       <div class="section">
         <h2>Members Roles, Assigned Duties & Contact info</h2>
@@ -650,7 +697,7 @@ export default function FinanceSettlement({
             </tr>
           </thead>
           <tbody>
-            ${members.map(m => `
+            ${activeMembers.map(m => `
               <tr>
                 <td><strong>${m.name} (${m.nickname})</strong></td>
                 <td>${m.role.replace(/_/g, " ")}</td>
@@ -662,6 +709,19 @@ export default function FinanceSettlement({
         </table>
       </div>
     `;
+
+    // Filter settlements to ensure only active contributing members are listed
+    const filteredSettlements = (reportSummary?.memberSettlements || []).filter((m: any) => {
+      const isAdministrative = [
+        UserRole.ADMIN,
+        UserRole.SUPERUSER,
+        UserRole.ASSISTANT_SUPERUSER
+      ].includes(m.role);
+      if (isAdministrative) {
+        return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
+      }
+      return true;
+    });
 
     // Build Ledger Table (Strictly NO meal count columns!)
     const ledgerHtml = `
@@ -679,7 +739,7 @@ export default function FinanceSettlement({
             </tr>
           </thead>
           <tbody>
-            ${(reportSummary?.memberSettlements || []).map((m: any) => `
+            ${filteredSettlements.map((m: any) => `
               <tr>
                 <td><strong>${m.nickname}</strong></td>
                 <td>৳ ${m.deposit}</td>
@@ -693,10 +753,10 @@ export default function FinanceSettlement({
             `).join("")}
             <tr class="total-row">
               <td><strong>TOTALS:</strong></td>
-              <td>৳ ${reportSummary?.totalDeposits || 0}</td>
-              <td>৳ ${reportSummary?.totalMarkets || 0}</td>
-              <td>৳ ${(reportSummary?.memberSettlements || []).reduce((s: number, m: any) => s + (m.mealCost || 0), 0).toFixed(2)}</td>
-              <td><strong>৳ ${(reportSummary?.memberSettlements || []).reduce((s: number, m: any) => s + (m.balance || 0), 0).toFixed(2)}</strong></td>
+              <td>৳ ${filteredSettlements.reduce((s: number, m: any) => s + (m.deposit || 0), 0)}</td>
+              <td>৳ ${filteredSettlements.reduce((s: number, m: any) => s + (m.market || 0), 0)}</td>
+              <td>৳ ${filteredSettlements.reduce((s: number, m: any) => s + (m.mealCost || 0), 0).toFixed(2)}</td>
+              <td><strong>৳ ${filteredSettlements.reduce((s: number, m: any) => s + (m.balance || 0), 0).toFixed(2)}</strong></td>
               <td>Meal Rate: ৳ ${reportSummary?.mealRate || 0}</td>
             </tr>
           </tbody>
@@ -1992,7 +2052,17 @@ export default function FinanceSettlement({
                   <td colSpan={7} className="py-6 text-center text-slate-500">No calculations loaded. Log meals and expenses first.</td>
                 </tr>
               ) : (
-                reportSummary.memberSettlements.map((m: any) => {
+                (reportSummary.memberSettlements || []).filter((m: any) => {
+                  const isAdministrative = [
+                    UserRole.ADMIN,
+                    UserRole.SUPERUSER,
+                    UserRole.ASSISTANT_SUPERUSER
+                  ].includes(m.role);
+                  if (isAdministrative) {
+                    return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
+                  }
+                  return true;
+                }).map((m: any) => {
                   const isPositive = m.balance >= 0;
                   return (
                     <tr 
@@ -2038,11 +2108,22 @@ export default function FinanceSettlement({
               )}
             </tbody>
             {reportSummary?.memberSettlements && reportSummary.memberSettlements.length > 0 && (() => {
+              const activeSettlements = (reportSummary.memberSettlements || []).filter((m: any) => {
+                const isAdministrative = [
+                  UserRole.ADMIN,
+                  UserRole.SUPERUSER,
+                  UserRole.ASSISTANT_SUPERUSER
+                ].includes(m.role);
+                if (isAdministrative) {
+                  return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
+                }
+                return true;
+              });
               const totalDeposits = reportSummary.totalDeposits || 0;
               const totalMarkets = reportSummary.totalMarkets || 0;
               const totalMeals = reportSummary.totalMeals || 0;
-              const sumMealCost = reportSummary.memberSettlements.reduce((sum: number, m: any) => sum + (m.mealCost || 0), 0);
-              const sumBalance = reportSummary.memberSettlements.reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
+              const sumMealCost = activeSettlements.reduce((sum: number, m: any) => sum + (m.mealCost || 0), 0);
+              const sumBalance = activeSettlements.reduce((sum: number, m: any) => sum + (m.balance || 0), 0);
 
               return (
                 <tfoot>
