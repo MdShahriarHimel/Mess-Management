@@ -7,7 +7,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
   DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2, Search, Users, FileText
 } from "lucide-react";
-import { Member, Bill, BillStatus, UserRole, MessMonth, RespectSenioritySettings, RoomLabel } from "../types.js";
+import { Member, Bill, BillStatus, UserRole, MemberStatus, MessMonth, RespectSenioritySettings, RoomLabel } from "../types.js";
 import * as XLSX from "xlsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
@@ -70,41 +70,53 @@ export default function FinanceSettlement({
     }
   });
 
-  // Calculate active participating members for this mess month
-  // (Admins/Superusers/Assistant Superusers are ONLY members if they have financial contribution/meal count/deposit/market/bills)
+  // Calculate participating members for this mess month
+  // (Admins with status "Not member (only for Admin)" [NOT_MEMBER] are excluded from mess calculations.
+  // Otherwise, if their status is ACTIVE or AWAY, they are included everywhere just like any other member.)
   const activeMembers = useMemo(() => {
+    const currentMonthObj = (months || []).find((mo: any) => mo.id === currentMonthId);
+    const monthStart = currentMonthObj?.startDate ? currentMonthObj.startDate.split("T")[0] : null;
+    const monthEnd = currentMonthObj?.endDate ? currentMonthObj.endDate.split("T")[0] : null;
+
     return members.filter(m => {
-      if (m.status !== "ACTIVE" && m.status !== "AWAY") return false;
-
-      const isAdministrativeRole = [
-        UserRole.ADMIN,
-        UserRole.SUPERUSER,
-        UserRole.ASSISTANT_SUPERUSER
-      ].includes(m.role);
-
-      if (!isAdministrativeRole) return true;
-
-      // Check if admin has any financial activity in reportSummary
       const settlement = (reportSummary?.memberSettlements || []).find((s: any) => s.memberId === m.id);
-      if (settlement) {
-        const hasFinancialContribution = (settlement.mealsCount > 0) || 
-          (settlement.deposit > 0) || 
-          (settlement.market > 0) || 
-          (settlement.holdingPaid > 0) || 
-          (settlement.mealCost > 0) || 
-          (settlement.balance !== 0);
-        if (hasFinancialContribution) return true;
+      const hasSettlement = !!settlement;
+
+      // 1. If status is NOT_MEMBER (Only for Admin):
+      // Admin is not a participating member for this mess calculations unless they have an explicit settlement record
+      if (m.status === MemberStatus.NOT_MEMBER || (m.status as string) === "NOT_MEMBER") {
+        if (hasSettlement) {
+          const hasFinancialContribution = (settlement.mealsCount > 0) || 
+            (settlement.deposit > 0) || 
+            (settlement.market > 0) || 
+            (settlement.holdingPaid > 0) || 
+            (settlement.mealCost > 0) || 
+            (settlement.balance !== 0);
+          return hasFinancialContribution;
+        }
+        return false;
       }
 
-      // Check if admin has custom bill amounts assigned
-      const overrides = customBillOverrides[currentMonthId]?.[m.id];
-      if (overrides && Object.values(overrides).some(v => typeof v === "number" && v > 0)) {
+      // 2. For regular Active / Away members (including Admins whose status is ACTIVE/AWAY)
+      if (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY) {
+        if (monthEnd && m.joiningDate && m.joiningDate.split("T")[0] > monthEnd) {
+          return false;
+        }
         return true;
+      }
+
+      // 3. For Left, Archived, or Suspended members:
+      if (hasSettlement) {
+        return true;
+      } else if (m.status === MemberStatus.LEFT || m.status === MemberStatus.ARCHIVED) {
+        const joinedBeforeMonthEnd = !monthEnd || !m.joiningDate || m.joiningDate.split("T")[0] <= monthEnd;
+        const leftAfterMonthStart = !monthStart || !m.leavingDate || m.leavingDate.split("T")[0] >= monthStart;
+        return joinedBeforeMonthEnd && leftAfterMonthStart;
       }
 
       return false;
     });
-  }, [members, reportSummary?.memberSettlements, customBillOverrides, currentMonthId]);
+  }, [members, reportSummary?.memberSettlements, currentMonthId, months]);
 
   // Mess Settings State & PDF Header Customization
   const [messSettings, setMessSettings] = useState<any>(null);
@@ -544,17 +556,7 @@ export default function FinanceSettlement({
       "Refund / Return Status"
     ];
     
-    const filteredSettlements = (reportSummary.memberSettlements || []).filter((m: any) => {
-      const isAdministrative = [
-        UserRole.ADMIN,
-        UserRole.SUPERUSER,
-        UserRole.ASSISTANT_SUPERUSER
-      ].includes(m.role);
-      if (isAdministrative) {
-        return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
-      }
-      return true;
-    });
+    const filteredSettlements = (reportSummary.memberSettlements || []);
     
     const rows = filteredSettlements.map((m: any) => [
       m.nickname,
@@ -710,18 +712,8 @@ export default function FinanceSettlement({
       </div>
     `;
 
-    // Filter settlements to ensure only active contributing members are listed
-    const filteredSettlements = (reportSummary?.memberSettlements || []).filter((m: any) => {
-      const isAdministrative = [
-        UserRole.ADMIN,
-        UserRole.SUPERUSER,
-        UserRole.ASSISTANT_SUPERUSER
-      ].includes(m.role);
-      if (isAdministrative) {
-        return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
-      }
-      return true;
-    });
+    // All calculated month members are listed
+    const filteredSettlements = (reportSummary?.memberSettlements || []);
 
     // Build Ledger Table (Strictly NO meal count columns!)
     const ledgerHtml = `
@@ -2052,17 +2044,7 @@ export default function FinanceSettlement({
                   <td colSpan={7} className="py-6 text-center text-slate-500">No calculations loaded. Log meals and expenses first.</td>
                 </tr>
               ) : (
-                (reportSummary.memberSettlements || []).filter((m: any) => {
-                  const isAdministrative = [
-                    UserRole.ADMIN,
-                    UserRole.SUPERUSER,
-                    UserRole.ASSISTANT_SUPERUSER
-                  ].includes(m.role);
-                  if (isAdministrative) {
-                    return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
-                  }
-                  return true;
-                }).map((m: any) => {
+                (reportSummary.memberSettlements || []).map((m: any) => {
                   const isPositive = m.balance >= 0;
                   return (
                     <tr 
@@ -2108,17 +2090,7 @@ export default function FinanceSettlement({
               )}
             </tbody>
             {reportSummary?.memberSettlements && reportSummary.memberSettlements.length > 0 && (() => {
-              const activeSettlements = (reportSummary.memberSettlements || []).filter((m: any) => {
-                const isAdministrative = [
-                  UserRole.ADMIN,
-                  UserRole.SUPERUSER,
-                  UserRole.ASSISTANT_SUPERUSER
-                ].includes(m.role);
-                if (isAdministrative) {
-                  return (m.mealsCount > 0) || (m.deposit > 0) || (m.market > 0) || (m.holdingPaid > 0) || (m.mealCost > 0) || (m.balance !== 0);
-                }
-                return true;
-              });
+              const activeSettlements = reportSummary.memberSettlements || [];
               const totalDeposits = reportSummary.totalDeposits || 0;
               const totalMarkets = reportSummary.totalMarkets || 0;
               const totalMeals = reportSummary.totalMeals || 0;

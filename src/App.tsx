@@ -38,7 +38,7 @@ import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 
 // Types
-import { Member, MessMonth, UserRole, CycleProposal, RespectSenioritySettings } from "./types.js";
+import { Member, MessMonth, UserRole, MemberStatus, CycleProposal, RespectSenioritySettings } from "./types.js";
 import { getRespectDisplayName } from "./utils/respectHelper.js";
 
 const COLOR_PALETTES = [
@@ -2397,7 +2397,7 @@ export default function App() {
     }
   };
 
-  const sortMonthsDescending = <T extends { startDate?: string; endDate?: string; name?: string }>(list: T[]): T[] => {
+  const sortMonthsDescending = <T extends { id: string; startDate?: string; endDate?: string; name?: string }>(list: T[]): T[] => {
     return [...list].sort((a, b) => {
       const parseMonthTime = (m: { startDate?: string; endDate?: string; name?: string }) => {
         if (m.startDate) {
@@ -2806,9 +2806,35 @@ export default function App() {
       return sortedDesc;
     }
 
+    let filtered = sortedDesc;
+
+    const isLeftOrArchived = currentUser.status === MemberStatus.LEFT || currentUser.status === "LEFT" || currentUser.status === MemberStatus.ARCHIVED || currentUser.status === "ARCHIVED";
+
+    // Leaving date / departure cutoff:
+    // If member has left, or has leavingDate, they can only see cycles where the cycle started on or before their leaving date
+    if (isLeftOrArchived || currentUser.leavingDate) {
+      const leavingDateStr = currentUser.leavingDate ? currentUser.leavingDate.split("T")[0] : new Date().toISOString().split("T")[0];
+      filtered = filtered.filter(m => {
+        if (!m.startDate) return true;
+        const cycleStart = m.startDate.split("T")[0];
+        return cycleStart <= leavingDateStr;
+      });
+    }
+
+    // Joining date cutoff:
+    // Members can only see cycles that ended on or after their joining date
+    if (currentUser.joiningDate) {
+      const joiningDateStr = currentUser.joiningDate.split("T")[0];
+      filtered = filtered.filter(m => {
+        if (!m.endDate) return true;
+        const cycleEnd = m.endDate.split("T")[0];
+        return cycleEnd >= joiningDateStr;
+      });
+    }
+
     // Regular members: if history window restriction is active (> 0)
-    if (memberHistoryWindowMonths && memberHistoryWindowMonths > 0 && months.length > 0) {
-      const sortedAsc = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    if (memberHistoryWindowMonths && memberHistoryWindowMonths > 0 && filtered.length > 0) {
+      const sortedAsc = [...filtered].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       const now = new Date();
       let currentIdx = sortedAsc.findIndex(m => {
         const start = new Date(m.startDate);
@@ -2827,7 +2853,7 @@ export default function App() {
       return sortMonthsDescending(allowed);
     }
 
-    return sortedDesc;
+    return filtered;
   };
 
   useEffect(() => {
@@ -2876,7 +2902,8 @@ export default function App() {
       if (currentActive && selectable.some(m => m.id === currentActive.id)) {
         setCurrentMonthId(currentActive.id);
       } else {
-        setCurrentMonthId(selectable[selectable.length - 1].id);
+        // Pick the most recent allowed cycle (first element of descending array)
+        setCurrentMonthId(selectable[0].id);
       }
     }
   }, [currentUser, currentMonthId, months]);
@@ -4903,13 +4930,16 @@ export default function App() {
             </div>
           ))}
         
-        {currentUser.status === "ARCHIVED" && (
+        {(currentUser.status === "ARCHIVED" || currentUser.status === "LEFT" || currentUser.status === MemberStatus.LEFT || currentUser.status === MemberStatus.ARCHIVED) && (
           <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-xs text-rose-400">
             <span className="text-base">⚠️</span>
             <div>
-              <p className="font-bold">ARCHIVED PROFILE (READ-ONLY ACCESS)</p>
+              <p className="font-bold uppercase">
+                {currentUser.status === "LEFT" || currentUser.status === MemberStatus.LEFT ? "Left Mess Account (Read-Only Access)" : "Archived Profile (Read-Only Access)"}
+              </p>
               <p className="text-[11px] opacity-80 mt-0.5">
-                You have left this mess. You have read-only access to view your past logs, history, and records. You cannot make any edits or save new updates.
+                {currentUser.leavingDate ? `You left the mess on ${currentUser.leavingDate}. ` : "You have left this mess. "}
+                You have read-only access to view your settlements, meals history, vouchers, and past records for the months you stayed.
               </p>
             </div>
           </div>

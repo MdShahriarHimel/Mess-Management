@@ -616,9 +616,10 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
               member.status === MemberStatus.AWAY ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
               member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
               member.status === MemberStatus.PENDING ? "bg-orange-500/20 text-orange-400 border-orange-500/30 animate-pulse" :
+              member.status === MemberStatus.LEFT ? "bg-rose-500/25 text-rose-300 border-rose-500/40" :
               "bg-slate-500/20 text-slate-300 border-slate-500/30"
             }`}>
-              {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status}
+              {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status === MemberStatus.LEFT ? "LEFT MESS" : member.status}
             </span>
           </div>
 
@@ -705,6 +706,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
             <span className={`text-[10px] font-mono font-medium ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
               Join: {member.joiningDate}
             </span>
+            {(member.leavingDate || member.status === MemberStatus.LEFT) && (
+              <span className={`text-[10px] font-mono font-bold ${isDarkMode ? "text-rose-300 bg-rose-500/10 px-1 rounded border border-rose-500/20" : "text-rose-700 bg-rose-50 px-1 rounded border border-rose-200"}`}>
+                Left: {member.leavingDate || "Unknown"}
+              </span>
+            )}
           </div>
 
 
@@ -1549,6 +1555,11 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>
                         </select>
+                        {editingMember.status === MemberStatus.NOT_MEMBER && (
+                          <p className="text-[10px] text-amber-400 font-medium mt-1">
+                            Non-participating Admin: Excluded from all meal rates, shared bill splits, and mess calculations.
+                          </p>
+                        )}
                         {originalRole === UserRole.ADMIN && isEditingSelf && (
                           <p className="text-[9px] text-rose-500 font-bold mt-1">Admin cannot select 'suspend' or 'pending' for their ID/profile.</p>
                         )}
@@ -1565,6 +1576,36 @@ export default function Members({ currentUser, members, isDarkMode, onRefresh, c
                       </div>
                     )}
                   </div>
+
+                  {([UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER].includes(currentUser.role)) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/15">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">Joining Date</label>
+                        <input
+                          type="date"
+                          value={editingMember.joiningDate ? editingMember.joiningDate.split("T")[0] : ""}
+                          onChange={(e) => setEditingMember({ ...editingMember, joiningDate: e.target.value })}
+                          className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                            isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                          }`}
+                        />
+                        <p className="text-[10px] text-slate-500">Member's first day in the mess.</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-rose-400 uppercase tracking-wider block">Leaving Date (If Left)</label>
+                        <input
+                          type="date"
+                          value={editingMember.leavingDate ? editingMember.leavingDate.split("T")[0] : ""}
+                          onChange={(e) => setEditingMember({ ...editingMember, leavingDate: e.target.value || null })}
+                          className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-rose-400 ${
+                            isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                          }`}
+                        />
+                        <p className="text-[10px] text-slate-500">Limits member's monthly dropdown visibility after departure.</p>
+                      </div>
+                    </div>
+                  )}
 
                   {((editingMember.role === UserRole.MANAGER || editingMember.role === UserRole.PARTIAL_MANAGER) && editingMember.role !== originalRole) && (
                     <div className="space-y-1.5 p-3 rounded-xl bg-orange-500/10 border border-orange-500/25 animate-pulse">

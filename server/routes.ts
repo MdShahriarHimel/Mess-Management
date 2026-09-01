@@ -1023,6 +1023,8 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
     return;
   }
 
+  const canManageMemberStatus = isActorUltimateAdmin || isMessAdmin || req.user?.role === UserRole.SUPERUSER || req.user?.role === UserRole.ASSISTANT_SUPERUSER || checkAdminPermission(req, "canSuspendMembers");
+
   // Strip administrative-only settings if actor is neither Ultimate Admin nor Mess Admin
   if (!isActorUltimateAdmin && !isMessAdmin) {
     delete updates.gifEnabledByAdmin;
@@ -1033,13 +1035,13 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
       delete updates.hideCardFromDirectoryByAdmin;
     }
     const isStatusRestore = isSelf && (updates.status === MemberStatus.ACTIVE || updates.status === MemberStatus.PENDING);
-    if (!isStatusRestore) {
+    if (!isStatusRestore && !canManageMemberStatus) {
       delete updates.role;
       delete updates.status;
       delete updates.joiningDate;
       delete updates.leavingDate;
       delete updates.permissions;
-    } else {
+    } else if (!canManageMemberStatus) {
       delete updates.role;
       delete updates.joiningDate;
       delete updates.leavingDate;
@@ -1076,7 +1078,9 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
   const isInactiveNow = [MemberStatus.ARCHIVED, MemberStatus.LEFT, MemberStatus.SUSPENDED].includes(updatedMember.status);
   const wasInactiveBefore = [MemberStatus.ARCHIVED, MemberStatus.LEFT, MemberStatus.SUSPENDED].includes(original.status);
 
-  if (isInactiveNow && !wasInactiveBefore) {
+  if (updates.leavingDate !== undefined) {
+    updatedMember.leavingDate = updates.leavingDate || null;
+  } else if (isInactiveNow && !wasInactiveBefore) {
     updatedMember.leavingDate = new Date().toISOString().split("T")[0];
   } else if (!isInactiveNow && wasInactiveBefore) {
     updatedMember.leavingDate = null;
@@ -3676,15 +3680,57 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   const { monthId } = req.params;
   const db = loadDB();
 
-  // Filter lists
-  const monthMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY);
   const monthDeposits = db.deposits.filter(d => d.monthId === monthId);
   const monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
-  
   const monthMeals = await getMealsForCurrentCycle(monthId);
-
   const monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
   const monthBills = db.bills.filter(b => b.monthId === monthId);
+
+  // Month cycle date range
+  const monthObj = db.months?.find((m: any) => m.id === monthId);
+  const monthStart = monthObj?.startDate ? monthObj.startDate.split("T")[0] : null;
+  const monthEnd = monthObj?.endDate ? monthObj.endDate.split("T")[0] : null;
+
+  // Filter members that participated in this monthly cycle (Active, Away, or Left/Archived who stayed during this cycle)
+  const monthMembers = db.members.filter(m => {
+    // If status is NOT_MEMBER (Not member only for Admin), exclude from mess calculations unless they have direct activity
+    if (m.status === MemberStatus.NOT_MEMBER || (m.status as string) === "NOT_MEMBER") {
+      const hasDirectActivity = monthDeposits.some(d => d.memberId === m.id) ||
+        monthMarkets.some(mk => mk.memberId === m.id) ||
+        monthMeals.some(ml => ml.memberId === m.id) ||
+        monthHoldings.some(h => h.memberId === m.id) ||
+        monthBills.some((b: any) => b.assignedMemberIds?.includes(m.id));
+      return hasDirectActivity;
+    }
+
+    // Check if member has direct activity/records in this cycle
+    const hasActivity = monthDeposits.some(d => d.memberId === m.id) ||
+      monthMarkets.some(mk => mk.memberId === m.id) ||
+      monthMeals.some(ml => ml.memberId === m.id) ||
+      monthHoldings.some(h => h.memberId === m.id) ||
+      monthBills.some((b: any) => b.assignedMemberIds?.includes(m.id));
+
+    if (hasActivity) return true;
+
+    // For Active / Away members (including Admins whose status is ACTIVE/AWAY)
+    if (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY) {
+      if (monthEnd && m.joiningDate && m.joiningDate.split("T")[0] > monthEnd) {
+        return false;
+      }
+      return true;
+    }
+
+    // For Left, Suspended, or Archived members:
+    // They are included in this month if their membership overlapped with this cycle
+    const joinedBeforeMonthEnd = !monthEnd || !m.joiningDate || m.joiningDate.split("T")[0] <= monthEnd;
+    const leftAfterMonthStart = !monthStart || !m.leavingDate || m.leavingDate.split("T")[0] >= monthStart;
+
+    if (joinedBeforeMonthEnd && leftAfterMonthStart) {
+      return true;
+    }
+
+    return false;
+  });
 
   // Sums
   const totalDeposits = monthDeposits.reduce((sum, d) => sum + d.amount, 0);
@@ -3769,21 +3815,7 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
     };
   });
 
-  // Filter out system administrative accounts (ADMIN, SUPERUSER, ASSISTANT_SUPERUSER) who did not contribute or participate in this month's finances
-  const memberSettlements = allMemberSettlements.filter(s => {
-    const isAdministrativeRole = [
-      UserRole.ADMIN,
-      UserRole.SUPERUSER,
-      UserRole.ASSISTANT_SUPERUSER
-    ].includes(s.role as UserRole);
-
-    if (isAdministrativeRole) {
-      const hasContribution = (s.mealsCount > 0) || (s.deposit > 0) || (s.market > 0) || (s.holdingPaid > 0) || (s.mealCost > 0) || (s.balance !== 0);
-      return hasContribution;
-    }
-
-    return true;
-  });
+  const memberSettlements = allMemberSettlements;
 
   res.json({
     totalDeposits,
