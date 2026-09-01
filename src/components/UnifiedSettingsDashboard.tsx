@@ -255,17 +255,34 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const [roomRentInput, setRoomRentInput] = useState<string>("");
   const [roomDescInput, setRoomDescInput] = useState<string>("");
 
+  // Mess Official PDF Ledger Header State
+  const [ledgerHeaderTitle, setLedgerHeaderTitle] = useState<string>("");
+  const [ledgerHeaderSubtitle, setLedgerHeaderSubtitle] = useState<string>("");
+  const [ledgerFooterText, setLedgerFooterText] = useState<string>("");
+  const [isSavingLedgerHeader, setIsSavingLedgerHeader] = useState<boolean>(false);
+
   useEffect(() => {
     fetch("/api/settings", {
       headers: { "Authorization": `Bearer ${currentUser.id}` }
     })
       .then(res => res.json())
       .then(data => {
-        if (data && Array.isArray(data.roomLabels)) {
-          setRoomList(data.roomLabels);
+        if (data) {
+          if (Array.isArray(data.roomLabels)) {
+            setRoomList(data.roomLabels);
+          }
+          if (data.ledgerHeaderTitle !== undefined) {
+            setLedgerHeaderTitle(data.ledgerHeaderTitle || "");
+          }
+          if (data.ledgerHeaderSubtitle !== undefined) {
+            setLedgerHeaderSubtitle(data.ledgerHeaderSubtitle || "");
+          }
+          if (data.ledgerFooterText !== undefined) {
+            setLedgerFooterText(data.ledgerFooterText || "");
+          }
         }
       })
-      .catch(e => console.error("Error loading roomLabels:", e));
+      .catch(e => console.error("Error loading settings in UnifiedSettingsDashboard:", e));
   }, [currentUser.id]);
 
   const handleToggleMessAuditMode = async (messId: string, enable: boolean) => {
@@ -1591,6 +1608,84 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                       }`}
                     >
                       {messAnimations?.disableBackgroundAudio ? "🔈 Muted for Mess" : "🔊 Playing for Mess"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Mess-specific Settlement & PDF Ledger Header Customization */}
+              {(currentUser.role === "SUPERUSER" || currentUser.role === "ADMIN" || isUltimateAdmin) && (
+                <div className="mt-6 p-5 rounded-xl border border-cyan-500/20 bg-slate-950/40 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <LucideIcons.FileText className="text-cyan-400 shrink-0 mt-0.5" size={18} />
+                      <div>
+                        <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                          Official Settlement & PDF Ledger Header (Super User Settings)
+                        </h4>
+                        <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
+                          Set the default official header and tagline printed on monthly settlement sheets and audit PDF exports for this mess.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-300 block uppercase">
+                        Official Header Title
+                      </label>
+                      <input
+                        type="text"
+                        value={ledgerHeaderTitle}
+                        onChange={(e) => setLedgerHeaderTitle(e.target.value)}
+                        placeholder="e.g. Ababil mess Official Ledger"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-750 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-medium transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-300 block uppercase">
+                        Header Subtitle / Tagline
+                      </label>
+                      <input
+                        type="text"
+                        value={ledgerHeaderSubtitle}
+                        onChange={(e) => setLedgerHeaderSubtitle(e.target.value)}
+                        placeholder="e.g. ERP Cloud Platform • Automated Audit Snapshot"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-750 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                    <span className="text-[10px] text-slate-500">
+                      Changes apply automatically to all future PDF printouts and settlement export sheets for this mess tenant.
+                    </span>
+                    <button
+                      onClick={async () => {
+                        setIsSavingLedgerHeader(true);
+                        const success = await handleUpdateSettings({
+                          ledgerHeaderTitle,
+                          ledgerHeaderSubtitle,
+                          ledgerFooterText
+                        });
+                        setIsSavingLedgerHeader(false);
+                        if (success) {
+                          showStatus("success", "Official PDF Ledger header settings saved successfully.");
+                        } else {
+                          showStatus("error", "Failed to save PDF Ledger header settings.");
+                        }
+                      }}
+                      disabled={isSavingLedgerHeader}
+                      className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      {isSavingLedgerHeader ? (
+                        <LucideIcons.Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <LucideIcons.Save size={13} />
+                      )}
+                      <span>Save Ledger Header</span>
                     </button>
                   </div>
                 </div>

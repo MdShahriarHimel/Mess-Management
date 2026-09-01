@@ -4090,6 +4090,9 @@ function mapSettingsToRow(messId: string, settings: any) {
     _lastMigratedAt: settings.lastMigratedAt,
     _roomLabels: settings.roomLabels,
     _customBillOverrides: settings.customBillOverrides,
+    _ledgerHeaderTitle: settings.ledgerHeaderTitle,
+    _ledgerHeaderSubtitle: settings.ledgerHeaderSubtitle,
+    _ledgerFooterText: settings.ledgerFooterText,
   };
 
   return {
@@ -4152,6 +4155,9 @@ function mapRowToSettings(row: any) {
         { id: "room_c", label: "Room C (Small)", rent: 2000, description: "Standard Small Room" },
       ];
   const customBillOverrides = appearancePermissionsRaw._customBillOverrides || {};
+  const ledgerHeaderTitle = appearancePermissionsRaw._ledgerHeaderTitle || "";
+  const ledgerHeaderSubtitle = appearancePermissionsRaw._ledgerHeaderSubtitle || "";
+  const ledgerFooterText = appearancePermissionsRaw._ledgerFooterText || "";
 
   const appearancePermissionsClean = { ...appearancePermissionsRaw };
   delete appearancePermissionsClean._schemaVersion;
@@ -4160,6 +4166,9 @@ function mapRowToSettings(row: any) {
   delete appearancePermissionsClean._lastMigratedAt;
   delete appearancePermissionsClean._roomLabels;
   delete appearancePermissionsClean._customBillOverrides;
+  delete appearancePermissionsClean._ledgerHeaderTitle;
+  delete appearancePermissionsClean._ledgerHeaderSubtitle;
+  delete appearancePermissionsClean._ledgerFooterText;
 
   return {
     messName: row.messName,
@@ -4197,6 +4206,9 @@ function mapRowToSettings(row: any) {
     }),
     roomLabels,
     customBillOverrides,
+    ledgerHeaderTitle,
+    ledgerHeaderSubtitle,
+    ledgerFooterText,
     schemaVersion,
     createdAt,
     updatedAt,
@@ -5176,6 +5188,18 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       return;
     }
     currentSettings.translations = translations;
+  }
+
+  if (req.body.ledgerHeaderTitle !== undefined) {
+    currentSettings.ledgerHeaderTitle = req.body.ledgerHeaderTitle;
+  }
+
+  if (req.body.ledgerHeaderSubtitle !== undefined) {
+    currentSettings.ledgerHeaderSubtitle = req.body.ledgerHeaderSubtitle;
+  }
+
+  if (req.body.ledgerFooterText !== undefined) {
+    currentSettings.ledgerFooterText = req.body.ledgerFooterText;
   }
 
   if (req.body.auditMode !== undefined) {

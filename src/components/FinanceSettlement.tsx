@@ -62,6 +62,15 @@ export default function FinanceSettlement({
   const [isSavingOverrides, setIsSavingOverrides] = useState(false);
   const [overrideSaveStatus, setOverrideSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Mess Settings State & PDF Header Customization
+  const [messSettings, setMessSettings] = useState<any>(null);
+  const [pdfHeaderTitle, setPdfHeaderTitle] = useState("");
+  const [pdfHeaderSubtitle, setPdfHeaderSubtitle] = useState("");
+  const [pdfFooterText, setPdfFooterText] = useState("");
+  const [pdfManagerDisplay, setPdfManagerDisplay] = useState("");
+  const [isSavingPdfDefaults, setIsSavingPdfDefaults] = useState(false);
+  const [savePdfDefaultsSuccess, setSavePdfDefaultsSuccess] = useState(false);
+
   useEffect(() => {
     fetch("/api/settings", {
       headers: { "Authorization": `Bearer ${currentUser.id}` }
@@ -69,6 +78,7 @@ export default function FinanceSettlement({
       .then(res => res.json())
       .then(data => {
         if (data) {
+          setMessSettings(data);
           if (Array.isArray(data.roomLabels)) {
             setRoomLabels(data.roomLabels);
           }
@@ -367,37 +377,121 @@ export default function FinanceSettlement({
   const [pdfShiftLogs, setPdfShiftLogs] = useState<any[]>([]);
   const [pdfRatings, setPdfRatings] = useState<any[]>([]);
 
+  const deriveMonthManagers = (shiftLogsList: any[] = []) => {
+    const managerNamesSet = new Set<string>();
+
+    // 1. Current full manager(s) and partial manager(s)
+    const fullManagers = members.filter(m => m.role === UserRole.MANAGER);
+    const partialManagers = members.filter(m => m.role === UserRole.PARTIAL_MANAGER);
+
+    fullManagers.forEach(m => managerNamesSet.add(m.nickname || m.name));
+    partialManagers.forEach(m => managerNamesSet.add(`${m.nickname || m.name} (Partial)`));
+
+    // 2. Scan shift logs for managers assigned or shifted during this cycle
+    shiftLogsList.forEach((log: any) => {
+      if (log.details) {
+        const shiftMatch = log.details.match(/to\s+([A-Za-z0-9_.\s\u0980-\u09FF]+?)(?:\.|\s+Date|$)/i);
+        if (shiftMatch && shiftMatch[1]) {
+          managerNamesSet.add(shiftMatch[1].trim());
+        }
+        const demoteMatch = log.details.match(/previous manager\s+([A-Za-z0-9_.\s\u0980-\u09FF]+?)(?:\s+due|\.|$)/i);
+        if (demoteMatch && demoteMatch[1]) {
+          managerNamesSet.add(demoteMatch[1].trim());
+        }
+      }
+      if (log.userName && (log.action === "SHIFT_MANAGER" || log.action === "APPOINT_PARTIAL_MANAGER" || log.action === "DEMOTE_PREVIOUS_MANAGER")) {
+        managerNamesSet.add(log.userName);
+      }
+    });
+
+    const managersArr = Array.from(managerNamesSet).filter(Boolean);
+    if (managersArr.length > 0) {
+      return managersArr.join(", ");
+    }
+    return fullManagers.length > 0 ? (fullManagers[0].nickname || fullManagers[0].name) : "Not Assigned";
+  };
+
   const handleOpenLedgerPDFModal = async () => {
     setShowLedgerPDFModal(true);
     setPdfLoading(true);
+    setSavePdfDefaultsSuccess(false);
     try {
       const authHeader = { "Authorization": `Bearer ${currentUser.id}` };
-      const [marRes, logRes, ratRes] = await Promise.all([
+      const [marRes, logRes, ratRes, setRes] = await Promise.all([
         fetch(`/api/markets/${currentMonthId}`, { headers: authHeader }),
         fetch("/api/auditlogs", { headers: authHeader }),
-        fetch(`/api/ratings/${currentMonthId}`, { headers: authHeader })
+        fetch(`/api/ratings/${currentMonthId}`, { headers: authHeader }),
+        fetch("/api/settings", { headers: authHeader })
       ]);
       
+      let fetchedSettings = messSettings;
+      if (setRes.ok) {
+        fetchedSettings = await setRes.json().catch(() => messSettings);
+        if (fetchedSettings) setMessSettings(fetchedSettings);
+      }
+
       if (marRes.ok) {
         const marData = await marRes.json().catch(() => ({}));
         setPdfMarkets(marData.markets || []);
       }
+      let filteredLogs: any[] = [];
       if (logRes.ok) {
         const logData = await logRes.json().catch(() => ({}));
         // Filter shift and partial manager logs
-        const filtered = (logData.auditLogs || []).filter((l: any) => 
+        filteredLogs = (logData.auditLogs || []).filter((l: any) => 
           l.action === "SHIFT_MANAGER" || l.action === "APPOINT_PARTIAL_MANAGER" || l.action === "DEMOTE_PREVIOUS_MANAGER"
         );
-        setPdfShiftLogs(filtered);
+        setPdfShiftLogs(filteredLogs);
       }
       if (ratRes.ok) {
         const ratData = await ratRes.json().catch(() => ({}));
         setPdfRatings(ratData.ratings || []);
       }
+
+      // Initialize customizable header & manager fields
+      const currentMessName = fetchedSettings?.messName || logoText || "Mess";
+      const resolvedTitle = fetchedSettings?.ledgerHeaderTitle || `${currentMessName} Official Ledger`;
+      const resolvedSubtitle = fetchedSettings?.ledgerHeaderSubtitle || "ERP Cloud Platform • Automated Audit Snapshot";
+      const resolvedFooter = fetchedSettings?.ledgerFooterText || "";
+
+      setPdfHeaderTitle(resolvedTitle);
+      setPdfHeaderSubtitle(resolvedSubtitle);
+      setPdfFooterText(resolvedFooter);
+      setPdfManagerDisplay(deriveMonthManagers(filteredLogs));
     } catch (e) {
       console.error("Failed to load PDF datasets:", e);
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  const handleSavePdfDefaults = async () => {
+    setIsSavingPdfDefaults(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${currentUser.id}`
+        },
+        body: JSON.stringify({
+          ledgerHeaderTitle: pdfHeaderTitle,
+          ledgerHeaderSubtitle: pdfHeaderSubtitle,
+          ledgerFooterText: pdfFooterText,
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json().catch(() => ({}));
+        if (updated.settings) {
+          setMessSettings(updated.settings);
+        }
+        setSavePdfDefaultsSuccess(true);
+        setTimeout(() => setSavePdfDefaultsSuccess(false), 3500);
+      }
+    } catch (e) {
+      console.error("Failed to save PDF ledger defaults for mess:", e);
+    } finally {
+      setIsSavingPdfDefaults(false);
     }
   };
 
@@ -726,8 +820,8 @@ export default function FinanceSettlement({
       </head>
       <body>
         <div class="header">
-          <h1>Bangladesh Mess Association Official Ledger</h1>
-          <p>ERP Cloud Platform &bull; Automated Audit Snapshot</p>
+          <h1>${pdfHeaderTitle || (messSettings?.ledgerHeaderTitle || `${messSettings?.messName || logoText || "Mess"} Official Ledger`)}</h1>
+          <p>${pdfHeaderSubtitle || (messSettings?.ledgerHeaderSubtitle || "ERP Cloud Platform &bull; Automated Audit Snapshot")}</p>
         </div>
 
         <div class="meta-grid">
@@ -736,8 +830,8 @@ export default function FinanceSettlement({
             <div>${activeMonth?.name || "N/A"}</div>
           </div>
           <div class="meta-item">
-            <label>Active Manager</label>
-            <div>${activeManager?.name || "Not Assigned"}</div>
+            <label>Manager</label>
+            <div>${pdfManagerDisplay || (activeManager ? (activeManager.nickname || activeManager.name) : "Not Assigned")}</div>
           </div>
           <div class="meta-item">
             <label>Average Manager Rating</label>
@@ -755,7 +849,7 @@ export default function FinanceSettlement({
         ${shiftingHtml}
 
         <div class="footer">
-          Generated officially on ${new Date().toLocaleString()} &bull; Under Bangladesh Mess ERP protocol compliance.
+          ${pdfFooterText || (messSettings?.ledgerFooterText || `Generated officially on ${new Date().toLocaleString()} &bull; Under Mess ERP protocol compliance.`)}
         </div>
         
         <script>
@@ -3221,12 +3315,12 @@ export default function FinanceSettlement({
 
       {/* 4. LEDGER PDF EXPORT OPTIONS MODAL */}
       {showLedgerPDFModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-2xl">
-            <div className="flex justify-between items-center mb-5 border-b border-slate-850 pb-3">
-              <h3 className="text-base font-bold font-display flex items-center gap-1.5">
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="w-full max-w-lg p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-2xl my-8">
+            <div className="flex justify-between items-center mb-5 border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold font-display flex items-center gap-2">
                 <Printer size={18} className="text-cyan-400" />
-                Ledger PDF Export Configuration
+                Ledger PDF Export & Customization
               </h3>
               <button onClick={() => setShowLedgerPDFModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X size={18} />
@@ -3236,16 +3330,94 @@ export default function FinanceSettlement({
             {pdfLoading ? (
               <div className="py-12 flex flex-col items-center justify-center gap-3">
                 <RefreshCw size={24} className="text-cyan-400 animate-spin" />
-                <span className="text-xs text-slate-400 font-medium">Assembling Ledger Datasets...</span>
+                <span className="text-xs text-slate-400 font-medium">Assembling Ledger Datasets & Tenant Headers...</span>
               </div>
             ) : (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Customize the elements that will be printed in your monthly financial ledger. 
-                  Note: Following regulatory standards, <strong>the ledger report does not include individual meal count columns</strong>.
+                  Customize the title, subtitle, and manager details printed on your monthly settlement ledger sheet.
                 </p>
 
-                <div className="space-y-3 bg-slate-950/40 p-4 rounded-xl border border-slate-850">
+                {/* Customizable Header Information Card */}
+                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3.5 text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText size={13} />
+                      Mess Ledger Header Configuration
+                    </span>
+                    {(currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER || currentUser.role === UserRole.ADMIN) && (
+                      <span className="text-[9px] font-semibold text-slate-400 bg-slate-850 px-2 py-0.5 rounded border border-slate-750">
+                        Super User Editable
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-300 block uppercase">
+                      Official Header Title
+                    </label>
+                    <input
+                      type="text"
+                      value={pdfHeaderTitle}
+                      onChange={(e) => setPdfHeaderTitle(e.target.value)}
+                      placeholder="e.g. Ababil mess Official Ledger"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-750 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-medium transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-300 block uppercase">
+                      Header Subtitle / Audit Tagline
+                    </label>
+                    <input
+                      type="text"
+                      value={pdfHeaderSubtitle}
+                      onChange={(e) => setPdfHeaderSubtitle(e.target.value)}
+                      placeholder="e.g. ERP Cloud Platform • Automated Audit Snapshot"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-750 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-medium transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-300 block uppercase">
+                      Manager(s) in this Settlement Cycle
+                    </label>
+                    <input
+                      type="text"
+                      value={pdfManagerDisplay}
+                      onChange={(e) => setPdfManagerDisplay(e.target.value)}
+                      placeholder="e.g. Nahid (1st–27th Aug), Sakib (28th–31st Aug)"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-750 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-medium transition-all"
+                    />
+                    <span className="text-[10px] text-slate-500 block">
+                      Label in the PDF will display "Manager". If multiple managers served during the cycle, specify their names or date ranges above.
+                    </span>
+                  </div>
+
+                  {(currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER || currentUser.role === UserRole.ADMIN) && (
+                    <div className="pt-2 flex items-center justify-between border-t border-slate-850">
+                      <span className="text-[10px] text-slate-400">
+                        Save custom title as mess default?
+                      </span>
+                      <button
+                        onClick={handleSavePdfDefaults}
+                        disabled={isSavingPdfDefaults}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {isSavingPdfDefaults ? (
+                          <RefreshCw size={11} className="animate-spin" />
+                        ) : savePdfDefaultsSuccess ? (
+                          <Check size={11} className="text-emerald-400" />
+                        ) : (
+                          <Save size={11} />
+                        )}
+                        <span>{savePdfDefaultsSuccess ? "Default Saved!" : "Save Mess Default"}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2.5 bg-slate-950/40 p-4 rounded-xl border border-slate-850">
                   <label className="flex items-start gap-3 cursor-pointer group">
                     <input
                       type="checkbox"
@@ -3263,7 +3435,7 @@ export default function FinanceSettlement({
                     </div>
                   </label>
 
-                  <label className="flex items-start gap-3 cursor-pointer group border-t border-slate-850/50 pt-3">
+                  <label className="flex items-start gap-3 cursor-pointer group border-t border-slate-850/50 pt-2.5">
                     <input
                       type="checkbox"
                       checked={pdfIncludeMarkets}
@@ -3281,18 +3453,18 @@ export default function FinanceSettlement({
                   </label>
                 </div>
 
-                <div className="text-xs text-slate-400 bg-cyan-950/20 border border-cyan-900/40 p-3 rounded-lg flex gap-2">
+                <div className="text-xs text-slate-400 bg-cyan-950/20 border border-cyan-900/40 p-3 rounded-lg flex gap-2 text-left">
                   <AlertCircle size={16} className="text-cyan-400 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold text-cyan-300 block mb-0.5">Manager Shift & Rating Audit</span>
-                    <span>Manager shifting history, shifting dates, transition reasons and manager ratings are automatically compiled and printed.</span>
+                    <span className="font-bold text-cyan-300 block mb-0.5">Manager Transition & Rating Audit</span>
+                    <span>Manager shifting history, transition dates, reasons, and manager ratings are automatically compiled and printed in the audit trail.</span>
                   </div>
                 </div>
 
                 <div className="flex gap-3 pt-3 border-t border-slate-850">
                   <button
                     onClick={() => setShowLedgerPDFModal(false)}
-                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-750 text-xs font-bold rounded-xl transition-all"
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-750 text-xs font-bold rounded-xl transition-all cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -3301,10 +3473,10 @@ export default function FinanceSettlement({
                       setShowLedgerPDFModal(false);
                       generatePrintablePDF();
                     }}
-                    className="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/10 transition-all flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Printer size={14} />
-                    Generate & Print
+                    Generate & Print PDF
                   </button>
                 </div>
               </div>
