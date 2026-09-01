@@ -4,7 +4,7 @@
  */
 
 import { SyncIndicator } from "./components/SyncIndicator";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { onAuthStateChanged, onIdTokenChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
@@ -1574,7 +1574,13 @@ export default function App() {
       o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
     )
   );
-  const [dismissedGlobalAnnouncement, setDismissedGlobalAnnouncement] = useState(false);
+  const [dismissedGlobalAnnouncement, setDismissedGlobalAnnouncement] = useState(() => {
+    try {
+      return localStorage.getItem("dismissed_global_announcement") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [activeAnnouncements, setActiveAnnouncements] = useState<any[]>([]);
   const [dismissedAnnIds, setDismissedAnnIds] = useState<string[]>([]);
 
@@ -1844,6 +1850,34 @@ export default function App() {
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<string>("mess-appearance");
   const [erpBrandingState, setErpBrandingState] = useState<any>(null);
   const [messAppearanceState, setMessAppearanceState] = useState<any>(null);
+
+  const isGlobalAnnouncementDismissed = useMemo(() => {
+    if (dismissedGlobalAnnouncement) return true;
+    try {
+      const saved = localStorage.getItem("dismissed_global_announcement_text");
+      if (saved && saved === erpBrandingState?.globalAnnouncement) {
+        return true;
+      }
+      if (!erpBrandingState?.globalAnnouncement || erpBrandingState.globalAnnouncement.trim() === "") {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }, [dismissedGlobalAnnouncement, erpBrandingState?.globalAnnouncement]);
+
+  const handleDismissGlobalAnnouncement = () => {
+    setDismissedGlobalAnnouncement(true);
+    try {
+      if (erpBrandingState?.globalAnnouncement) {
+        localStorage.setItem("dismissed_global_announcement_text", erpBrandingState.globalAnnouncement);
+      }
+      localStorage.setItem("dismissed_global_announcement", "true");
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Branding Icon Helper
   const CurrentBrandIcon = (() => {
@@ -2363,6 +2397,30 @@ export default function App() {
     }
   };
 
+  const sortMonthsDescending = <T extends { startDate?: string; endDate?: string; name?: string }>(list: T[]): T[] => {
+    return [...list].sort((a, b) => {
+      const parseMonthTime = (m: { startDate?: string; endDate?: string; name?: string }) => {
+        if (m.startDate) {
+          const t = new Date(m.startDate).getTime();
+          if (!isNaN(t) && t > 0) return t;
+        }
+        if (m.endDate) {
+          const t = new Date(m.endDate).getTime();
+          if (!isNaN(t) && t > 0) return t;
+        }
+        if (m.name) {
+          const t = new Date(Date.parse(m.name + " 1")).getTime();
+          if (!isNaN(t) && t > 0) return t;
+        }
+        return 0;
+      };
+      const timeA = parseMonthTime(a);
+      const timeB = parseMonthTime(b);
+      if (timeA !== timeB) return timeB - timeA;
+      return (b.name || "").localeCompare(a.name || "");
+    });
+  };
+
   // Fetch core constants
   const fetchMonthsAndMembers = async (token: string, isInitialLoad = false) => {
     try {
@@ -2373,7 +2431,8 @@ export default function App() {
 
       if (monthsRes.ok) {
         const monthsData = await monthsRes.json().catch(() => ({}));
-        const loadedMonths = monthsData.months || [];
+        const rawMonths: MessMonth[] = monthsData.months || [];
+        const loadedMonths = sortMonthsDescending(rawMonths);
         setMonths(loadedMonths);
 
         const defaults = getMonthDefaults(loadedMonths);
@@ -2388,7 +2447,7 @@ export default function App() {
             const start = new Date(m.startDate);
             const end = new Date(m.endDate);
             return now >= start && now <= end && !m.isLocked;
-          }) || loadedMonths.find((m: MessMonth) => !m.isLocked) || loadedMonths[loadedMonths.length - 1];
+          }) || loadedMonths.find((m: MessMonth) => !m.isLocked) || loadedMonths[0];
 
           if (!currentMonthId || !loadedMonths.some((m: MessMonth) => m.id === currentMonthId)) {
             if (activeMonth) setCurrentMonthId(activeMonth.id);
@@ -2734,7 +2793,8 @@ export default function App() {
   };
 
   const getSelectableMonths = () => {
-    if (!currentUser) return months;
+    const sortedDesc = sortMonthsDescending(months);
+    if (!currentUser) return sortedDesc;
     const isPrivileged = currentUser.role === UserRole.ADMIN ||
       currentUser.role === UserRole.SUPERUSER ||
       currentUser.role === UserRole.ASSISTANT_SUPERUSER ||
@@ -2743,30 +2803,31 @@ export default function App() {
 
     // Privileged authorities always have access to all historical cycles
     if (isPrivileged) {
-      return months;
+      return sortedDesc;
     }
 
     // Regular members: if history window restriction is active (> 0)
     if (memberHistoryWindowMonths && memberHistoryWindowMonths > 0 && months.length > 0) {
-      const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      const sortedAsc = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       const now = new Date();
-      let currentIdx = sorted.findIndex(m => {
+      let currentIdx = sortedAsc.findIndex(m => {
         const start = new Date(m.startDate);
         const end = new Date(m.endDate);
         return now >= start && now <= end;
       });
       if (currentIdx === -1) {
-        currentIdx = sorted.findIndex(m => m.id === currentMonthId);
+        currentIdx = sortedAsc.findIndex(m => m.id === currentMonthId);
         if (currentIdx === -1) {
-          currentIdx = sorted.length - 1;
+          currentIdx = sortedAsc.length - 1;
         }
       }
 
       const earliestIdx = Math.max(0, currentIdx - memberHistoryWindowMonths);
-      return sorted.slice(earliestIdx);
+      const allowed = sortedAsc.slice(earliestIdx);
+      return sortMonthsDescending(allowed);
     }
 
-    return months;
+    return sortedDesc;
   };
 
   useEffect(() => {
@@ -4684,13 +4745,13 @@ export default function App() {
               <CurrentBrandIcon size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <h1 className={`font-extrabold text-base tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-none uppercase truncate ${
+              <h1 className={`font-extrabold text-sm tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-tight uppercase truncate ${
                 activeIsDarkMode ? "from-cyan-400 to-cyan-500" : "from-cyan-700 to-cyan-900"
               }`}>
                 {erpBrandingState?.logoText || messName}
               </h1>
-              <span className={`text-[8px] font-bold font-mono block tracking-wider mt-0.5 uppercase truncate ${
-                activeIsDarkMode ? "text-slate-500" : "text-cyan-600/70"
+              <span className={`text-[7px] font-semibold font-mono block tracking-widest uppercase truncate opacity-70 ${
+                activeIsDarkMode ? "text-slate-400" : "text-cyan-800"
               }`}>
                 {erpBrandingState?.erpName || "Enterprise"} • {erpBrandingState?.erpVersion || "v2.5.4"}
               </span>
@@ -4791,39 +4852,6 @@ export default function App() {
           MAIN SCROLLABLE CONTENT BODY
           --------------------------------------------------------- */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full space-y-6">
-
-        {/* Central Global Announcement from Level 1 ERP Identity */}
-        {erpBrandingState?.globalAnnouncement && !dismissedGlobalAnnouncement && (
-          <div 
-            id="erp-global-announcement-banner"
-            className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs font-sans transition-all animate-fadeIn ${
-              activeIsDarkMode 
-                ? "bg-gradient-to-r from-cyan-950/40 to-slate-900/60 border-cyan-500/30 text-cyan-200" 
-                : "bg-gradient-to-r from-cyan-50 to-white border-cyan-200 text-cyan-900 shadow-sm"
-            }`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 shrink-0">
-                <CurrentBrandIcon size={14} />
-              </span>
-              <div className="min-w-0">
-                <span className="font-bold text-[10px] tracking-wider uppercase opacity-75 block">
-                  {erpBrandingState?.erpName || "Mess ERP"} Global Broadcast
-                </span>
-                <p className="font-medium text-xs truncate md:whitespace-normal">{erpBrandingState.globalAnnouncement}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setDismissedGlobalAnnouncement(true)}
-              className={`p-1 rounded-lg cursor-pointer transition-colors shrink-0 ${
-                activeIsDarkMode ? "hover:bg-white/10 text-slate-400 hover:text-white" : "hover:bg-cyan-100 text-cyan-700"
-              }`}
-              title="Dismiss announcement"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
         
         {/* Dynamic Platform Announcement Banners (Top Position) */}
         {activeAnnouncements

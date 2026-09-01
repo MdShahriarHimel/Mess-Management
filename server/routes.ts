@@ -1349,7 +1349,28 @@ router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.
 // ---------------------------------------------------------
 router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const db = loadDB();
-  res.json({ months: db.months });
+  const sortedMonths = [...db.months].sort((a, b) => {
+    const parseMonthTime = (m: MessMonth) => {
+      if (m.startDate) {
+        const t = new Date(m.startDate).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      if (m.endDate) {
+        const t = new Date(m.endDate).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      if (m.name) {
+        const t = new Date(Date.parse(m.name + " 1")).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      return 0;
+    };
+    const timeA = parseMonthTime(a);
+    const timeB = parseMonthTime(b);
+    if (timeA !== timeB) return timeB - timeA;
+    return (b.name || "").localeCompare(a.name || "");
+  });
+  res.json({ months: sortedMonths });
 });
 
 // Create new month (Admin, Super User, Manager, and Partial Manager)
