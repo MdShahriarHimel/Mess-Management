@@ -355,6 +355,36 @@ export default function Dashboard({
     UserRole.ASSISTANT_SUPERUSER
   ].includes(currentUser.role as UserRole);
 
+  // Helper to format a bill's display title for duty roster
+  const formatBillDutyTitle = (billName: string) => {
+    if (!billName) return "Mess Duty";
+    // Strip trailing date like (2026-09-02)
+    const clean = billName.replace(/\s*\([^)]+\)$/, "").trim();
+    const parts = clean.split(":");
+    let type = "";
+    let name = clean;
+    if (parts.length >= 2) {
+      type = parts[0].trim().toUpperCase();
+      name = parts.slice(1).join(":").trim();
+    } else {
+      const match = clean.match(/^(RENT|WORKER|UTILITY|EXTRA)\s+(.*)$/i);
+      if (match) {
+        type = match[1].toUpperCase();
+        name = match[2].trim();
+      }
+    }
+
+    if (!name || name.toLowerCase() === "default bill") {
+      if (type === "RENT") return "House Rent / মেস ভাড়া";
+      if (type === "WORKER") return "Maid / বুয়া বিল";
+      if (type === "UTILITY") return "Utility / কারেন্ট বিল";
+      if (type === "EXTRA") return "Extra Bill";
+      return type ? `${type} Bill` : "Mess Bill";
+    }
+
+    return name;
+  };
+
   // Month-specific duties for the currently selected/active month
   const activeMonthDuties = useMemo(() => {
     return (duties || []).filter((d: any) => d.monthId === currentMonthId);
@@ -365,26 +395,67 @@ export default function Dashboard({
     return activeMonthDuties.filter((d: any) => !d.name?.toLowerCase()?.startsWith("market duty:"));
   }, [activeMonthDuties]);
 
+  // Active participating members with assigned work duties in this month (strictly combining active registered bills collectors and duties table for current month)
+  const assignedMembersForMonth = useMemo(() => {
+    const allMembers = members.length > 0 ? members : membersListProp;
+    const eligibleMembers = (allMembers || []).filter(
+      (m: any) => (m.status === "ACTIVE" || m.status === "AWAY") && (m.role !== UserRole.ADMIN || !m.hideAdminRole)
+    );
+
+    const result: Array<{
+      dutyId: string;
+      memberId: string;
+      name: string;
+      nickname: string;
+      member: any;
+      assignedTask: string;
+      taskDetails?: string;
+    }> = [];
+
+    eligibleMembers.forEach((member: any) => {
+      const dutyTitles: string[] = [];
+      let detailsNotes = "";
+
+      // 1. Check registered bills for this active month where this member is assigned as collector
+      const collectorBills = (reportSummary?.bills || []).filter((b: any) => b.collectorId === member.id);
+      collectorBills.forEach((b: any) => {
+        const title = formatBillDutyTitle(b.name);
+        if (title && !dutyTitles.includes(title)) {
+          dutyTitles.push(title);
+        }
+      });
+
+      // 2. Check work duties from duties table for this active month
+      const memberDuties = activeWorkDuties.filter((d: any) => d.memberId === member.id);
+      memberDuties.forEach((d: any) => {
+        if (d.name && d.name.trim() && !dutyTitles.includes(d.name.trim())) {
+          dutyTitles.push(d.name.trim());
+        }
+        if (d.task && d.task.trim()) {
+          detailsNotes = d.task.trim();
+        }
+      });
+
+      if (dutyTitles.length > 0) {
+        result.push({
+          dutyId: `duty-${member.id}`,
+          memberId: member.id,
+          name: member.name || "Member",
+          nickname: member.nickname || "",
+          member,
+          assignedTask: dutyTitles.join(" • "),
+          taskDetails: detailsNotes
+        });
+      }
+    });
+
+    return result;
+  }, [activeWorkDuties, members, membersListProp, reportSummary?.bills]);
+
   // Current user's duty for this active month
   const currentUserDuty = useMemo(() => {
-    return activeWorkDuties.find((d: any) => d.memberId === currentUser.id);
-  }, [activeWorkDuties, currentUser.id]);
-
-  // Active participating members with assigned work duties in this month
-  const assignedMembersForMonth = useMemo(() => {
-    return activeWorkDuties.map((duty: any) => {
-      const member = members.find((m: any) => m.id === duty.memberId);
-      return {
-        dutyId: duty.id,
-        memberId: duty.memberId,
-        name: member?.name || "Unknown Member",
-        nickname: member?.nickname || "",
-        member,
-        assignedTask: duty.name,
-        taskDetails: duty.task || ""
-      };
-    }).filter((item: any) => item.member && (item.member.status === "ACTIVE" || item.member.status === "AWAY"));
-  }, [activeWorkDuties, members]);
+    return assignedMembersForMonth.find((item) => item.memberId === currentUser.id);
+  }, [assignedMembersForMonth, currentUser.id]);
 
   if (dashboardVisibility && dashboardVisibility.showDashboardOverview === false) {
     return (
@@ -900,7 +971,7 @@ export default function Dashboard({
               {currentUserDuty ? (
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs text-orange-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                  <span><strong>Work Assigned:</strong> {currentUserDuty.name}{currentUserDuty.task ? ` (${currentUserDuty.task})` : ""}</span>
+                  <span><strong>Work Assigned:</strong> {currentUserDuty.assignedTask}{currentUserDuty.taskDetails ? ` (${currentUserDuty.taskDetails})` : ""}</span>
                 </div>
               ) : (
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-500/5 border border-slate-500/10 text-xs text-slate-400">
