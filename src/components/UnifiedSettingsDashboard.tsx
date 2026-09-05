@@ -6,6 +6,7 @@ import { LoginEnginePanel } from "./LoginEnginePanel";
 import { MonetizationHub } from "./MonetizationHub";
 import { RespectSenioritySettings, RoomLabel } from "../types";
 import { getRespectDisplayName } from "../utils/respectHelper";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface Member {
   id: string;
@@ -202,6 +203,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     customNoticeTitle: "Hostel Notice Board",
     ...(homeCustomization || {})
   });
+  const effectiveAuthToken = sessionToken || getAuthToken(currentUser);
 
   useEffect(() => {
     if (dashboardVisibility) {
@@ -223,7 +225,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     setLoadingAuditMesses(true);
     try {
       const res = await fetch("/api/admin/messes", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${effectiveAuthToken}` }
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -263,7 +265,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   useEffect(() => {
     fetch("/api/settings", {
-      headers: { "Authorization": `Bearer ${currentUser.id}` }
+      headers: { "Authorization": `Bearer ${effectiveAuthToken}` }
     })
       .then(res => res.json())
       .then(data => {
@@ -291,7 +293,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${effectiveAuthToken}`
         },
         body: JSON.stringify({ enabled: enable, messId })
       });

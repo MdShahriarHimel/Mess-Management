@@ -8,6 +8,7 @@ import { Bell, Plus, Pin, Archive, Trash2, X, Check, AlertTriangle } from "lucid
 import { Member, Notice, UserRole } from "../types.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface NoticesProps {
   currentUser: Member;
@@ -15,6 +16,7 @@ interface NoticesProps {
 }
 
 export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
+  const authToken = getAuthToken(currentUser);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
@@ -33,7 +35,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
     try {
       const url = (loadAll || hasLoadedAll) ? "/api/notices" : "/api/notices?limit=5";
       const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -100,7 +102,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ title, content, pinned, isDirectToManager })
       });
@@ -125,7 +127,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ pinned: !currentPin })
       });
@@ -143,7 +145,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ archived: !currentArchive })
       });
@@ -160,7 +162,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
     try {
       const response = await fetch(`/api/notices/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         fetchNotices();
@@ -187,7 +189,7 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
     try {
       const response = await fetch("/api/notices/bulk-delete", {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));

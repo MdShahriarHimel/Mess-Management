@@ -8,6 +8,7 @@ import { DollarSign, Plus, X, Trash2 } from "lucide-react";
 import { Member, Deposit, UserRole, MessMonth } from "../types.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface DepositsProps {
   currentUser: Member;
@@ -50,6 +51,7 @@ export default function Deposits({
   customColors,
   dateRestrictions
 }: DepositsProps) {
+  const authToken = getAuthToken(currentUser);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [memberId, setMemberId] = useState("");
@@ -67,7 +69,7 @@ export default function Deposits({
     if (!currentMonthId) return;
     try {
       const response = await fetch(`/api/deposits/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -126,7 +128,7 @@ export default function Deposits({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -162,7 +164,7 @@ export default function Deposits({
     try {
       const response = await fetch(`/api/deposits/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         fetchDeposits();

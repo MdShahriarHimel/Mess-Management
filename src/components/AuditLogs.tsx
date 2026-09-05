@@ -14,6 +14,7 @@ import { Member, AuditLog, RespectSenioritySettings } from "../types.js";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface AuditLogsProps {
   currentUser: Member;
@@ -29,6 +30,7 @@ interface MessOption {
 }
 
 export default function AuditLogs({ currentUser, isDarkMode, members = [], respectSenioritySettings }: AuditLogsProps) {
+  const authToken = getAuthToken(currentUser);
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   // State variables
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -119,7 +121,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ enabled, messId: selectedMess || activeMessId || "default" })
       });
@@ -165,7 +167,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
 
       const url = `/api/auditlogs?${queryParams.toString()}`;
       const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` },
+        headers: { "Authorization": `Bearer ${authToken}` },
         signal
       });
       if (response.ok) {
@@ -218,7 +220,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
     if (!isAdmin && !isSuperUser) return;
     try {
       const response = await fetch("/api/admin/messes", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -235,7 +237,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
     if (!isAdmin) return;
     try {
       const response = await fetch("/api/settings", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -256,7 +258,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
         method: "PUT",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ auditRetentionDays: days })
       });
@@ -333,7 +335,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ format: "csv", reason: `Exported ${filteredLogs.length} audit logs as CSV file.` })
       });
@@ -390,7 +392,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ format: "pdf", reason: `Printed/Exported ${filteredLogs.length} audit logs as PDF.` })
       });

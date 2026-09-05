@@ -15,6 +15,7 @@ import { ColorPalettePicker } from "../App.js";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface DashboardProps {
   currentUser: Member;
@@ -89,6 +90,7 @@ export default function Dashboard({
   onApplyCycleProposal,
   onDeleteCycleProposal
 }: DashboardProps) {
+  const authToken = getAuthToken(currentUser);
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [managerRating, setManagerRating] = useState<number | null>(null);
@@ -140,7 +142,7 @@ export default function Dashboard({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           ...currentUser,
@@ -181,7 +183,7 @@ export default function Dashboard({
     try {
       const url = (loadAll || hasLoadedAllNotices) ? "/api/notices" : "/api/notices?limit=5";
       const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -208,7 +210,7 @@ export default function Dashboard({
     try {
       const response = await fetch(`/api/notices/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         fetchNotices();
@@ -222,7 +224,7 @@ export default function Dashboard({
   const fetchMembers = async () => {
     try {
       const response = await fetch("/api/members", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -238,7 +240,7 @@ export default function Dashboard({
     if (!currentMonthId) return;
     try {
       const response = await fetch(`/api/ratings/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -254,7 +256,7 @@ export default function Dashboard({
     if (!currentMonthId || !currentUser) return;
     try {
       const response = await fetch(`/api/meals/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -303,7 +305,7 @@ export default function Dashboard({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ monthId: currentMonthId, rating: score })
       });

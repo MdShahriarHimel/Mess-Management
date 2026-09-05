@@ -12,6 +12,7 @@ import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySetting
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -53,6 +54,7 @@ export default function MarketLogs({
   months = [],
   respectSenioritySettings
 }: MarketLogsProps) {
+  const authToken = getAuthToken(currentUser);
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -212,7 +214,7 @@ export default function MarketLogs({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           name: nextInfo.name,
@@ -308,7 +310,7 @@ export default function MarketLogs({
     const activeId = targetId || viewMonthId || currentMonthId;
     if (!activeId) return;
     try {
-      const authHeader = { "Authorization": `Bearer ${currentUser.id}` };
+      const authHeader = { "Authorization": `Bearer ${authToken}` };
       
       const mRes = await fetch(`/api/markets/${activeId}`, { headers: authHeader });
       const dRes = await fetch(`/api/duties/${activeId}`, { headers: authHeader });
@@ -380,7 +382,7 @@ export default function MarketLogs({
       if (!currentMonthId || coveredDates.length === 0) return;
       try {
         const response = await fetch(`/api/foodmenu/${currentMonthId}`, {
-          headers: { "Authorization": `Bearer ${currentUser.id}` }
+          headers: { "Authorization": `Bearer ${authToken}` }
         });
         if (response.ok) {
           const data = await response.json().catch(() => ({}));
@@ -531,7 +533,7 @@ export default function MarketLogs({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${currentUser.id}`
+            "Authorization": `Bearer ${authToken}`
           },
           body: JSON.stringify({
             monthId: currentMonthId,
@@ -553,7 +555,7 @@ export default function MarketLogs({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -618,7 +620,7 @@ export default function MarketLogs({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: targetMonthId,
@@ -662,7 +664,7 @@ export default function MarketLogs({
     try {
       const response = await fetch(`/api/duties/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         fetchMarketsAndSchedules();
@@ -681,7 +683,7 @@ export default function MarketLogs({
     try {
       const response = await fetch(`/api/markets/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         fetchMarketsAndSchedules();
@@ -702,7 +704,7 @@ export default function MarketLogs({
     try {
       const response = await fetch(`/api/holdings/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         fetchMarketsAndSchedules();
@@ -721,7 +723,7 @@ export default function MarketLogs({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,

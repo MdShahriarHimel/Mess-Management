@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { Member, MessRule, RuleType, RuleSeverity, UserRole } from "../types.js";
 import { RefreshButton } from "./RefreshButton.tsx";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface RulesProps {
   currentUser: Member;
@@ -151,6 +152,7 @@ const PRESET_TEMPLATES = [
 ];
 
 export default function Rules({ currentUser, isDarkMode, members, isPlatformOwner = false }: RulesProps) {
+  const authToken = getAuthToken(currentUser);
   const [rules, setRules] = useState<MessRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"ALL" | "MESS" | "PERSONAL" | "MANUAL">("ALL");
@@ -196,7 +198,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
     try {
       setLoading(true);
       const res = await fetch("/api/rules", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (res.ok) {
         const data = await res.json();
@@ -285,7 +287,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
         method,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify(payload)
       });
@@ -311,7 +313,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
     try {
       const res = await fetch(`/api/rules/${id}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (res.ok) {
         showToast("মুছে ফেলা হয়েছে।");
@@ -329,7 +331,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ pinned: !rule.pinned })
       });
@@ -346,7 +348,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
     try {
       const res = await fetch(`/api/rules/${ruleId}/agree`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (res.ok) {
         const data = await res.json();
@@ -362,7 +364,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
     try {
       const res = await fetch("/api/rules/seed-defaults", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (res.ok) {
         setShowSeedModal(false);

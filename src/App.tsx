@@ -2459,6 +2459,16 @@ export default function App() {
         const membersData = await membersRes.json().catch(() => ({}));
         const mList = membersData.members || [];
         setMembersList(mList);
+        if (currentUser) {
+          const freshUser = mList.find((m: Member) => 
+            m.id === currentUser.id || 
+            (m.email && currentUser.email && m.email.toLowerCase() === currentUser.email.toLowerCase())
+          );
+          if (freshUser && (freshUser.id !== currentUser.id || freshUser.status !== currentUser.status || freshUser.role !== currentUser.role)) {
+            setCurrentUser(freshUser);
+            localStorage.setItem("user", JSON.stringify(freshUser));
+          }
+        }
         await checkSuperUserRecentLogs(token, mList, isInitialLoad);
       }
 
@@ -2822,10 +2832,13 @@ export default function App() {
     }
 
     // Joining date cutoff:
-    // Members can only see cycles that ended on or after their joining date
+    // Members can only see cycles that ended on or after their joining date.
+    // However, for the current active cycle (currentMonthId or unlocked cycle),
+    // any member must be able to see and access it, even if they joined on the 26th or anywhere during the cycle.
     if (currentUser.joiningDate) {
       const joiningDateStr = currentUser.joiningDate.split("T")[0];
       filtered = filtered.filter(m => {
+        if (m.id === currentMonthId || !(m as any).isLocked) return true;
         if (!m.endDate) return true;
         const cycleEnd = m.endDate.split("T")[0];
         return cycleEnd >= joiningDateStr;

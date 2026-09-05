@@ -12,6 +12,7 @@ import * as XLSX from "xlsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface FinanceSettlementProps {
   currentUser: Member;
@@ -57,6 +58,7 @@ export default function FinanceSettlement({
   respectSenioritySettings,
   duties = []
 }: FinanceSettlementProps) {
+  const authToken = getAuthToken(currentUser);
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const [showAddBillModal, setShowAddBillModal] = useState(false);
   const [roomLabels, setRoomLabels] = useState<RoomLabel[]>([]);
@@ -101,6 +103,11 @@ export default function FinanceSettlement({
 
       // 2. For regular Active / Away members (including Admins whose status is ACTIVE/AWAY)
       if (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY) {
+        // In the active or unlocked cycle, all active/away members are included
+        // even if they join on the 26th or anywhere in the cycle
+        if (currentMonthObj && !currentMonthObj.isLocked) {
+          return true;
+        }
         if (monthEnd && m.joiningDate && m.joiningDate.split("T")[0] > monthEnd) {
           return false;
         }
@@ -131,7 +138,7 @@ export default function FinanceSettlement({
 
   useEffect(() => {
     fetch("/api/settings", {
-      headers: { "Authorization": `Bearer ${currentUser.id}` }
+      headers: { "Authorization": `Bearer ${authToken}` }
     })
       .then(res => res.json())
       .then(data => {
@@ -271,7 +278,7 @@ export default function FinanceSettlement({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ customBillOverrides })
       });
@@ -474,7 +481,7 @@ export default function FinanceSettlement({
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${currentUser.id}`
+            "Authorization": `Bearer ${authToken}`
           },
           body: JSON.stringify({ customBillOverrides: nextOverrides })
         });
@@ -585,7 +592,7 @@ export default function FinanceSettlement({
     setPdfLoading(true);
     setSavePdfDefaultsSuccess(false);
     try {
-      const authHeader = { "Authorization": `Bearer ${currentUser.id}` };
+      const authHeader = { "Authorization": `Bearer ${authToken}` };
       const [marRes, logRes, ratRes, setRes] = await Promise.all([
         fetch(`/api/markets/${currentMonthId}`, { headers: authHeader }),
         fetch("/api/auditlogs", { headers: authHeader }),
@@ -641,7 +648,7 @@ export default function FinanceSettlement({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           ledgerHeaderTitle: pdfHeaderTitle,
@@ -1105,7 +1112,7 @@ export default function FinanceSettlement({
     setMealsLoading(true);
     try {
       const response = await fetch(`/api/meals/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -1140,7 +1147,7 @@ export default function FinanceSettlement({
     if (!currentMonthId) return;
     try {
       const response = await fetch(`/api/markets/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -1232,7 +1239,7 @@ export default function FinanceSettlement({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -1438,7 +1445,7 @@ export default function FinanceSettlement({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           name: finalName,
@@ -1474,7 +1481,7 @@ export default function FinanceSettlement({
       const response = await fetch(`/api/bills/${billId}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         }
       });
 
@@ -1500,7 +1507,7 @@ export default function FinanceSettlement({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -1536,7 +1543,7 @@ export default function FinanceSettlement({
       const response = await fetch(`/api/holdings/${id}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         }
       });
       if (response.ok) {
@@ -1572,7 +1579,7 @@ export default function FinanceSettlement({
   const fetchMemberAccountings = async (memberId: string) => {
     setAcctsLoading(true);
     try {
-      const authHeader = { "Authorization": `Bearer ${currentUser.id}` };
+      const authHeader = { "Authorization": `Bearer ${authToken}` };
       const [depRes, marRes] = await Promise.all([
         fetch(`/api/deposits/${currentMonthId}`, { headers: authHeader }),
         fetch(`/api/markets/${currentMonthId}`, { headers: authHeader })
@@ -1610,7 +1617,7 @@ export default function FinanceSettlement({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${currentUser.id}`
+            "Authorization": `Bearer ${authToken}`
           },
           body: JSON.stringify({
             monthId: currentMonthId,
@@ -1639,7 +1646,7 @@ export default function FinanceSettlement({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${currentUser.id}`
+            "Authorization": `Bearer ${authToken}`
           },
           body: JSON.stringify({
             monthId: currentMonthId,
@@ -1670,7 +1677,7 @@ export default function FinanceSettlement({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -1700,7 +1707,7 @@ export default function FinanceSettlement({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
@@ -1740,7 +1747,7 @@ export default function FinanceSettlement({
       const response = await fetch(`/api/deposits/${depId}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         }
       });
       if (response.ok) {
@@ -1764,7 +1771,7 @@ export default function FinanceSettlement({
       const response = await fetch(`/api/markets/${marId}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         }
       });
       if (response.ok) {
@@ -1788,7 +1795,7 @@ export default function FinanceSettlement({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -1820,7 +1827,7 @@ export default function FinanceSettlement({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,

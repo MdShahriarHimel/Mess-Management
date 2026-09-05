@@ -14,6 +14,7 @@ import { ColorPalettePicker } from "../App.tsx";
 import { processProfilePhoto } from "../utils/imageOptimizer";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 
 const COLOR_PALETTES = [
@@ -118,6 +119,7 @@ export default function Members({
   respectSenioritySettings,
   months = []
 }: MembersProps) {
+  const authToken = getAuthToken(currentUser);
   const [searchTerm, setSearchTerm] = useState("");
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
@@ -140,7 +142,7 @@ export default function Members({
     if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.SUPERUSER) return;
     try {
       const response = await fetch("/api/members/deleted-list", {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -170,7 +172,7 @@ export default function Members({
     try {
       const response = await fetch(`/api/members/restore-deleted/${memberId}`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         onRefresh();
@@ -195,7 +197,7 @@ export default function Members({
 
   React.useEffect(() => {
     fetch("/api/settings", {
-      headers: { "Authorization": `Bearer ${currentUser.id}` }
+      headers: { "Authorization": `Bearer ${authToken}` }
     })
       .then(res => res.json())
       .then(data => {
@@ -264,7 +266,7 @@ export default function Members({
     if (!currentMonthId) return;
     setMealsLoading(true);
     try {
-      const authHeader = { "Authorization": `Bearer ${currentUser.id}` };
+      const authHeader = { "Authorization": `Bearer ${authToken}` };
       const [mealsRes, depRes, marRes] = await Promise.all([
         fetch(`/api/meals/${currentMonthId}`, { headers: authHeader }),
         fetch(`/api/deposits/${currentMonthId}`, { headers: authHeader }),
@@ -360,7 +362,7 @@ export default function Members({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           name, nickname, email, phone, whatsapp, bloodGroup, occupation, role, notes, photo, assignedTask: assignedTaskState
@@ -407,7 +409,7 @@ export default function Members({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${currentUser.id}`
+            "Authorization": `Bearer ${authToken}`
           },
           body: JSON.stringify({
             targetMemberId: editingMember.id,
@@ -426,7 +428,7 @@ export default function Members({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify(editingMember)
       });
@@ -443,7 +445,7 @@ export default function Members({
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${currentUser.id}`
+              "Authorization": `Bearer ${authToken}`
             },
             body: JSON.stringify({
               monthId: dutyTargetMonthId || currentMonthId,
@@ -468,6 +470,31 @@ export default function Members({
     }
   };
 
+  // Quick activate pending member (Admin / Manager)
+  const handleActivate = async (memberId: string) => {
+    try {
+      const response = await fetch(`/api/members/${memberId}`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}` 
+        },
+        body: JSON.stringify({
+          status: MemberStatus.ACTIVE,
+          notes: ""
+        })
+      });
+      if (response.ok) {
+        onRefresh();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to activate member");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Archive member
   const handleArchive = async (memberId: string) => {
     const message = safeMode 
@@ -477,7 +504,7 @@ export default function Members({
     try {
       const response = await fetch(`/api/members/${memberId}/archive`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         onRefresh();
@@ -495,7 +522,7 @@ export default function Members({
     try {
       const response = await fetch(`/api/members/${memberId}/restore`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         onRefresh();
@@ -514,7 +541,7 @@ export default function Members({
     try {
       const response = await fetch(`/api/members/${memberId}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         onRefresh();
@@ -749,10 +776,24 @@ export default function Members({
 
 
           {(isAuthorizedToEdit || currentUser.id === member.id) && (
-            <div className="flex gap-1.5">
+            <div className="flex items-center gap-1.5">
               {/* Super Users cannot modify Admins */}
               {!(member.role === UserRole.ADMIN && currentUser.role !== UserRole.ADMIN) && (
                 <>
+                  {member.status === MemberStatus.PENDING && isAuthorizedToEdit && (
+                    <button
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        handleActivate(member.id); 
+                      }}
+                      className="px-2.5 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-sm"
+                      title="Activate & Verify Member"
+                    >
+                      <UserCheck size={12} />
+                      Activate
+                    </button>
+                  )}
+
                   <button
                     onClick={(e) => { 
                       e.stopPropagation(); 
@@ -2435,7 +2476,7 @@ export default function Members({
                                     method: "PUT",
                                     headers: {
                                       "Content-Type": "application/json",
-                                      "Authorization": `Bearer ${currentUser.id}`
+                                      "Authorization": `Bearer ${authToken}`
                                     },
                                     body: JSON.stringify({
                                       glow: editingMember.glow,

@@ -160,11 +160,18 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       } else if (member.id !== decodedToken.uid) {
         // Link the Firebase Auth UID to the invited email's member record
         const oldId = member.id;
+        if (!(member as any).previousIds) (member as any).previousIds = [];
+        if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
         member.id = decodedToken.uid;
         if (decodedToken.picture) member.photo = decodedToken.picture;
 
         // Update references in PostgreSQL for meals directly
         await drizzleDb.update(mealsTable).set({ memberId: decodedToken.uid }).where(eq(mealsTable.memberId, oldId));
+        try {
+          await drizzleDb.update(members).set({ id: decodedToken.uid, photo: member.photo }).where(eq(members.id, oldId));
+        } catch (dbErr) {
+          console.warn("Notice: PostgreSQL member id sync:", dbErr);
+        }
 
         // Update references in other tables
         db.marketEntries.forEach(m => { if (m.memberId === oldId) m.memberId = decodedToken.uid; });
@@ -195,7 +202,11 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   } else {
     // Fallback for local development or session token (memberId:sess_version or memberId)
     const memberIdFromToken = token.split(":")[0];
-    member = db.members.find(m => m.id === memberIdFromToken);
+    member = db.members.find(m => 
+      m.id === memberIdFromToken || 
+      (m as any).previousIds?.includes(memberIdFromToken) ||
+      m.email.toLowerCase() === memberIdFromToken.toLowerCase()
+    );
 
     if (member && !isValidMemberSessionToken(token, member.id)) {
       res.status(401).json({ error: "Unauthorized: Session invalidated due to password change or security reset. Please log in again." });
@@ -3899,6 +3910,11 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
 
     // For Active / Away members (including Admins whose status is ACTIVE/AWAY)
     if (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY) {
+      // In an active/unlocked cycle, all active/away members are always included
+      // even if they join on the 26th or anywhere during the cycle
+      if (monthObj && !monthObj.isLocked) {
+        return true;
+      }
       if (monthEnd && m.joiningDate && m.joiningDate.split("T")[0] > monthEnd) {
         return false;
       }

@@ -8,6 +8,7 @@ import {
   FileText, Calendar, Edit, Check, AlertCircle, Sparkles, PieChart, Info, ArrowRight
 } from "lucide-react";
 import { Member, FoodMenu as MenuType, UserRole } from "../types.js";
+import { getAuthToken } from "../lib/authHeader.ts";
 
 interface FoodMenuProps {
   currentUser: Member;
@@ -39,6 +40,7 @@ export default function FoodMenu({
   forcedMarketDate,
   onNavigateToTab
 }: FoodMenuProps) {
+  const authToken = getAuthToken(currentUser);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [lunchVegetable, setLunchVegetable] = useState("");
   const [lunchMain, setLunchMain] = useState("");
@@ -57,7 +59,7 @@ export default function FoodMenu({
     if (!currentMonthId) return;
     try {
       const response = await fetch(`/api/foodmenu/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -90,7 +92,7 @@ export default function FoodMenu({
     if (!currentMonthId) return;
     try {
       const response = await fetch(`/api/foodmenu/statistics/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${currentUser.id}` }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
         const data = await response.json();
@@ -143,7 +145,7 @@ export default function FoodMenu({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${currentUser.id}`
+          "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
           monthId: currentMonthId,
