@@ -37,7 +37,14 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
-        setNotices(data.notices || []);
+        const validNotices = (data.notices || []).filter((n: Notice) => {
+          const titleLower = (n.title || "").toLowerCase();
+          const contentLower = (n.content || "").toLowerCase();
+          if (titleLower.startsWith("profile updated by") || titleLower.includes("profile updated")) return false;
+          if (contentLower.includes("updated your profile")) return false;
+          return true;
+        });
+        setNotices(validNotices);
         setHasMore(data.hasMore || false);
         if (loadAll) {
           setHasLoadedAll(true);

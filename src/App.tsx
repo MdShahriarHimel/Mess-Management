@@ -5199,6 +5199,7 @@ export default function App() {
               logoText={logoText}
               mealTypes={mealTypes}
               respectSenioritySettings={respectSenioritySettings}
+              duties={dutiesList}
             />
           )}
 

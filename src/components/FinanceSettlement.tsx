@@ -37,6 +37,7 @@ interface FinanceSettlementProps {
   logoText?: string;
   mealTypes?: any[];
   respectSenioritySettings?: RespectSenioritySettings;
+  duties?: any[];
 }
 
 export default function FinanceSettlement({ 
@@ -53,7 +54,8 @@ export default function FinanceSettlement({
   safeMode = false,
   logoText = "Ababil mess",
   mealTypes,
-  respectSenioritySettings
+  respectSenioritySettings,
+  duties = []
 }: FinanceSettlementProps) {
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
   const [showAddBillModal, setShowAddBillModal] = useState(false);
@@ -215,16 +217,18 @@ export default function FinanceSettlement({
           category: parsed.type as "Utility" | "Worker" | "Rent" | "Extra",
           amount: b.amount,
           status: b.status,
-          perMemberShare: b.amount / totalActiveCount
+          perMemberShare: b.amount / totalActiveCount,
+          collectorId: b.collectorId,
+          billName: b.name
         };
       });
     }
 
     return [
-      { id: "Utility", title: "UTILITY BILL", category: "Utility" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0 },
-      { id: "Worker", title: "WORKER BILL", category: "Worker" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0 },
-      { id: "Rent", title: "HOUSE RENT", category: "Rent" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0 },
-      { id: "Extra", title: "EXTRA BILL", category: "Extra" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0 }
+      { id: "Utility", title: "UTILITY BILL", category: "Utility" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0, collectorId: "", billName: "UTILITY" },
+      { id: "Worker", title: "WORKER BILL", category: "Worker" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0, collectorId: "", billName: "WORKER" },
+      { id: "Rent", title: "HOUSE RENT", category: "Rent" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0, collectorId: "", billName: "RENT" },
+      { id: "Extra", title: "EXTRA BILL", category: "Extra" as const, amount: 0, status: BillStatus.UNPAID, perMemberShare: 0, collectorId: "", billName: "EXTRA" }
     ];
   }, [reportSummary?.bills, activeMembers.length]);
 
@@ -277,7 +281,8 @@ export default function FinanceSettlement({
         setOverrideSaveStatus({ type: 'success', message: 'Individual member bill amounts saved successfully!' });
         setTimeout(() => setOverrideSaveStatus(null), 4000);
       } else {
-        setOverrideSaveStatus({ type: 'error', message: 'Failed to save individual bill amounts to server.' });
+        const errorData = await response.json().catch(() => ({}));
+        setOverrideSaveStatus({ type: 'error', message: errorData.error || 'Failed to save individual bill amounts to server.' });
       }
     } catch (e) {
       console.error("Error saving custom bill overrides:", e);
@@ -287,9 +292,10 @@ export default function FinanceSettlement({
     }
   };
 
-  const hasDutyForBill = (user: Member | null, col: { id: string; title: string; category: string }): boolean => {
+  const hasDutyForBill = (user: Member | null, col: { id: string; title: string; category: string; collectorId?: string; billName?: string }): boolean => {
     if (!user) return false;
 
+    // Authorities always have full permission
     const isManagerOrAdmin = [
       UserRole.ADMIN,
       UserRole.SUPERUSER,
@@ -300,6 +306,104 @@ export default function FinanceSettlement({
 
     if (isManagerOrAdmin) return true;
 
+    const userNickLower = (user.nickname || "").trim().toLowerCase();
+    const userNameLower = (user.name || "").trim().toLowerCase();
+    const userIdLower = user.id.toLowerCase();
+
+    const isUserMatch = (idOrName?: string) => {
+      if (!idOrName) return false;
+      const target = idOrName.trim().toLowerCase();
+      if (target === userIdLower) return true;
+      if (userNickLower && target === userNickLower) return true;
+      if (userNameLower && target === userNameLower) return true;
+      // Bengali / transliteration match (e.g. কুরাইশ / Kuraish)
+      if ((target.includes("কুরাইশ") || target.includes("kuraish")) &&
+          (userNickLower.includes("কুরাইশ") || userNickLower.includes("kuraish") || userNameLower.includes("কুরাইশ") || userNameLower.includes("kuraish"))) {
+        return true;
+      }
+      return false;
+    };
+
+    // 1. Direct match on col.collectorId
+    if (col.collectorId && isUserMatch(col.collectorId)) {
+      return true;
+    }
+
+    // 2. Direct match on reportSummary.bills by bill id
+    const matchingBill = (reportSummary?.bills || []).find((b: any) => b.id === col.id);
+    if (matchingBill && isUserMatch(matchingBill.collectorId)) {
+      return true;
+    }
+
+    // 3. Match against any registered bill this user is collecting in the active month
+    const billsCollectedByUser = (reportSummary?.bills || []).filter((b: any) => isUserMatch(b.collectorId));
+    if (billsCollectedByUser.length > 0) {
+      const titleLower = (col.title || "").toLowerCase();
+      const catLower = (col.category || "").toLowerCase();
+      const idLower = (col.id || "").toLowerCase();
+
+      for (const b of billsCollectedByUser) {
+        if (b.id === col.id) return true;
+        const bName = (b.name || "").toLowerCase();
+        if (bName.includes(titleLower) || titleLower.includes(bName)) return true;
+        if (bName.includes(catLower) || catLower.includes(bName)) return true;
+
+        // Check WiFi / Internet
+        if ((titleLower.includes("wifi") || catLower.includes("extra") || idLower.includes("wifi") || idLower.includes("extra")) &&
+            (bName.includes("wifi") || bName.includes("ওয়াইফাই") || bName.includes("ওয়াইফাই") || bName.includes("internet"))) {
+          return true;
+        }
+
+        // Check Worker / Maid / Bua
+        if ((titleLower.includes("worker") || titleLower.includes("maid") || catLower.includes("worker") || idLower.includes("worker")) &&
+            (bName.includes("worker") || bName.includes("maid") || bName.includes("বুয়া") || bName.includes("বুয়া") || bName.includes("বুলবুল"))) {
+          return true;
+        }
+
+        // Check Rent
+        if ((titleLower.includes("rent") || catLower.includes("rent") || idLower.includes("rent")) &&
+            (bName.includes("rent") || bName.includes("ভাড়া") || bName.includes("ভাড়া") || bName.includes("বাসা"))) {
+          return true;
+        }
+
+        // Check Electricity / Utility
+        if ((titleLower.includes("electric") || catLower.includes("utility") || idLower.includes("utility")) &&
+            (bName.includes("electric") || bName.includes("electricity") || bName.includes("কারেন্ট") || bName.includes("পানি"))) {
+          return true;
+        }
+      }
+    }
+
+    // 4. Duties table for current month cycle
+    const userDuties = (duties || []).filter((d: any) => d.monthId === currentMonthId && d.memberId === user.id);
+    for (const d of userDuties) {
+      const dName = ((d.name || "") + " " + (d.task || "")).toLowerCase();
+      const titleLower = (col.title || "").toLowerCase();
+      const catLower = (col.category || "").toLowerCase();
+      const idLower = (col.id || "").toLowerCase();
+
+      if (dName.includes(titleLower) || titleLower.includes(dName)) return true;
+      if (dName.includes(catLower) || catLower.includes(dName)) return true;
+
+      if ((titleLower.includes("wifi") || catLower.includes("extra") || idLower.includes("wifi")) &&
+          (dName.includes("wifi") || dName.includes("ওয়াইফাই") || dName.includes("ওয়াইফাই") || dName.includes("internet"))) {
+        return true;
+      }
+      if ((titleLower.includes("worker") || titleLower.includes("maid") || catLower.includes("worker")) &&
+          (dName.includes("worker") || dName.includes("maid") || dName.includes("বুয়া") || dName.includes("বুয়া") || dName.includes("বুলবুল"))) {
+        return true;
+      }
+      if ((titleLower.includes("rent") || catLower.includes("rent") || idLower.includes("rent")) &&
+          (dName.includes("rent") || dName.includes("ভাড়া") || dName.includes("ভাড়া") || dName.includes("বাসা"))) {
+        return true;
+      }
+      if ((titleLower.includes("electric") || catLower.includes("utility") || idLower.includes("utility")) &&
+          (dName.includes("electric") || dName.includes("electricity") || dName.includes("কারেন্ট") || dName.includes("পানি"))) {
+        return true;
+      }
+    }
+
+    // 5. Check user.assignedTask profile field
     const task = (user.assignedTask || "").toLowerCase().trim();
     if (!task) return false;
 
@@ -308,18 +412,18 @@ export default function FinanceSettlement({
     const idLower = col.id.toLowerCase();
 
     // Check WiFi / Internet
-    if (titleLower.includes("wifi") || catLower.includes("utility") || idLower.includes("utility")) {
-      if (task.includes("wifi") || task.includes("internet") || task.includes("ওয়াইফাই")) return true;
+    if (titleLower.includes("wifi") || catLower.includes("utility") || catLower.includes("extra") || idLower.includes("utility") || idLower.includes("extra")) {
+      if (task.includes("wifi") || task.includes("internet") || task.includes("ওয়াইফাই") || task.includes("ওয়াইফাই")) return true;
     }
 
     // Check Worker / Maid / Bua
     if (catLower.includes("worker") || titleLower.includes("worker") || titleLower.includes("maid") || titleLower.includes("cleaner") || titleLower.includes("bua")) {
-      if (task.includes("maid") || task.includes("bua") || task.includes("বুয়া") || task.includes("বুলবুল") || task.includes("worker") || task.includes("কাজ")) return true;
+      if (task.includes("maid") || task.includes("bua") || task.includes("বুয়া") || task.includes("বুয়া") || task.includes("বুলবুল") || task.includes("worker") || task.includes("কাজ")) return true;
     }
 
     // Check Rent
     if (catLower.includes("rent") || titleLower.includes("rent") || titleLower.includes("house")) {
-      if (task.includes("rent") || task.includes("ভাড়া") || task.includes("সিট") || task.includes("সীট") || task.includes("বাসা")) return true;
+      if (task.includes("rent") || task.includes("ভাড়া") || task.includes("ভাড়া") || task.includes("সিট") || task.includes("সীট") || task.includes("বাসা")) return true;
     }
 
     // Check Electricity / Utility
@@ -335,7 +439,8 @@ export default function FinanceSettlement({
     return tokens.some(token => token.length >= 2 && (titleLower.includes(token) || catLower.includes(token) || idLower.includes(token)));
   };
 
-  const handleToggleMemberBillStatus = (memberId: string, colId: string, newStatus: "PAID" | "UNPAID") => {
+  const handleToggleMemberBillStatus = async (memberId: string, colId: string, newStatus: "PAID" | "UNPAID") => {
+    let nextOverrides: any = null;
     setCustomBillOverrides((prev) => {
       const updated = { ...prev };
       if (!updated[currentMonthId]) {
@@ -348,7 +453,7 @@ export default function FinanceSettlement({
       memberMap[`${colId}_status`] = newStatus;
 
       const targetCol = billColumns.find(c => c.id === colId);
-      if (targetCol) {
+      if (targetCol && billColumns.filter(c => c.category === targetCol.category).length === 1) {
         memberMap[`${targetCol.category}_status`] = newStatus;
       }
 
@@ -357,9 +462,26 @@ export default function FinanceSettlement({
         [memberId]: memberMap
       };
 
+      nextOverrides = updated;
       localStorage.setItem("custom_bill_overrides", JSON.stringify(updated));
       return updated;
     });
+
+    // Automatically sync updated payment status to server in the background
+    if (nextOverrides) {
+      try {
+        await fetch("/api/settings", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${currentUser.id}`
+          },
+          body: JSON.stringify({ customBillOverrides: nextOverrides })
+        });
+      } catch (err) {
+        console.error("Error auto-syncing bill payment status:", err);
+      }
+    }
   };
 
   const getMemberBillStats = (memberId: string) => {

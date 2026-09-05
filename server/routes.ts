@@ -1157,7 +1157,9 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
     console.warn("Direct Drizzle sync fallback in PUT /members/:id:", err);
   }
 
-  // Member Notification: Create a Dashboard notification if Admin or Ultimate Admin modifies another member's profile
+  // Member Notification: Automated dashboard notice when Admin modifies member profile is disabled per user request
+  // (Disabled to prevent flooding the Dashboard notice board whenever admin makes adjustments)
+  /*
   if (!isSelf && (isActorUltimateAdmin || isMessAdmin)) {
     let actorName = "Administrator";
     if (isActorUltimateAdmin) {
@@ -1198,6 +1200,7 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
     db.notices.unshift(notificationNotice);
     saveDB();
   }
+  */
 
   logAudit(
     req.user!.id,
@@ -3244,13 +3247,30 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
   const activeMessId = getActiveMessId();
   const user = req.user!;
   
-  const rawNotices = (db.notices || []).filter(n => n.id !== "notice-uuid-1");
-
-  // Ensure automated profile update notices are not pinned
-  rawNotices.forEach(n => {
-    if (n.title && n.title.startsWith("Profile Updated by")) {
-      n.pinned = false;
+  // Clean up any existing legacy automated profile update notices in db.notices
+  if (db.notices && db.notices.length > 0) {
+    const prevCount = db.notices.length;
+    db.notices = db.notices.filter(n => {
+      const titleLower = (n.title || "").toLowerCase();
+      const contentLower = (n.content || "").toLowerCase();
+      const isAutoAdminNotice = titleLower.startsWith("profile updated by") || 
+                                titleLower.includes("profile updated") || 
+                                contentLower.includes("updated your profile");
+      return !isAutoAdminNotice;
+    });
+    if (db.notices.length !== prevCount) {
+      saveDB();
     }
+  }
+
+  // Filter out notice-uuid-1 and any automated notices
+  const rawNotices = (db.notices || []).filter(n => {
+    if (n.id === "notice-uuid-1") return false;
+    const titleLower = (n.title || "").toLowerCase();
+    const contentLower = (n.content || "").toLowerCase();
+    if (titleLower.startsWith("profile updated by") || titleLower.includes("profile updated")) return false;
+    if (contentLower.includes("updated your profile")) return false;
+    return true;
   });
 
   const scopedNotices = rawNotices.filter(n => {
@@ -5105,8 +5125,63 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     UserRole.MANAGER
   ].includes(role);
 
+  const userId = req.user!.id;
+  const userNick = (req.user!.nickname || "").trim().toLowerCase();
+  const userName = (req.user!.name || "").trim().toLowerCase();
+
+  const db = loadDB();
+  const isBillCollectorOrDuty = 
+    db.bills.some((b: any) => {
+      const colId = (b.collectorId || "").trim().toLowerCase();
+      return colId === userId.toLowerCase() || 
+             (userNick && colId === userNick) || 
+             (userName && colId === userName) ||
+             (colId.includes("কুরাইশ") && (userNick.includes("কুরাইশ") || userName.includes("কুরাইশ"))) ||
+             (colId.includes("kuraish") && (userNick.includes("kuraish") || userName.includes("kuraish")));
+    }) ||
+    db.duties.some((d: any) => d.memberId === userId) ||
+    Boolean(req.user!.assignedTask && req.user!.assignedTask.trim());
+
   if (!isAuthority) {
-    res.status(403).json({ error: "Only authorized personnel can customize UI or change settings" });
+    if (isBillCollectorOrDuty && req.body.customBillOverrides !== undefined) {
+      const currentSettings = loadSettings();
+      const existingOverrides = currentSettings.customBillOverrides || {};
+      const incomingOverrides = req.body.customBillOverrides || {};
+
+      // Merge month-by-month to safely preserve all existing month data
+      const mergedOverrides: Record<string, any> = { ...existingOverrides };
+      for (const [monthKey, monthData] of Object.entries(incomingOverrides)) {
+        if (typeof monthData === "object" && monthData !== null) {
+          mergedOverrides[monthKey] = {
+            ...(mergedOverrides[monthKey] || {}),
+            ...(monthData as any)
+          };
+        }
+      }
+
+      currentSettings.customBillOverrides = mergedOverrides;
+      saveSettings(currentSettings);
+
+      logAudit(
+        req.user!.id,
+        req.user!.nickname || req.user!.name,
+        "BILL_PAYMENT_STATUS_UPDATED",
+        "Updated",
+        "Saved",
+        `Bill collector ${req.user!.nickname || req.user!.name} updated member payment statuses in monthly settlement summary`,
+        {
+          module: "BILLS",
+          actionType: "BILL_PAYMENT_STATUS_UPDATED",
+          description: `Bill collector ${req.user!.nickname || req.user!.name} updated member payment statuses`,
+          userRole: req.user!.role
+        }
+      );
+
+      res.json({ success: true, settings: loadSettings() });
+      return;
+    }
+
+    res.status(403).json({ error: "Only authorized personnel or designated bill collectors can customize UI or change settings" });
     return;
   }
 

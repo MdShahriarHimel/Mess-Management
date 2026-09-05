@@ -321,6 +321,10 @@ export default function Dashboard({
   const isManagerOrAdmin = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.PARTIAL_MANAGER || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.role === UserRole.ASSISTANT_SUPERUSER;
   const activeNotices = notices.filter(n => {
     if (n.archived) return false;
+    const titleLower = (n.title || "").toLowerCase();
+    const contentLower = (n.content || "").toLowerCase();
+    if (titleLower.startsWith("profile updated by") || titleLower.includes("profile updated")) return false;
+    if (contentLower.includes("updated your profile")) return false;
     if (n.isDirectToManager) {
       return isManagerOrAdmin || n.authorId === currentUser.id;
     }
