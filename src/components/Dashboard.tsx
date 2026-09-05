@@ -416,12 +416,40 @@ export default function Dashboard({
       taskDetails?: string;
     }> = [];
 
+    // Strictly consider bills belonging to the current month cycle
+    const currentMonthBills = (reportSummary?.bills || []).filter(
+      (b: any) => !b.monthId || b.monthId === currentMonthId
+    );
+
+    // Standard bill categories helper to recognize when duties duplicate or conflict with registered bill collectors
+    const getBillCategory = (titleOrName: string) => {
+      const lower = (titleOrName || "").toLowerCase();
+      if (lower.includes("rent") || lower.includes("ভাড়া") || lower.includes("ভাড়া")) return "RENT";
+      if (lower.includes("wifi") || lower.includes("wi-fi") || lower.includes("ওয়াইফাই") || lower.includes("ওয়াইফাই") || lower.includes("internet")) return "WIFI";
+      if (lower.includes("elect") || lower.includes("বিদ্যুৎ") || lower.includes("কারেন্ট") || lower.includes("water") || lower.includes("পানি") || lower.includes("utility")) return "ELECTRICITY";
+      if (lower.includes("maid") || lower.includes("বুয়া") || lower.includes("বুয়া") || lower.includes("worker") || lower.includes("খালা")) return "MAID";
+      return null;
+    };
+
+    // Map each standard category to its active collector ID(s) in this month
+    const activeCategoryCollectors = new Map<string, string[]>();
+    currentMonthBills.forEach((b: any) => {
+      const cat = getBillCategory(b.name);
+      if (cat && b.collectorId) {
+        const existing = activeCategoryCollectors.get(cat) || [];
+        if (!existing.includes(b.collectorId)) {
+          existing.push(b.collectorId);
+        }
+        activeCategoryCollectors.set(cat, existing);
+      }
+    });
+
     eligibleMembers.forEach((member: any) => {
       const dutyTitles: string[] = [];
       let detailsNotes = "";
 
       // 1. Check registered bills for this active month where this member is assigned as collector
-      const collectorBills = (reportSummary?.bills || []).filter((b: any) => b.collectorId === member.id);
+      const collectorBills = currentMonthBills.filter((b: any) => b.collectorId === member.id);
       collectorBills.forEach((b: any) => {
         const title = formatBillDutyTitle(b.name);
         if (title && !dutyTitles.includes(title)) {
@@ -430,12 +458,28 @@ export default function Dashboard({
       });
 
       // 2. Check work duties from duties table for this active month
-      const memberDuties = activeWorkDuties.filter((d: any) => d.memberId === member.id);
+      const memberDuties = activeWorkDuties.filter((d: any) => d.memberId === member.id && (!d.monthId || d.monthId === currentMonthId));
       memberDuties.forEach((d: any) => {
-        if (d.name && d.name.trim() && !dutyTitles.includes(d.name.trim())) {
-          dutyTitles.push(d.name.trim());
+        const dutyName = (d.name || "").trim();
+        if (!dutyName) return;
+
+        // If this duty matches a standard bill category (Rent, WiFi, Electricity, Maid)
+        // and that category is already assigned to a collector in this cycle's bills,
+        // ensure this member is actually the designated collector.
+        // If someone else is the collector, this duty is an outdated remnant from a prior cycle.
+        const dutyCat = getBillCategory(dutyName);
+        if (dutyCat && activeCategoryCollectors.has(dutyCat)) {
+          const collectors = activeCategoryCollectors.get(dutyCat) || [];
+          if (!collectors.includes(member.id)) {
+            // Outdated duty from a previous cycle; member was not selected for this cycle
+            return;
+          }
         }
-        if (d.task && d.task.trim()) {
+
+        if (!dutyTitles.includes(dutyName)) {
+          dutyTitles.push(dutyName);
+        }
+        if (d.task && d.task.trim() && d.task.trim() !== "Invited to Mess ERP.") {
           detailsNotes = d.task.trim();
         }
       });
@@ -454,7 +498,7 @@ export default function Dashboard({
     });
 
     return result;
-  }, [activeWorkDuties, members, membersListProp, reportSummary?.bills]);
+  }, [activeWorkDuties, currentMonthId, members, membersListProp, reportSummary?.bills]);
 
   // Current user's duty for this active month
   const currentUserDuty = useMemo(() => {

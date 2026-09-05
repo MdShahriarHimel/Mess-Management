@@ -449,7 +449,7 @@ export default function Members({
               monthId: dutyTargetMonthId || currentMonthId,
               memberId: editingMember.id,
               name: editingMember.assignedTask || "",
-              task: editingMember.notes || ""
+              task: ""
             })
           });
         } catch (dutyErr) {
