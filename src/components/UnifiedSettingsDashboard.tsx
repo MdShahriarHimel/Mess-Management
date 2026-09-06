@@ -106,6 +106,8 @@ interface UnifiedSettingsDashboardProps {
   setTypographySettings?: React.Dispatch<React.SetStateAction<any>>;
   respectSenioritySettings?: RespectSenioritySettings;
   setRespectSenioritySettings?: React.Dispatch<React.SetStateAction<RespectSenioritySettings>>;
+  previewTemplateId?: string | null;
+  setPreviewTemplateId?: (id: string | null) => void;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -176,12 +178,14 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   handleUpdateMonthCycle,
   handleDeleteMonthCycle,
   typographySettings = {},
-  setTypographySettings = () => {}
+  setTypographySettings = (_val?: any) => {},
+  previewTemplateId: propPreviewTemplateId,
+  setPreviewTemplateId: propSetPreviewTemplateId
 }) => {
   const respectSenioritySettings = propRespectSenioritySettings;
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
-  const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
   // Dashboard Overview local state
   const [localVisibility, setLocalVisibility] = useState<any>({
@@ -388,7 +392,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     }
   }, [isUltimateAdmin, currentUser.role]);
 
-  const showStatus = (type: "success" | "error", text: string) => {
+  const showStatus = (type: "success" | "error" | "info", text: string) => {
     setStatusMsg({ type, text });
     setTimeout(() => setStatusMsg(null), 4000);
   };
@@ -460,7 +464,14 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   }, [creditConfig]);
 
   // Level 3: User Preferences Local State
-  const [prefDarkMode, setPrefDarkMode] = useState(userPreferencesState?.isDarkMode ?? true);
+  const [localPreviewTemplateId, setLocalPreviewTemplateId] = useState<string | null>(null);
+  const activePreviewId = propPreviewTemplateId !== undefined ? propPreviewTemplateId : localPreviewTemplateId;
+  const setActivePreviewId = propSetPreviewTemplateId || setLocalPreviewTemplateId;
+
+  const [prefUseMessDefault, setPrefUseMessDefault] = useState(
+    userPreferencesState?.useMessDefault !== false && (userPreferencesState?.isDarkMode === undefined || userPreferencesState?.useMessDefault === true)
+  );
+  const [prefDarkMode, setPrefDarkMode] = useState(userPreferencesState?.isDarkMode ?? (messAppearanceState?.isDarkMode ?? false));
   const [prefCompactMode, setPrefCompactMode] = useState(userPreferencesState?.compactMode ?? false);
   const [prefHighContrast, setPrefHighContrast] = useState(userPreferencesState?.highContrast ?? false);
   const [prefAnimationOn, setPrefAnimationOn] = useState(userPreferencesState?.animationOn ?? true);
@@ -469,14 +480,17 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   useEffect(() => {
     if (userPreferencesState) {
-      setPrefDarkMode(userPreferencesState.isDarkMode ?? true);
+      setPrefUseMessDefault(
+        userPreferencesState.useMessDefault !== false && (userPreferencesState.isDarkMode === undefined || userPreferencesState.useMessDefault === true)
+      );
+      setPrefDarkMode(userPreferencesState.isDarkMode ?? (messAppearanceState?.isDarkMode ?? false));
       setPrefCompactMode(userPreferencesState.compactMode ?? false);
       setPrefHighContrast(userPreferencesState.highContrast ?? false);
       setPrefAnimationOn(userPreferencesState.animationOn ?? true);
       setPrefLanguage(userPreferencesState.language || "en");
       setPrefFontSize(userPreferencesState.fontSize || "normal");
     }
-  }, [userPreferencesState]);
+  }, [userPreferencesState, messAppearanceState]);
 
   // Central Refresh Settings State
   const [localRefreshSettings, setLocalRefreshSettings] = useState({
@@ -588,7 +602,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   const handleSavePersonalPrefs = async () => {
     const success = await handleUpdatePreferences({
-      isDarkMode: prefDarkMode,
+      useMessDefault: prefUseMessDefault,
+      isDarkMode: prefUseMessDefault ? undefined : prefDarkMode,
       compactMode: prefCompactMode,
       highContrast: prefHighContrast,
       animationOn: prefAnimationOn,
@@ -596,7 +611,58 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       fontSize: prefFontSize
     });
     if (success) {
-      showStatus("success", "Personal visual workspace parameters updated!");
+      if (prefUseMessDefault) {
+        setIsDarkMode(!!messAppearanceState?.isDarkMode);
+      } else {
+        setIsDarkMode(prefDarkMode);
+      }
+      showStatus("success", "Personal visual workspace preferences updated!");
+    }
+  };
+
+  const handleApplyThemeGlobally = async (themeToApply: any) => {
+    try {
+      const payload = {
+        siteColor: themeToApply.siteColor,
+        fontStyle: themeToApply.fontStyle,
+        isDarkMode: themeToApply.isDarkMode,
+        defaultMode: themeToApply.isDarkMode ? "dark" : "light",
+        customColors: themeToApply.customColors,
+        messAnimations: {
+          ...messAnimations,
+          backgroundTheme: themeToApply.backgroundTheme,
+          themeTemplate: themeToApply.id
+        },
+        typographySettings: {
+          ...typographySettings,
+          primaryFontColor: themeToApply.isDarkMode ? "#f8fafc" : "#0f172a",
+          secondaryFontColor: themeToApply.isDarkMode ? "#94a3b8" : "#475569",
+          headingColor: themeToApply.isDarkMode ? "#22d3ee" : "#0f172a",
+          sidebarTextColor: themeToApply.isDarkMode ? "#94a3b8" : "#0f172a"
+        }
+      };
+
+      setSiteColor(themeToApply.siteColor);
+      setFontStyle(themeToApply.fontStyle);
+      setIsDarkMode(themeToApply.isDarkMode);
+      setCustomColors(themeToApply.customColors);
+      setMessAnimations(payload.messAnimations);
+      if (setTypographySettings) (setTypographySettings as any)(payload.typographySettings);
+      setActivePreviewId(null);
+
+      await handleUpdateSettings(payload);
+      if (handleUpdateAppearance) {
+        await handleUpdateAppearance({
+          theme: themeToApply.id,
+          accentColor: themeToApply.customColors?.accentColor,
+          isDarkMode: themeToApply.isDarkMode,
+          defaultMode: themeToApply.isDarkMode ? "dark" : "light"
+        });
+      }
+      showStatus("success", `Successfully applied "${themeToApply.name}" for all 13 mess members!`);
+    } catch (e) {
+      console.error(e);
+      showStatus("error", "Failed to apply theme for everyone.");
     }
   };
 
@@ -612,7 +678,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "dashboard-overview", label: "Dashboard Overview", role: "admin", icon: "LayoutDashboard" },
     { id: "branding", label: "ERP Identity", role: "ultimate-admin", icon: "Sparkles" },
     { id: "credit", label: "Credit Panel", role: "ultimate-admin", icon: "Heart" },
-    { id: "theme-library", label: "Theme Library", role: "ultimate-admin", icon: "Palette" },
+    { id: "theme-library", label: "Theme Library", role: "admin", icon: "Palette" },
     { id: "login-customizer", label: "Login Engine", role: "ultimate-admin", icon: "LayoutTemplate" },
     { id: "mess-appearance", label: "Mess Appearance", role: "any", icon: "Sliders" },
     { id: "user-appearance", label: "Personal Preferences", role: "any", icon: "User" },
@@ -1472,53 +1538,142 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
-              <div>
-                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
-                  <LucideIcons.Palette size={18} className="text-cyan-400" />
-                  Central Custom Theme Library & Templates
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Design, manage and distribute visual presets for the entire application environment.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
+                    <LucideIcons.Palette size={18} className="text-cyan-400" />
+                    Central Theme Library & Templates
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Select any UI theme below to preview live or click <strong>Save & Apply</strong> to set it as the default appearance for all 13 mess members.
+                  </p>
+                </div>
               </div>
 
-              {!isUltimateAdmin && (
-                <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-300 flex items-start gap-3">
-                  <LucideIcons.Lock className="shrink-0 mt-0.5" size={16} />
-                  <div className="text-xs">
-                    <span className="font-bold block mb-0.5">🔒 Theme Library Locked</span>
-                    Theme Library additions, design templates export/import and global defaults are exclusive to the Ultimate Admin.
+              {/* Active Preview Banner */}
+              {activePreviewId && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/70 to-slate-900 border border-cyan-500/40 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <LucideIcons.Eye className="text-cyan-400 shrink-0" size={18} />
+                    <div className="text-left">
+                      <div className="text-xs font-bold text-cyan-300">
+                        Live Previewing: {THEME_TEMPLATES.find(t => t.id === activePreviewId)?.name}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        Navigate through any tab to experience this layout. Click "Save & Apply" to make it permanent for everyone.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivePreviewId(null);
+                        showStatus("info", "Preview cancelled.");
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                    >
+                      Cancel Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const t = THEME_TEMPLATES.find(th => th.id === activePreviewId);
+                        if (t) await handleApplyThemeGlobally(t);
+                      }}
+                      className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <LucideIcons.Check size={13} />
+                      Save & Apply for Everyone
+                    </button>
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {THEME_TEMPLATES.map(theme => (
-                  <div 
-                    key={theme.id}
-                    className="p-4 rounded-xl border border-slate-800 bg-slate-950/40 space-y-3 relative overflow-hidden"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.customColors.accentColor }} />
-                      <span className="text-xs font-bold text-slate-200">{theme.name}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {THEME_TEMPLATES.map(theme => {
+                  const isCurrentSaved = (messAnimations?.themeTemplate === theme.id);
+                  const isPreviewing = (activePreviewId === theme.id);
+
+                  return (
+                    <div 
+                      key={theme.id}
+                      className={`p-4 rounded-xl border transition-all space-y-3 relative overflow-hidden flex flex-col justify-between ${
+                        isPreviewing
+                          ? "border-cyan-400 bg-cyan-950/20 ring-2 ring-cyan-500/30"
+                          : isCurrentSaved && !activePreviewId
+                          ? "border-emerald-500/40 bg-emerald-950/10"
+                          : isDarkMode
+                          ? "border-slate-800 bg-slate-950/40 hover:border-slate-700"
+                          : "border-slate-200 bg-slate-50 hover:border-slate-300 shadow-sm"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: theme.customColors.accentColor }} />
+                            <span className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+                              {theme.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {isCurrentSaved && !activePreviewId && (
+                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                Active Mess Default
+                              </span>
+                            )}
+                            {isPreviewing && (
+                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                                Previewing
+                              </span>
+                            )}
+                            <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                              {theme.isDarkMode ? "Dark" : "Light"}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-normal">{theme.desc}</p>
+                      </div>
+
+                      {/* Action Buttons: Preview & Save and Apply */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-800/40">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivePreviewId(theme.id);
+                            setSiteColor(theme.siteColor);
+                            setFontStyle(theme.fontStyle);
+                            setCustomColors(theme.customColors);
+                            setMessAnimations(prev => ({
+                              ...prev,
+                              backgroundTheme: theme.backgroundTheme,
+                              themeTemplate: theme.id
+                            }));
+                            showStatus("info", `Previewing "${theme.name}"`);
+                          }}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border transition-all cursor-pointer ${
+                            isPreviewing
+                              ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
+                              : "bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300"
+                          }`}
+                        >
+                          <LucideIcons.Eye size={12} />
+                          {isPreviewing ? "Previewing" : "Preview"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApplyThemeGlobally(theme)}
+                          className="flex-1 py-1.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-500/40 shadow-sm transition-all cursor-pointer"
+                          title="Save & Apply this UI theme for all members of the mess"
+                        >
+                          <LucideIcons.Check size={12} />
+                          Save & Apply
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-slate-500 leading-normal">{theme.desc}</p>
-                    {isUltimateAdmin && (
-                      <button
-                        onClick={async () => {
-                          const success = await handleUpdateAppearance({
-                            theme: theme.id,
-                            accentColor: theme.customColors.accentColor
-                          });
-                          if (success) showStatus("success", `Applied global base template: ${theme.name}`);
-                        }}
-                        className="w-full py-1 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
-                      >
-                        Designate Default
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1541,6 +1696,39 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const payload = {
+                        customColors,
+                        typographySettings,
+                        messAnimations,
+                        siteColor,
+                        fontStyle,
+                        isDarkMode
+                      };
+                      const s1 = await handleUpdateSettings(payload);
+                      let s2 = true;
+                      if (handleUpdateAppearance) {
+                        s2 = await handleUpdateAppearance({
+                          accentColor: customColors?.accentColor,
+                          isDarkMode,
+                          theme: messAnimations?.themeTemplate || "custom"
+                        });
+                      }
+                      if (s1 && s2) {
+                        showStatus("success", "Saved all appearance customizations for all members!");
+                      } else {
+                        showStatus("error", "Failed to save appearance settings.");
+                      }
+                    }}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+                    title="Save current appearance configuration to the server for everyone"
+                  >
+                    <LucideIcons.Save size={13} />
+                    Save All Appearance for Everyone
+                  </button>
+
                   {erpBrandingState?.locks?.[activeMonthId] === true ? (
                     <span className="px-2.5 py-1 bg-rose-950 text-rose-300 border border-rose-500/20 rounded-xl text-[10px] font-bold flex items-center gap-1 shrink-0">
                       <LucideIcons.Lock size={10} />
@@ -1567,9 +1755,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 setFontStyle={setFontStyle}
                 customColors={customColors}
                 setCustomColors={setCustomColors}
-                previewTemplateId={null}
-                setPreviewTemplateId={() => {}}
+                previewTemplateId={activePreviewId}
+                setPreviewTemplateId={setActivePreviewId}
                 handleUpdateSettings={handleUpdateSettings}
+                handleUpdateAppearance={handleUpdateAppearance}
+                messAppearanceState={messAppearanceState}
                 typographySettings={typographySettings}
                 setTypographySettings={setTypographySettings}
               />
@@ -1712,26 +1902,72 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
-                {/* Dark Mode toggle */}
-                <div className={`flex items-center justify-between p-3.5 rounded-xl border ${
+                {/* UI Mode Preference (Hierarchical) */}
+                <div className={`p-4 rounded-xl border col-span-1 md:col-span-2 ${
                   isDarkMode 
                     ? "bg-slate-950/40 border-slate-800" 
                     : "bg-slate-50 border-slate-200"
-                }`}>
-                  <div className="space-y-0.5">
-                    <span className={`text-xs font-bold block ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Dark Canvas Theme</span>
-                    <span className="text-[10px] text-slate-500">Apply custom eye-safe midnight palette.</span>
+                } space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className={`text-xs font-bold block ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+                        Theme Mode (Light / Dark)
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Admin Mess Default: <strong>{messAppearanceState?.isDarkMode ? "Dark Mode" : "Light Mode"}</strong>
+                      </span>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => setPrefDarkMode(!prefDarkMode)}
-                    className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                      prefDarkMode ? "bg-cyan-500" : "bg-slate-700"
-                    }`}
-                  >
-                    <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
-                      prefDarkMode ? "translate-x-5" : "translate-x-0"
-                    }`} />
-                  </button>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrefUseMessDefault(true);
+                        setPrefDarkMode(!!messAppearanceState?.isDarkMode);
+                      }}
+                      className={`p-2.5 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        prefUseMessDefault
+                          ? "bg-cyan-500/20 border-cyan-500 text-cyan-300 ring-1 ring-cyan-500/30 font-extrabold"
+                          : "bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-800"
+                      }`}
+                    >
+                      <LucideIcons.Sparkles size={12} />
+                      Follow Mess Default ({messAppearanceState?.isDarkMode ? "Dark" : "Light"})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrefUseMessDefault(false);
+                        setPrefDarkMode(false);
+                      }}
+                      className={`p-2.5 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        !prefUseMessDefault && !prefDarkMode
+                          ? "bg-amber-400 text-slate-950 border-amber-300 ring-1 ring-amber-400/30 font-extrabold"
+                          : "bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-800"
+                      }`}
+                    >
+                      <LucideIcons.Sun size={12} />
+                      Always Light Mode
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrefUseMessDefault(false);
+                        setPrefDarkMode(true);
+                      }}
+                      className={`p-2.5 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        !prefUseMessDefault && prefDarkMode
+                          ? "bg-cyan-500 text-slate-950 border-cyan-400 ring-1 ring-cyan-500/30 font-extrabold"
+                          : "bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-800"
+                      }`}
+                    >
+                      <LucideIcons.Moon size={12} />
+                      Always Dark Mode
+                    </button>
+                  </div>
                 </div>
 
                 {/* Compact spacing toggle */}

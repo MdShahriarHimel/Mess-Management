@@ -4149,7 +4149,9 @@ export function loadMessAppearance(messId: string) {
     spacing: "normal",
     density: "normal",
     navigationStyle: "sidebar",
-    cardLayout: "bento"
+    cardLayout: "bento",
+    isDarkMode: false,
+    defaultMode: "light"
   };
 
   try {
@@ -4650,6 +4652,8 @@ function loadSettings() {
     siteColor: "cyan",
     fontSize: "normal",
     fontStyle: "sans",
+    isDarkMode: false,
+    defaultMode: "light",
     logoText: messId === "default" ? "Ababil mess" : `Mess ${messId.toUpperCase()}`,
     dropdownOptions: ["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"],
     translations: {},
@@ -4845,6 +4849,12 @@ function loadSettings() {
   if (appearance.fontSize) {
     merged.fontSize = appearance.fontSize;
   }
+  if (appearance.isDarkMode !== undefined) {
+    merged.isDarkMode = appearance.isDarkMode;
+  }
+  if (appearance.defaultMode !== undefined) {
+    merged.defaultMode = appearance.defaultMode;
+  }
   if (appearance.roundedCorners) {
     // Keep compatible with any custom animations or cards styles
   }
@@ -5028,6 +5038,12 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
   if (req.body.fontSize !== undefined) {
     currentSettings.fontSize = req.body.fontSize;
   }
+  if (req.body.isDarkMode !== undefined) {
+    currentSettings.isDarkMode = req.body.isDarkMode;
+  }
+  if (req.body.defaultMode !== undefined) {
+    currentSettings.defaultMode = req.body.defaultMode;
+  }
   saveSettings(currentSettings);
 
   logAudit(
@@ -5056,6 +5072,12 @@ router.get("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, 
 router.put("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const oldPrefs = loadUserPreferences(req.user!.id);
   const newPrefs = { ...oldPrefs, ...req.body };
+  if (req.body.useMessDefault === true) {
+    delete newPrefs.isDarkMode;
+    newPrefs.useMessDefault = true;
+  } else if (req.body.isDarkMode !== undefined) {
+    newPrefs.useMessDefault = false;
+  }
   saveUserPreferences(req.user!.id, newPrefs);
 
   logAudit(
@@ -5119,6 +5141,8 @@ router.get("/settings/public", (req: Request, res: Response) => {
     siteColor: s.siteColor,
     fontSize: s.fontSize,
     fontStyle: s.fontStyle,
+    isDarkMode: s.isDarkMode,
+    defaultMode: s.defaultMode,
     logoText: s.logoText,
     customColors: s.customColors,
     messAnimations: s.messAnimations,
@@ -5277,6 +5301,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     // Check general appearance & branding updates
     const adminOnlyFields = [
       'siteColor', 'fontSize', 'fontStyle', 'logoText',
+      'isDarkMode', 'defaultMode',
       'customColors', 'messAnimations', 'typographySettings',
       'loginCustomization', 'homeCustomization', 'balanceSheetGlow', 'roleAnimations', 'adminVisibility'
     ];
@@ -5395,6 +5420,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (siteColor !== undefined) currentSettings.siteColor = siteColor;
   if (fontSize !== undefined) currentSettings.fontSize = fontSize;
   if (fontStyle !== undefined) currentSettings.fontStyle = fontStyle;
+  if (req.body.isDarkMode !== undefined) currentSettings.isDarkMode = req.body.isDarkMode;
+  if (req.body.defaultMode !== undefined) currentSettings.defaultMode = req.body.defaultMode;
   if (logoText !== undefined) currentSettings.logoText = logoText;
   if (dropdownOptions !== undefined) currentSettings.dropdownOptions = dropdownOptions;
   if (superUserCanEditBills !== undefined) currentSettings.superUserCanEditBills = superUserCanEditBills;
@@ -5538,6 +5565,13 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   saveSettings(currentSettings);
+  if (req.body.isDarkMode !== undefined || req.body.defaultMode !== undefined) {
+    const messId = getActiveMessId();
+    const app = loadMessAppearance(messId);
+    if (req.body.isDarkMode !== undefined) app.isDarkMode = req.body.isDarkMode;
+    if (req.body.defaultMode !== undefined) app.defaultMode = req.body.defaultMode;
+    saveMessAppearance(messId, app);
+  }
   res.json({ success: true, settings: loadSettings() });
 });
 

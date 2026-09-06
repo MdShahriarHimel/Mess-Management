@@ -56,6 +56,8 @@ interface ThemeEnginePanelProps {
   previewTemplateId: string | null;
   setPreviewTemplateId: (id: string | null) => void;
   handleUpdateSettings: (updates: any) => Promise<boolean>;
+  handleUpdateAppearance?: (updates: any) => Promise<boolean>;
+  messAppearanceState?: any;
   typographySettings: any;
   setTypographySettings: React.Dispatch<React.SetStateAction<any>>;
 }
@@ -74,6 +76,8 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
   previewTemplateId,
   setPreviewTemplateId,
   handleUpdateSettings,
+  handleUpdateAppearance,
+  messAppearanceState,
   typographySettings,
   setTypographySettings
 }) => {
@@ -187,13 +191,66 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
 
   const handleSaveCustomizerChanges = async () => {
     try {
-      await handleUpdateSettings({
+      const payload = {
         customColors,
-        typographySettings
-      });
-      showStatus("success", "Customizer configuration successfully saved to the database!");
+        typographySettings,
+        messAnimations,
+        siteColor,
+        fontStyle,
+        isDarkMode
+      };
+      await handleUpdateSettings(payload);
+      if (handleUpdateAppearance) {
+        await handleUpdateAppearance({
+          accentColor: customColors?.accentColor,
+          isDarkMode,
+          theme: messAnimations?.themeTemplate || "custom"
+        });
+      }
+      showStatus("success", "Appearance configuration successfully saved and applied for all members!");
     } catch (err) {
       showStatus("error", "Failed to save configuration.");
+    }
+  };
+
+  const handleSaveDefaultMode = async (targetMode: "light" | "dark") => {
+    const isDark = targetMode === "dark";
+    setIsDarkMode(isDark);
+    try {
+      await handleUpdateSettings({
+        isDarkMode: isDark,
+        defaultMode: targetMode
+      });
+      if (handleUpdateAppearance) {
+        await handleUpdateAppearance({
+          isDarkMode: isDark,
+          defaultMode: targetMode
+        });
+      }
+      showStatus("success", `Default UI mode set to ${isDark ? "Dark Mode" : "Light Mode"} for all members!`);
+    } catch (e) {
+      console.error(e);
+      showStatus("error", "Failed to save default UI mode.");
+    }
+  };
+
+  const handleSaveBackgroundEffect = async () => {
+    try {
+      await handleUpdateSettings({
+        messAnimations
+      });
+      if (handleUpdateAppearance) {
+        await handleUpdateAppearance({
+          animations: {
+            enableEffect: messAnimations.enableEffect,
+            effectType: messAnimations.effectType,
+            animationSpeed: messAnimations.animationSpeed
+          }
+        });
+      }
+      showStatus("success", "Background overlay saved and applied for everyone!");
+    } catch (e) {
+      showStatus("error", "Failed to save background overlay.");
     }
   };
 
@@ -328,44 +385,70 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
     }
   };
 
+  // Commit a specific theme or current preview as the global saved theme for everyone
+  const handleApplyThemeForEveryone = async (themeToApply: ThemeTemplate) => {
+    try {
+      const payload = {
+        siteColor: themeToApply.siteColor,
+        fontStyle: themeToApply.fontStyle,
+        isDarkMode: themeToApply.isDarkMode,
+        defaultMode: themeToApply.isDarkMode ? "dark" : "light",
+        customColors: themeToApply.customColors,
+        messAnimations: {
+          ...messAnimations,
+          backgroundTheme: themeToApply.backgroundTheme,
+          themeTemplate: themeToApply.id
+        },
+        typographySettings: {
+          ...typographySettings,
+          primaryFontColor: themeToApply.isDarkMode ? "#f8fafc" : "#0f172a",
+          secondaryFontColor: themeToApply.isDarkMode ? "#94a3b8" : "#475569",
+          headingColor: themeToApply.isDarkMode ? "#22d3ee" : "#0f172a",
+          sidebarTextColor: themeToApply.isDarkMode ? "#94a3b8" : "#0f172a"
+        }
+      };
+
+      setSiteColor(themeToApply.siteColor);
+      setFontStyle(themeToApply.fontStyle);
+      setIsDarkMode(themeToApply.isDarkMode);
+      setCustomColors(themeToApply.customColors);
+      setMessAnimations(payload.messAnimations);
+      if (setTypographySettings) setTypographySettings(payload.typographySettings);
+      setPreviewTemplateId(null);
+
+      await handleUpdateSettings(payload);
+      if (handleUpdateAppearance) {
+        await handleUpdateAppearance({
+          theme: themeToApply.id,
+          accentColor: themeToApply.customColors?.accentColor,
+          isDarkMode: themeToApply.isDarkMode,
+          defaultMode: themeToApply.isDarkMode ? "dark" : "light"
+        });
+      }
+      showStatus("success", `Successfully applied "${themeToApply.name}" for the entire mess! All members will see this layout.`);
+    } catch (e) {
+      console.error(e);
+      showStatus("error", "Failed to apply theme for everyone.");
+    }
+  };
+
   // Commit preview as the global saved theme
   const handleApplyGlobally = async () => {
     const targetId = previewTemplateId || currentThemeId;
     const targetTheme = allThemes.find(t => t.id === targetId);
     if (targetTheme) {
-      try {
-        const payload = {
-          siteColor: targetTheme.siteColor,
-          fontStyle: targetTheme.fontStyle,
-          customColors: targetTheme.customColors,
-          messAnimations: {
-            ...messAnimations,
-            backgroundTheme: targetTheme.backgroundTheme,
-            themeTemplate: targetTheme.id
-          }
-        };
-        
-        setIsDarkMode(targetTheme.isDarkMode);
-        setCustomColors(targetTheme.customColors);
-        setMessAnimations((prev: any) => ({
-          ...prev,
-          backgroundTheme: targetTheme.backgroundTheme,
-          themeTemplate: targetTheme.id
-        }));
-
-        await handleUpdateSettings(payload);
-        setPreviewTemplateId(null);
-        showStatus("success", `Successfully applied "${targetTheme.name}" globally!`);
-      } catch (e) {
-        showStatus("error", "Failed to apply theme globally.");
-      }
+      await handleApplyThemeForEveryone(targetTheme);
     }
   };
 
   const handleCancelPreview = () => {
     setPreviewTemplateId(null);
-    // Reload whatever is currently configured in backend settings
-    window.location.reload(); // Quick reset of all state variables
+    const savedTheme = allThemes.find(t => t.id === (messAnimations?.themeTemplate || "default-erp")) || THEME_TEMPLATES[0];
+    setSiteColor(savedTheme.siteColor);
+    setFontStyle(savedTheme.fontStyle);
+    setCustomColors(savedTheme.customColors);
+    setIsDarkMode(savedTheme.isDarkMode);
+    showStatus("success", "Preview cancelled. Reverted to active mess configuration.");
   };
 
   // Save current dynamic customization as a new custom theme
@@ -549,13 +632,66 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
             </button>
             <button
               onClick={handleApplyGlobally}
-              className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-md cursor-pointer"
+              className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              Apply Globally
+              <Check size={12} />
+              Save & Apply for Everyone
             </button>
           </div>
         </div>
       )}
+
+      {/* Mess Global UI Default Mode (Admin Hierarchical Control) */}
+      <div className={`p-4 rounded-2xl border ${
+        isDarkMode 
+          ? "border-cyan-500/20 bg-gradient-to-br from-cyan-950/20 via-slate-900/30 to-slate-950/40" 
+          : "border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-slate-50 shadow-sm"
+      } flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left`}>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">
+              <Sun size={15} />
+            </span>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+              Mess Default UI Mode (Light / Dark)
+            </h4>
+            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border border-cyan-500/20">
+              Applies to all 13 members
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 max-w-xl">
+            Choose whether all members see <strong>Light Mode</strong> or <strong>Dark Mode</strong> by default when entering the mess website. Individual members can also change their personal preference at any time.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => handleSaveDefaultMode("light")}
+            className={`flex-1 md:flex-initial px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+              !isDarkMode 
+                ? "bg-amber-400 text-slate-950 border-amber-300 shadow-md ring-2 ring-amber-400/30 font-extrabold" 
+                : "bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700"
+            }`}
+          >
+            <Sun size={13} className={!isDarkMode ? "text-slate-950" : "text-amber-400"} />
+            Light Mode {!isDarkMode && "✓ (Saved Default)"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSaveDefaultMode("dark")}
+            className={`flex-1 md:flex-initial px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+              isDarkMode 
+                ? "bg-cyan-500 text-slate-950 border-cyan-400 shadow-md ring-2 ring-cyan-500/30 font-extrabold" 
+                : "bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700"
+            }`}
+          >
+            <Moon size={13} className={isDarkMode ? "text-slate-950" : "text-cyan-400"} />
+            Dark Mode {isDarkMode && "✓ (Saved Default)"}
+          </button>
+        </div>
+      </div>
 
       {/* Navigation sub-tabs */}
       <div className={`flex flex-wrap gap-1.5 border-b pb-2 ${isDarkMode ? "border-slate-800/40" : "border-slate-200"}`}>
@@ -678,48 +814,82 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
                   </div>
 
                   {/* Palette Indicators & Admin Actions */}
-                  <div className="flex items-center justify-between border-t border-slate-800/20 dark:border-slate-800/40 pt-2 mt-auto">
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.customColors.siteAccentColorRgb }} title="Accent" />
-                      <span className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.customColors.sidebarBg }} title="Sidebar" />
-                      <span className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.customColors.cardBg }} title="Cards" />
+                  <div className="flex flex-col gap-2 border-t border-slate-800/20 dark:border-slate-800/40 pt-2 mt-auto">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.customColors.siteAccentColorRgb }} title="Accent" />
+                        <span className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.customColors.sidebarBg }} title="Sidebar" />
+                        <span className="w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.customColors.cardBg }} title="Cards" />
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {/* Copy / Duplicate button */}
+                        <button
+                          title="Duplicate Template"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDuplicateTheme(t);
+                          }}
+                          className="p-1 hover:bg-slate-800/80 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <Copy size={11} />
+                        </button>
+
+                        {/* Delete Custom Theme */}
+                        {customThemes.some(ct => ct.id === t.id) && (
+                          <button
+                            title="Delete Custom Theme"
+                            onClick={(e) => handleDeleteCustomTheme(t.id, e)}
+                            className="p-1 hover:bg-rose-950/40 rounded text-rose-400 hover:text-rose-200 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+
+                        {/* Active Badges */}
+                        {isSaved && !previewTemplateId && (
+                          <span className="text-[8px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md font-bold flex items-center gap-1 animate-pulse">
+                            Active
+                          </span>
+                        )}
+                        {isCurrentlyPreviewed && (
+                          <span className="text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md font-bold">
+                            Previewing
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {/* Copy / Duplicate button */}
+                    {/* Action buttons: Preview and Save & Apply for Everyone */}
+                    <div className="flex items-center gap-1.5 pt-1">
                       <button
-                        title="Duplicate Template"
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDuplicateTheme(t);
+                          handlePreviewTheme(t.id);
                         }}
-                        className="p-1 hover:bg-slate-800/80 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                        className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border transition-all cursor-pointer ${
+                          isCurrentlyPreviewed
+                            ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
+                            : "bg-slate-800/60 hover:bg-slate-700/80 border-slate-700/60 text-slate-300"
+                        }`}
                       >
-                        <Copy size={11} />
+                        <Eye size={10} />
+                        {isCurrentlyPreviewed ? "Previewing" : "Preview"}
                       </button>
 
-                      {/* Delete Custom Theme */}
-                      {customThemes.some(ct => ct.id === t.id) && (
-                        <button
-                          title="Delete Custom Theme"
-                          onClick={(e) => handleDeleteCustomTheme(t.id, e)}
-                          className="p-1 hover:bg-rose-950/40 rounded text-rose-400 hover:text-rose-200 transition-colors cursor-pointer"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
-
-                      {/* Active Badges */}
-                      {isSaved && !previewTemplateId && (
-                        <span className="text-[8px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md font-bold flex items-center gap-1 animate-pulse">
-                          Active
-                        </span>
-                      )}
-                      {isCurrentlyPreviewed && (
-                        <span className="text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md font-bold">
-                          Previewing
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleApplyThemeForEveryone(t);
+                        }}
+                        className="flex-1 py-1 px-2 rounded-lg text-[10px] font-extrabold flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-500/40 shadow-sm transition-all cursor-pointer"
+                        title="Save & Apply this UI theme for all members of the mess"
+                      >
+                        <Check size={10} />
+                        Save & Apply
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -732,9 +902,19 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       {/* Tab CONTENT: Backgrounds selection */}
       {activeTab === "backgrounds" && (
         <div className="space-y-4">
-          <div>
-            <h4 className="text-xs font-extrabold uppercase tracking-widest text-slate-400">Atmospheric Background Overlay Library</h4>
-            <p className="text-[10px] text-slate-500">Pick independent interactive ambient canvas rendering effects below. Blends gracefully with UI themes.</p>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-cyan-500/20 bg-cyan-950/10">
+            <div>
+              <h4 className="text-xs font-extrabold uppercase tracking-widest text-slate-300">Atmospheric Background Overlay Library</h4>
+              <p className="text-[10px] text-slate-400">Pick independent interactive ambient canvas rendering effects below. Blends gracefully with UI themes.</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveBackgroundEffect}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Save size={13} />
+              Save & Apply for Everyone
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
