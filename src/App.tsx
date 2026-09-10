@@ -5537,45 +5537,54 @@ export default function App() {
           ))}
 
         {/* ---------------------------------------------------------
-            DEVELOPER & SYSTEM INFORMATION FOOTER (AT THE BOTTOM OF THE PAGE)
+            FOOTER: ON DASHBOARD SHOW DEVELOPER & SYSTEM INFO; ON OTHER PAGES ONLY CLOUD SYNC
             --------------------------------------------------------- */}
         <footer 
           id="developer-page-footer"
-          className={`mt-14 pt-6 pb-6 border-t text-xs transition-all ${
+          className={`mt-14 pt-4 pb-4 border-t text-xs transition-all ${
             activeIsDarkMode 
               ? "border-slate-800/80 bg-slate-950/20 text-slate-400" 
               : "border-slate-200 bg-white/40 text-slate-600 shadow-sm rounded-2xl p-4"
           }`}
         >
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left px-2">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className={`font-bold ${activeIsDarkMode ? "text-slate-200" : "text-slate-800"}`}>
-                {erpBrandingState?.copyright || "Copyright © 2026 Mess ERP"}
-              </span>
-            </div>
+          {activeTab === "dashboard" ? (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left px-2">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className={`font-bold ${activeIsDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+                  {erpBrandingState?.copyright || "Copyright © 2026 Mess ERP"}
+                </span>
+              </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px]">
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">Dev:</span>
-                <span className={`font-bold ${activeIsDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
-                  {erpBrandingState?.developerInfo || "HIMEL"}
-                </span>
+              <div className="flex flex-wrap items-center justify-center gap-3 text-[11px]">
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500">Dev:</span>
+                  <span className={`font-bold ${activeIsDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
+                    {erpBrandingState?.developerInfo || "HIMEL"}
+                  </span>
+                </div>
+                <span className="text-slate-500">•</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500">Support:</span>
+                  <span className={`font-medium ${activeIsDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                    {erpBrandingState?.supportInfo || "Ababil team"}
+                  </span>
+                </div>
+                <span className="text-slate-500">•</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Cloud Sync:</span>
+                  <SyncIndicator />
+                </div>
               </div>
-              <span className="text-slate-500">•</span>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500">Support:</span>
-                <span className={`font-medium ${activeIsDarkMode ? "text-slate-300" : "text-slate-700"}`}>
-                  {erpBrandingState?.supportInfo || "Ababil team"}
-                </span>
-              </div>
-              <span className="text-slate-500">•</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center sm:justify-end px-2 text-[11px]">
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-500">Cloud Sync:</span>
                 <SyncIndicator />
               </div>
             </div>
-          </div>
+          )}
         </footer>
 
       </main>
