@@ -4622,14 +4622,14 @@ export default function App() {
       {/* ---------------------------------------------------------
           HEADER FOR MOBILE / VIEW CONTROL
           --------------------------------------------------------- */}
-      <header className={`md:hidden sticky top-0 flex items-center justify-between px-4 py-3.5 border-b z-40 backdrop-blur-md ${
+      <header className={`md:hidden sticky top-0 flex items-center justify-between px-4 py-2.5 border-b z-40 backdrop-blur-md ${
         isDarkMode ? "bg-slate-950/80 border-slate-900" : "bg-white/80 border-slate-200 shadow-sm"
       }`}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {activeTab !== "dashboard" && (
             <button
               onClick={() => setActiveTab("dashboard")}
-              className="flex items-center gap-1 text-xs font-bold text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/20 mr-1"
+              className="flex items-center gap-1 text-xs font-bold text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/20 shrink-0 mr-0.5"
             >
               ← Back
             </button>
@@ -4640,29 +4640,50 @@ export default function App() {
               handleRefreshAll();
             }}
             title="Refresh All Data & Return to Dashboard"
-            className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all text-left"
+            className="flex items-center gap-2 cursor-pointer active:scale-95 transition-all text-left min-w-0"
           >
-            <CurrentBrandIcon size={14} className={`text-cyan-400 ${isRefreshingAll ? "animate-spin" : ""}`} />
-            <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase">
-              {erpBrandingState?.logoText || messName}
+            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border shrink-0 ${
+              isRefreshingAll ? "animate-spin border-cyan-400 text-cyan-300" : ""
+            } ${
+              activeIsDarkMode ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" : "bg-cyan-100 border-cyan-200 text-cyan-700"
+            }`}>
+              <CurrentBrandIcon size={15} />
             </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase leading-none">
+                  {erpBrandingState?.logoText || messName}
+                </span>
+                <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded uppercase leading-none">
+                  {erpBrandingState?.erpVersion || "v2.5.4"}
+                </span>
+              </div>
+              {/* Mess address beneath the version and brand name */}
+              <span className={`text-[9px] font-medium block truncate max-w-[170px] sm:max-w-[220px] leading-tight mt-0.5 ${
+                activeIsDarkMode ? "text-slate-400" : "text-cyan-900/70"
+              }`}>
+                {erpBrandingState?.erpName || "Ababil Mess ,Noya Bazar"}
+              </span>
+            </div>
           </button>
-          <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded uppercase">
-            {erpBrandingState?.erpVersion || "v2.5.4"}
-          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 cursor-pointer"
+            className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+              activeIsDarkMode ? "text-amber-400 hover:bg-slate-900" : "text-cyan-700 hover:bg-cyan-100"
+            }`}
+            title={activeIsDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
           >
-            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+            {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 cursor-pointer"
+            className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+              activeIsDarkMode ? "text-slate-400 hover:text-cyan-400 hover:bg-slate-900" : "text-slate-600 hover:text-cyan-700 hover:bg-slate-100"
+            }`}
           >
             {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
@@ -4676,22 +4697,32 @@ export default function App() {
             style={{
               backgroundColor: activeCustomColors?.sidebarBg || (activeIsDarkMode ? "#020617" : "#ecfeff")
             }}
-            className={`w-64 h-full p-5 flex flex-col justify-between border-r transition-all ${
+            className={`w-72 max-w-[85vw] h-full flex flex-col justify-between border-r transition-all overflow-hidden ${
               activeIsDarkMode 
                 ? "border-slate-900 bg-slate-950 text-slate-100" 
                 : "border-cyan-100 bg-cyan-50 text-cyan-900"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div>
-              <div className={`flex justify-between items-center mb-6 pb-2 border-b ${activeIsDarkMode ? "border-slate-800/40" : "border-cyan-100"}`}>
-                <span className={`font-black font-display ${activeIsDarkMode ? "text-cyan-400" : "text-cyan-800"}`}>Mess Navigation</span>
-                <button onClick={() => setMobileMenuOpen(false)} className={activeIsDarkMode ? "text-slate-400 hover:text-slate-100" : "text-cyan-700 hover:text-cyan-900"}>
-                  <X size={18} />
-                </button>
+            {/* Header */}
+            <div className={`flex justify-between items-center p-4 pb-3 border-b shrink-0 ${activeIsDarkMode ? "border-slate-800/40" : "border-cyan-100"}`}>
+              <div className="flex items-center gap-2">
+                <CurrentBrandIcon size={16} className="text-cyan-400" />
+                <span className={`font-black font-display text-sm tracking-wide ${activeIsDarkMode ? "text-cyan-400" : "text-cyan-800"}`}>
+                  Mess Navigation
+                </span>
               </div>
+              <button 
+                onClick={() => setMobileMenuOpen(false)} 
+                className={`p-1.5 rounded-lg cursor-pointer transition-colors ${activeIsDarkMode ? "text-slate-400 hover:text-slate-100 hover:bg-slate-900" : "text-cyan-700 hover:text-cyan-900 hover:bg-cyan-100"}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-              <nav className="space-y-1.5">
+            {/* Scrollable Navigation List */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1">
+              <nav className="space-y-1">
                 {visibleNavItems.map(item => {
                   const isActive = activeTab === item.id;
                   return (
@@ -4709,7 +4740,7 @@ export default function App() {
                       }`}
                     >
                       {item.icon}
-                      <span className="flex-1">{item.label}</span>
+                      <span className="flex-1 truncate">{item.label}</span>
                       {item.id === "audit" && hasSuperUserChangeDot && (
                         <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
                       )}
@@ -4719,12 +4750,18 @@ export default function App() {
               </nav>
             </div>
 
-            <div className={`space-y-4 border-t pt-4 ${activeIsDarkMode ? "border-slate-800/60" : "border-cyan-100"}`}>
-              <div className="flex items-center gap-3 px-1">
+            {/* Pinned Bottom Controls: Cloud Sync, Profile, Role, Logout */}
+            <div className={`p-4 border-t shrink-0 space-y-3 ${activeIsDarkMode ? "border-slate-800/60 bg-slate-950/40" : "border-cyan-100 bg-cyan-50/50"}`}>
+              <div className="flex justify-between items-center text-xs">
+                <span className={`text-[11px] font-medium ${activeIsDarkMode ? "text-slate-400" : "text-cyan-900/70 font-semibold"}`}>Cloud Sync</span>
+                <SyncIndicator />
+              </div>
+
+              <div className="flex items-center gap-2.5 pt-2 border-t border-slate-800/20">
                 {currentUser.photo ? (
-                  <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20" alt="" />
+                  <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20 shrink-0" alt="" />
                 ) : (
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border ${
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 border ${
                     activeIsDarkMode 
                       ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
                       : "bg-cyan-100 border-cyan-200 text-cyan-700"
@@ -4734,19 +4771,19 @@ export default function App() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className={`text-xs font-bold truncate leading-none ${activeIsDarkMode ? "text-white" : "text-cyan-900"}`}>{getRespectDisplayName(currentUser, currentUser, respectSenioritySettings)}</p>
-                  <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-1">{currentUser.role}</span>
+                  <span className="text-[9px] text-orange-500 font-mono uppercase tracking-wider block mt-0.5">{currentUser.role}</span>
                 </div>
+                
+                <button 
+                  onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                  className={`p-1.5 rounded-lg cursor-pointer transition-colors shrink-0 ${
+                    activeIsDarkMode ? "text-rose-400 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-100/60"
+                  }`}
+                  title="Sign Out Access"
+                >
+                  <LogOut size={16} />
+                </button>
               </div>
-
-              <button 
-                onClick={handleLogout}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer text-left transition-all ${
-                  activeIsDarkMode ? "text-rose-400 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-100/60"
-                }`}
-              >
-                <LogOut size={16} />
-                Sign Out Access
-              </button>
             </div>
           </div>
         </div>
@@ -4765,7 +4802,7 @@ export default function App() {
             : "border-cyan-100 bg-cyan-50 text-cyan-900"
         }`}
       >
-        <div className="p-6">
+        <div className="p-4 pb-2 shrink-0">
           {/* Logo brand (Clickable Refresh & Return to Dashboard) */}
           <button
             onClick={() => {
@@ -4773,9 +4810,9 @@ export default function App() {
               handleRefreshAll();
             }}
             title="Refresh All System Data & Return to Dashboard"
-            className="w-full flex items-center gap-2 mb-8 text-left group cursor-pointer hover:opacity-90 active:scale-98 transition-all"
+            className="w-full flex items-center gap-2.5 mb-2 text-left group cursor-pointer hover:opacity-90 active:scale-98 transition-all"
           >
-            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all ${
+            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border shrink-0 transition-all ${
               isRefreshingAll ? "animate-spin border-cyan-400 text-cyan-300" : ""
             } ${
               activeIsDarkMode 
@@ -4790,23 +4827,25 @@ export default function App() {
               }`}>
                 {erpBrandingState?.logoText || messName}
               </h1>
-              <span className={`text-[7px] font-semibold font-mono block tracking-widest uppercase truncate opacity-70 ${
+              <span className={`text-[8px] font-semibold font-mono block tracking-widest uppercase truncate opacity-70 ${
                 activeIsDarkMode ? "text-slate-400" : "text-cyan-800"
               }`}>
                 {erpBrandingState?.erpName || "Enterprise"} • {erpBrandingState?.erpVersion || "v2.5.4"}
               </span>
             </div>
           </button>
+        </div>
 
-          {/* Navigation Menu */}
-          <nav className="space-y-1.5">
+        {/* Navigation Menu (Scrollable with auto-overflow to prevent off-screen cutoff) */}
+        <div className="flex-1 overflow-y-auto px-3 py-1 min-h-0 space-y-1">
+          <nav className="space-y-1">
             {visibleNavItems.map(item => {
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all text-left cursor-pointer ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold tracking-wide transition-all text-left cursor-pointer ${
                     isActive
                       ? (activeIsDarkMode 
                           ? "bg-cyan-500/10 border-l-2 border-cyan-400 text-cyan-400 font-extrabold"
@@ -4817,7 +4856,7 @@ export default function App() {
                   }`}
                 >
                   {item.icon}
-                  <span className="flex-1">{item.label}</span>
+                  <span className="flex-1 truncate">{item.label}</span>
                   {item.id === "audit" && hasSuperUserChangeDot && (
                     <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" title="Recent Super User activity" />
                   )}
@@ -4827,33 +4866,18 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Footer info & Logout */}
-        <div className={`p-6 border-t space-y-4 ${activeIsDarkMode ? "border-slate-800/60" : "border-cyan-100"}`}>
+        {/* Pinned Bottom Sidebar: Cloud Sync status, Member profile, role, and logout */}
+        <div className={`p-3.5 border-t shrink-0 space-y-2.5 ${activeIsDarkMode ? "border-slate-800/60 bg-slate-950/40" : "border-cyan-100 bg-cyan-50/50"}`}>
           <div className="flex justify-between items-center text-xs">
-            <div className="flex justify-between items-center text-xs">
-              <span className={`text-[10px] ${activeIsDarkMode ? "text-slate-500" : "text-cyan-900/50 font-semibold"}`}>Cloud Sync</span>
-              <SyncIndicator />
-            </div>
-          </div>
-          <div className="flex justify-between items-center text-xs">
-            <span className={`text-[10px] ${activeIsDarkMode ? "text-slate-500" : "text-cyan-900/50 font-semibold"}`}>Theme</span>
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
-                activeIsDarkMode 
-                  ? "border-slate-800 text-cyan-400 bg-slate-950/40 hover:bg-slate-900/60" 
-                  : "border-cyan-200 text-cyan-600 bg-cyan-100/50 hover:bg-cyan-100"
-              }`}
-            >
-              {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
-            </button>
+            <span className={`text-[11px] font-medium ${activeIsDarkMode ? "text-slate-400" : "text-cyan-900/70 font-semibold"}`}>Cloud Sync</span>
+            <SyncIndicator />
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 pt-1.5 border-t border-slate-800/20">
             {currentUser.photo ? (
-              <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20" alt="" />
+              <img src={currentUser.photo} className="w-8 h-8 rounded-lg object-cover border border-cyan-500/20 shrink-0" alt="" />
             ) : (
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border ${
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 border ${
                 activeIsDarkMode 
                   ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" 
                   : "bg-cyan-100 border-cyan-200 text-cyan-700"
@@ -4873,17 +4897,8 @@ export default function App() {
               }`}
               title="Sign Out Access"
             >
-              <LogOut size={14} />
+              <LogOut size={15} />
             </button>
-          </div>
-
-          {/* Level 1 ERP Identity Info Badges */}
-          <div className={`pt-2 border-t text-[9px] space-y-0.5 leading-tight ${
-            activeIsDarkMode ? "border-slate-800/40 text-slate-500" : "border-cyan-100 text-cyan-800/60"
-          }`}>
-            <p className="font-semibold truncate">{erpBrandingState?.copyright || "Copyright © 2026 Mess ERP"}</p>
-            <p className="truncate">Dev: <span className="font-medium">{erpBrandingState?.developerInfo || "Bengal Bachelor Developers"}</span></p>
-            <p className="truncate">Support: <span className="font-medium">{erpBrandingState?.supportInfo || "Ababil support team"}</span></p>
           </div>
         </div>
       </aside>
@@ -5027,6 +5042,30 @@ export default function App() {
                 </select>
               </div>
             )}
+
+            {/* TOP UI COLOR MODE / THEME SWITCH (Desktop only; on mobile the top sticky header has it) */}
+            <button
+              id="top-theme-toggle"
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className={`hidden md:flex px-3 py-1.5 text-xs font-bold rounded-lg border items-center gap-1.5 cursor-pointer transition-all shadow-sm ${
+                activeIsDarkMode 
+                  ? "bg-slate-950 border-cyan-500/40 text-cyan-300 hover:bg-slate-900 hover:border-cyan-400" 
+                  : "bg-cyan-50 border-cyan-300 text-cyan-800 hover:bg-cyan-100"
+              }`}
+              title={activeIsDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {activeIsDarkMode ? (
+                <>
+                  <Sun size={14} className="text-amber-400 shrink-0" />
+                  <span>Light Mode</span>
+                </>
+              ) : (
+                <>
+                  <Moon size={14} className="text-cyan-700 shrink-0" />
+                  <span>Dark Mode</span>
+                </>
+              )}
+            </button>
 
             <button
               onClick={handleRefreshAll}
@@ -5496,6 +5535,48 @@ export default function App() {
               )}
             </div>
           ))}
+
+        {/* ---------------------------------------------------------
+            DEVELOPER & SYSTEM INFORMATION FOOTER (AT THE BOTTOM OF THE PAGE)
+            --------------------------------------------------------- */}
+        <footer 
+          id="developer-page-footer"
+          className={`mt-14 pt-6 pb-6 border-t text-xs transition-all ${
+            activeIsDarkMode 
+              ? "border-slate-800/80 bg-slate-950/20 text-slate-400" 
+              : "border-slate-200 bg-white/40 text-slate-600 shadow-sm rounded-2xl p-4"
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left px-2">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className={`font-bold ${activeIsDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+                {erpBrandingState?.copyright || "Copyright © 2026 Mess ERP"}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px]">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">Dev:</span>
+                <span className={`font-bold ${activeIsDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
+                  {erpBrandingState?.developerInfo || "HIMEL"}
+                </span>
+              </div>
+              <span className="text-slate-500">•</span>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">Support:</span>
+                <span className={`font-medium ${activeIsDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                  {erpBrandingState?.supportInfo || "Ababil team"}
+                </span>
+              </div>
+              <span className="text-slate-500">•</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500">Cloud Sync:</span>
+                <SyncIndicator />
+              </div>
+            </div>
+          </div>
+        </footer>
 
       </main>
 
