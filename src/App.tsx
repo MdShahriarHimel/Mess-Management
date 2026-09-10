@@ -1763,6 +1763,21 @@ export default function App() {
     { id: "breakfast", name: "Breakfast", enabled: false }
   ]);
 
+  // Memoized members list with custom translation matrix names applied
+  const displayedMembersList = useMemo(() => {
+    if (!translations || Object.keys(translations).length === 0) return membersList;
+    return membersList.map(m => {
+      const translatedName = translations[m.name];
+      const translatedNickname = m.nickname ? translations[m.nickname] : undefined;
+      if (!translatedName && !translatedNickname) return m;
+      return {
+        ...m,
+        name: (translatedName && translatedName.trim() !== "") ? translatedName : m.name,
+        nickname: (translatedNickname && translatedNickname.trim() !== "") ? translatedNickname : m.nickname,
+      };
+    });
+  }, [membersList, translations]);
+
   // Login page customizer
   const [loginCustomization, setLoginCustomization] = useState({
     title: "Mess ERP",
@@ -3353,7 +3368,20 @@ export default function App() {
 
   // Translation helper function
   const t = (text: string) => {
-    // If user's language preference is Bangla, use the built-in dictionary
+    if (!text) return text;
+
+    // 1. Custom wording overwrite matrix always takes highest priority!
+    if (translations && typeof translations === "object") {
+      if (translations[text] !== undefined && translations[text].trim() !== "") {
+        return translations[text];
+      }
+      const trimmed = text.trim();
+      if (translations[trimmed] !== undefined && translations[trimmed].trim() !== "") {
+        return translations[trimmed];
+      }
+    }
+
+    // 2. If user's language preference is Bangla, use the built-in dictionary
     if (userPreferencesState?.language === "bn") {
       const bnTranslations: Record<string, string> = {
         "Dashboard Hub": "ড্যাশবোর্ড হাব",
@@ -3399,9 +3427,6 @@ export default function App() {
       }
     }
 
-    if (translations && translations[text]) {
-      return translations[text];
-    }
     return text;
   };
 
@@ -5152,7 +5177,7 @@ export default function App() {
                 welcomeSubtitle: homeCustomization?.welcomeSubtitle || erpBrandingState?.welcomeMessage
               }}
               elections={elections}
-              membersListProp={membersList}
+              membersListProp={displayedMembersList}
               showResultsInDashboard={showResultsInDashboard}
               enableManagerRating={enableManagerRating}
               duties={dutiesList}
@@ -5174,7 +5199,7 @@ export default function App() {
           {activeTab === "members" && (
             <Members 
               currentUser={currentUser}
-              members={membersList}
+              members={displayedMembersList}
               isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               currentMonthId={currentMonthId}
@@ -5190,7 +5215,7 @@ export default function App() {
             <MealsTracker 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
-              members={membersList}
+              members={displayedMembersList}
               isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
@@ -5216,7 +5241,7 @@ export default function App() {
             <MarketLogs 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
-              members={membersList}
+              members={displayedMembersList}
               isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
@@ -5234,7 +5259,7 @@ export default function App() {
             <Deposits 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
-              members={membersList}
+              members={displayedMembersList}
               months={months}
               isDarkMode={activeIsDarkMode}
               onRefresh={handleRefreshAll}
@@ -5248,7 +5273,7 @@ export default function App() {
             <FinanceSettlement 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
-              members={membersList}
+              members={displayedMembersList}
               isDarkMode={activeIsDarkMode}
               reportSummary={reportSummary}
               onRefresh={handleRefreshAll}
@@ -5275,7 +5300,7 @@ export default function App() {
             <Rules 
               currentUser={currentUser}
               isDarkMode={activeIsDarkMode}
-              members={membersList}
+              members={displayedMembersList}
               isPlatformOwner={isPlatformOwner}
             />
           )}
@@ -5284,7 +5309,7 @@ export default function App() {
             <AuditLogs 
               currentUser={currentUser}
               isDarkMode={activeIsDarkMode}
-              members={membersList}
+              members={displayedMembersList}
               respectSenioritySettings={respectSenioritySettings}
             />
           )}
@@ -5293,7 +5318,7 @@ export default function App() {
             <Democracy 
               currentUser={currentUser}
               isDarkMode={activeIsDarkMode}
-              members={membersList}
+              members={displayedMembersList}
               elections={elections}
               sessionToken={sessionToken}
               onRefresh={() => {

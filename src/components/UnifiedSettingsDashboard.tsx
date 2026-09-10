@@ -334,6 +334,110 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     }
   }, [propRespectSenioritySettings]);
 
+  // Dynamic Translation Matrix local state
+  interface TranslationRowItem {
+    id: string;
+    originalKey: string;
+    customValue: string;
+  }
+
+  const [translationRows, setTranslationRows] = useState<TranslationRowItem[]>(() => {
+    const raw = typeof translations === "object" && translations !== null ? translations : {};
+    const entries = Object.entries(raw);
+    if (entries.length === 0) {
+      return [
+        { id: "row-default-1", originalKey: "Rent/ভাড়া", customValue: "" }
+      ];
+    }
+    return entries.map(([k, v], idx) => ({
+      id: `row-${idx}-${k}`,
+      originalKey: k,
+      customValue: String(v || "")
+    }));
+  });
+
+  const [translationSearch, setTranslationSearch] = useState<string>("");
+  const [selectedPresetCategory, setSelectedPresetCategory] = useState<"members" | "tabs" | "roles" | "finance">("members");
+  const [isSavingTranslations, setIsSavingTranslations] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (translations && typeof translations === "object") {
+      const entries = Object.entries(translations);
+      if (entries.length > 0) {
+        setTranslationRows(entries.map(([k, v], idx) => ({
+          id: `row-${idx}-${k}`,
+          originalKey: k,
+          customValue: String(v || "")
+        })));
+      }
+    }
+  }, [translations]);
+
+  const handleAddPresetTranslation = (key: string, defaultVal: string = "") => {
+    setTranslationRows(prev => {
+      const existing = prev.find(r => r.originalKey.trim().toLowerCase() === key.trim().toLowerCase());
+      if (existing) {
+        showStatus("info", `"${key}" is already in your translation matrix.`);
+        return prev;
+      }
+      return [
+        { id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, originalKey: key, customValue: defaultVal },
+        ...prev
+      ];
+    });
+    showStatus("success", `Added "${key}" to translation list.`);
+  };
+
+  const handleAddAllMembersToTranslations = () => {
+    let addedCount = 0;
+    setTranslationRows(prev => {
+      const existingKeys = new Set(prev.map(r => r.originalKey.trim().toLowerCase()));
+      const newItems: TranslationRowItem[] = [];
+      (membersList || []).forEach(m => {
+        if (m.name && !existingKeys.has(m.name.trim().toLowerCase())) {
+          newItems.push({
+            id: `row-member-${m.id}-${Date.now()}`,
+            originalKey: m.name,
+            customValue: ""
+          });
+          existingKeys.add(m.name.trim().toLowerCase());
+          addedCount++;
+        }
+      });
+      return [...newItems, ...prev];
+    });
+    if (addedCount > 0) {
+      showStatus("success", `Added ${addedCount} mess members to translation matrix.`);
+    } else {
+      showStatus("info", "All mess members are already in the translation matrix.");
+    }
+  };
+
+  const handleSaveTranslations = async () => {
+    setIsSavingTranslations(true);
+    try {
+      const updatedMap: Record<string, string> = {};
+      translationRows.forEach(row => {
+        const k = row.originalKey.trim();
+        if (k) {
+          updatedMap[k] = row.customValue;
+        }
+      });
+
+      setTranslations(updatedMap);
+      const success = await handleUpdateSettings({ translations: updatedMap });
+      if (success) {
+        showStatus("success", `Successfully saved ${Object.keys(updatedMap).length} translation rules!`);
+      } else {
+        showStatus("error", "Failed to save translation matrix. Please try again.");
+      }
+    } catch (e: any) {
+      showStatus("error", e.message || "Failed to save translations");
+    } finally {
+      setIsSavingTranslations(false);
+    }
+  };
+
   // Hybrid AI Food Knowledge Base States
   const [foodAnalytics, setFoodAnalytics] = useState<any>(null);
   const [foodList, setFoodList] = useState<any[]>([]);
@@ -2934,71 +3038,504 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           {/* 9. TRANSLATIONS MATRIX */}
           {activeSubTab === "translations" && filteredTabs.some(t => t.id === "translations") && (
             <div className={`p-6 rounded-2xl border ${
-              isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
+              isDarkMode ? "bg-slate-900/40 border-cyan-500/20" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
-              <div>
-                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
-                  <LucideIcons.Languages size={18} className="text-cyan-400" />
-                  Global Translation & Sentence Matrix
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Translate or modify label wording, currency outputs, and headers dynamically.
-                </p>
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 border-slate-800/40">
+                <div>
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
+                    <LucideIcons.Languages size={20} className="text-cyan-400" />
+                    Global Translation & Sentence Matrix
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Translate or modify label wording, member names, roles, and headers dynamically across the entire application.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                    isDarkMode 
+                      ? "bg-cyan-950/40 border-cyan-500/30 text-cyan-300" 
+                      : "bg-cyan-50 border-cyan-200 text-cyan-800"
+                  }`}>
+                    {translationRows.filter(r => r.originalKey.trim()).length} Active Rules
+                  </span>
+                </div>
               </div>
 
               {currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin && (
                 <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-300 flex items-start gap-3">
                   <LucideIcons.Lock className="shrink-0 mt-0.5" size={16} />
                   <div className="text-xs text-slate-400">
-                    Only authorized Admins can translate global text patterns.
+                    Only authorized Admins and Super Users can modify global translation rules.
                   </div>
                 </div>
               )}
 
-              <div className="space-y-4">
-                <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/25 space-y-4">
-                  {/* Standard renamer row */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Default Label Wording</label>
-                      <input
-                        type="text"
-                        disabled
-                        value="Rent/ভাড়া"
-                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-900 border border-slate-800 text-slate-400"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Custom Wording Overwrite</label>
-                      <input
-                        type="text"
-                        disabled={currentUser.role !== "ADMIN" && !isUltimateAdmin}
-                        value={translations["Rent/ভাড়া"] || ""}
-                        onChange={(e) => {
-                          const updated = { ...translations, "Rent/ভাড়া": e.target.value };
-                          setTranslations(updated);
-                        }}
-                        placeholder="Custom label translation..."
-                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
-                      />
-                    </div>
+              {/* Quick Preset Selector Toolbar */}
+              <div className={`p-4 rounded-xl border space-y-3 ${
+                isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-slate-50 border-slate-200"
+              }`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-orange-400 uppercase tracking-wider">
+                    <LucideIcons.Sparkles size={14} />
+                    <span>Quick Add Suggestions (Click to Add or Translate)</span>
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-lg border border-slate-800 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPresetCategory("members")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        selectedPresetCategory === "members"
+                          ? "bg-cyan-500 text-slate-950 shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Mess Members ({(membersList || []).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPresetCategory("tabs")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        selectedPresetCategory === "tabs"
+                          ? "bg-cyan-500 text-slate-950 shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      System Tabs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPresetCategory("roles")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        selectedPresetCategory === "roles"
+                          ? "bg-cyan-500 text-slate-950 shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      User Roles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPresetCategory("finance")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        selectedPresetCategory === "finance"
+                          ? "bg-cyan-500 text-slate-950 shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Finance & Labels
+                    </button>
                   </div>
                 </div>
 
-                {(currentUser.role === "ADMIN" || isUltimateAdmin) && (
-                  <div className="flex justify-end pt-2">
+                {/* Chips Container */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {selectedPresetCategory === "members" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleAddAllMembersToTranslations}
+                        className="px-2.5 py-1 text-xs rounded-lg font-bold bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                      >
+                        <LucideIcons.Plus size={12} />
+                        Add All Mess Members
+                      </button>
+                      {(membersList || []).map(m => {
+                        const isAlreadyAdded = translationRows.some(
+                          r => r.originalKey.trim().toLowerCase() === m.name.trim().toLowerCase()
+                        );
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => handleAddPresetTranslation(m.name)}
+                            className={`px-2 py-1 text-xs rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                              isAlreadyAdded
+                                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                                : isDarkMode
+                                ? "bg-slate-900 border-slate-800 text-slate-300 hover:border-cyan-500 hover:text-cyan-300"
+                                : "bg-white border-slate-200 text-slate-700 hover:border-cyan-500 hover:text-cyan-700"
+                            }`}
+                          >
+                            <LucideIcons.User size={12} className="opacity-60" />
+                            <span>{m.name}</span>
+                            {isAlreadyAdded && <LucideIcons.Check size={11} className="text-emerald-400" />}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {selectedPresetCategory === "tabs" && (
+                    [
+                      "Dashboard Hub",
+                      "Mess Members",
+                      "Meals Intake",
+                      "Meal Planner",
+                      "Market Logs",
+                      "Cash Deposits",
+                      "Settlement Sheet",
+                      "Democracy Ballot",
+                      "Notices",
+                      "Rules",
+                      "Audit Log",
+                      "Security Settings",
+                      "Personal Preferences",
+                      "ERP Control Panel"
+                    ].map(tabName => {
+                      const isAlreadyAdded = translationRows.some(
+                        r => r.originalKey.trim().toLowerCase() === tabName.trim().toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={tabName}
+                          type="button"
+                          onClick={() => handleAddPresetTranslation(tabName)}
+                          className={`px-2 py-1 text-xs rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                            isAlreadyAdded
+                              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                              : isDarkMode
+                              ? "bg-slate-900 border-slate-800 text-slate-300 hover:border-cyan-500 hover:text-cyan-300"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-cyan-500 hover:text-cyan-700"
+                          }`}
+                        >
+                          <LucideIcons.Tag size={12} className="opacity-60" />
+                          <span>{tabName}</span>
+                          {isAlreadyAdded && <LucideIcons.Check size={11} className="text-emerald-400" />}
+                        </button>
+                      );
+                    })
+                  )}
+
+                  {selectedPresetCategory === "roles" && (
+                    [
+                      "Admin",
+                      "Super User",
+                      "Asst. Super User",
+                      "Manager",
+                      "Partial Manager",
+                      "Member"
+                    ].map(roleName => {
+                      const isAlreadyAdded = translationRows.some(
+                        r => r.originalKey.trim().toLowerCase() === roleName.trim().toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={roleName}
+                          type="button"
+                          onClick={() => handleAddPresetTranslation(roleName)}
+                          className={`px-2 py-1 text-xs rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                            isAlreadyAdded
+                              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                              : isDarkMode
+                              ? "bg-slate-900 border-slate-800 text-slate-300 hover:border-cyan-500 hover:text-cyan-300"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-cyan-500 hover:text-cyan-700"
+                          }`}
+                        >
+                          <LucideIcons.Shield size={12} className="opacity-60" />
+                          <span>{roleName}</span>
+                          {isAlreadyAdded && <LucideIcons.Check size={11} className="text-emerald-400" />}
+                        </button>
+                      );
+                    })
+                  )}
+
+                  {selectedPresetCategory === "finance" && (
+                    [
+                      "Rent/ভাড়া",
+                      "Room Rent",
+                      "Active Monthly Cycle",
+                      "Safe Mode",
+                      "Cash In Hand",
+                      "Total Cost",
+                      "Meal Rate",
+                      "Deposit",
+                      "Due",
+                      "Balance",
+                      "Fixed Cost"
+                    ].map(term => {
+                      const isAlreadyAdded = translationRows.some(
+                        r => r.originalKey.trim().toLowerCase() === term.trim().toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={term}
+                          type="button"
+                          onClick={() => handleAddPresetTranslation(term)}
+                          className={`px-2 py-1 text-xs rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                            isAlreadyAdded
+                              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                              : isDarkMode
+                              ? "bg-slate-900 border-slate-800 text-slate-300 hover:border-cyan-500 hover:text-cyan-300"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-cyan-500 hover:text-cyan-700"
+                          }`}
+                        >
+                          <LucideIcons.DollarSign size={12} className="opacity-60" />
+                          <span>{term}</span>
+                          {isAlreadyAdded && <LucideIcons.Check size={11} className="text-emerald-400" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Action Toolbar: Search & Add Row */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-72">
+                  <LucideIcons.Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    value={translationSearch}
+                    onChange={(e) => setTranslationSearch(e.target.value)}
+                    placeholder="Search translation rules..."
+                    className={`w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                      isDarkMode 
+                        ? "bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500" 
+                        : "bg-white border-slate-300 text-slate-800 placeholder-slate-400"
+                    }`}
+                  />
+                  {translationSearch && (
                     <button
-                      onClick={async () => {
-                        await handleUpdateSettings({ translations });
-                        showStatus("success", "Custom word renames matrix saved successfully!");
-                      }}
-                      className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 font-bold text-xs rounded-xl cursor-pointer transition-all"
+                      type="button"
+                      onClick={() => setTranslationSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs"
                     >
-                      SAVE ALL TRANSLATIONS
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                    onClick={() => {
+                      setTranslationRows(prev => [
+                        { id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`, originalKey: "", customValue: "" },
+                        ...prev
+                      ]);
+                    }}
+                    className="w-full sm:w-auto px-3.5 py-1.5 text-xs font-bold rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <LucideIcons.Plus size={14} />
+                    Add Custom Word / Name
+                  </button>
+                </div>
+              </div>
+
+              {/* Rows List */}
+              <div className="space-y-3">
+                {/* Table Column Headers */}
+                <div className="hidden sm:grid sm:grid-cols-12 gap-3 px-3 text-[11px] font-bold text-orange-400 uppercase tracking-wider">
+                  <div className="col-span-5">Default Label / Name to Translate</div>
+                  <div className="col-span-1 text-center"></div>
+                  <div className="col-span-5">Custom Wording Overwrite / Translation</div>
+                  <div className="col-span-1 text-center">Action</div>
+                </div>
+
+                {translationRows
+                  .filter(row => {
+                    if (!translationSearch.trim()) return true;
+                    const q = translationSearch.toLowerCase();
+                    return row.originalKey.toLowerCase().includes(q) || row.customValue.toLowerCase().includes(q);
+                  })
+                  .map((row) => {
+                    return (
+                      <div 
+                        key={row.id}
+                        className={`p-3.5 rounded-xl border transition-all ${
+                          isDarkMode 
+                            ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" 
+                            : "bg-slate-50/70 border-slate-200 hover:border-slate-300 shadow-sm"
+                        }`}
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                          {/* Left Column: Original Key Input + Selector */}
+                          <div className="sm:col-span-5 space-y-1">
+                            <label className="sm:hidden text-[10px] font-bold text-orange-400 uppercase block">
+                              Default Label / Name to Translate
+                            </label>
+                            <div className="flex gap-1.5 items-center">
+                              <input
+                                type="text"
+                                disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                                value={row.originalKey}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setTranslationRows(prev => prev.map(r => r.id === row.id ? { ...r, originalKey: val } : r));
+                                }}
+                                placeholder="Type member name, tab label, or word..."
+                                className={`w-full px-3 py-2 text-xs rounded-lg border font-medium focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                                  isDarkMode 
+                                    ? "bg-slate-900 border-slate-800 text-white placeholder-slate-600" 
+                                    : "bg-white border-slate-300 text-slate-900 placeholder-slate-400"
+                                }`}
+                              />
+                              {/* Quick Picker dropdown to easily select any member or system term */}
+                              <select
+                                disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    const val = e.target.value;
+                                    setTranslationRows(prev => prev.map(r => r.id === row.id ? { ...r, originalKey: val } : r));
+                                  }
+                                }}
+                                value=""
+                                title="Pick from existing member names or system terms"
+                                className={`px-2 py-2 text-[11px] rounded-lg border shrink-0 cursor-pointer ${
+                                  isDarkMode 
+                                    ? "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700" 
+                                    : "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200"
+                                }`}
+                              >
+                                <option value="" disabled>Pick...</option>
+                                <optgroup label="Mess Members">
+                                  {(membersList || []).map(m => (
+                                    <option key={m.id} value={m.name}>{m.name}</option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="System Tabs">
+                                  <option value="Dashboard Hub">Dashboard Hub</option>
+                                  <option value="Mess Members">Mess Members</option>
+                                  <option value="Meals Intake">Meals Intake</option>
+                                  <option value="Meal Planner">Meal Planner</option>
+                                  <option value="Market Logs">Market Logs</option>
+                                  <option value="Cash Deposits">Cash Deposits</option>
+                                  <option value="Settlement Sheet">Settlement Sheet</option>
+                                  <option value="Democracy Ballot">Democracy Ballot</option>
+                                  <option value="Notices">Notices</option>
+                                  <option value="Rules">Rules</option>
+                                  <option value="Audit Log">Audit Log</option>
+                                  <option value="Security Settings">Security Settings</option>
+                                  <option value="Personal Preferences">Personal Preferences</option>
+                                  <option value="ERP Control Panel">ERP Control Panel</option>
+                                </optgroup>
+                                <optgroup label="Common Terms">
+                                  <option value="Rent/ভাড়া">Rent/ভাড়া</option>
+                                  <option value="Room Rent">Room Rent</option>
+                                  <option value="Active Monthly Cycle">Active Monthly Cycle</option>
+                                  <option value="Safe Mode">Safe Mode</option>
+                                  <option value="Cash In Hand">Cash In Hand</option>
+                                  <option value="Total Cost">Total Cost</option>
+                                  <option value="Meal Rate">Meal Rate</option>
+                                  <option value="Deposit">Deposit</option>
+                                  <option value="Due">Due</option>
+                                  <option value="Balance">Balance</option>
+                                </optgroup>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Arrow Divider */}
+                          <div className="sm:col-span-1 flex items-center justify-center text-slate-500">
+                            <LucideIcons.ArrowRight size={16} className="rotate-90 sm:rotate-0" />
+                          </div>
+
+                          {/* Right Column: Custom Overwrite Input */}
+                          <div className="sm:col-span-5 space-y-1">
+                            <label className="sm:hidden text-[10px] font-bold text-orange-400 uppercase block">
+                              Custom Wording Overwrite
+                            </label>
+                            <input
+                              type="text"
+                              disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                              value={row.customValue}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setTranslationRows(prev => prev.map(r => r.id === row.id ? { ...r, customValue: val } : r));
+                              }}
+                              placeholder="Type custom translation or Bangla overwrite..."
+                              className={`w-full px-3 py-2 text-xs rounded-lg border font-medium focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                                isDarkMode 
+                                  ? "bg-slate-900 border-slate-800 text-cyan-300 placeholder-slate-600" 
+                                  : "bg-white border-slate-300 text-cyan-900 placeholder-slate-400"
+                              }`}
+                            />
+                          </div>
+
+                          {/* Delete Button */}
+                          <div className="sm:col-span-1 flex items-center justify-center">
+                            <button
+                              type="button"
+                              disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                              onClick={() => {
+                                setTranslationRows(prev => prev.filter(r => r.id !== row.id));
+                              }}
+                              title="Delete this translation rule"
+                              className={`p-2 rounded-lg border transition-all cursor-pointer ${
+                                isDarkMode 
+                                  ? "border-rose-500/20 text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/40" 
+                                  : "border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300"
+                              }`}
+                            >
+                              <LucideIcons.Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Live Row Preview */}
+                        <div className="mt-2 pt-2 border-t border-slate-800/30 flex items-center justify-between text-[11px] text-slate-500">
+                          <span className="truncate">
+                            Preview: <span className="font-semibold text-slate-400">"{row.originalKey || "(empty)"}"</span> → <span className="font-bold text-cyan-400">"{row.customValue || "(no change)"}"</span>
+                          </span>
+                          {row.originalKey && membersList.some(m => m.name.toLowerCase() === row.originalKey.trim().toLowerCase()) && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+                              Member Name
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {translationRows.length === 0 && (
+                  <div className="p-8 text-center rounded-xl border border-dashed border-slate-800 text-slate-500 space-y-2">
+                    <LucideIcons.Languages size={28} className="mx-auto opacity-40 text-cyan-400" />
+                    <p className="text-xs">No translation rules defined yet.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTranslationRows([
+                          { id: `row-${Date.now()}`, originalKey: "Rent/ভাড়া", customValue: "" }
+                        ]);
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-cyan-400 bg-cyan-500/10 rounded-lg border border-cyan-500/30 hover:bg-cyan-500/20 transition-all cursor-pointer"
+                    >
+                      + Add First Translation Rule
                     </button>
                   </div>
                 )}
               </div>
+
+              {/* Bottom Actions */}
+              {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-800/50">
+                  <div className="text-xs text-slate-500">
+                    Translations are applied with top priority across navigation, forms, and reports.
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button
+                      type="button"
+                      disabled={isSavingTranslations}
+                      onClick={handleSaveTranslations}
+                      className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 font-bold text-xs rounded-xl cursor-pointer transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isSavingTranslations ? (
+                        <>
+                          <span className="inline-block w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+                          <span>SAVING TRANSLATIONS...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LucideIcons.Save size={14} />
+                          <span>SAVE ALL TRANSLATIONS</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
