@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from "react";
 import * as LucideIcons from "lucide-react";
 
-export const SyncIndicator: React.FC = () => {
+interface SyncIndicatorProps {
+  className?: string;
+  compact?: boolean;
+}
+
+export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ className = "", compact = false }) => {
   const [status, setStatus] = useState<"Idle" | "Syncing" | "Pending">("Idle");
 
   useEffect(() => {
@@ -21,28 +26,41 @@ export const SyncIndicator: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const sizeClass = compact ? "text-[11px] px-1.5 py-0.5 gap-1" : "text-xs px-2 py-1 gap-1.5";
+  const iconSize = compact ? 12 : 14;
+
   if (status === "Idle") {
     return (
-      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400 bg-slate-900/50 px-2 py-1 rounded-md border border-slate-800">
-        <LucideIcons.CheckCircle2 size={14} className="text-emerald-400" />
-        <span>Synced</span>
+      <div 
+        title="Database status: All changes synced to cloud"
+        className={`flex items-center font-medium rounded-md border transition-all ${sizeClass} bg-slate-900/60 border-slate-800 text-slate-300 ${className}`}
+      >
+        <LucideIcons.CheckCircle2 size={iconSize} className="text-emerald-400 shrink-0" />
+        <span className="truncate">Synced</span>
       </div>
     );
   }
 
   if (status === "Pending") {
     return (
-      <div className="flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-900/20 px-2 py-1 rounded-md border border-amber-800/50">
-        <LucideIcons.Clock size={14} />
-        <span>Saving...</span>
+      <div 
+        title="Database status: Saving changes to cloud"
+        className={`flex items-center font-medium rounded-md border transition-all ${sizeClass} bg-amber-950/40 border-amber-800/60 text-amber-300 ${className}`}
+      >
+        <LucideIcons.Clock size={iconSize} className="text-amber-400 shrink-0" />
+        <span className="truncate">Saving...</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5 text-xs font-medium text-cyan-400 bg-cyan-900/20 px-2 py-1 rounded-md border border-cyan-800/50">
-      <LucideIcons.RefreshCw size={14} className="animate-spin" />
-      <span>Syncing</span>
+    <div 
+      title="Database status: Syncing with cloud database"
+      className={`flex items-center font-medium rounded-md border transition-all ${sizeClass} bg-cyan-950/40 border-cyan-800/60 text-cyan-300 ${className}`}
+    >
+      <LucideIcons.RefreshCw size={iconSize} className="animate-spin text-cyan-400 shrink-0" />
+      <span className="truncate">Syncing</span>
     </div>
   );
 };
+

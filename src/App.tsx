@@ -4622,16 +4622,22 @@ export default function App() {
       {/* ---------------------------------------------------------
           HEADER FOR MOBILE / VIEW CONTROL
           --------------------------------------------------------- */}
-      <header className={`md:hidden sticky top-0 flex items-center justify-between px-4 py-2.5 border-b z-40 backdrop-blur-md ${
+      <header className={`md:hidden sticky top-0 flex items-center justify-between px-3 py-2 border-b z-40 backdrop-blur-md ${
         isDarkMode ? "bg-slate-950/80 border-slate-900" : "bg-white/80 border-slate-200 shadow-sm"
       }`}>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
           {activeTab !== "dashboard" && (
             <button
               onClick={() => setActiveTab("dashboard")}
-              className="flex items-center gap-1 text-xs font-bold text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/20 shrink-0 mr-0.5"
+              aria-label="Back to Dashboard"
+              title="Back to Dashboard Hub"
+              className={`p-1.5 rounded-lg border shrink-0 transition-all active:scale-95 flex items-center justify-center ${
+                activeIsDarkMode 
+                  ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20" 
+                  : "bg-cyan-50 border-cyan-300 text-cyan-700 hover:bg-cyan-100"
+              }`}
             >
-              ← Back
+              <LucideIcons.ArrowLeft size={16} />
             </button>
           )}
           <button
@@ -4640,7 +4646,7 @@ export default function App() {
               handleRefreshAll();
             }}
             title="Refresh All Data & Return to Dashboard"
-            className="flex items-center gap-2 cursor-pointer active:scale-95 transition-all text-left min-w-0"
+            className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all text-left min-w-0"
           >
             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border shrink-0 ${
               isRefreshingAll ? "animate-spin border-cyan-400 text-cyan-300" : ""
@@ -4650,16 +4656,16 @@ export default function App() {
               <CurrentBrandIcon size={15} />
             </span>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase leading-none">
+              <div className="flex items-center gap-1">
+                <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase leading-none truncate">
                   {erpBrandingState?.logoText || messName}
                 </span>
-                <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded uppercase leading-none">
+                <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1 py-0.5 rounded uppercase leading-none shrink-0">
                   {erpBrandingState?.erpVersion || "v2.5.4"}
                 </span>
               </div>
               {/* Mess address beneath the version and brand name */}
-              <span className={`text-[9px] font-medium block truncate max-w-[170px] sm:max-w-[220px] leading-tight mt-0.5 ${
+              <span className={`text-[9px] font-medium block truncate max-w-[130px] sm:max-w-[200px] leading-tight mt-0.5 ${
                 activeIsDarkMode ? "text-slate-400" : "text-cyan-900/70"
               }`}>
                 {erpBrandingState?.erpName || "Ababil Mess ,Noya Bazar"}
@@ -4668,7 +4674,10 @@ export default function App() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Cloud Sync Status Indicator in the top header */}
+          <SyncIndicator compact={true} />
+
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
@@ -5537,17 +5546,17 @@ export default function App() {
           ))}
 
         {/* ---------------------------------------------------------
-            FOOTER: ON DASHBOARD SHOW DEVELOPER & SYSTEM INFO; ON OTHER PAGES ONLY CLOUD SYNC
+            FOOTER: ON DASHBOARD SHOW DEVELOPER & SYSTEM INFO; ON OTHER PAGES CLOUD SYNC IS IN THE TOP HEADER
             --------------------------------------------------------- */}
-        <footer 
-          id="developer-page-footer"
-          className={`mt-14 pt-4 pb-4 border-t text-xs transition-all ${
-            activeIsDarkMode 
-              ? "border-slate-800/80 bg-slate-950/20 text-slate-400" 
-              : "border-slate-200 bg-white/40 text-slate-600 shadow-sm rounded-2xl p-4"
-          }`}
-        >
-          {activeTab === "dashboard" ? (
+        {activeTab === "dashboard" && (
+          <footer 
+            id="developer-page-footer"
+            className={`mt-14 pt-4 pb-4 border-t text-xs transition-all ${
+              activeIsDarkMode 
+                ? "border-slate-800/80 bg-slate-950/20 text-slate-400" 
+                : "border-slate-200 bg-white/40 text-slate-600 shadow-sm rounded-2xl p-4"
+            }`}
+          >
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left px-2">
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -5577,15 +5586,8 @@ export default function App() {
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="flex items-center justify-center sm:justify-end px-2 text-[11px]">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">Cloud Sync:</span>
-                <SyncIndicator />
-              </div>
-            </div>
-          )}
-        </footer>
+          </footer>
+        )}
 
       </main>
 
