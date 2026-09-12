@@ -22,6 +22,29 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Embedded Author Provenance & Security Watermark Headers
+app.use((req, res, next) => {
+  res.setHeader("X-Project-Author", "Md. Shahriar Himel");
+  res.setHeader("X-Author-Email", "mdshahriarhimel@gmail.com");
+  res.setHeader("X-Author-Signature", "SIG-HIMEL-MESSEXP-2026-X799");
+  res.setHeader("X-Provenance-Hash", "SHA256-MESS-ERP-MD-SHAHRIAR-HIMEL-2026-BD-PROPRIETARY");
+  next();
+});
+
+// System Provenance and Watermark Signature Endpoint
+app.get("/api/system/signature", (req, res) => {
+  res.json({
+    status: "verified",
+    author: "Md. Shahriar Himel",
+    email: "mdshahriarhimel@gmail.com",
+    project: "Mess ERP - Bengal Bachelor ERP Engine",
+    signatureId: "SIG-HIMEL-MESSEXP-2026-X799",
+    provenanceHash: "SHA256-MESS-ERP-MD-SHAHRIAR-HIMEL-2026-BD-PROPRIETARY",
+    copyright: "Copyright (c) 2026 Md. Shahriar Himel. All rights reserved.",
+    license: "Proprietary - Unauthorized duplication or re-uploading is strictly prohibited."
+  });
+});
+
 // Vercel Serverless background database synchronization flusher middleware (only active on Vercel)
 if (process.env.VERCEL) {
   app.use((req, res, next) => {

@@ -36,6 +36,7 @@ import { UnifiedSettingsDashboard } from "./components/UnifiedSettingsDashboard.
 import { BackgroundAudioPlayer } from "./components/BackgroundAudioPlayer.tsx";
 import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
+import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
 
 // Types
 import { Member, MessMonth, UserRole, MemberStatus, CycleProposal, RespectSenioritySettings } from "./types.js";
@@ -5595,6 +5596,20 @@ export default function App() {
                   <span className="text-slate-500">Dev:</span>
                   <span className={`font-bold ${activeIsDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
                     {erpBrandingState?.developerInfo || "HIMEL"}
+                  </span>
+                </div>
+                <span className="text-slate-500">•</span>
+                <div 
+                  className="flex items-center gap-1 cursor-help" 
+                  title={`Original Project Signature: ${AUTHOR_WATERMARK.signatureId}\nAuthor: ${AUTHOR_WATERMARK.author} (${AUTHOR_WATERMARK.email})\nFingerprint: ${AUTHOR_WATERMARK.fingerprint}`}
+                >
+                  <span className="text-slate-500">Sig:</span>
+                  <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded transition-all ${
+                    activeIsDarkMode 
+                      ? "bg-cyan-950/60 text-cyan-400 border border-cyan-800/60 hover:border-cyan-400" 
+                      : "bg-cyan-50 text-cyan-800 border border-cyan-200 hover:border-cyan-500"
+                  }`}>
+                    {AUTHOR_WATERMARK.signatureId}
                   </span>
                 </div>
                 <span className="text-slate-500">•</span>

@@ -1,7 +1,36 @@
+================================================================================
+PROPRIETARY SOFTWARE LICENSE & PROVENANCE CERTIFICATE
+================================================================================
+
+PROJECT NAME: Mess ERP (Bengal Bachelor ERP Engine)
+ORIGINAL AUTHOR: Md. Shahriar Himel
+AUTHOR EMAIL: mdshahriarhimel@gmail.com
+PROJECT SIGNATURE: SIG-HIMEL-MESSEXP-2026-X799
+PROVENANCE FINGERPRINT: SHA256-MESS-ERP-MD-SHAHRIAR-HIMEL-2026-BD-PROPRIETARY
+FIRST PUBLISHED: 2026
+
 Copyright (c) 2026 Md. Shahriar Himel. All rights reserved.
 
-This software and associated documentation files (the "Software") are proprietary and confidential.
+This software, its source code, architecture, schemas, and associated 
+documentation files (collectively, the "Software") are proprietary and 
+confidential property of Md. Shahriar Himel.
 
-Unauthorized copying, modification, distribution, sublicensing, or publication of this Software, 
-via any medium or under any other name, is strictly prohibited without the prior written consent 
-of the copyright owner.
+TERMS & RESTRICTIONS:
+1. RESTRICTION ON REDISTRIBUTION: No person or entity may copy, duplicate, 
+   fork, clone, modify, distribute, publish, relicense, or upload this 
+   Software to any public repository or hosting service (including but not 
+   limited to GitHub, Hugging Face, GitLab, or Bitbucket) under their own 
+   name or any other pseudonym without prior express written permission from 
+   the original author.
+
+2. WATERMARK & SIGNATURE PRESERVATION: Any attempt to strip, alter, obscure, 
+   or remove embedded author watermarks, signature headers (SIG-HIMEL-MESSEXP-2026-X799), 
+   cryptographic provenance hashes, or copyright notices constitutes a 
+   willful infringement of copyright and will be subject to immediate DMCA 
+   takedown requests and intellectual property enforcement.
+
+3. UNAUTHORIZED USE: Use of this software without a valid license granted 
+   directly by Md. Shahriar Himel is strictly prohibited.
+
+For licensing inquiries or permissions, contact: mdshahriarhimel@gmail.com
+================================================================================
