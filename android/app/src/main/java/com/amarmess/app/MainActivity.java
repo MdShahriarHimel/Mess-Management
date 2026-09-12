@@ -31,22 +31,52 @@ public class MainActivity extends BridgeActivity {
                 .build();
         googleSignInClient = GoogleSignIn.getClient(this, gso);
 
-        // Attach native bridge to Capacitor WebView
-        WebView webView = this.getBridge().getWebView();
-        if (webView != null) {
-            webView.addJavascriptInterface(new AndroidAuthBridge(), "AndroidAuthBridge");
+        attachBridge();
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        attachBridge();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        attachBridge();
+    }
+
+    private void attachBridge() {
+        try {
+            if (this.getBridge() != null && this.getBridge().getWebView() != null) {
+                WebView webView = this.getBridge().getWebView();
+                webView.addJavascriptInterface(new AndroidAuthBridge(), "AndroidAuthBridge");
+                Log.d(TAG, "AndroidAuthBridge attached successfully to Capacitor WebView");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error attaching AndroidAuthBridge: " + e.getMessage());
         }
     }
 
     public class AndroidAuthBridge {
         @JavascriptInterface
+        public boolean isNative() {
+            return true;
+        }
+
+        @JavascriptInterface
         public void launchGoogleSignIn() {
             runOnUiThread(() -> {
-                if (googleSignInClient != null) {
-                    googleSignInClient.signOut().addOnCompleteListener(task -> {
-                        Intent signInIntent = googleSignInClient.getSignInIntent();
-                        startActivityForResult(signInIntent, RC_SIGN_IN);
-                    });
+                try {
+                    if (googleSignInClient != null) {
+                        // Sign out first so Google always displays the bottom sheet account chooser with ALL accounts on the device
+                        googleSignInClient.signOut().addOnCompleteListener(task -> {
+                            Intent signInIntent = googleSignInClient.getSignInIntent();
+                            startActivityForResult(signInIntent, RC_SIGN_IN);
+                        });
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error launching native Google sign-in: " + e.getMessage());
                 }
             });
         }
