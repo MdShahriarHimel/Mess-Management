@@ -43,10 +43,6 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#020617'
-    },
-    GoogleAuth: {
-      scopes: ['profile', 'email'],
-      forceCodeForRefreshToken: false
     }
   }
 };

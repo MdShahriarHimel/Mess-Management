@@ -262,48 +262,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     setError(null);
     setSuccess(null);
 
-    // 1. Try official Capacitor GoogleAuth native plugin first if on native device
-    const isCapacitorNative =
-      typeof (window as any).Capacitor !== "undefined" &&
-      typeof (window as any).Capacitor.isNativePlatform === "function" &&
-      (window as any).Capacitor.isNativePlatform();
-
-    if (isCapacitorNative && !forceWeb) {
-      setLoading(true);
-      try {
-        const { GoogleAuth } = await import("@codetrix-studio/capacitor-google-auth");
-        const googleUser = await GoogleAuth.signIn();
-        if (googleUser && googleUser.email) {
-          const res = await fetch("/api/auth/google-native", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: googleUser.email,
-              name: googleUser.name || (googleUser as any).displayName || "Mess Member",
-              photo: googleUser.imageUrl || ""
-            })
-          });
-
-          if (!res.ok) {
-            const errorData = await res.json().catch(() => ({}));
-            throw new Error(errorData.error || "Failed to authenticate with server. Make sure you are an invited member.");
-          }
-
-          const data = await res.json().catch(() => ({}));
-          onLoginSuccess(data.token, data.user, rememberMe);
-          return;
-        }
-      } catch (capErr: any) {
-        console.warn("[GoogleAuth Plugin] Native sign-in dismissed or error:", capErr);
-        const errMsg = String(capErr?.message || capErr || "");
-        if (errMsg.includes("canceled") || errMsg.includes("cancelled") || errMsg.includes("12501")) {
-          setLoading(false);
-          return;
-        }
-      }
-    }
-
-    // 2. If inside Android app and not forced to web, try native Google Account Chooser
+    // If inside Android app and not forced to web, try native Google Account Chooser
     if (!forceWeb && (window as any).AndroidAuthBridge && typeof (window as any).AndroidAuthBridge.launchGoogleSignIn === "function") {
       setLoading(true);
       (window as any).AndroidAuthBridge.launchGoogleSignIn();
