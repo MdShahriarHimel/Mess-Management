@@ -17,7 +17,16 @@ const config: CapacitorConfig = {
     url: 'https://mymessmanagement.onrender.com',
     cleartext: false,
     androidScheme: 'https',
-    iosScheme: 'https'
+    iosScheme: 'https',
+    allowNavigation: [
+      'mymessmanagement.onrender.com',
+      '*.firebaseapp.com',
+      '*.firebase.com',
+      'accounts.google.com',
+      '*.google.com',
+      '*.googleapis.com',
+      'apis.google.com'
+    ]
   },
   plugins: {
     SplashScreen: {

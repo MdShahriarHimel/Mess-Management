@@ -2741,13 +2741,15 @@ var firebase_applet_config_default;
 var init_firebase_applet_config = __esm({
   "firebase-applet-config.json"() {
     firebase_applet_config_default = {
+      projectId: "mess-managing",
+      appId: "1:1055947161976:web:0285ca311e26a7b751c88d",
       apiKey: "AIzaSyC7SnylyJvxPhFfqpivcTGICZ_qdCsHCHQ",
       authDomain: "mess-managing.firebaseapp.com",
-      projectId: "mess-managing",
+      firestoreDatabaseId: "ai-studio-messerp-e6d8d833-ebeb-44d7-ab99-f9251071cb45",
       storageBucket: "mess-managing.firebasestorage.app",
       messagingSenderId: "1055947161976",
-      appId: "1:1055947161976:web:129e2a1442782de851c88d",
-      measurementId: "G-D7L4B1HQ1R"
+      measurementId: "",
+      recaptchaSiteKey: ""
     };
   }
 });
