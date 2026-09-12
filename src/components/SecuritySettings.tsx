@@ -42,6 +42,31 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [hasServerPassword, setHasServerPassword] = useState<boolean | null>(null);
+
+  // Check backend server password status
+  useEffect(() => {
+    const checkServerPassword = async () => {
+      try {
+        const res = await fetch("/api/auth/has-password", {
+          headers: { "Authorization": `Bearer ${sessionToken}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const hasPass = Boolean(data.hasPassword);
+          setHasServerPassword(hasPass);
+          if (!hasPass) {
+            setIsGoogleOnly(true);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check server password status:", e);
+      }
+    };
+    if (sessionToken) {
+      checkServerPassword();
+    }
+  }, [sessionToken]);
 
   // Determine auth provider on mount with listener for state synchronization
   useEffect(() => {
@@ -51,14 +76,18 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
         setUserEmail(user.email || currentUser.email || "");
         const isGoogle = user.providerData.some(p => p.providerId === "google.com") && 
                          !user.providerData.some(p => p.providerId === "password");
-        setIsGoogleOnly(isGoogle);
+        if (isGoogle || hasServerPassword === false) {
+          setIsGoogleOnly(true);
+        }
       } else {
-        setIsGoogleOnly(false);
+        if (hasServerPassword === false) {
+          setIsGoogleOnly(true);
+        }
         setUserEmail(currentUser.email || "");
       }
     });
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, hasServerPassword]);
 
   // Password Validation Rules
   const hasMinLength = newPassword.length >= 8;
@@ -154,12 +183,31 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
 
         if (isGoogleOnly) {
           // Link password credential (Set Password for Google account)
-          const credential = EmailAuthProvider.credential(user.email!, newPassword);
-          await linkWithCredential(user, credential);
+          try {
+            const credential = EmailAuthProvider.credential(user.email!, newPassword);
+            await linkWithCredential(user, credential);
+          } catch (linkErr: any) {
+            console.warn("Firebase linkWithCredential (continuing to backend sync):", linkErr);
+          }
           
+          // CRITICAL: Sync password to backend server database so manual login works immediately!
+          const resetRes = await fetch("/api/auth/reset-password", {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${freshToken}`
+            },
+            body: JSON.stringify({ memberId: currentUser.id, newPassword })
+          });
+
+          if (!resetRes.ok) {
+            const errData = await resetRes.json().catch(() => ({}));
+            throw new Error(errData.error || "Failed to save password to mess database.");
+          }
+
           // Success
           await triggerAuditLog(freshToken);
-          setSuccess("Password has been set successfully! Your account is now linked with Email & Password credentials.");
+          setSuccess("Password has been set successfully! You can now log in using either Google or your Email & Password.");
           setIsGoogleOnly(false); // No longer Google-only, now has password
           setCurrentPassword("");
           setNewPassword("");
@@ -181,7 +229,7 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
             }
           }
 
-          // 2. Update Password
+          // 2. Update Password in Firebase
           try {
             await updatePassword(user, newPassword);
           } catch (updateErr: any) {
@@ -195,27 +243,44 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
             }
           }
 
-          // 3. Trigger audit log and clear form
+          // 3. CRITICAL: Sync password to backend server database
+          const resetRes = await fetch("/api/auth/reset-password", {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${freshToken}`
+            },
+            body: JSON.stringify({ memberId: currentUser.id, newPassword })
+          });
+
+          if (!resetRes.ok) {
+            const errData = await resetRes.json().catch(() => ({}));
+            throw new Error(errData.error || "Failed to update password on the server.");
+          }
+
+          // 4. Trigger audit log and clear form
           await triggerAuditLog(freshToken);
-          setSuccess("Password changed successfully.");
+          setSuccess("Password changed successfully! You can now log in using your new password.");
           setCurrentPassword("");
           setNewPassword("");
           setConfirmPassword("");
         }
       } else {
         // Regular local email/password change using the secure backend endpoint
-        // 1. Re-authenticate local user
-        const reauthRes = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: currentUser.email, password: currentPassword })
-        });
-        if (!reauthRes.ok) {
-          const errData = await reauthRes.json().catch(() => ({}));
-          throw new Error(errData.error || "Current password is incorrect.");
+        if (hasServerPassword) {
+          // 1. Re-authenticate local user
+          const reauthRes = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: currentUser.email, password: currentPassword })
+          });
+          if (!reauthRes.ok) {
+            const errData = await reauthRes.json().catch(() => ({}));
+            throw new Error(errData.error || "Current password is incorrect.");
+          }
         }
         
-        // 2. Change password
+        // 2. Change password on backend
         const resetRes = await fetch("/api/auth/reset-password", {
           method: "POST",
           headers: { 
@@ -231,7 +296,9 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
 
         // 3. Trigger audit log and clear form
         await triggerAuditLog(sessionToken);
-        setSuccess("Password changed successfully.");
+        setSuccess(hasServerPassword ? "Password changed successfully." : "Password has been created successfully! You can now log in using your Email & Password.");
+        setHasServerPassword(true);
+        setIsGoogleOnly(false);
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");

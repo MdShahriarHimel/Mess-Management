@@ -306,6 +306,19 @@ router.get("/auth/me", authMiddleware, (req: AuthenticatedRequest, res: Response
   res.json({ user: req.user });
 });
 
+// Check if user has a password set in the server database
+router.get("/auth/has-password", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const creds = loadCredentials();
+  const memberId = req.user!.id;
+  const email = req.user!.email ? req.user!.email.toLowerCase() : "";
+  const hasPassword = Boolean(
+    creds[memberId] || 
+    (email && creds[email]) ||
+    ((req.user as any).previousIds && Array.isArray((req.user as any).previousIds) && (req.user as any).previousIds.some((pid: string) => Boolean(creds[pid])))
+  );
+  res.json({ hasPassword });
+});
+
 // Native Google Sign-In endpoint for Android app
 router.post("/auth/google-native", (req: Request, res: Response): void => {
   const { email, name, photo } = req.body;
@@ -404,7 +417,9 @@ router.post("/auth/login", (req: Request, res: Response): void => {
   }
 
   const creds = loadCredentials();
-  const storedPassword = creds[member.id];
+  const storedPassword = creds[member.id] || 
+    (member.email ? creds[member.email.toLowerCase()] : undefined) ||
+    ((member as any).previousIds ? (member as any).previousIds.map((id: string) => creds[id]).find(Boolean) : undefined);
 
   if (storedPassword === password) {
     recordSuccessfulLogin(email, member.id, clientIp, userAgent);
@@ -482,6 +497,7 @@ router.post("/auth/register", (req: Request, res: Response): void => {
 
   // Set password & add to history
   creds[member.id] = password;
+  if (member.email) creds[member.email.toLowerCase()] = password;
   saveCredentials();
   addPasswordToHistory(member.id, password);
 
@@ -673,6 +689,7 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
 
   // Update password in credentials and history
   creds[member.id] = newPassword;
+  if (member.email) creds[member.email.toLowerCase()] = newPassword;
   saveCredentials();
   addPasswordToHistory(member.id, newPassword);
 
@@ -774,6 +791,14 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   creds[memberId] = newPassword;
+  if (targetMember.email) {
+    creds[targetMember.email.toLowerCase()] = newPassword;
+  }
+  if ((targetMember as any).previousIds && Array.isArray((targetMember as any).previousIds)) {
+    (targetMember as any).previousIds.forEach((pid: string) => {
+      creds[pid] = newPassword;
+    });
+  }
   saveCredentials();
   addPasswordToHistory(memberId, newPassword);
 
