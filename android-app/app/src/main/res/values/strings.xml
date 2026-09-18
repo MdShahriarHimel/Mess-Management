@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mess Management</string>
+    <string name="website_url" translatable="false">https://mymessmanagement.onrender.com</string>
+    <string name="reload_website">Reload live website</string>
+    <string name="open_browser">Open in browser</string>
+    <string name="connection_title">Couldn’t load your mess</string>
+    <string name="connection_message">Check your internet connection and try again. The website may also be starting up or temporarily unavailable.</string>
+    <string name="retry">Try again</string>
+    <string name="reload_title">Reload the website?</string>
+    <string name="reload_message">This loads the latest design and data. Save any unfinished changes first.</string>
+    <string name="reload">Reload</string>
+    <string name="no_link_handler">No app is available to open this link.</string>
+    <string name="browser_download">Open the website in your browser to download this file.</string>
 </resources>
