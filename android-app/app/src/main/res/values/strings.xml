@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mess Management</string>
+    <string name="app_name">My Mess</string>
     <string name="website_url" translatable="false">https://mymessmanagement.onrender.com</string>
     <string name="reload_website">Reload live website</string>
     <string name="open_browser">Open in browser</string>
