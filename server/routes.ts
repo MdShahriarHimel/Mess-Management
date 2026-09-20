@@ -111,6 +111,134 @@ interface AuthenticatedRequest extends Request {
 }
 
 // ---------------------------------------------------------
+// MULTI-MESS MANAGEMENT & CROSS-MESS MEMBER RESOLUTION
+// ---------------------------------------------------------
+const MESSES_FILE = path.join(DB_DIR, "messes.json");
+
+export function loadMesses(): { messes: Array<{ id: string; name: string }> } {
+  const defaultMesses = {
+    messes: [
+      { id: "default", name: "Ababil Mess (Main)" },
+      { id: "mess-a", name: "Mess A (Dhaka Branch)" },
+      { id: "mess-b", name: "Mess B (Chittagong Branch)" },
+      { id: "mess-c", name: "Mess C (Sylhet Branch)" }
+    ]
+  };
+  try {
+    if (fs.existsSync(MESSES_FILE)) {
+      const data = fs.readFileSync(MESSES_FILE, "utf-8");
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.messes)) {
+          return { ...defaultMesses, ...parsed };
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error loading messes:", e);
+  }
+  return defaultMesses;
+}
+
+export function saveMesses(messes: any) {
+  try {
+    writeAndPersistFile("messes.json", JSON.stringify(messes, null, 2));
+  } catch (e) {
+    console.error("Error saving messes:", e);
+  }
+}
+
+export interface MemberLookupResult {
+  member: Member;
+  memberIndex: number;
+  messId: string;
+  db: any;
+}
+
+export function findMemberAcrossAllMesses(query: { email?: string; id?: string; previousId?: string }): MemberLookupResult | null {
+  const normEmail = query.email ? String(query.email).trim().toLowerCase() : "";
+  const queryId = query.id ? String(query.id).trim() : "";
+  const queryPrevId = query.previousId ? String(query.previousId).trim() : "";
+
+  if (!normEmail && !queryId && !queryPrevId) return null;
+
+  const matchesMember = (m: Member): boolean => {
+    if (!m) return false;
+    if (normEmail && m.email && typeof m.email === "string" && m.email.trim().toLowerCase() === normEmail) {
+      return true;
+    }
+    if (queryId && m.id === queryId) {
+      return true;
+    }
+    if (queryPrevId && (m as any).previousIds && Array.isArray((m as any).previousIds) && (m as any).previousIds.includes(queryPrevId)) {
+      return true;
+    }
+    return false;
+  };
+
+  // 1. Check current active mess first
+  const activeMessId = getActiveMessId() || "default";
+  try {
+    const activeDb = loadDB(activeMessId);
+    if (activeDb && Array.isArray(activeDb.members)) {
+      const idx = activeDb.members.findIndex(matchesMember);
+      if (idx !== -1) {
+        return {
+          member: activeDb.members[idx],
+          memberIndex: idx,
+          messId: activeMessId,
+          db: activeDb
+        };
+      }
+    }
+  } catch (e) {
+    console.error(`[findMemberAcrossAllMesses] Error in active mess ${activeMessId}:`, e);
+  }
+
+  // 2. Check all other messes defined in messes.json
+  const messesList = loadMesses().messes || [];
+  for (const mess of messesList) {
+    if (mess.id === activeMessId) continue;
+    try {
+      const mDb = loadDB(mess.id);
+      if (mDb && Array.isArray(mDb.members)) {
+        const idx = mDb.members.findIndex(matchesMember);
+        if (idx !== -1) {
+          return {
+            member: mDb.members[idx],
+            memberIndex: idx,
+            messId: mess.id,
+            db: mDb
+          };
+        }
+      }
+    } catch (e) {
+      console.error(`[findMemberAcrossAllMesses] Error in mess ${mess.id}:`, e);
+    }
+  }
+
+  // 3. Fallback to "default" if activeMessId was not "default"
+  if (activeMessId !== "default") {
+    try {
+      const defaultDb = loadDB("default");
+      if (defaultDb && Array.isArray(defaultDb.members)) {
+        const idx = defaultDb.members.findIndex(matchesMember);
+        if (idx !== -1) {
+          return {
+            member: defaultDb.members[idx],
+            memberIndex: idx,
+            messId: "default",
+            db: defaultDb
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------
 // AUTH MIDDLEWARE
 // ---------------------------------------------------------
 export async function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -153,30 +281,17 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     tokenUid = token.split(":")[0];
   }
 
-  // Look up user reference across any existing database or default
-  const defaultDb = loadDB("default");
-  let memberRef = defaultDb.members.find(m => 
-    m.id === tokenUid || 
-    (m as any).previousIds?.includes(tokenUid) || 
-    (tokenEmail && m.email?.toLowerCase() === tokenEmail)
-  );
+  // Look up user reference across all messes in the system
+  const userLookup = findMemberAcrossAllMesses({
+    email: tokenEmail,
+    id: tokenUid,
+    previousId: tokenUid
+  });
 
-  if (!memberRef && !token.startsWith("ey")) {
-    // If not in default DB, check other messes for this local session user
-    const messesList = loadMesses().messes;
-    for (const mess of messesList) {
-      if (mess.id === "default") continue;
-      const mDb = loadDB(mess.id);
-      const found = mDb.members.find(m => 
-        m.id === tokenUid || 
-        (m as any).previousIds?.includes(tokenUid) || 
-        (tokenEmail && m.email?.toLowerCase() === tokenEmail)
-      );
-      if (found) {
-        memberRef = found;
-        break;
-      }
-    }
+  let memberRef = userLookup?.member;
+  let userHomeMessId = userLookup?.messId || "default";
+  if (memberRef) {
+    (memberRef as any).messId = userHomeMessId;
   }
 
   const userId = tokenUid || memberRef?.id || "";
@@ -199,7 +314,7 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   let allowedMesses: string[] | null = null;
 
   if (isUltimateAdmin) {
-    targetMessId = requestedMess || getUserActiveMessId(userId, userEmail) || getActiveMessId() || "default";
+    targetMessId = requestedMess || getUserActiveMessId(userId, userEmail) || userHomeMessId || getActiveMessId() || "default";
   } else if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
     allowedMesses = userControls.allowedMesses;
     if (requestedMess && allowedMesses.includes(requestedMess)) {
@@ -214,7 +329,7 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     }
   } else {
     // Normal member: limited strictly to their assigned mess
-    targetMessId = (memberRef as any)?.messId || "default";
+    targetMessId = (memberRef as any)?.messId || userHomeMessId || getUserActiveMessId(userId, userEmail) || "default";
   }
 
   // 3. Execute request inside tenant context
@@ -223,9 +338,13 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       const db = loadDB(targetMessId);
       let member = db.members.find(m => 
         m.id === userId || 
-        (m as any).previousIds?.includes(userId) ||
-        (userEmail && m.email?.toLowerCase() === userEmail)
+        ((m as any).previousIds && (m as any).previousIds.includes(userId)) ||
+        (userEmail && m.email && m.email.toLowerCase() === userEmail)
       );
+
+      if (!member && userLookup && userLookup.messId === targetMessId) {
+        member = userLookup.member;
+      }
 
       if (!member) {
         if (isUltimateAdmin || (allowedMesses && allowedMesses.includes(targetMessId))) {
@@ -362,7 +481,7 @@ function checkRole(roles: UserRole[]) {
 
 // Check invite / Me endpoint
 router.get("/auth/me", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const activeMessId = getActiveMessId();
+  const activeMessId = (req.user as any)?.messId || getActiveMessId() || "default";
   res.json({ user: req.user, activeMessId });
 });
 
@@ -457,17 +576,20 @@ router.post("/auth/login", (req: Request, res: Response): void => {
     return;
   }
 
-  const db = loadDB();
-  const member = db.members.find(m => m.email.toLowerCase() === String(email).trim().toLowerCase());
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
-  if (!member) {
+  if (!lookup) {
     recordFailedLogin(email, clientIp, userAgent);
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }
 
+  const { member, messId } = lookup;
+  (member as any).messId = messId;
+
   if (member.status === MemberStatus.PENDING) {
-    res.status(403).json({ error: "Account is pending activation. Please create a password first." });
+    res.status(403).json({ error: "Account is pending activation. Please activate your account first." });
     return;
   }
 
@@ -483,21 +605,23 @@ router.post("/auth/login", (req: Request, res: Response): void => {
 
   if (storedPassword === password) {
     recordSuccessfulLogin(email, member.id, clientIp, userAgent);
+    setUserActiveMessId(member.id, member.email, messId);
     logAudit(
       member.id,
       member.nickname,
       "LOGIN",
       "None",
       "Logged In Successfully",
-      "User logged into system.",
+      `User logged into system for mess: ${messId}.`,
       {
         userRole: member.role,
         browser: userAgent,
-        ipAddress: clientIp
+        ipAddress: clientIp,
+        messId
       }
     );
     const token = generateSessionToken(member.id);
-    res.json({ token, user: member });
+    res.json({ token, user: member, activeMessId: messId });
   } else {
     recordFailedLogin(email, clientIp, userAgent);
     logAudit(
@@ -510,7 +634,8 @@ router.post("/auth/login", (req: Request, res: Response): void => {
       {
         userRole: member.role,
         browser: userAgent,
-        ipAddress: clientIp
+        ipAddress: clientIp,
+        messId
       }
     );
     res.status(401).json({ error: "Invalid email or password" });
@@ -532,20 +657,20 @@ router.post("/auth/register", (req: Request, res: Response): void => {
     return;
   }
 
-  const db = loadDB();
-  const memberIndex = db.members.findIndex(m => m.email.toLowerCase() === String(email).trim().toLowerCase());
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
-  if (memberIndex === -1) {
-    res.status(404).json({ error: "This email has not been invited to the Mess. Contact the Admin." });
+  if (!lookup) {
+    res.status(404).json({ error: "This email has not been invited to any Mess. Contact your Admin." });
     return;
   }
 
-  const member = db.members[memberIndex];
+  const { member, memberIndex, messId, db } = lookup;
   
   // Check if member is already activated or credentials already exist
   const creds = loadCredentials();
   const hasExistingCredentials = Boolean(creds[member.id] && String(creds[member.id]).trim() !== "");
-  const isAlreadyActivated = member.status !== MemberStatus.PENDING || hasExistingCredentials;
+  const isAlreadyActivated = member.status !== MemberStatus.PENDING && hasExistingCredentials;
 
   if (isAlreadyActivated) {
     res.status(400).json({ error: "This account has already been activated. Please log in or use Forgot Password." });
@@ -563,14 +688,16 @@ router.post("/auth/register", (req: Request, res: Response): void => {
 
   // Activate member
   member.status = MemberStatus.ACTIVE;
+  (member as any).messId = messId;
   db.members[memberIndex] = member;
-  saveDB();
+  saveDB(messId);
+  setUserActiveMessId(member.id, member.email, messId);
 
   // Invalidate old sessions and create fresh session token
   invalidateMemberSessions(member.id);
   const token = generateSessionToken(member.id);
 
-  logAudit(member.id, member.nickname, "ACTIVATE_ACCOUNT", "PENDING", "ACTIVE", "User completed account activation.");
+  logAudit(member.id, member.nickname, "ACTIVATE_ACCOUNT", "PENDING", "ACTIVE", "User completed account activation.", { messId });
 
   // Record security event & send security notifications
   recordSecurityEvent({
@@ -578,12 +705,12 @@ router.post("/auth/register", (req: Request, res: Response): void => {
     email: member.email,
     action: "ACCOUNT_ACTIVATION",
     success: true,
-    reason: "User completed account activation.",
+    reason: `User completed account activation for mess ${messId}.`,
     ip: clientIp,
     userAgent
   });
 
-  res.json({ success: true, token, user: member });
+  res.json({ success: true, token, user: member, activeMessId: messId });
 });
 
 // In-memory store for password reset OTPs
@@ -607,13 +734,14 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
     return;
   }
 
-  const db = loadDB();
-  const member = db.members.find(m => m.email.toLowerCase() === String(email).trim().toLowerCase());
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
-  if (!member) {
+  if (!lookup) {
     res.status(404).json({ error: "No registered member found with this email address" });
     return;
   }
+  const member = lookup.member;
 
   // Record OTP request
   recordForgotPasswordRequest(email, clientIp, userAgent);
@@ -731,13 +859,16 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
   const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
   const userAgent = (req.headers["user-agent"] as string) || "Unknown";
 
-  const db = loadDB();
-  const member = db.members.find(m => m.email.toLowerCase() === email.toLowerCase());
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
-  if (!member) {
+  if (!lookup) {
     res.status(404).json({ error: "User profile not found" });
     return;
   }
+
+  const { member, messId } = lookup;
+  setUserActiveMessId(member.id, member.email, messId);
 
   // Check password history
   const creds = loadCredentials();
@@ -791,7 +922,14 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   const db = loadDB();
-  const targetMember = db.members.find(m => m.id === memberId);
+  let targetMember = db.members.find(m => m.id === memberId);
+
+  if (!targetMember) {
+    const lookup = findMemberAcrossAllMesses({ id: memberId });
+    if (lookup) {
+      targetMember = lookup.member;
+    }
+  }
 
   if (!targetMember) {
     res.status(404).json({ error: "Member not found" });
@@ -864,6 +1002,7 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
 
   // Terminate all existing sessions for this member
   invalidateMemberSessions(memberId);
+  const newToken = generateSessionToken(memberId);
 
   let auditMsg = `Reset password for user: ${targetMember.nickname}`;
   if (isAdmin && !isSelf) {
@@ -892,7 +1031,7 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     userAgent
   });
 
-  res.json({ success: true, message: "Password updated successfully." });
+  res.json({ success: true, message: "Password updated successfully.", token: isSelf ? newToken : undefined });
 });
 
 // Create audit log for a self-initiated secure password change
@@ -6234,41 +6373,6 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
 // ---------------------------------------------------------
 // MULTI-MESS MANAGEMENT ENDPOINTS (ADMIN ONLY)
 // ---------------------------------------------------------
-const MESSES_FILE = path.join(DB_DIR, "messes.json");
-
-function loadMesses() {
-  const defaultMesses = {
-    messes: [
-      { id: "default", name: "Ababil Mess (Main)" },
-      { id: "mess-a", name: "Mess A (Dhaka Branch)" },
-      { id: "mess-b", name: "Mess B (Chittagong Branch)" },
-      { id: "mess-c", name: "Mess C (Sylhet Branch)" }
-    ]
-  };
-  try {
-    if (fs.existsSync(MESSES_FILE)) {
-      const data = fs.readFileSync(MESSES_FILE, "utf-8");
-      if (data && data.trim()) {
-        const parsed = JSON.parse(data);
-        if (parsed && typeof parsed === "object") {
-          return { ...defaultMesses, ...parsed };
-        }
-      }
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  return defaultMesses;
-}
-
-function saveMesses(messes: any) {
-  try {
-    writeAndPersistFile("messes.json", JSON.stringify(messes, null, 2));
-  } catch (e) {
-    console.error(e);
-  }
-}
-
 router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
     res.status(403).json({ error: "Only an authorized Admin or Superuser can list messes." });

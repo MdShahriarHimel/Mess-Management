@@ -2693,8 +2693,17 @@ export default function App() {
         validateSession(token);
       }
     };
+    const handleTokenRefreshed = (e: any) => {
+      if (e.detail?.token) {
+        setSessionToken(e.detail.token);
+      }
+    };
     window.addEventListener("refresh-current-user", handleRefreshUser);
-    return () => window.removeEventListener("refresh-current-user", handleRefreshUser);
+    window.addEventListener("token-refreshed", handleTokenRefreshed);
+    return () => {
+      window.removeEventListener("refresh-current-user", handleRefreshUser);
+      window.removeEventListener("token-refreshed", handleTokenRefreshed);
+    };
   }, [sessionToken]);
 
   // Setup global fetch interceptor to inject active mess scope and refresh token on 401
@@ -3079,6 +3088,10 @@ export default function App() {
         localStorage.removeItem("mess_token");
         localStorage.removeItem("mess_token_expiry");
         sessionStorage.setItem("mess_token", token);
+      }
+      if ((user as any)?.messId) {
+        setActiveMessId((user as any).messId);
+        localStorage.setItem("active_mess_id", (user as any).messId);
       }
     } catch (e) {
       console.error("Storage write failed:", e);

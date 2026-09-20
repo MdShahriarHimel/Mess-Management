@@ -1,9 +1,11 @@
 {
   "messName": "Ababil mess",
-  "siteColor": "windows-10-modern",
+  "siteColor": "cyberpunk",
   "fontSize": "normal",
-  "fontStyle": "sans",
-  "logoText": "Mess ERP",
+  "fontStyle": "mono",
+  "isDarkMode": false,
+  "defaultMode": "light",
+  "logoText": "ABABIL",
   "dropdownOptions": [
     "Rent/ভাড়া",
     "বুয়া বিল",
@@ -14,6 +16,7 @@
     "Rent/ভাড়া": "Mess Rent"
   },
   "allowSuperUserUnlock": false,
+  "memberHistoryWindowMonths": 0,
   "superUserCanEditBills": true,
   "superUserCanInviteMembers": true,
   "superUserCanArchiveMembers": true,
@@ -42,17 +45,17 @@
   ],
   "balanceSheetGlow": "none",
   "customColors": {
-    "cashDepositBg": "#f973161a",
-    "cashDepositBorder": "#f97316",
-    "settlementBg": "#22c55e1a",
-    "settlementBorder": "#22c55e",
-    "sidebarBg": "#0f172a",
-    "headerBg": "#0f172a",
-    "cardBg": "#1e293b",
-    "accentColor": "#0078d4",
-    "siteAccentColorRgb": "#22d3ee",
-    "typographyHighlightRgb": "#67e8f9",
-    "layoutScaleColorRgb": "#a78bfa",
+    "cashDepositBg": "#facc151a",
+    "cashDepositBorder": "#facc15",
+    "settlementBg": "#e9d5ff1a",
+    "settlementBorder": "#d8b4fe",
+    "sidebarBg": "#05000a",
+    "headerBg": "#05000a",
+    "cardBg": "#0f051d",
+    "accentColor": "#facc15",
+    "siteAccentColorRgb": "#facc15",
+    "typographyHighlightRgb": "#39ff14",
+    "layoutScaleColorRgb": "#ff007f",
     "inputBorderColor": "#8adce3",
     "inputTextColor": "#6cb6d4"
   },
@@ -61,11 +64,11 @@
     "effectType": "none",
     "animationSpeed": "normal",
     "accentGlow": true,
-    "backgroundTheme": "deep-space",
+    "backgroundTheme": "cyberpunk-grid",
     "customBackgroundUrl": "",
     "backgroundOpacity": 20,
-    "themeTemplate": "midnight",
-    "disableBackgroundAudio": false
+    "themeTemplate": "cyberpunk",
+    "disableBackgroundAudio": true
   },
   "dashboardVisibility": {
     "showAuditLogs": true,
@@ -138,7 +141,7 @@
     "textColor": "#ffffff",
     "accentColor": "#22d3ee",
     "animationType": "bounce",
-    "loginTheme": "cyberpunk",
+    "loginTheme": "glass-blue",
     "buttonTextLogin": "প্রবেশ করুন",
     "titleFontSize": "3xl",
     "subtitleFontSize": "",
@@ -194,22 +197,34 @@
   },
   "roomLabels": [
     {
-      "id": "room_a",
-      "label": "Room A (Large)",
-      "rent": 3000,
-      "description": "Master Large Room"
+      "id": "room_1787845037890",
+      "label": "single",
+      "rent": 1220,
+      "description": ""
     },
     {
-      "id": "room_b",
-      "label": "Room B (Medium)",
-      "rent": 2500,
-      "description": "Medium South Room"
+      "id": "room_1787845056640",
+      "label": "left stair",
+      "rent": 1340,
+      "description": ""
     },
     {
-      "id": "room_c",
-      "label": "Room C (Small)",
-      "rent": 2000,
-      "description": "Standard Small Room"
+      "id": "room_1787845068553",
+      "label": "right stair",
+      "rent": 1400,
+      "description": ""
+    },
+    {
+      "id": "room_1787845089441",
+      "label": "attached bathroom",
+      "rent": 1550,
+      "description": ""
+    },
+    {
+      "id": "room_1787845100616",
+      "label": "top Left-Right",
+      "rent": 1450,
+      "description": ""
     }
   ],
   "customBillOverrides": {
@@ -258,52 +273,128 @@
     },
     "idx_ih57qdvt0popvk75ob1wf": {
       "idx_84e4eu3878vf1ux9guvvvm": {
-        "idx_5jmbtk6b150knzfciog9te": 400
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
       },
       "B846zoR80ueVCTDbAoN9mxJKyZL2": {
-        "idx_5jmbtk6b150knzfciog9te": 400
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
       },
       "idx_05hs5yfsf9vkec2jma2bb": {
         "idx_5jmbtk6b150knzfciog9te": 400,
         "idx_5jmbtk6b150knzfciog9te_status": "PAID",
+        "Worker_status": "PAID",
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "idx_cipwrilfk0d2ea5t3jhg81": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "8dPqTuu0WJgo2gsRt6o0IW7kvKy1": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "UkK2sJbFdRfarWwIPSGbMD3fsag1": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "qI1FTflzTwOQPgwAyReM7i8ZVjk2": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "0WFurNLaYUOuy28nTqJxpufePtm2": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "idx_6zhrbg7ib2qspfm17lhcki": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "68vZPzINxgNUlJGapcYlfdQwwVR2": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "xUsfNEEHOcaWBvpJYFPvmnMRnyp2": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      },
+      "VqcmcyWcXCgqRIu2XoL5UycAnhl1": {
+        "idx_5jmbtk6b150knzfciog9te": 400,
+        "idx_hes7ql6cu0q4amd74d7aml": 280
+      }
+    },
+    "idx_7s53gqrkzc9x1m49b2qcag": {
+      "qI1FTflzTwOQPgwAyReM7i8ZVjk2": {
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID"
+      },
+      "VqcmcyWcXCgqRIu2XoL5UycAnhl1": {
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID"
+      },
+      "idx_6zhrbg7ib2qspfm17lhcki": {
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
         "Worker_status": "PAID"
       },
       "idx_cipwrilfk0d2ea5t3jhg81": {
-        "idx_5jmbtk6b150knzfciog9te": 400
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID"
       },
-      "8dPqTuu0WJgo2gsRt6o0IW7kvKy1": {
-        "idx_5jmbtk6b150knzfciog9te": 400
-      },
-      "UkK2sJbFdRfarWwIPSGbMD3fsag1": {
-        "idx_5jmbtk6b150knzfciog9te": 400
-      },
-      "qI1FTflzTwOQPgwAyReM7i8ZVjk2": {
-        "idx_5jmbtk6b150knzfciog9te": 400
-      },
-      "0WFurNLaYUOuy28nTqJxpufePtm2": {
-        "idx_5jmbtk6b150knzfciog9te": 400
-      },
-      "idx_6zhrbg7ib2qspfm17lhcki": {
-        "idx_5jmbtk6b150knzfciog9te": 400
-      },
-      "68vZPzINxgNUlJGapcYlfdQwwVR2": {
-        "idx_5jmbtk6b150knzfciog9te": 400
+      "B846zoR80ueVCTDbAoN9mxJKyZL2": {
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID",
+        "idx_src3hbim3kwgiwdcfdrvj_status": "PAID",
+        "Utility_status": "PAID"
       },
       "xUsfNEEHOcaWBvpJYFPvmnMRnyp2": {
-        "idx_5jmbtk6b150knzfciog9te": 400
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID"
       },
-      "VqcmcyWcXCgqRIu2XoL5UycAnhl1": {
-        "idx_5jmbtk6b150knzfciog9te": 400
+      "8dPqTuu0WJgo2gsRt6o0IW7kvKy1": {
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID"
+      },
+      "UkK2sJbFdRfarWwIPSGbMD3fsag1": {
+        "idx_hajgh1vx5dgqbv8x8sz57_status": "PAID",
+        "Worker_status": "PAID"
       }
     }
   },
   "schemaVersion": 2,
   "createdAt": "2026-07-23T08:36:15.703Z",
-  "updatedAt": "2026-08-10T11:07:04.498Z",
-  "erpName": "Mess ERP",
-  "disableBackgroundAudio": false,
+  "updatedAt": "2026-09-20T12:54:48.465Z",
+  "erpName": "Ababil Mess ,Noya Bazar",
+  "disableBackgroundAudio": true,
   "activeAudioSettings": {
-    "url": "https://youtu.be/r7qovpFAGrQ?list=RDApXoWvfEYVU",
-    "enabled": true
+    "url": "https://youtu.be/RgKAFK5djSk?list=RDApXoWvfEYVU",
+    "enabled": false
+  },
+  "ledgerHeaderTitle": "Ababil  Mess",
+  "ledgerHeaderSubtitle": "Zakia House  , Noya Bazar",
+  "ledgerFooterText": "",
+  "typographySettings": {
+    "primaryFontColor": "#f8fafc",
+    "secondaryFontColor": "#94a3b8",
+    "headingColor": "#22d3ee",
+    "menuTextColor": "",
+    "sidebarTextColor": "#94a3b8",
+    "navbarTextColor": "",
+    "cardTextColor": "",
+    "tableTextColor": "",
+    "buttonTextColor": "",
+    "linkColor": "",
+    "successTextColor": "",
+    "warningTextColor": "",
+    "errorTextColor": "",
+    "globalFontSize": 14,
+    "headingSize": 18,
+    "sidebarFontSize": 12,
+    "navigationFontSize": 12,
+    "cardTitleSize": 14,
+    "cardBodySize": 12,
+    "tableFontSize": 12,
+    "buttonFontSize": 12,
+    "fontFamily": "Inter",
+    "accessibilityPreset": "normal"
   }
 }

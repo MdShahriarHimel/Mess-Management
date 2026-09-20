@@ -1,0 +1,50 @@
+{
+  "messName": "rangpur",
+  "logoText": "rangpur",
+  "siteColor": "cyan",
+  "fontSize": "normal",
+  "fontStyle": "sans",
+  "currency": "BDT",
+  "allowFutureMarket": true,
+  "allowPreviousMarket": true,
+  "allowFutureMealPlanner": true,
+  "allowPreviousMealPlanner": true,
+  "dropdownOptions": [
+    "Rent/ভাড়া",
+    "বুয়া বিল",
+    "WiFi",
+    "Electricity + Water"
+  ],
+  "translations": {},
+  "mealTypes": [
+    {
+      "id": "lunch",
+      "name": "Lunch",
+      "enabled": true
+    },
+    {
+      "id": "dinner",
+      "name": "Dinner",
+      "enabled": true
+    },
+    {
+      "id": "breakfast",
+      "name": "Breakfast",
+      "enabled": false
+    }
+  ],
+  "customColors": {},
+  "messAnimations": {},
+  "dashboardVisibility": {},
+  "roleAnimations": {},
+  "dateRestrictions": {},
+  "loginCustomization": {},
+  "homeCustomization": {},
+  "adminVisibility": {},
+  "creditConfig": {},
+  "appearancePermissions": {},
+  "schemaVersion": 2,
+  "createdAt": "2026-09-20T15:20:39.261Z",
+  "updatedAt": "2026-09-20T15:20:39.261Z",
+  "lastMigratedAt": "2026-09-20T15:20:39.261Z"
+}

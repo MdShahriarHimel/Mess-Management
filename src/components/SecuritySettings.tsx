@@ -289,13 +289,23 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
           },
           body: JSON.stringify({ memberId: currentUser.id, newPassword })
         });
+        const resetData = await resetRes.json().catch(() => ({}));
         if (!resetRes.ok) {
-          const errData = await resetRes.json().catch(() => ({}));
-          throw new Error(errData.error || "Failed to update password on the server.");
+          throw new Error(resetData.error || "Failed to update password on the server.");
+        }
+
+        const activeToken = resetData.token || sessionToken;
+        if (resetData.token) {
+          if (localStorage.getItem("mess_token")) {
+            localStorage.setItem("mess_token", resetData.token);
+          } else {
+            sessionStorage.setItem("mess_token", resetData.token);
+          }
+          window.dispatchEvent(new CustomEvent("token-refreshed", { detail: { token: resetData.token } }));
         }
 
         // 3. Trigger audit log and clear form
-        await triggerAuditLog(sessionToken);
+        await triggerAuditLog(activeToken);
         setSuccess(hasServerPassword ? "Password changed successfully." : "Password has been created successfully! You can now log in using your Email & Password.");
         setHasServerPassword(true);
         setIsGoogleOnly(false);

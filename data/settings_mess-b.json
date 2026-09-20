@@ -9,5 +9,43 @@
   "allowFutureMarket": true,
   "allowPreviousMarket": true,
   "allowFutureMealPlanner": true,
-  "allowPreviousMealPlanner": true
+  "allowPreviousMealPlanner": true,
+  "dropdownOptions": [
+    "Rent/ভাড়া",
+    "বুয়া বিল",
+    "WiFi",
+    "Electricity + Water"
+  ],
+  "translations": {},
+  "mealTypes": [
+    {
+      "id": "lunch",
+      "name": "Lunch",
+      "enabled": true
+    },
+    {
+      "id": "dinner",
+      "name": "Dinner",
+      "enabled": true
+    },
+    {
+      "id": "breakfast",
+      "name": "Breakfast",
+      "enabled": false
+    }
+  ],
+  "customColors": {},
+  "messAnimations": {},
+  "dashboardVisibility": {},
+  "roleAnimations": {},
+  "dateRestrictions": {},
+  "loginCustomization": {},
+  "homeCustomization": {},
+  "adminVisibility": {},
+  "creditConfig": {},
+  "appearancePermissions": {},
+  "schemaVersion": 2,
+  "createdAt": "2026-09-20T15:21:12.981Z",
+  "updatedAt": "2026-09-20T15:21:12.981Z",
+  "lastMigratedAt": "2026-09-20T15:21:12.981Z"
 }

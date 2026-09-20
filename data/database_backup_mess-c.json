@@ -12,7 +12,7 @@
       "joiningDate": "2026-07-01",
       "leavingDate": null,
       "role": "ADMIN",
-      "status": "ACTIVE",
+      "status": "NOT_MEMBER",
       "notes": "System seeded secure Administrator account.",
       "photo": "https://lh3.googleusercontent.com/a/ACg8ocIdPvmGLFO3q7RHon9ePLdZ9FNS9OlmvWMEBc6SOFG4hjiigPzk=s96-c",
       "previousIds": [

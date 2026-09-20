@@ -15,14 +15,14 @@
   "maintenanceThemeColor": "cyan",
   "maintenanceEmoji": "⚙️",
   "maintenanceWarningIcon": "AlertTriangle",
-  "maintenanceBannerImage": "",
+  "maintenanceBannerImage": "https://www.istockphoto.com/vector/repair-line-icon-editable-stroke-vector-icon-gm2204030328-621528631",
   "featureFlags": {
     "monetization": true,
     "advertisements": true,
     "rewardCenter": true,
     "premiumStore": true,
     "aiFeatures": true,
-    "themeEngine": true,
+    "themeEngine": false,
     "statistics": true,
     "experimentalFeatures": false,
     "futureModules": false

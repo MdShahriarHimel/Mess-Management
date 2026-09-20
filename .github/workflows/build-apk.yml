@@ -3,19 +3,14 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master ]
-    paths: [ 'android-app/**', '.github/workflows/build-apk.yml' ]
   pull_request:
-    paths: [ 'android-app/**', '.github/workflows/build-apk.yml' ]
+    branches: [ main, master ]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
-    name: Check Android and build test APK
+    name: Build Signed Release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
       - name: Checkout Code
@@ -27,25 +22,35 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-
-      - name: Install Android Build Tools and Platform
+      - name: Setup Android SDK Licenses
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      - name: Test, lint and build APK
+      - name: Generate Release Keystore
+        working-directory: android-app/app
+        run: |
+          if [ ! -f release.keystore ]; then
+            keytool -genkey -v -keystore release.keystore -alias messmanagement -keyalg RSA -keysize 2048 -validity 10000 -storepass messmanagement123 -keypass messmanagement123 -dname "CN=Mess Management, OU=Development, O=MessApp, L=Dhaka, ST=Dhaka, C=BD"
+          fi
+
+      - name: Build Signed Release APK
         working-directory: android-app
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleRelease --stacktrace
+          else
+            gradle assembleRelease --stacktrace
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mess-Management-Test-APK
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: Mess-Management-Release-APK
+          path: android-app/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

@@ -1,5 +1,93 @@
 [
   {
+    "id": "fa_i3dmk3ozc",
+    "date": "2026-09-20",
+    "time": "18:55:35",
+    "userId": "test_pending_1789930535702",
+    "email": "pending_user_1789930535702@example.com",
+    "action": "LOGIN_SUCCESS",
+    "module": "SECURITY",
+    "ip": "127.0.0.1",
+    "result": "User authenticated successfully"
+  },
+  {
+    "id": "fa_mdq11rdgv",
+    "date": "2026-09-20",
+    "time": "18:55:35",
+    "userId": "test_pending_1789930535702",
+    "email": "pending_user_1789930535702@example.com",
+    "action": "ACCOUNT_ACTIVATION",
+    "module": "SECURITY",
+    "ip": "127.0.0.1",
+    "result": "User completed account activation for mess mess-c."
+  },
+  {
+    "id": "fa_uzsyx4iw7",
+    "date": "2026-09-20",
+    "time": "18:55:29",
+    "userId": "B846zoR80ueVCTDbAoN9mxJKyZL2",
+    "email": "mdshahriarhimel@gmail.com",
+    "action": "LOGIN_SUCCESS",
+    "module": "SECURITY",
+    "ip": "127.0.0.1",
+    "result": "User authenticated successfully"
+  },
+  {
+    "id": "fa_67vxpham8",
+    "date": "2026-09-20",
+    "time": "18:44:39",
+    "userId": "system",
+    "email": "freefire1100028@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "103.146.3.211",
+    "result": "Failed login attempt (5/5)"
+  },
+  {
+    "id": "fa_j6yzm811y",
+    "date": "2026-09-20",
+    "time": "18:44:38",
+    "userId": "system",
+    "email": "freefire1100028@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "103.146.3.211",
+    "result": "Failed login attempt (4/5)"
+  },
+  {
+    "id": "fa_kg4l3rpat",
+    "date": "2026-09-20",
+    "time": "18:44:37",
+    "userId": "system",
+    "email": "freefire1100028@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "103.146.3.211",
+    "result": "Failed login attempt (3/5)"
+  },
+  {
+    "id": "fa_4pga9o9vo",
+    "date": "2026-09-20",
+    "time": "18:44:27",
+    "userId": "system",
+    "email": "freefire1100028@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "103.146.3.211",
+    "result": "Failed login attempt (2/5)"
+  },
+  {
+    "id": "fa_f02x46d5i",
+    "date": "2026-09-20",
+    "time": "18:44:20",
+    "userId": "system",
+    "email": "freefire1100028@gmail.com",
+    "action": "LOGIN_FAILURE",
+    "module": "SECURITY",
+    "ip": "103.146.3.211",
+    "result": "Failed login attempt (1/5)"
+  },
+  {
     "id": "fa_ga7ijbkkb",
     "date": "2026-08-01",
     "time": "11:02:56",

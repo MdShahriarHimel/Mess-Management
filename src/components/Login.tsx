@@ -247,9 +247,10 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       if (activeTab === "login") {
         onLoginSuccess(data.token, data.user, rememberMe);
       } else {
-        setSuccess("Account activated successfully! You can now log in using the Login tab.");
-        setActiveTab("login");
-        setPassword("");
+        setSuccess("Account activated successfully! Logging you in...");
+        setTimeout(() => {
+          onLoginSuccess(data.token, data.user, true);
+        }, 500);
       }
     } catch (err: any) {
       setError(err.message || "Connection failure");

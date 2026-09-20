@@ -52,6 +52,30 @@
       "canSuspendMembers": false,
       "canEditProfiles": false,
       "canEditCycles": false
+    },
+    "Mqzqoo0sAHYNTjMDtODdNt7GCQW2": {
+      "allowedMesses": [
+        "mess-c",
+        "mess-n7rrcvg"
+      ],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false,
+      "canEditProfiles": false,
+      "canEditCycles": false
+    },
+    "freefire1100028@gmail.com": {
+      "allowedMesses": [
+        "mess-c",
+        "mess-n7rrcvg"
+      ],
+      "canEditBills": false,
+      "canManageMeals": false,
+      "canAddMarkets": false,
+      "canSuspendMembers": false,
+      "canEditProfiles": false,
+      "canEditCycles": false
     }
   }
 }
