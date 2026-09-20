@@ -27,6 +27,7 @@ import Notices from "./components/Notices.tsx";
 import Rules from "./components/Rules.tsx";
 import Democracy from "./components/Democracy.tsx";
 import { AdminControlsPanel } from "./components/AdminControlsPanel.tsx";
+import { MessSwitcher } from "./components/MessSwitcher.tsx";
 import RgbColorPicker from "./components/RgbColorPicker.tsx";
 import { ThemeEnginePanel } from "./components/ThemeEnginePanel.tsx";
 import { THEME_TEMPLATES } from "./themeTemplates.ts";
@@ -1749,7 +1750,23 @@ export default function App() {
   const [forcedMarketDate, setForcedMarketDate] = useState<string>("");
 
   const [messes, setMesses] = useState<{ id: string, name: string }[]>([]);
-  const [activeMessId, setActiveMessId] = useState("default");
+  const [activeMessId, setActiveMessId] = useState(() => {
+    try {
+      return localStorage.getItem("active_mess_id") || "default";
+    } catch {
+      return "default";
+    }
+  });
+  const [messNotification, setMessNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    if (messNotification) {
+      const timer = setTimeout(() => {
+        setMessNotification(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [messNotification]);
 
   // Dynamic UI configuration states
   const [siteColor, setSiteColor] = useState("cyan");
@@ -1914,6 +1931,16 @@ export default function App() {
         return Sparkles;
     }
   })();
+
+  const currentActiveMessObj = useMemo(() => {
+    return messes.find(m => m.id === activeMessId) || null;
+  }, [messes, activeMessId]);
+
+  const currentActiveMessName = currentActiveMessObj?.name || messName || "Mess ERP";
+  const erpPlatformTitle = (erpBrandingState?.erpName && !erpBrandingState.erpName.toLowerCase().includes("ababil"))
+    ? erpBrandingState.erpName
+    : "Mess ERP Ecosystem";
+
   const [userPreferencesState, setUserPreferencesState] = useState<any>({
     isDarkMode: false,
     accentColor: "#22d3ee",
@@ -1998,10 +2025,93 @@ export default function App() {
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
         if (data.messes) setMesses(data.messes);
-        if (data.activeMessId) setActiveMessId(data.activeMessId);
+        if (data.activeMessId) {
+          setActiveMessId(data.activeMessId);
+          localStorage.setItem("active_mess_id", data.activeMessId);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch messes:", e);
+    }
+  };
+
+  const handleSwitchMess = async (targetMessId: string) => {
+    if (!sessionToken) return;
+    try {
+      setIsRefreshingAll(true);
+      const res = await fetch("/api/admin/messes/active", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({ messId: targetMessId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveMessId(targetMessId);
+        localStorage.setItem("active_mess_id", targetMessId);
+        await Promise.all([
+          fetchMonthsAndMembers(sessionToken, true),
+          fetchSettings(sessionToken),
+          fetchMesses(sessionToken),
+          fetchElections(sessionToken),
+          fetchDuties(),
+          fetchReportSummary()
+        ]);
+        window.dispatchEvent(new CustomEvent("app-global-refresh"));
+        setMessNotification({
+          type: "success",
+          message: `Switched mess scope to: ${data.name || targetMessId}`
+        });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMessNotification({
+          type: "error",
+          message: err.error || "Failed to switch mess scope"
+        });
+      }
+    } catch (e) {
+      console.error("Failed to switch mess:", e);
+      setMessNotification({
+        type: "error",
+        message: "Error connecting to server to switch mess."
+      });
+    } finally {
+      setIsRefreshingAll(false);
+    }
+  };
+
+  const handleCreateMess = async (name: string) => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch("/api/admin/messes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messes) setMesses(data.messes);
+        setMessNotification({
+          type: "success",
+          message: `Created new mess: ${name}`
+        });
+        if (data.newMessId) {
+          await handleSwitchMess(data.newMessId);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMessNotification({
+          type: "error",
+          message: err.error || "Failed to create mess"
+        });
+      }
+    } catch (e) {
+      console.error("Failed to create mess:", e);
     }
   };
 
@@ -2369,6 +2479,10 @@ export default function App() {
         const data = await response.json().catch(() => ({}));
         setCurrentUser(data.user);
         setSessionToken(token);
+        if (data.activeMessId) {
+          setActiveMessId(data.activeMessId);
+          localStorage.setItem("active_mess_id", data.activeMessId);
+        }
       } else {
         handleLogoutLocal();
       }
@@ -2583,11 +2697,29 @@ export default function App() {
     return () => window.removeEventListener("refresh-current-user", handleRefreshUser);
   }, [sessionToken]);
 
-  // Setup global fetch interceptor to heal/refresh token on 401 token expired errors
+  // Setup global fetch interceptor to inject active mess scope and refresh token on 401
   useEffect(() => {
     const originalFetch = window.fetch;
     window.fetch = async function (input, init) {
-      let response = await originalFetch(input, init);
+      let modInit = init;
+      const storedMessId = localStorage.getItem("active_mess_id");
+      if (storedMessId && typeof input === "string" && input.startsWith("/api/")) {
+        const headers = new Headers(init?.headers || {});
+        if (!headers.has("x-mess-id")) {
+          headers.set("x-mess-id", storedMessId);
+        }
+        modInit = { ...init, headers };
+      }
+
+      let response = await originalFetch(input, modInit);
+
+      // Track mess scope returned from server header
+      const resMessId = response.headers.get("x-mess-id");
+      if (resMessId && resMessId !== localStorage.getItem("active_mess_id")) {
+        localStorage.setItem("active_mess_id", resMessId);
+        setActiveMessId(resMessId);
+      }
+
       // If we receive a 401 Unauthorized or session expired from the backend
       if (response.status === 401 && auth.currentUser) {
         try {
@@ -2937,7 +3069,7 @@ export default function App() {
     }
   }, [currentUser, currentMonthId, months]);
 
-  const handleLoginSuccess = (token: string, user: Member, rememberMe?: boolean) => {
+  const handleLoginSuccess = async (token: string, user: Member, rememberMe?: boolean) => {
     try {
       if (rememberMe) {
         localStorage.setItem("mess_token", token);
@@ -2953,7 +3085,10 @@ export default function App() {
     }
     setSessionToken(token);
     setCurrentUser(user);
+    await fetchMesses(token);
+    await validateSession(token);
     fetchMonthsAndMembers(token);
+    fetchSettings(token);
   };
 
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
@@ -4742,7 +4877,7 @@ export default function App() {
             <div className="min-w-0">
               <div className="flex items-center gap-1">
                 <span className="font-extrabold text-sm tracking-tight font-display bg-gradient-to-r from-cyan-400 to-cyan-500 bg-clip-text text-transparent uppercase leading-none truncate">
-                  {erpBrandingState?.logoText || messName}
+                  {currentActiveMessName}
                 </span>
                 <span className="text-[9px] font-bold text-orange-500 bg-orange-500/10 px-1 py-0.5 rounded uppercase leading-none shrink-0">
                   {erpBrandingState?.erpVersion || "v2.5.4"}
@@ -4752,13 +4887,27 @@ export default function App() {
               <span className={`text-[9px] font-medium block truncate max-w-[130px] sm:max-w-[200px] leading-tight mt-0.5 ${
                 activeIsDarkMode ? "text-slate-400" : "text-cyan-900/70"
               }`}>
-                {erpBrandingState?.erpName || "Ababil Mess ,Noya Bazar"}
+                {erpPlatformTitle}
               </span>
             </div>
           </button>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Mobile Mess Switcher */}
+          {currentUser && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || isPlatformOwner || (messes && messes.length > 1)) && (
+            <MessSwitcher 
+              messes={messes}
+              activeMessId={activeMessId}
+              currentUser={currentUser}
+              sessionToken={sessionToken || ""}
+              isDarkMode={activeIsDarkMode}
+              onSwitchMess={handleSwitchMess}
+              onCreateMess={handleCreateMess}
+              compact={true}
+            />
+          )}
+
           {/* Cloud Sync Status Indicator in the top header */}
           <SyncIndicator compact={true} />
 
@@ -4812,6 +4961,22 @@ export default function App() {
                 <X size={18} />
               </button>
             </div>
+
+            {/* Mess Switcher in Mobile Drawer */}
+            {currentUser && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || isPlatformOwner || (messes && messes.length > 1)) && (
+              <div className="p-3 pb-1 shrink-0">
+                <MessSwitcher 
+                  messes={messes}
+                  activeMessId={activeMessId}
+                  currentUser={currentUser}
+                  sessionToken={sessionToken || ""}
+                  isDarkMode={activeIsDarkMode}
+                  onSwitchMess={handleSwitchMess}
+                  onCreateMess={handleCreateMess}
+                  onOpenAdminControls={() => { setMobileMenuOpen(false); setActiveTab("settings"); }}
+                />
+              </div>
+            )}
 
             {/* Scrollable Navigation List */}
             <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1">
@@ -4918,15 +5083,31 @@ export default function App() {
               <h1 className={`font-extrabold text-sm tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-tight uppercase truncate ${
                 activeIsDarkMode ? "from-cyan-400 to-cyan-500" : "from-cyan-700 to-cyan-900"
               }`}>
-                {erpBrandingState?.logoText || messName}
+                {currentActiveMessName}
               </h1>
               <span className={`text-[8px] font-semibold font-mono block tracking-widest uppercase truncate opacity-70 ${
                 activeIsDarkMode ? "text-slate-400" : "text-cyan-800"
               }`}>
-                {erpBrandingState?.erpName || "Enterprise"} • {erpBrandingState?.erpVersion || "v2.5.4"}
+                {erpPlatformTitle} • {erpBrandingState?.erpVersion || "v2.5.4"}
               </span>
             </div>
           </button>
+
+          {/* Active Mess Switcher */}
+          {currentUser && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || isPlatformOwner || (messes && messes.length > 1)) && (
+            <div className="mt-2 pt-2 border-t border-slate-800/40">
+              <MessSwitcher 
+                messes={messes}
+                activeMessId={activeMessId}
+                currentUser={currentUser}
+                sessionToken={sessionToken || ""}
+                isDarkMode={activeIsDarkMode}
+                onSwitchMess={handleSwitchMess}
+                onCreateMess={handleCreateMess}
+                onOpenAdminControls={() => setActiveTab("settings")}
+              />
+            </div>
+          )}
         </div>
 
         {/* Navigation Menu (Scrollable with auto-overflow to prevent off-screen cutoff) */}
@@ -5493,6 +5674,11 @@ export default function App() {
                 setEditMonthEnd={setEditMonthEnd}
                 handleUpdateMonthCycle={handleUpdateMonthCycle}
                 handleDeleteMonthCycle={handleDeleteMonthCycle}
+                messName={messName}
+                setMessName={setMessName}
+                logoText={logoText}
+                setLogoText={setLogoText}
+                activeMessId={activeMessId}
               />
 
               {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
@@ -5688,6 +5874,26 @@ export default function App() {
         )}
 
       </main>
+
+      {messNotification && (
+        <div 
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-3 duration-200 ${
+            messNotification.type === "success"
+              ? "bg-slate-950/95 border-emerald-500/40 text-emerald-300 shadow-emerald-950/30"
+              : "bg-slate-950/95 border-rose-500/40 text-rose-300 shadow-rose-950/30"
+          }`}
+          role="status"
+        >
+          <span className="w-2 h-2 rounded-full bg-current animate-pulse shrink-0" />
+          <span className="text-xs font-bold leading-snug">{messNotification.message}</span>
+          <button 
+            onClick={() => setMessNotification(null)}
+            className="p-1 rounded-md text-slate-400 hover:text-white cursor-pointer ml-1"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <BackgroundAudioPlayer
         activeAudioSettings={activeAudioSettings}

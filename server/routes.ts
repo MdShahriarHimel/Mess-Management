@@ -13,6 +13,9 @@ import { loadDB, saveDB, syncState,
   logAudit,
   getActiveMessId,
   setActiveMessId,
+  getUserActiveMessId,
+  setUserActiveMessId,
+  messContext,
   writeAndPersistFile,
   ensurePersistentFile,
   deletePersistentFile,
@@ -118,74 +121,20 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   }
 
   const token = authHeader.split(" ")[1];
-  const db = loadDB();
-  let member: Member | undefined;
+  let tokenUid = "";
+  let tokenEmail = "";
+  let tokenName = "";
+  let tokenPicture: string | null = null;
+  let decodedToken: any = null;
 
-  // Check if token is a Firebase ID Token (JWT starts with ey)
+  // 1. Authenticate credentials / token
   if (token.startsWith("ey")) {
     try {
-      const decodedToken = await adminAuth.verifyIdToken(token);
-      member = db.members.find(m => m.id === decodedToken.uid || m.email.toLowerCase() === decodedToken.email?.toLowerCase());
-
-      if (!member) {
-        const email = (decodedToken.email || "").toLowerCase();
-        if (email === "mdshahriarhimel@gmail.com") {
-          // Automatically provision admin if not present
-          const name = decodedToken.name || "Mess Administrator";
-          const newMember: Member = {
-            id: decodedToken.uid,
-            name,
-            nickname: "Admin",
-            email,
-            phone: "01712345678",
-            whatsapp: "01712345678",
-            bloodGroup: "O+",
-            occupation: "System Admin",
-            joiningDate: new Date().toISOString().split("T")[0],
-            leavingDate: null,
-            role: UserRole.ADMIN,
-            status: MemberStatus.ACTIVE,
-            notes: "Auto-provisioned Admin via Google Sign-In",
-            photo: decodedToken.picture || null,
-          };
-
-          db.members.push(newMember);
-          saveDB();
-          member = newMember;
-        } else {
-          // Reject unknown/uninvited emails to prevent unauthorized sign-ups
-          res.status(403).json({ error: "Your email has not been invited to the Mess. Please ask your Admin to invite you." });
-          return;
-        }
-      } else if (member.id !== decodedToken.uid) {
-        // Link the Firebase Auth UID to the invited email's member record
-        const oldId = member.id;
-        if (!(member as any).previousIds) (member as any).previousIds = [];
-        if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
-        member.id = decodedToken.uid;
-        if (decodedToken.picture) member.photo = decodedToken.picture;
-
-        // Update references in PostgreSQL for meals directly
-        await drizzleDb.update(mealsTable).set({ memberId: decodedToken.uid }).where(eq(mealsTable.memberId, oldId));
-        try {
-          await drizzleDb.update(members).set({ id: decodedToken.uid, photo: member.photo }).where(eq(members.id, oldId));
-        } catch (dbErr) {
-          console.warn("Notice: PostgreSQL member id sync:", dbErr);
-        }
-
-        // Update references in other tables
-        db.marketEntries.forEach(m => { if (m.memberId === oldId) m.memberId = decodedToken.uid; });
-        db.deposits.forEach(d => { 
-          if (d.memberId === oldId) d.memberId = decodedToken.uid;
-          if (d.enteredBy === oldId) d.enteredBy = decodedToken.uid;
-        });
-        db.duties.forEach(d => { if (d.memberId === oldId) d.memberId = decodedToken.uid; });
-        db.managerHoldings.forEach(m => { if (m.memberId === oldId) m.memberId = decodedToken.uid; });
-        db.notices.forEach(n => { if (n.authorId === oldId) n.authorId = decodedToken.uid; });
-        db.auditLogs.forEach(a => { if (a.userId === oldId) a.userId = decodedToken.uid; });
-
-        saveDB();
-      }
+      decodedToken = await adminAuth.verifyIdToken(token);
+      tokenUid = decodedToken.uid;
+      tokenEmail = (decodedToken.email || "").toLowerCase();
+      tokenName = decodedToken.name || "";
+      tokenPicture = decodedToken.picture || null;
     } catch (e: any) {
       const isExpired = e?.code === "auth/id-token-expired" || e?.message?.includes("expired") || String(e).includes("expired");
       if (isExpired) {
@@ -200,52 +149,162 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       return;
     }
   } else {
-    // Fallback for local development or session token (memberId:sess_version or memberId)
-    const memberIdFromToken = token.split(":")[0];
-    member = db.members.find(m => 
-      m.id === memberIdFromToken || 
-      (m as any).previousIds?.includes(memberIdFromToken) ||
-      m.email.toLowerCase() === memberIdFromToken.toLowerCase()
-    );
+    // Session token
+    tokenUid = token.split(":")[0];
+  }
 
-    if (member && !isValidMemberSessionToken(token, member.id)) {
-      res.status(401).json({ error: "Unauthorized: Session invalidated due to password change or security reset. Please log in again." });
-      return;
+  // Look up user reference across any existing database or default
+  const defaultDb = loadDB("default");
+  let memberRef = defaultDb.members.find(m => 
+    m.id === tokenUid || 
+    (m as any).previousIds?.includes(tokenUid) || 
+    (tokenEmail && m.email?.toLowerCase() === tokenEmail)
+  );
+
+  if (!memberRef && !token.startsWith("ey")) {
+    // If not in default DB, check other messes for this local session user
+    const messesList = loadMesses().messes;
+    for (const mess of messesList) {
+      if (mess.id === "default") continue;
+      const mDb = loadDB(mess.id);
+      const found = mDb.members.find(m => 
+        m.id === tokenUid || 
+        (m as any).previousIds?.includes(tokenUid) || 
+        (tokenEmail && m.email?.toLowerCase() === tokenEmail)
+      );
+      if (found) {
+        memberRef = found;
+        break;
+      }
     }
   }
 
-  if (!member) {
-    res.status(401).json({ error: "Unauthorized: Invalid session" });
+  const userId = tokenUid || memberRef?.id || "";
+  const userEmail = (tokenEmail || memberRef?.email || "").toLowerCase();
+  const userName = tokenName || memberRef?.name || "Admin";
+  const userNickname = memberRef?.nickname || (userName.split(" ")[0] || "Admin");
+
+  if (!userId && !userEmail) {
+    res.status(401).json({ error: "Unauthorized: Invalid session credentials" });
     return;
   }
 
-  const isSelfUpdateOrRestore = 
-    (req.method === "PUT" && req.path === `/members/${member.id}`) ||
-    (req.method === "POST" && req.path === `/members/${member.id}/restore`);
+  // 2. Determine authorized mess scope
+  const isUltimateAdmin = userEmail === "mdshahriarhimel@gmail.com";
+  const adminControls = loadAdminControls().controls;
+  const userControls = (userEmail && adminControls[userEmail]) || (userId && adminControls[userId]);
+  const requestedMess = ((req.headers["x-mess-id"] as string) || (req.query.messId as string) || "").trim();
 
-  if (member.status === MemberStatus.SUSPENDED) {
-    if (!isSelfUpdateOrRestore) {
-      res.status(403).json({ error: "Account suspended: Contact Admin" });
-      return;
+  let targetMessId = "default";
+  let allowedMesses: string[] | null = null;
+
+  if (isUltimateAdmin) {
+    targetMessId = requestedMess || getUserActiveMessId(userId, userEmail) || getActiveMessId() || "default";
+  } else if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
+    allowedMesses = userControls.allowedMesses;
+    if (requestedMess && allowedMesses.includes(requestedMess)) {
+      targetMessId = requestedMess;
+    } else {
+      const saved = getUserActiveMessId(userId, userEmail);
+      if (saved && allowedMesses.includes(saved)) {
+        targetMessId = saved;
+      } else {
+        targetMessId = allowedMesses[0];
+      }
     }
+  } else {
+    // Normal member: limited strictly to their assigned mess
+    targetMessId = (memberRef as any)?.messId || "default";
   }
 
-  if (member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.LEFT) {
-    if (!isSelfUpdateOrRestore && req.method !== "GET") {
-      res.status(403).json({ error: "Account archived or inactive: Read-only access to past logs is granted. Modifications are forbidden." });
-      return;
-    }
-  }
+  // 3. Execute request inside tenant context
+  messContext.run({ messId: targetMessId }, async () => {
+    try {
+      const db = loadDB(targetMessId);
+      let member = db.members.find(m => 
+        m.id === userId || 
+        (m as any).previousIds?.includes(userId) ||
+        (userEmail && m.email?.toLowerCase() === userEmail)
+      );
 
-  if (member && member.email.toLowerCase() === "mdshahriarhimel@gmail.com") {
-    const actingRole = req.headers["x-acting-role"] as string;
-    if (actingRole && Object.values(UserRole).includes(actingRole as any)) {
-      member = { ...member, role: actingRole as UserRole };
-    }
-  }
+      if (!member) {
+        if (isUltimateAdmin || (allowedMesses && allowedMesses.includes(targetMessId))) {
+          // Auto-provision delegated admin in target mess with non-resident status
+          const newMember: Member = {
+            id: userId,
+            name: userName,
+            nickname: userNickname,
+            email: userEmail,
+            phone: memberRef?.phone || "01712345678",
+            whatsapp: memberRef?.whatsapp || "01712345678",
+            bloodGroup: memberRef?.bloodGroup || "O+",
+            occupation: memberRef?.occupation || "Admin",
+            joiningDate: memberRef?.joiningDate || new Date().toISOString().split("T")[0],
+            leavingDate: null,
+            role: UserRole.ADMIN,
+            status: isUltimateAdmin ? MemberStatus.ACTIVE : MemberStatus.NOT_MEMBER, // Not a dining member!
+            notes: isUltimateAdmin ? "Platform Owner" : "Delegated Admin authorized by Platform Owner",
+            photo: tokenPicture || memberRef?.photo || null,
+          };
 
-  req.user = member;
-  next();
+          db.members.push(newMember);
+          saveDB(targetMessId);
+          member = newMember;
+        } else {
+          res.status(403).json({ error: "Your email has not been invited to this Mess. Please ask your Admin to invite you." });
+          return;
+        }
+      } else if (tokenUid && member.id !== tokenUid && token.startsWith("ey")) {
+        // Link Firebase UID
+        const oldId = member.id;
+        if (!(member as any).previousIds) (member as any).previousIds = [];
+        if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
+        member.id = tokenUid;
+        if (tokenPicture) member.photo = tokenPicture;
+        saveDB(targetMessId);
+      }
+
+      if (!member) {
+        res.status(401).json({ error: "Unauthorized: Member record not found" });
+        return;
+      }
+
+      if (!token.startsWith("ey") && !isValidMemberSessionToken(token, member.id)) {
+        res.status(401).json({ error: "Unauthorized: Session invalidated due to password change. Please log in again." });
+        return;
+      }
+
+      const isSelfUpdateOrRestore = 
+        (req.method === "PUT" && req.path === `/members/${member.id}`) ||
+        (req.method === "POST" && req.path === `/members/${member.id}/restore`);
+
+      if (member.status === MemberStatus.SUSPENDED && !isSelfUpdateOrRestore) {
+        res.status(403).json({ error: "Account suspended: Contact Admin" });
+        return;
+      }
+
+      if ((member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.LEFT) && !isSelfUpdateOrRestore && req.method !== "GET") {
+        res.status(403).json({ error: "Account archived or inactive: Read-only access granted." });
+        return;
+      }
+
+      if (isUltimateAdmin) {
+        const actingRole = req.headers["x-acting-role"] as string;
+        if (actingRole && Object.values(UserRole).includes(actingRole as any)) {
+          member = { ...member, role: actingRole as UserRole };
+        }
+      }
+
+      setUserActiveMessId(member.id, member.email, targetMessId);
+      res.setHeader("x-mess-id", targetMessId);
+
+      req.user = member;
+      next();
+    } catch (err) {
+      console.error("Error in tenant auth middleware:", err);
+      res.status(500).json({ error: "Internal error resolving mess context" });
+    }
+  });
 }
 
 // Role-based helper
@@ -303,7 +362,8 @@ function checkRole(roles: UserRole[]) {
 
 // Check invite / Me endpoint
 router.get("/auth/me", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  res.json({ user: req.user });
+  const activeMessId = getActiveMessId();
+  res.json({ user: req.user, activeMessId });
 });
 
 // Check if user has a password set in the server database
@@ -5315,10 +5375,22 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       }
     }
 
-    // Check branding / logo text updates - STRICTLY Ultimate Admin only
-    if (req.body.logoText !== undefined || req.body.erpName !== undefined) {
-      res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify ERP branding and logo text" });
+    // Check branding / logo text updates - STRICTLY Ultimate Admin only for central platform ERP name
+    if (req.body.erpName !== undefined) {
+      res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify central ERP platform name" });
       return;
+    }
+
+    // Check Mess Identity & Branding permission for Admins
+    if (role === UserRole.ADMIN) {
+      const isModifyingIdentity = [
+        'messName', 'logoText', 'location', 'welcomeMessage', 'announcement', 'logoIcon'
+      ].some(field => req.body[field] !== undefined);
+
+      if (isModifyingIdentity && !checkAdminPermission(req, "canManageMessIdentity")) {
+        res.status(403).json({ error: "You do not have permission to manage this mess's identity and branding." });
+        return;
+      }
     }
 
     const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
@@ -5366,9 +5438,8 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
         "Tables", "Buttons", "Branding", "Credit", "Logo", "Banner", "Welcome Message"
       ].includes(p));
 
-      // If they have NO appearance permissions defined and they are the main ADMIN, let them use original ADMIN role permissions.
-      // But if they have ANY appearance permissions defined, or they are not ADMIN, enforce the explicit permission checks!
-      if (hasAnyAppearancePermission || role !== UserRole.ADMIN) {
+      // Standard Admins have administrative appearance authority over their assigned mess
+      if (role !== UserRole.ADMIN && (hasAnyAppearancePermission || role !== UserRole.SUPERUSER)) {
         if (!hasRequiredFeature) {
           res.status(403).json({ error: "You do not have explicit permissions granted by the Ultimate Admin to perform this appearance action" });
           return;
@@ -5448,6 +5519,25 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (req.body.isDarkMode !== undefined) currentSettings.isDarkMode = req.body.isDarkMode;
   if (req.body.defaultMode !== undefined) currentSettings.defaultMode = req.body.defaultMode;
   if (logoText !== undefined) currentSettings.logoText = logoText;
+  if (req.body.messName !== undefined && req.body.messName.trim()) {
+    const trimmedName = req.body.messName.trim();
+    currentSettings.messName = trimmedName;
+    try {
+      const activeMid = getActiveMessId();
+      const messesData = loadMesses();
+      const target = messesData.messes.find((m: any) => m.id === activeMid);
+      if (target) {
+        target.name = trimmedName;
+        saveMesses(messesData);
+      }
+    } catch (err) {
+      console.error("Failed to sync messes.json with new messName:", err);
+    }
+  }
+  if (req.body.location !== undefined) currentSettings.location = req.body.location.trim();
+  if (req.body.welcomeMessage !== undefined) currentSettings.welcomeMessage = req.body.welcomeMessage;
+  if (req.body.announcement !== undefined) currentSettings.announcement = req.body.announcement;
+  if (req.body.logoIcon !== undefined) currentSettings.logoIcon = req.body.logoIcon;
   if (dropdownOptions !== undefined) currentSettings.dropdownOptions = dropdownOptions;
   if (superUserCanEditBills !== undefined) currentSettings.superUserCanEditBills = superUserCanEditBills;
   if (superUserCanInviteMembers !== undefined) currentSettings.superUserCanInviteMembers = superUserCanInviteMembers;
@@ -6024,7 +6114,10 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
   const controls = loadAdminControls().controls;
   const emailKey = req.user.email ? req.user.email.toLowerCase() : "";
   const userControls = (emailKey && controls[emailKey]) || controls[req.user.id];
-  if (!userControls) return true; // if no explicit overrides, default to true
+  if (!userControls) {
+    if (actionKey === "canManageMessBranches") return false;
+    return true; // if no explicit overrides, default to true
+  }
 
   if (actionKey === "canEditBills" && userControls.canEditBills === false) return false;
   if (actionKey === "canManageMeals" && userControls.canManageMeals === false) return false;
@@ -6032,6 +6125,8 @@ function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boo
   if (actionKey === "canSuspendMembers" && userControls.canSuspendMembers === false) return false;
   if (actionKey === "canEditProfiles" && userControls.canEditProfiles === false) return false;
   if (actionKey === "canEditCycles" && userControls.canEditCycles === false) return false;
+  if (actionKey === "canManageMessIdentity" && userControls.canManageMessIdentity === false) return false;
+  if (actionKey === "canManageMessBranches" && userControls.canManageMessBranches !== true) return false;
 
   return true;
 }
@@ -6100,7 +6195,11 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
     return;
   }
   
-  const { userId, email, allowedMesses, canEditBills, canManageMeals, canAddMarkets, canSuspendMembers, canEditProfiles, canEditCycles } = req.body;
+  const { 
+    userId, email, allowedMesses, 
+    canEditBills, canManageMeals, canAddMarkets, canSuspendMembers, canEditProfiles, canEditCycles,
+    canManageMessIdentity, canManageMessBranches
+  } = req.body;
   if (!userId && !email) {
     res.status(400).json({ error: "User ID or Email is required." });
     return;
@@ -6114,7 +6213,9 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
     canAddMarkets: canAddMarkets !== false,
     canSuspendMembers: canSuspendMembers !== false,
     canEditProfiles: canEditProfiles !== false,
-    canEditCycles: canEditCycles !== false
+    canEditCycles: canEditCycles !== false,
+    canManageMessIdentity: canManageMessIdentity !== false,
+    canManageMessBranches: canManageMessBranches === true
   };
 
   if (userId) {
@@ -6169,8 +6270,8 @@ function saveMesses(messes: any) {
 }
 
 router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can list multiple messes." });
+  if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
+    res.status(403).json({ error: "Only an authorized Admin or Superuser can list messes." });
     return;
   }
   
@@ -6182,6 +6283,9 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
     const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
     if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
       messes = messes.filter((m: any) => userControls.allowedMesses.includes(m.id));
+    } else {
+      const homeMessId = (req.user as any).messId || "default";
+      messes = messes.filter((m: any) => m.id === homeMessId);
     }
   }
 
@@ -6203,20 +6307,34 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
     );
     return {
       ...m,
+      name: messSettings.messName || m.name,
       auditMode: active,
       auditModeExpiresAt: active ? messSettings.auditModeExpiresAt : null
     };
   });
 
+  const userSavedMess = getUserActiveMessId(req.user!.id, req.user!.email);
+  const currentContextMess = getActiveMessId();
+  let resolvedActiveMessId = currentContextMess;
+  if (!messes.some((m: any) => m.id === resolvedActiveMessId)) {
+    if (userSavedMess && messes.some((m: any) => m.id === userSavedMess)) {
+      resolvedActiveMessId = userSavedMess;
+    } else {
+      resolvedActiveMessId = messes[0]?.id || "default";
+    }
+  }
+
   res.json({
     messes: messesWithAuditStatus,
-    activeMessId: getActiveMessId()
+    activeMessId: resolvedActiveMessId
   });
 });
 
 router.post("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can create new messes." });
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const canCreate = isUltimateAdmin || (req.user!.role === UserRole.ADMIN && checkAdminPermission(req, "canManageMessBranches"));
+  if (!canCreate) {
+    res.status(403).json({ error: "Only the Platform Owner or authorized Admins with branch management permission can create new messes." });
     return;
   }
 
@@ -6228,16 +6346,100 @@ router.post("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Re
 
   const id = "mess-" + Math.random().toString(36).substring(2, 9);
   const data = loadMesses();
-  data.messes.push({ id, name });
+  data.messes.push({ id, name: name.trim() });
   saveMesses(data);
 
+  // If created by a branch admin, auto-add to their allowedMesses
+  if (!isUltimateAdmin) {
+    try {
+      const controlsData = loadAdminControls();
+      const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+      const userControls = (emailKey && controlsData.controls[emailKey]) || controlsData.controls[req.user!.id];
+      if (userControls) {
+        if (!userControls.allowedMesses) userControls.allowedMesses = [];
+        if (!userControls.allowedMesses.includes(id)) userControls.allowedMesses.push(id);
+        saveAdminControls(controlsData);
+      }
+    } catch (e) {
+      console.error("Failed to auto-assign new mess to admin:", e);
+    }
+  }
+
+  // Initialize initial settings file for the newly created mess
+  const initialSettings = {
+    messName: name.trim(),
+    logoText: name.trim(),
+    siteColor: "cyan",
+    fontSize: "normal",
+    fontStyle: "sans",
+    currency: "BDT",
+    allowFutureMarket: true,
+    allowPreviousMarket: true,
+    allowFutureMealPlanner: true,
+    allowPreviousMealPlanner: true
+  };
+  try {
+    writeAndPersistFile(`settings_${id}.json`, JSON.stringify(initialSettings, null, 2));
+  } catch (e) {
+    console.error(e);
+  }
+
   logAudit(req.user!.id, req.user!.nickname, "CREATE_MESS", "None", name, `Created new managed mess: ${name}`);
+  res.json({ success: true, messes: data.messes, newMessId: id });
+});
+
+router.put("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    res.status(400).json({ error: "Mess name is required." });
+    return;
+  }
+
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  if (!isUltimateAdmin) {
+    const adminControls = loadAdminControls().controls;
+    const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+    const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
+    const allowed = (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0)
+      ? userControls.allowedMesses
+      : [(req.user as any).messId || "default"];
+    if (!allowed.includes(id) || !checkAdminPermission(req, "canManageMessIdentity")) {
+      res.status(403).json({ error: "Access denied. You do not have permission to manage this mess." });
+      return;
+    }
+  }
+
+  const data = loadMesses();
+  const mess = data.messes.find((m: any) => m.id === id);
+  if (!mess) {
+    res.status(404).json({ error: "Mess not found." });
+    return;
+  }
+
+  const oldName = mess.name;
+  mess.name = name.trim();
+  saveMesses(data);
+
+  try {
+    const settingsFile = id === "default" ? "settings.json" : `settings_${id}.json`;
+    const fullPath = path.join(DB_DIR, settingsFile);
+    if (fs.existsSync(fullPath)) {
+      const s = JSON.parse(fs.readFileSync(fullPath, "utf-8"));
+      s.messName = name.trim();
+      writeAndPersistFile(settingsFile, JSON.stringify(s, null, 2));
+    }
+  } catch (e) {
+    console.error("Failed to sync settings file with new mess name:", e);
+  }
+
+  logAudit(req.user!.id, req.user!.nickname, "UPDATE_MESS", oldName, name.trim(), `Renamed mess ID ${id} from "${oldName}" to "${name.trim()}"`);
   res.json({ success: true, messes: data.messes });
 });
 
 router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can shift active mess scopes." });
+  if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
+    res.status(403).json({ error: "Only an authorized Admin or Superuser can shift active mess scopes." });
     return;
   }
 
@@ -6249,11 +6451,12 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
     const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
-    if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
-      if (!userControls.allowedMesses.includes(messId)) {
-        res.status(403).json({ error: "Access denied. You do not have permission to control this mess." });
-        return;
-      }
+    const allowed = (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0)
+      ? userControls.allowedMesses
+      : [(req.user as any).messId || "default"];
+    if (!allowed.includes(messId)) {
+      res.status(403).json({ error: "Access denied. You do not have permission to control this mess." });
+      return;
     }
   }
 
@@ -6265,7 +6468,10 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
     return;
   }
 
-  setActiveMessId(messId);
+  setUserActiveMessId(req.user!.id, req.user!.email, messId);
+  if (isUltimateAdmin) {
+    setActiveMessId(messId);
+  }
   preloadSettings(messId);
   logAudit(req.user!.id, req.user!.nickname, "SWITCH_MESS_SCOPE", "Previous", messId, `Switched current ERP database scope to: ${found.name}`);
   res.json({ success: true, activeMessId: messId, name: found.name });
@@ -6273,7 +6479,14 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
 
 router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can delete messes." });
+    res.status(403).json({ error: "Only an authorized Admin can delete messes." });
+    return;
+  }
+
+  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const canDelete = isUltimateAdmin || checkAdminPermission(req, "canManageMessBranches");
+  if (!canDelete) {
+    res.status(403).json({ error: "Only the Platform Owner or authorized Admins with branch management permission can delete messes." });
     return;
   }
 
@@ -6281,6 +6494,17 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
   if (id === "default") {
     res.status(400).json({ error: "Cannot delete the default main mess." });
     return;
+  }
+
+  if (!isUltimateAdmin) {
+    const adminControls = loadAdminControls().controls;
+    const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+    const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
+    const allowed = (userControls && userControls.allowedMesses) ? userControls.allowedMesses : [];
+    if (!allowed.includes(id)) {
+      res.status(403).json({ error: "Access denied. You do not manage this mess branch." });
+      return;
+    }
   }
 
   const data = loadMesses();

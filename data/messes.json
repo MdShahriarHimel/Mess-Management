@@ -1,0 +1,20 @@
+{
+  "messes": [
+    {
+      "id": "default",
+      "name": "Ababil Mess (Main)"
+    },
+    {
+      "id": "mess-a",
+      "name": "Mess A (Dhaka Branch)"
+    },
+    {
+      "id": "mess-b",
+      "name": "Mess B (Chittagong Branch)"
+    },
+    {
+      "id": "mess-c",
+      "name": "Mess C (Sylhet Branch)"
+    }
+  ]
+}

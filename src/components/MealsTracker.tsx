@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { 
   Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle 
 } from "lucide-react";
-import { Member, Meal, UserRole, RespectSenioritySettings } from "../types.js";
+import { Member, Meal, UserRole, RespectSenioritySettings, MemberStatus } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
@@ -53,9 +53,9 @@ export default function MealsTracker({
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY" || m.status === "PENDING").length > 0
-    ? members.filter(m => m.status === "ACTIVE" || m.status === "AWAY" || m.status === "PENDING")
-    : members.filter(m => m.status !== "ARCHIVED" && m.status !== "LEFT");
+  const activeMembers = members.filter(m => 
+    m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY || m.status === MemberStatus.PENDING
+  );
 
   const getActiveMealTypes = () => {
     if (Array.isArray(mealTypes) && mealTypes.length > 0) {

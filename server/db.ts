@@ -5,6 +5,9 @@
 
 import fs from 'fs';
 import crypto from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+export const messContext = new AsyncLocalStorage<{ messId: string }>();
 
 const lastSyncHashes = new Map<string, string>();
 
@@ -109,6 +112,7 @@ interface CredentialsSchema {
 }
 
 // Memory cache
+const dbCaches = new Map<string, DatabaseSchema>();
 let dbCache: DatabaseSchema | null = null;
 let credentialsCache: CredentialsSchema | null = null;
 
@@ -1036,6 +1040,10 @@ async function doActualSync(cache: DatabaseSchema) {
 
 export function getActiveMessId(): string {
   try {
+    const store = messContext.getStore();
+    if (store && store.messId) {
+      return store.messId;
+    }
     const ACTIVE_MESS_FILE = path.join(DB_DIR, "active_mess.json");
     if (fs.existsSync(ACTIVE_MESS_FILE)) {
       const data = fs.readFileSync(ACTIVE_MESS_FILE, "utf-8");
@@ -1047,9 +1055,34 @@ export function getActiveMessId(): string {
   return "default";
 }
 
+const USER_MESSES_FILE = path.join(DB_DIR, "user_active_messes.json");
+
+export function getUserActiveMessId(userId?: string, email?: string): string | null {
+  try {
+    if (fs.existsSync(USER_MESSES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(USER_MESSES_FILE, "utf-8"));
+      return (userId && data[userId]) || (email && data[email.toLowerCase()]) || null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+export function setUserActiveMessId(userId: string | undefined, email: string | undefined, messId: string) {
+  try {
+    let data: Record<string, string> = {};
+    if (fs.existsSync(USER_MESSES_FILE)) {
+      data = JSON.parse(fs.readFileSync(USER_MESSES_FILE, "utf-8"));
+    }
+    if (userId) data[userId] = messId;
+    if (email) data[email.toLowerCase()] = messId;
+    writeAndPersistFile("user_active_messes.json", JSON.stringify(data, null, 2));
+  } catch (e) {}
+}
+
 export function setActiveMessId(messId: string) {
   try {
     writeAndPersistFile("active_mess.json", JSON.stringify({ activeMessId: messId }, null, 2));
+    dbCaches.delete(messId);
     dbCache = null; // Clear cache to force reload on next loadDB
   } catch (e) {
     console.error(e);
@@ -1057,11 +1090,12 @@ export function setActiveMessId(messId: string) {
 }
 
 // Load database from file/memory
-export function loadDB(): DatabaseSchema {
-  if (!dbCache) {
-    console.warn("[TRACE G - loadDB()] dbCache is NULL or uninitialized! Triggering fallback file/seed load. Call stack:", new Error().stack?.split("\n").slice(1, 4).join(" | "));
+export function loadDB(explicitMessId?: string): DatabaseSchema {
+  const messId = explicitMessId || getActiveMessId() || "default";
+  let target = dbCaches.get(messId);
+
+  if (!target) {
     ensureDBDir();
-    const messId = getActiveMessId();
     const BACKUP_FILE = messId === "default"
       ? path.join(DB_DIR, "database_backup.json")
       : path.join(DB_DIR, `database_backup_${messId}.json`);
@@ -1069,21 +1103,23 @@ export function loadDB(): DatabaseSchema {
     if (fs.existsSync(BACKUP_FILE)) {
       try {
         const data = fs.readFileSync(BACKUP_FILE, "utf-8");
-        dbCache = JSON.parse(data);
+        target = JSON.parse(data);
       } catch (e) {
-        console.error("Error reading dynamic BACKUP_FILE", e);
+        console.error("Error reading dynamic BACKUP_FILE for mess " + messId, e);
       }
     }
     
-    if (!dbCache) {
-      dbCache = getInitialSeedData();
+    if (!target) {
+      target = getInitialSeedData();
     }
+    dbCaches.set(messId, target);
   }
 
-  if (dbCache && !dbCache.messRules) {
-    const messId = getActiveMessId();
-    dbCache.messRules = getDefaultMessRules(messId);
+  if (target && !target.messRules) {
+    target.messRules = getDefaultMessRules(messId);
   }
+
+  dbCache = target;
 
   // Helper to parse dates in Asia/Dhaka (+06:00) timezone
   const parseDhakaDate = (dateStr: string): Date => {
@@ -1285,31 +1321,24 @@ export function loadDB(): DatabaseSchema {
 let backupTimer: NodeJS.Timeout | null = null;
 let lastBackupCacheContent = "";
 
-export function saveDB() {
-  if (!dbCache) return;
-  const startTime = Date.now();
+export function saveDB(explicitMessId?: string) {
+  const messId = explicitMessId || getActiveMessId() || "default";
+  const target = dbCaches.get(messId) || dbCache;
+  if (!target) return;
+  
   // Trigger non-blocking async synchronization in the background
-  syncCacheToPostgresDirectly(dbCache);
+  syncCacheToPostgresDirectly(target);
 
-  if (backupTimer) return;
-  backupTimer = setTimeout(() => {
-    backupTimer = null;
-    if (!dbCache) return;
-    try {
-      const messId = getActiveMessId();
-      const backupFilename = messId === "default"
-        ? "database_backup.json"
-        : `database_backup_${messId}.json`;
-        
-      const content = JSON.stringify(dbCache);
-      if (content !== lastBackupCacheContent) {
-        writeAndPersistFile(backupFilename, content);
-        lastBackupCacheContent = content;
-      }
-    } catch (e) {
-      console.error("Error writing dynamic backup file:", e);
-    }
-  }, 2000);
+  try {
+    const backupFilename = messId === "default"
+      ? "database_backup.json"
+      : `database_backup_${messId}.json`;
+      
+    const content = JSON.stringify(target);
+    writeAndPersistFile(backupFilename, content);
+  } catch (e) {
+    console.error("Error writing dynamic backup file for mess " + messId, e);
+  }
 }
 
 // Load credentials (legacy fallback)

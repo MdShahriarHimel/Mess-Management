@@ -21,6 +21,8 @@ interface AdminControlConfig {
   canSuspendMembers: boolean;
   canEditProfiles: boolean;
   canEditCycles: boolean;
+  canManageMessIdentity?: boolean;
+  canManageMessBranches?: boolean;
 }
 
 export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminControlsPanelProps) {
@@ -39,6 +41,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
   const [canSuspendMembers, setCanSuspendMembers] = useState(true);
   const [canEditProfiles, setCanEditProfiles] = useState(true);
   const [canEditCycles, setCanEditCycles] = useState(true);
+  const [canManageMessIdentity, setCanManageMessIdentity] = useState(true);
+  const [canManageMessBranches, setCanManageMessBranches] = useState(false);
 
   // Fetch all members to find other admins across all messes
   const fetchData = async () => {
@@ -85,7 +89,9 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
       canAddMarkets: true,
       canSuspendMembers: true,
       canEditProfiles: true,
-      canEditCycles: true
+      canEditCycles: true,
+      canManageMessIdentity: true,
+      canManageMessBranches: false
     };
 
     setAllowedMesses(config.allowedMesses || []);
@@ -95,6 +101,8 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
     setCanSuspendMembers(config.canSuspendMembers !== false);
     setCanEditProfiles(config.canEditProfiles !== false);
     setCanEditCycles(config.canEditCycles !== false);
+    setCanManageMessIdentity(config.canManageMessIdentity !== false);
+    setCanManageMessBranches(config.canManageMessBranches === true);
   };
 
   const handleAdminChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -139,7 +147,9 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
           canAddMarkets,
           canSuspendMembers,
           canEditProfiles,
-          canEditCycles
+          canEditCycles,
+          canManageMessIdentity,
+          canManageMessBranches
         })
       });
 
@@ -349,6 +359,40 @@ export function AdminControlsPanel({ messes, sessionToken, isDarkMode }: AdminCo
                   <div>
                     <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Edit Cycles (Months)</p>
                     <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow creating, updating, locking, unlocking, or deleting monthly cycles.</p>
+                  </div>
+                </label>
+
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-cyan-500/20 hover:bg-slate-950/30" 
+                    : "bg-cyan-50/50 border-cyan-200 hover:bg-cyan-50"
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={canManageMessIdentity}
+                    onChange={(e) => setCanManageMessIdentity(e.target.checked)}
+                    className="accent-cyan-400 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-cyan-300" : "text-cyan-800"}`}>Can Manage Mess Identity & Appearance</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>Allow setting Mess name, branch location, logo text, welcome banner, announcement notice, and visual styling for assigned messes.</p>
+                  </div>
+                </label>
+
+                <label className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+                  isDarkMode 
+                    ? "bg-slate-950/15 border-slate-850/50 hover:bg-slate-950/30" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={canManageMessBranches}
+                    onChange={(e) => setCanManageMessBranches(e.target.checked)}
+                    className="accent-cyan-400 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <p className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>Can Create / Delete Mess Branches</p>
+                    <p className={`text-[9px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>Allow provisioning new mess branches or deleting assigned mess branches.</p>
                   </div>
                 </label>
               </div>

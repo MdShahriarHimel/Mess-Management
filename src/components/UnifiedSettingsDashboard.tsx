@@ -108,6 +108,11 @@ interface UnifiedSettingsDashboardProps {
   setRespectSenioritySettings?: React.Dispatch<React.SetStateAction<RespectSenioritySettings>>;
   previewTemplateId?: string | null;
   setPreviewTemplateId?: (id: string | null) => void;
+  messName?: string;
+  setMessName?: (val: string) => void;
+  logoText?: string;
+  setLogoText?: (val: string) => void;
+  activeMessId?: string;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -180,7 +185,12 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   typographySettings = {},
   setTypographySettings = (_val?: any) => {},
   previewTemplateId: propPreviewTemplateId,
-  setPreviewTemplateId: propSetPreviewTemplateId
+  setPreviewTemplateId: propSetPreviewTemplateId,
+  messName = "",
+  setMessName,
+  logoText = "",
+  setLogoText,
+  activeMessId = "default"
 }) => {
   const respectSenioritySettings = propRespectSenioritySettings;
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
@@ -538,6 +548,92 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     }
   }, [erpBrandingState]);
 
+  // Active Mess Identity State (Level 2 - Branch Scope)
+  const [localMessName, setLocalMessName] = useState(messName || "");
+  const [localMessLocation, setLocalMessLocation] = useState("");
+  const [localMessLogoText, setLocalMessLogoText] = useState(logoText || "");
+  const [localMessLogoIcon, setLocalMessLogoIcon] = useState("Building2");
+  const [localMessWelcomeMessage, setLocalMessWelcomeMessage] = useState(homeCustomization?.welcomeTitle || "");
+  const [localMessAnnouncement, setLocalMessAnnouncement] = useState("");
+  const [isSavingMessIdentity, setIsSavingMessIdentity] = useState(false);
+  const [loadingMessSettings, setLoadingMessSettings] = useState(false);
+
+  // Fetch active mess settings
+  const fetchActiveMessSettings = async () => {
+    if (!effectiveAuthToken) return;
+    setLoadingMessSettings(true);
+    try {
+      const res = await fetch("/api/settings", {
+        headers: { Authorization: `Bearer ${effectiveAuthToken}` }
+      });
+      if (res.ok) {
+        const s = await res.json();
+        if (s.messName) setLocalMessName(s.messName);
+        if (s.location !== undefined) setLocalMessLocation(s.location);
+        if (s.logoText) setLocalMessLogoText(s.logoText);
+        if (s.logoIcon) setLocalMessLogoIcon(s.logoIcon);
+        if (s.welcomeMessage) setLocalMessWelcomeMessage(s.welcomeMessage);
+        else if (s.homeCustomization?.welcomeTitle) setLocalMessWelcomeMessage(s.homeCustomization.welcomeTitle);
+        if (s.announcement !== undefined) setLocalMessAnnouncement(s.announcement);
+      }
+    } catch (e) {
+      console.error("Failed to load active mess settings:", e);
+    } finally {
+      setLoadingMessSettings(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === "branding" && effectiveAuthToken) {
+      fetchActiveMessSettings();
+    }
+  }, [activeSubTab, activeMessId, effectiveAuthToken]);
+
+  useEffect(() => {
+    if (messName) setLocalMessName(messName);
+  }, [messName]);
+
+  useEffect(() => {
+    if (logoText) setLocalMessLogoText(logoText);
+  }, [logoText]);
+
+  const handleSaveMessIdentity = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!localMessName.trim()) {
+      showStatus("error", "Mess name cannot be empty.");
+      return;
+    }
+    setIsSavingMessIdentity(true);
+    try {
+      const updates = {
+        messName: localMessName.trim(),
+        location: localMessLocation.trim(),
+        logoText: localMessLogoText.trim() || localMessName.trim(),
+        logoIcon: localMessLogoIcon,
+        welcomeMessage: localMessWelcomeMessage,
+        announcement: localMessAnnouncement,
+        homeCustomization: {
+          ...(homeCustomization || {}),
+          welcomeTitle: localMessWelcomeMessage
+        }
+      };
+      const ok = await handleUpdateSettings(updates);
+      if (ok) {
+        if (setMessName) setMessName(localMessName.trim());
+        if (setLogoText) setLogoText(localMessLogoText.trim() || localMessName.trim());
+        showStatus("success", "Mess Identity & Branding saved successfully!");
+        window.dispatchEvent(new CustomEvent("app-global-refresh"));
+      } else {
+        showStatus("error", "Failed to save mess identity. Ensure you have admin permissions.");
+      }
+    } catch (err) {
+      console.error(err);
+      showStatus("error", "Error saving mess identity.");
+    } finally {
+      setIsSavingMessIdentity(false);
+    }
+  };
+
   // Level 1: Credit Editor local state
   const [creditText, setCreditText] = useState(creditConfig?.text || "");
   const [creditShow, setCreditShow] = useState(creditConfig?.showCreditPanel || false);
@@ -780,7 +876,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   // Tab definitions
   const tabs = [
     { id: "dashboard-overview", label: "Dashboard Overview", role: "admin", icon: "LayoutDashboard" },
-    { id: "branding", label: "ERP Identity", role: "ultimate-admin", icon: "Sparkles" },
+    { id: "branding", label: isUltimateAdmin ? "ERP & Mess Identity" : "Mess Identity & Branding", role: "admin", icon: "Building" },
     { id: "credit", label: "Credit Panel", role: "ultimate-admin", icon: "Heart" },
     { id: "theme-library", label: "Theme Library", role: "admin", icon: "Palette" },
     { id: "login-customizer", label: "Login Engine", role: "ultimate-admin", icon: "LayoutTemplate" },
@@ -1136,158 +1232,248 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             </div>
           )}
 
-          {/* 1. ERP BRANDING (Ultimate Admin only) */}
+          {/* 1. MESS IDENTITY & ERP BRANDING */}
           {activeSubTab === "branding" && filteredTabs.some(t => t.id === "branding") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
             } space-y-6 text-left`}>
-              <div>
-                <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
-                  <LucideIcons.Sparkles size={18} className="text-cyan-400" />
-                  ERP Identity & Global Customization (Level 1)
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Control the global theme, font, and layout structure that acts as the starting point for all separate Mess environments.
-                </p>
+              {/* Header with Active Scope Info */}
+              <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-slate-800/60">
+                <div>
+                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
+                    <LucideIcons.Building size={20} className="text-cyan-400" />
+                    Mess Identity & Branding (মেস পরিচিতি ও ব্র্যান্ডিং)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Configure this mess branch's official name, location, logo text, brand icon, welcome banner, and notice announcement.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold shadow-sm">
+                  <LucideIcons.ShieldCheck size={14} className="text-cyan-400" />
+                  <span>Active Mess Scope: {localMessName || "Current Mess"} ({activeMessId || "default"})</span>
+                </div>
               </div>
 
-              {!isUltimateAdmin && (
-                <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-300 flex items-start gap-3">
-                  <LucideIcons.Lock className="shrink-0 mt-0.5" size={16} />
-                  <div className="text-xs">
-                    <span className="font-bold block mb-0.5">🔒 Exclusive Level 1 Access Control</span>
-                    Only the Ultimate Admin (Owner) can modify these values. Admins, Super Users, and Managers may only view them.
+              {/* Section 1: Active Mess Branch Identity (Available to all Mess Admins & Superusers) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <LucideIcons.Sliders size={14} />
+                    Branch Identity Settings (শাখা পরিচিতি)
+                  </h4>
+                  <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/40 flex items-center gap-1">
+                    <LucideIcons.CheckCircle size={10} /> Multi-Tenant Isolated
+                  </span>
+                </div>
+
+                <form onSubmit={handleSaveMessIdentity} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-cyan-400 uppercase block">
+                        Mess Full Name (মেসের পূর্ণ নাম) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={localMessName}
+                        onChange={(e) => setLocalMessName(e.target.value)}
+                        placeholder="e.g. রংপুর মেস / Ababil Mess"
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600"
+                      />
+                      <span className="text-[10px] text-slate-500">মেসের অফিসিয়াল নাম যা সদস্য ও রিপোর্টে দেখা যাবে।</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-cyan-400 uppercase block">
+                        Branch Location / Subtitle (শাখা / অবস্থান)
+                      </label>
+                      <input
+                        type="text"
+                        value={localMessLocation}
+                        onChange={(e) => setLocalMessLocation(e.target.value)}
+                        placeholder="e.g. ধাপ, রংপুর / নিউ মার্কেট, ঢাকা"
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600"
+                      />
+                      <span className="text-[10px] text-slate-500">মেস শাখার অবস্থান বা উপ-শিরোনাম।</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-cyan-400 uppercase block">
+                        Header Logo Text (লোগো টেক্সট / সংক্ষিপ্ত নাম)
+                      </label>
+                      <input
+                        type="text"
+                        value={localMessLogoText}
+                        onChange={(e) => setLocalMessLogoText(e.target.value)}
+                        placeholder="e.g. RANGPUR / ABABIL"
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600"
+                      />
+                      <span className="text-[10px] text-slate-500">টপ নেভিগেশন বারে প্রদর্শিত লোগো টেক্সট।</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-cyan-400 uppercase block">
+                          Brand Icon (ব্র্যান্ড আইকন)
+                        </label>
+                        <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                          Selected: 
+                          <span className="text-cyan-400 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
+                            {localMessLogoIcon}
+                          </span>
+                        </span>
+                      </div>
+                      <select
+                        value={localMessLogoIcon}
+                        onChange={(e) => setLocalMessLogoIcon(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      >
+                        <option value="Building2">Apartment / Residence 🏬</option>
+                        <option value="Building">Building 🏢</option>
+                        <option value="Home">Home 🏠</option>
+                        <option value="Hotel">Hostel / Mess Living 🏨</option>
+                        <option value="Landmark">Ecosystem Landmark 🏛️</option>
+                        <option value="Sparkles">Sparkles ✨</option>
+                        <option value="Shield">Shield 🛡️</option>
+                        <option value="Crown">Crown 👑</option>
+                        <option value="Flame">Flame 🔥</option>
+                        <option value="Cpu">CPU 💻</option>
+                      </select>
+                      <span className="text-[10px] text-slate-500">লোগোর পাশে প্রদর্শিত প্রতীক।</span>
+                    </div>
+
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-[10px] font-bold text-cyan-400 uppercase block">
+                        Welcome Title Banner (হোম পেজের ওয়েলকাম ব্যানার)
+                      </label>
+                      <input
+                        type="text"
+                        value={localMessWelcomeMessage}
+                        onChange={(e) => setLocalMessWelcomeMessage(e.target.value)}
+                        placeholder="e.g. Welcome to Rangpur Mess Family"
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600"
+                      />
+                      <span className="text-[10px] text-slate-500">হোম পেজে সদস্যদের স্বাগত জানানোর প্রধান ব্যানার টেক্সট।</span>
+                    </div>
+
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-[10px] font-bold text-cyan-400 uppercase block">
+                        Mess Announcement & Notice (মেসের ঘোষণা ও নোটিশ)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={localMessAnnouncement}
+                        onChange={(e) => setLocalMessAnnouncement(e.target.value)}
+                        placeholder="e.g. সকল সদস্যের অবগতির জন্য জানানো যাচ্ছে যে..."
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white placeholder-slate-600 resize-none"
+                      />
+                      <span className="text-[10px] text-slate-500">মেস ড্যাশবোর্ডে প্রদর্শিত সার্বক্ষণিক জরুরি নোটিশ বা বার্তা।</span>
+                    </div>
                   </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                      <LucideIcons.Info size={13} className="text-cyan-400" />
+                      যেকোনো সময় এই মেসের নাম ও লোগো পরিবর্তন করা যাবে।
+                    </p>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingMessIdentity || loadingMessSettings}
+                      className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
+                    >
+                      <LucideIcons.Save size={14} />
+                      <span>{isSavingMessIdentity ? "SAVING IDENTITY..." : "SAVE MESS IDENTITY & BRANDING"}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Section 2: Platform-Wide Developer Controls (Owner HIMEL Only) */}
+              {isUltimateAdmin ? (
+                <div className="mt-8 pt-6 border-t border-slate-800/80 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <LucideIcons.Sparkles size={14} />
+                      Central Platform Engine & Developer Branding (Level 1 - Owner Only)
+                    </h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Control the global ecosystem branding, developer signatures, and multi-tenant background audio.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Global Platform Name</label>
+                      <input
+                        type="text"
+                        value={localErpName}
+                        onChange={(e) => setLocalErpName(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Global Announcement</label>
+                      <input
+                        type="text"
+                        value={localGlobalAnnouncement}
+                        onChange={(e) => setLocalGlobalAnnouncement(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Developer Information</label>
+                      <input
+                        type="text"
+                        value={localDeveloperInfo}
+                        onChange={(e) => setLocalDeveloperInfo(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Support Info</label>
+                      <input
+                        type="text"
+                        value={localSupportInfo}
+                        onChange={(e) => setLocalSupportInfo(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">Copyright Text</label>
+                      <input
+                        type="text"
+                        value={localCopyright}
+                        onChange={(e) => setLocalCopyright(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-orange-400 uppercase block">ERP Version</label>
+                      <input
+                        type="text"
+                        value={localErpVersion}
+                        onChange={(e) => setLocalErpVersion(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 p-4 rounded-xl border border-slate-800/60 bg-slate-950/30 text-xs text-slate-400 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <LucideIcons.Cpu size={16} className="text-cyan-400" />
+                    <span>Platform Core Engine: <strong>Mess ERP Ecosystem v2.5.4</strong></span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">Platform Developer & Architecture by <strong>HIMEL</strong></span>
                 </div>
               )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">ERP Name</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localErpName}
-                    onChange={(e) => setLocalErpName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">ERP Logo (Header Text)</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localLogoText}
-                    onChange={(e) => setLocalLogoText(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">Welcome Title Banner</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localWelcomeMessage}
-                    onChange={(e) => setLocalWelcomeMessage(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">Global Announcement Message</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localGlobalAnnouncement}
-                    onChange={(e) => setLocalGlobalAnnouncement(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-orange-400 uppercase block">Logo Brand Icon</label>
-                    <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
-                      Preview: 
-                      <span className="text-cyan-400 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
-                        {localLogoIcon === "Home" && "🏠 Home"}
-                        {localLogoIcon === "Building" && "🏢 Building"}
-                        {(localLogoIcon === "Building2" || localLogoIcon === "Apartment") && "🏬 Apartment"}
-                        {localLogoIcon === "Hotel" && "🏨 Hostel"}
-                        {localLogoIcon === "Landmark" && "🏛️ Landmark"}
-                        {localLogoIcon === "Sparkles" && "✨ Sparkles"}
-                        {localLogoIcon === "Shield" && "🛡️ Shield"}
-                        {localLogoIcon === "Crown" && "👑 Crown"}
-                        {localLogoIcon === "Flame" && "🔥 Flame"}
-                        {localLogoIcon === "Cpu" && "💻 CPU"}
-                      </span>
-                    </span>
-                  </div>
-                  <select
-                    disabled={!isUltimateAdmin}
-                    value={localLogoIcon}
-                    onChange={(e) => setLocalLogoIcon(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  >
-                    <option value="Home">Home 🏠</option>
-                    <option value="Building">Building 🏢</option>
-                    <option value="Building2">Apartment / Residence 🏬</option>
-                    <option value="Hotel">Hostel / Mess Living 🏨</option>
-                    <option value="Landmark">Ecosystem Landmark 🏛️</option>
-                    <option value="Sparkles">Sparkles ✨</option>
-                    <option value="Shield">Shield 🛡️</option>
-                    <option value="Crown">Crown 👑</option>
-                    <option value="Flame">Flame 🔥</option>
-                    <option value="Cpu">CPU 💻</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">Developer Information</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localDeveloperInfo}
-                    onChange={(e) => setLocalDeveloperInfo(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">Support Info</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localSupportInfo}
-                    onChange={(e) => setLocalSupportInfo(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">Copyright Text</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localCopyright}
-                    onChange={(e) => setLocalCopyright(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-orange-400 uppercase block">ERP Version</label>
-                  <input
-                    type="text"
-                    disabled={!isUltimateAdmin}
-                    value={localErpVersion}
-                    onChange={(e) => setLocalErpVersion(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none disabled:opacity-50 text-white"
-                  />
-                </div>
-              </div>
 
               {/* Background Audio Settings Dashboard (Ultimate Admin Only) */}
               {isUltimateAdmin && (

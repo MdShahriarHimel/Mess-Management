@@ -1,0 +1,13 @@
+{
+  "messName": "Mess C (Sylhet Branch)",
+  "logoText": "Mess C (Sylhet Branch)",
+  "siteColor": "cyan",
+  "fontSize": "normal",
+  "fontStyle": "sans",
+  "isDarkMode": false,
+  "defaultMode": "light",
+  "allowFutureMarket": true,
+  "allowPreviousMarket": true,
+  "allowFutureMealPlanner": true,
+  "allowPreviousMealPlanner": true
+}

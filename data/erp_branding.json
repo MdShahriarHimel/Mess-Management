@@ -1,7 +1,7 @@
 {
-  "erpName": "আবাবিল মেস",
-  "logoText": "আবাবিল মেস",
-  "logoIcon": "Sparkles",
+  "erpName": "Mess ERP Ecosystem",
+  "logoText": "MESS ERP",
+  "logoIcon": "Building2",
   "brandColors": {
     "primary": "#22d3ee",
     "secondary": "#0f172a"
@@ -16,8 +16,8 @@
     "notices"
   ],
   "erpVersion": "v2.5.4",
-  "copyright": "Copyright © 2026 Mess ERP (HIMEL)",
-  "supportInfo": "@himel",
+  "copyright": "Copyright © 2026 Mess ERP",
+  "supportInfo": "Ababil team",
   "developerInfo": "HIMEL",
   "creditConfig": {
     "showCreditPanel": false,
@@ -32,8 +32,8 @@
     "emojis": "💖,✨,🚀,🌟",
     "link": ""
   },
-  "globalAnnouncement": "ঘুরে ঘুরে ফাংশনগুলো শিখে নিয়েন",
-  "welcomeMessage": "Learn Something good",
+  "globalAnnouncement": "Welcome to Mess ERP ecosystem!",
+  "welcomeMessage": "Welcome to SUST Bachelor Cooperative Ecosystem",
   "themeLibrary": [],
   "appearanceTemplates": [],
   "animationLibrary": [],
@@ -58,13 +58,8 @@
     "futureModules": "manual"
   },
   "backgroundAudio": {
-    "globalUrl": "https://www.youtube.com/shorts/phLHC1c_AKg",
-    "globalEnabled": true,
-    "messOverrides": {
-      "default": {
-        "url": "https://www.youtube.com/shorts/phLHC1c_AKg",
-        "enabled": true
-      }
-    }
+    "globalUrl": "https://youtu.be/RgKAFK5djSk?list=RDApXoWvfEYVU",
+    "globalEnabled": false,
+    "messOverrides": {}
   }
 }
