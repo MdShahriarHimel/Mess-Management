@@ -117,17 +117,19 @@ export const THEME_TEMPLATES: ThemeTemplate[] = [
       .theme-glassmorphism .rounded-2xl,
       .theme-glassmorphism aside,
       .theme-glassmorphism header {
-        background: rgba(30, 41, 59, 0.22) !important;
+        background: rgba(15, 23, 42, 0.78) !important;
         backdrop-filter: blur(25px) saturate(200%) !important;
         -webkit-backdrop-filter: blur(25px) saturate(200%) !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
       }
       .light-mode-root.theme-glassmorphism .glass-panel,
-      .light-mode-root.theme-glassmorphism .rounded-2xl {
-        background: rgba(255, 255, 255, 0.55) !important;
-        border: 1px solid rgba(255, 255, 255, 0.45) !important;
-        color: #1e293b !important;
+      .light-mode-root.theme-glassmorphism .rounded-2xl,
+      .light-mode-root.theme-glassmorphism aside,
+      .light-mode-root.theme-glassmorphism header {
+        background: rgba(255, 255, 255, 0.92) !important;
+        border: 1px solid rgba(226, 232, 240, 0.9) !important;
+        color: #0f172a !important;
         backdrop-filter: blur(25px) saturate(200%) !important;
         -webkit-backdrop-filter: blur(25px) saturate(200%) !important;
         box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.08) !important;
@@ -1316,8 +1318,18 @@ export const THEME_TEMPLATES: ThemeTemplate[] = [
       }
       .light-mode-root.theme-terminal-theme .glass-panel,
       .light-mode-root.theme-terminal-theme .rounded-2xl {
-        background-color: #000000 !important;
-        border-color: #22c55e !important;
+        background-color: #f0fdf4 !important;
+        border-color: #15803d !important;
+        color: #14532d !important;
+      }
+      .light-mode-root.theme-terminal-theme button,
+      .light-mode-root.theme-terminal-theme input,
+      .light-mode-root.theme-terminal-theme select {
+        background-color: #ffffff !important;
+        border: 2px solid #16a34a !important;
+        color: #14532d !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
       }
     `
   }

@@ -1259,13 +1259,13 @@ export default function MarketLogs({
                                         <span className={`text-[11px] sm:text-xs font-black ${
                                           cell.inCycle 
                                             ? hasMarketPushed
-                                              ? "text-emerald-400 dark:text-emerald-300 font-black"
+                                              ? (isDarkMode ? "text-emerald-300 font-black" : "text-emerald-700 font-black")
                                               : isToday 
-                                                ? "text-cyan-400 font-black" 
+                                                ? (isDarkMode ? "text-cyan-300 font-black" : "text-cyan-600 font-black") 
                                                 : isWeekend
-                                                  ? "text-rose-500 dark:text-rose-400 font-bold"
-                                                  : "text-slate-400 dark:text-slate-300 font-bold"
-                                            : "text-slate-600 dark:text-slate-700"
+                                                  ? (isDarkMode ? "text-rose-400 font-bold" : "text-rose-600 font-bold")
+                                                  : (isDarkMode ? "text-slate-100 font-black" : "text-slate-800 font-black")
+                                            : (isDarkMode ? "text-slate-600 font-medium" : "text-slate-400 font-medium")
                                         }`}>
                                           {cell.dayNum}
                                         </span>
@@ -1289,7 +1289,11 @@ export default function MarketLogs({
                                                 return (
                                                   <div
                                                     key={m.id}
-                                                    className="text-[9.5px] sm:text-[10.5px] md:text-xs font-black leading-tight px-1.5 py-0.5 rounded-md bg-emerald-500/30 dark:bg-emerald-500/40 text-emerald-950 dark:text-emerald-100 border border-emerald-500/60 shadow-sm text-center break-words"
+                                                    className={`text-[9.5px] sm:text-[10.5px] md:text-xs font-black leading-tight px-1.5 py-0.5 rounded-md shadow-sm text-center break-words ${
+                                                      isDarkMode 
+                                                        ? "bg-emerald-950/80 text-emerald-200 border border-emerald-400/60" 
+                                                        : "bg-emerald-100 text-emerald-950 border border-emerald-400"
+                                                    }`}
                                                     title={`Market done by: ${buyerMember?.name || buyerName} (৳${m.amount})`}
                                                   >
                                                     {buyerName}
@@ -1306,7 +1310,11 @@ export default function MarketLogs({
                                                 return (
                                                   <div
                                                     key={d.id}
-                                                    className="text-[9px] sm:text-[10px] font-bold leading-tight px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-center break-words"
+                                                    className={`text-[9px] sm:text-[10px] font-bold leading-tight px-1 py-0.5 rounded text-center break-words ${
+                                                      isDarkMode 
+                                                        ? "bg-emerald-950/70 text-emerald-300 border border-emerald-400/40" 
+                                                        : "bg-emerald-50 text-emerald-900 border border-emerald-300"
+                                                    }`}
                                                     title={`Assigned Duty: ${assignedMember?.name || nickName}`}
                                                   >
                                                     {nickName}
@@ -1323,7 +1331,11 @@ export default function MarketLogs({
                                                 return (
                                                   <div 
                                                     key={d.id}
-                                                    className="text-[9.5px] sm:text-[10.5px] md:text-xs leading-tight px-1.5 py-0.5 rounded-md bg-cyan-500/20 dark:bg-cyan-500/30 text-cyan-800 dark:text-cyan-200 font-extrabold border border-cyan-500/30 shadow-sm text-center break-words tracking-tight"
+                                                    className={`text-[9.5px] sm:text-[10.5px] md:text-xs leading-tight px-1.5 py-0.5 rounded-md font-black shadow-sm text-center break-words tracking-tight ${
+                                                      isDarkMode
+                                                        ? "bg-cyan-950/85 text-cyan-200 border border-cyan-400/60"
+                                                        : "bg-cyan-100 text-cyan-950 border border-cyan-300"
+                                                    }`}
                                                     title={`${assignedMember?.name || nickName}: ${d.task || "Market Duty"}`}
                                                   >
                                                     {nickName}
@@ -1366,14 +1378,14 @@ export default function MarketLogs({
           isDarkMode ? "bg-slate-900/50 border-cyan-500/10 text-white shadow-xl" : "bg-white border-slate-200 shadow-md text-slate-800"
         }`} id="market-expenses-panel">
           <h3 className="text-sm font-bold font-display mb-4 flex items-center gap-1.5">
-            <ShoppingCart size={16} className="text-cyan-400" />
-            Voucher History
+            <ShoppingCart size={16} className={isDarkMode ? "text-cyan-400" : "text-cyan-600"} />
+            <span className={isDarkMode ? "text-white" : "text-slate-900"}>Voucher History</span>
           </h3>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
+                <tr className={`border-b ${isDarkMode ? "bg-slate-950/60 border-slate-800 text-cyan-300" : "bg-slate-100 border-slate-200 text-slate-800"} font-extrabold`}>
                   <th className="py-3 px-4">Purchaser</th>
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Items / Details</th>
@@ -1385,7 +1397,7 @@ export default function MarketLogs({
               <tbody className="divide-y divide-cyan-500/5">
                 {markets.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-6 text-center text-slate-500">No market expenses logged yet.</td>
+                    <td colSpan={6} className={`py-6 text-center ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>No market expenses logged yet.</td>
                   </tr>
                 ) : (
                   [...markets].sort((a, b) => {
@@ -1404,7 +1416,7 @@ export default function MarketLogs({
                     const buyer = members.find(u => u.id === m.memberId);
                     return (
                       <tr key={m.id} className="hover:bg-cyan-500/5">
-                        <td className="py-3.5 px-4 font-bold text-cyan-400">
+                        <td className={`py-3.5 px-4 font-bold ${isDarkMode ? "text-cyan-300" : "text-slate-900"}`}>
                           <div className="flex items-center gap-2">
                             {buyer?.photo ? (
                               <img 
@@ -1430,41 +1442,67 @@ export default function MarketLogs({
                         </td>
                         <td className="py-3.5 px-4 font-mono text-xs">
                           {m.coveredDates && Array.isArray(m.coveredDates) && m.coveredDates.length > 0 ? (
-                            <div className="flex flex-wrap gap-1 max-w-[120px]">
+                            <div className="flex flex-wrap gap-1.5 max-w-[130px]">
                               {m.coveredDates.map((d: string) => {
                                 const dayOnly = d.split("-")[2] || d;
                                 return (
-                                  <span key={d} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-150 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700" title={d}>
+                                  <span 
+                                    key={d} 
+                                    className={`inline-flex items-center justify-center min-w-[26px] px-2 py-0.5 rounded text-[11px] font-black tracking-wide border shadow-sm ${
+                                      isDarkMode 
+                                        ? "bg-slate-800/90 text-cyan-300 border-cyan-500/40" 
+                                        : "bg-slate-100 text-slate-900 border-slate-300"
+                                    }`} 
+                                    title={d}
+                                  >
                                     {dayOnly}
                                   </span>
                                 );
                               })}
                             </div>
                           ) : (
-                            m.date
+                            <span 
+                              className={`inline-flex items-center justify-center min-w-[26px] px-2 py-0.5 rounded text-[11px] font-black tracking-wide border shadow-sm ${
+                                isDarkMode 
+                                  ? "bg-slate-800/90 text-cyan-300 border-cyan-500/40" 
+                                  : "bg-slate-100 text-slate-900 border-slate-300"
+                              }`}
+                            >
+                              {m.date ? (m.date.split("-")[2] || m.date) : "—"}
+                            </span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 truncate max-w-[150px]" title={m.description}>
-                          <div className="font-semibold">{m.description || "Daily mess grocery"}</div>
+                          <div className={`font-semibold ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}>{m.description || "Daily mess grocery"}</div>
                           {m.quantity && (
-                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/10">
+                            <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              isDarkMode 
+                                ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30" 
+                                : "bg-cyan-50 text-cyan-800 border border-cyan-200"
+                            }`}>
                               Qty: {m.quantity}
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4 text-right font-bold font-mono">
+                        <td className={`py-3.5 px-4 text-right font-black font-mono text-sm ${
+                          isDarkMode ? "text-emerald-300" : "text-emerald-700"
+                        }`}>
                           ৳ {m.amount}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           {m.receiptUrl ? (
                             <button
                               onClick={() => { setActiveReceipt(m.receiptUrl); }}
-                              className="px-2 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/30 text-cyan-400 font-bold text-[10px] cursor-pointer inline-flex items-center gap-1 border border-cyan-500/20"
+                              className={`px-2 py-1 rounded font-bold text-[10px] cursor-pointer inline-flex items-center gap-1 border transition-colors ${
+                                isDarkMode 
+                                  ? "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40" 
+                                  : "bg-cyan-100 hover:bg-cyan-200 text-cyan-800 border-cyan-300"
+                              }`}
                             >
                               <Eye size={10} /> VIEW
                             </button>
                           ) : (
-                            <span className="text-slate-600 font-mono text-[10px]">None</span>
+                            <span className={`font-mono text-[11px] font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>None</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right">

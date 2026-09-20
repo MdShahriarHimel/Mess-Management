@@ -3944,19 +3944,27 @@ export default function App() {
   };
 
   // Contrast YIQ calculator for ensuring text contrast dynamically on any background!
-  const getContrastColor = (hexcolor: string, lightColor = "#ffffff", darkColor = "#0f172a") => {
-    if (!hexcolor) return darkColor;
-    let r, g, b;
-    let hex = hexcolor.trim().replace("#", "");
-    if (hex.length === 3) {
-      hex = hex.split("").map(c => c + c).join("");
-    }
-    if (hex.length === 6) {
-      r = parseInt(hex.substring(0, 2), 16);
-      g = parseInt(hex.substring(2, 4), 16);
-      b = parseInt(hex.substring(4, 6), 16);
+  const getContrastColor = (colorStr: string, lightColor = "#ffffff", darkColor = "#0f172a") => {
+    if (!colorStr) return darkColor;
+    let r = 255, g = 255, b = 255;
+    const str = colorStr.trim();
+    if (str.startsWith("rgb")) {
+      const match = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if (match) {
+        r = parseInt(match[1], 10);
+        g = parseInt(match[2], 10);
+        b = parseInt(match[3], 10);
+      }
     } else {
-      return darkColor;
+      let hex = str.replace("#", "");
+      if (hex.length === 3) {
+        hex = hex.split("").map(c => c + c).join("");
+      }
+      if (hex.length >= 6) {
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      }
     }
     const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
     return (yiq >= 128) ? darkColor : lightColor;
@@ -4147,8 +4155,8 @@ export default function App() {
         style={getThemeBgStyle()}
         className={`min-h-screen transition-all duration-300 flex flex-col md:flex-row theme-${currentTemplateId} ${
           activeIsDarkMode
-            ? "text-white font-sans " + (theme === "default" || !theme ? "bg-slate-950" : "")
-            : "text-slate-900 font-sans light-mode-root " + (theme === "default" || !theme ? "bg-slate-50" : "")
+            ? "dark text-white font-sans " + (theme === "default" || !theme ? "bg-slate-950" : "")
+            : "light text-slate-900 font-sans light-mode-root " + (theme === "default" || !theme ? "bg-slate-50" : "")
         }`}
       >
       <style>{`
@@ -4290,7 +4298,12 @@ export default function App() {
           border-color: var(--custom-input-border) !important;
           color: var(--custom-card-text) !important;
         }
-        .glass-panel *, .card-container *, .card * {
+        .glass-panel p:not([class*="text-"]), 
+        .card-container p:not([class*="text-"]), 
+        .card p:not([class*="text-"]),
+        .glass-panel span:not([class*="text-"]):not([class*="bg-"]), 
+        .card-container span:not([class*="text-"]):not([class*="bg-"]), 
+        .card span:not([class*="text-"]):not([class*="bg-"]) {
           color: var(--custom-card-text);
         }
         .glass-panel p, .glass-panel span, .card-container p, .card-container span {
@@ -4415,7 +4428,17 @@ export default function App() {
         .light-mode-root .bg-slate-900,
         .light-mode-root .bg-slate-850,
         .light-mode-root .bg-slate-800,
-        .light-mode-root .bg-slate-750 {
+        .light-mode-root .bg-slate-750,
+        .light-mode-root .bg-gray-950,
+        .light-mode-root .bg-gray-900,
+        .light-mode-root .bg-gray-800,
+        .light-mode-root .bg-zinc-950,
+        .light-mode-root .bg-zinc-900,
+        .light-mode-root .bg-zinc-800,
+        .light-mode-root .bg-neutral-950,
+        .light-mode-root .bg-neutral-900,
+        .light-mode-root .bg-neutral-800,
+        .light-mode-root .bg-black {
           background-color: var(--custom-card-bg) !important;
           color: var(--custom-card-text) !important;
           border-color: var(--custom-input-border) !important;
@@ -4434,8 +4457,20 @@ export default function App() {
         .light-mode-root .bg-slate-900\\/20,
         .light-mode-root .bg-slate-900\\/10,
         .light-mode-root .bg-slate-950\\/50 {
-          background-color: rgba(0, 0, 0, 0.03) !important;
+          background-color: var(--custom-card-bg) !important;
           color: var(--custom-card-text) !important;
+          border-color: var(--custom-input-border) !important;
+        }
+
+        .light-mode-root aside {
+          background-color: var(--custom-sidebar-bg) !important;
+          color: var(--custom-sidebar-text) !important;
+          border-color: var(--custom-input-border) !important;
+        }
+
+        .light-mode-root header {
+          background-color: var(--custom-header-bg) !important;
+          color: var(--custom-header-text) !important;
           border-color: var(--custom-input-border) !important;
         }
 
@@ -4457,15 +4492,25 @@ export default function App() {
         .light-mode-root .text-slate-300,
         .light-mode-root .text-gray-100,
         .light-mode-root .text-gray-200,
-        .light-mode-root .text-gray-300 {
+        .light-mode-root .text-gray-300,
+        .light-mode-root .text-zinc-100,
+        .light-mode-root .text-zinc-200,
+        .light-mode-root .text-zinc-300,
+        .light-mode-root .text-neutral-100,
+        .light-mode-root .text-neutral-200,
+        .light-mode-root .text-neutral-300 {
           color: var(--custom-card-text) !important;
         }
 
         .light-mode-root .text-slate-400,
         .light-mode-root .text-slate-500,
         .light-mode-root .text-gray-400,
-        .light-mode-root .text-gray-500 {
-          color: var(--custom-card-secondary-text) !important;
+        .light-mode-root .text-gray-500,
+        .light-mode-root .text-zinc-400,
+        .light-mode-root .text-zinc-500,
+        .light-mode-root .text-neutral-400,
+        .light-mode-root .text-neutral-500 {
+          color: #334155 !important;
         }
 
         /* Sticky spreadsheet tables elements */
@@ -4510,6 +4555,13 @@ export default function App() {
           background-color: rgba(245, 158, 11, 0.1) !important;
           color: #713f12 !important;
         }
+        .light-mode-root .bg-purple-950,
+        .light-mode-root .bg-purple-950\\/20,
+        .light-mode-root .bg-violet-950,
+        .light-mode-root .bg-violet-950\\/20 {
+          background-color: rgba(147, 51, 234, 0.1) !important;
+          color: #581c87 !important;
+        }
         .light-mode-root .text-cyan-400,
         .light-mode-root .text-cyan-300 {
           color: #0891b2 !important;
@@ -4517,6 +4569,12 @@ export default function App() {
         .light-mode-root .text-amber-400,
         .light-mode-root .text-amber-300 {
           color: #b45309 !important;
+        }
+        .light-mode-root .text-purple-400,
+        .light-mode-root .text-purple-300,
+        .light-mode-root .text-violet-400,
+        .light-mode-root .text-violet-300 {
+          color: #7e22ce !important;
         }
         .light-mode-root .text-emerald-400,
         .light-mode-root .text-emerald-500 {
