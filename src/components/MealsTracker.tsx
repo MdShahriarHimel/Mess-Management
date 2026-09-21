@@ -59,12 +59,9 @@ export default function MealsTracker({
 
   const getActiveMealTypes = () => {
     if (Array.isArray(mealTypes) && mealTypes.length > 0) {
-      const enabledOnly = mealTypes.filter((t: any) => t.enabled !== false);
-      if (enabledOnly.length > 0) return enabledOnly;
-      return mealTypes.map((t: any) => ({ ...t, enabled: true }));
+      return mealTypes.filter((t: any) => t.enabled === true);
     }
     return [
-      { id: "breakfast", name: "Breakfast", enabled: true },
       { id: "lunch", name: "Lunch", enabled: true },
       { id: "dinner", name: "Dinner", enabled: true }
     ];
@@ -154,6 +151,11 @@ export default function MealsTracker({
           new Error().stack,
           map
         );
+
+        if (currentCount !== fetchCounter) {
+          console.log("[FETCH DISCARDED - STALE]", currentCount, "latest is", fetchCounter);
+          return;
+        }
 
         setMealsData(map);
       }

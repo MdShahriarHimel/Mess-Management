@@ -113,6 +113,8 @@ interface UnifiedSettingsDashboardProps {
   logoText?: string;
   setLogoText?: (val: string) => void;
   activeMessId?: string;
+  mealTypes?: any[];
+  setMealTypes?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -190,7 +192,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   setMessName,
   logoText = "",
   setLogoText,
-  activeMessId = "default"
+  activeMessId = "default",
+  mealTypes = [],
+  setMealTypes
 }) => {
   const respectSenioritySettings = propRespectSenioritySettings;
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
@@ -2446,6 +2450,101 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   </div>
                 </div>
               )}
+
+              {/* ERP SETTING: Breakfast / Meal Intake Configuration (Per-Mess Isolated) */}
+              <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1 pr-2">
+                    <div className="flex items-center gap-2">
+                      <LucideIcons.UtensilsCrossed size={16} className="text-amber-400" />
+                      <label className="text-xs font-bold text-slate-200">
+                        সকালের নাস্তা (Breakfast) সিস্টেম চালু / বন্ধ
+                      </label>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {activeMessId ? `মেস: ${activeMessId}` : "বর্তমান মেস"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      এই মেসের সদস্যদের জন্য মিল ইনটেকে ব্রেকফাস্ট (Breakfast) কলাম এবং হিসাব চালু বা বন্ধ রাখুন। এটি শুধুমাত্র এই মেসের জন্য প্রযোজ্য হবে।
+                    </p>
+                  </div>
+
+                  {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) ? (
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`text-xs font-bold ${
+                        (mealTypes?.find((t: any) => t.id === "breakfast")?.enabled ?? false)
+                          ? "text-emerald-400"
+                          : "text-slate-400"
+                      }`}>
+                        {(mealTypes?.find((t: any) => t.id === "breakfast")?.enabled ?? false) ? "চালু (ON)" : "বন্ধ (OFF)"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const currentBreakfast = mealTypes?.find((t: any) => t.id === "breakfast")?.enabled ?? false;
+                          const newBreakfastState = !currentBreakfast;
+                          let updatedMealTypes: any[];
+
+                          if (Array.isArray(mealTypes) && mealTypes.length > 0) {
+                            const hasBreakfast = mealTypes.some((t: any) => t.id === "breakfast");
+                            if (hasBreakfast) {
+                              updatedMealTypes = mealTypes.map((t: any) =>
+                                t.id === "breakfast" ? { ...t, enabled: newBreakfastState } : t
+                              );
+                            } else {
+                              updatedMealTypes = [
+                                { id: "breakfast", name: "Breakfast", enabled: newBreakfastState },
+                                ...mealTypes
+                              ];
+                            }
+                          } else {
+                            updatedMealTypes = [
+                              { id: "breakfast", name: "Breakfast", enabled: newBreakfastState },
+                              { id: "lunch", name: "Lunch", enabled: true },
+                              { id: "dinner", name: "Dinner", enabled: true }
+                            ];
+                          }
+
+                          if (setMealTypes) setMealTypes(updatedMealTypes);
+                          const ok = await handleUpdateSettings({ mealTypes: updatedMealTypes });
+                          if (ok) {
+                            showStatus(
+                              "success",
+                              `ব্রেকফাস্ট সফলভাবে ${newBreakfastState ? "চালু (ON)" : "বন্ধ (OFF)"} করা হয়েছে এই মেসের জন্য!`
+                            );
+                            window.dispatchEvent(new CustomEvent("app-global-refresh"));
+                          } else {
+                            showStatus("error", "ব্রেকফাস্ট সেটিংস সেভ করতে সমস্যা হয়েছে।");
+                          }
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          (mealTypes?.find((t: any) => t.id === "breakfast")?.enabled ?? false)
+                            ? "bg-emerald-500"
+                            : "bg-slate-700"
+                        }`}
+                        title="Toggle Breakfast on or off for this mess"
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            (mealTypes?.find((t: any) => t.id === "breakfast")?.enabled ?? false)
+                              ? "translate-x-5"
+                              : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-slate-500">🔒 শুধুমাত্র অ্যাডমিন বা সুপার ইউজার পরিবর্তন করতে পারবেন</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t border-slate-800/60 text-[11px] text-slate-400">
+                  <LucideIcons.ShieldCheck size={13} className="text-emerald-400 shrink-0" />
+                  <span>
+                    মেস আইসোলেশন সুরক্ষিত: এই সেটিংস পরিবর্তন অন্য কোনো মেসের মিল বা হিসাবকে প্রভাবিত করবে না।
+                  </span>
+                </div>
+              </div>
 
               {/* ERP SETTING: Allow Super User to Unlock Locked Cycles */}
               <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/40 space-y-2">

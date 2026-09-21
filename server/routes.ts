@@ -10,6 +10,7 @@ import { loadDB, saveDB, syncState,
   loadCredentials, 
   saveCredentials, 
   generateUUID, 
+  generateUniqueMessCode,
   logAudit,
   getActiveMessId,
   setActiveMessId,
@@ -27,7 +28,7 @@ import { loadDB, saveDB, syncState,
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
 import { db as drizzleDb } from "../src/db/index.js";
 import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings, meals as mealsTable } from "../src/db/schema.js";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, or } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
 import {
@@ -115,13 +116,13 @@ interface AuthenticatedRequest extends Request {
 // ---------------------------------------------------------
 const MESSES_FILE = path.join(DB_DIR, "messes.json");
 
-export function loadMesses(): { messes: Array<{ id: string; name: string }> } {
+export function loadMesses(): { messes: Array<{ id: string; name: string; messCode?: string }> } {
   const defaultMesses = {
     messes: [
-      { id: "default", name: "Ababil Mess (Main)" },
-      { id: "mess-a", name: "Mess A (Dhaka Branch)" },
-      { id: "mess-b", name: "Mess B (Chittagong Branch)" },
-      { id: "mess-c", name: "Mess C (Sylhet Branch)" }
+      { id: "default", name: "Ababil Mess (Main)", messCode: "ABAB1L" },
+      { id: "mess-a", name: "Mess A (Dhaka Branch)", messCode: "DHKA01" },
+      { id: "mess-b", name: "Mess B (Chittagong Branch)", messCode: "CHTG02" },
+      { id: "mess-c", name: "Mess C (Sylhet Branch)", messCode: "SYLT03" }
     ]
   };
   try {
@@ -130,6 +131,17 @@ export function loadMesses(): { messes: Array<{ id: string; name: string }> } {
       if (data && data.trim()) {
         const parsed = JSON.parse(data);
         if (parsed && typeof parsed === "object" && Array.isArray(parsed.messes)) {
+          // Guarantee all messes have a unique messCode
+          let modified = false;
+          parsed.messes.forEach((m: any) => {
+            if (!m.messCode) {
+              m.messCode = m.id === "default" ? "ABAB1L" : generateUniqueMessCode(parsed.messes);
+              modified = true;
+            }
+          });
+          if (modified) {
+            saveMesses(parsed);
+          }
           return { ...defaultMesses, ...parsed };
         }
       }
@@ -2067,7 +2079,7 @@ router.delete("/cycle-proposals/:id", authMiddleware, checkRole([UserRole.SUPERU
 // ---------------------------------------------------------
 export const mealDebugLogs: string[] = [];
 
-async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: any[]) {
+async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: any[], targetMessId: string = "default") {
   mealDebugLogs.push(`[upsertMealsTx] Starting upsert with ${meals.length} meals, types: ${mealTypes.map(t => t.id).join(",")}`);
   for (const m of meals) {
     if (!m.memberId || !m.date) {
@@ -2079,14 +2091,15 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
       and(
         eq(mealsTable.monthId, monthId),
         eq(mealsTable.memberId, m.memberId),
-        eq(mealsTable.date, m.date)
+        eq(mealsTable.date, m.date),
+        eq(mealsTable.messId, targetMessId)
       )
     ).limit(1);
 
     mealDebugLogs.push(`[upsertMealsTx] Member ${m.memberId} date ${m.date}: found ${existing.length} existing rows`);
 
     if (existing.length > 0) {
-      const updatedMeal: any = { ...existing[0] };
+      const updatedMeal: any = { ...existing[0], messId: targetMessId };
       mealTypes.forEach((t: any) => {
         const inputVal = (m as any)[t.id];
         const parsed = Number(inputVal);
@@ -2099,6 +2112,7 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
     } else {
       const newMeal: any = {
         id: generateUUID(),
+        messId: targetMessId,
         monthId,
         memberId: m.memberId,
         date: m.date
@@ -2115,9 +2129,18 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
   mealDebugLogs.push(`[upsertMealsTx] Finished bulk upsert`);
 }
 
-async function getMealsForCurrentCycle(monthId: string) {
-  const dbConfig = loadDB();
-  const rawMeals = await drizzleDb.select().from(mealsTable).where(eq(mealsTable.monthId, monthId));
+async function getMealsForCurrentCycle(monthId: string, targetMessId: string = "default") {
+  const dbConfig = loadDB(targetMessId);
+  const messCondition = (targetMessId === "default")
+    ? or(eq(mealsTable.messId, "default"), sql`${mealsTable.messId} IS NULL`)
+    : eq(mealsTable.messId, targetMessId);
+
+  const rawMeals = await drizzleDb.select().from(mealsTable).where(
+    and(
+      eq(mealsTable.monthId, monthId),
+      messCondition
+    )
+  );
   const monthObj = dbConfig.months?.find((m: any) => m.id === monthId);
   if (!monthObj) {
     return rawMeals;
@@ -2141,7 +2164,8 @@ async function getMealsForCurrentCycle(monthId: string) {
 
 router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const meals = await getMealsForCurrentCycle(monthId);
+  const currentMessId = getActiveMessId() || "default";
+  const meals = await getMealsForCurrentCycle(monthId, currentMessId);
   res.json({ meals });
 });
 
@@ -2219,8 +2243,9 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
   ];
 
   mealDebugLogs.length = 0; // clear previous
+  const currentMessId = getActiveMessId() || "default";
   await drizzleDb.transaction(async (tx) => {
-    await upsertMealsTx(tx, monthId, meals, mealTypes);
+    await upsertMealsTx(tx, monthId, meals, mealTypes, currentMessId);
   });
 
   logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_BULK", "Multiple", "Updated", `Logged meals for current cycle`);
@@ -5616,6 +5641,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     superUserCanInviteMembers,
     superUserCanArchiveMembers,
     superUserCanEditMeals,
+    mealTypes,
     roleAnimations,
     currencySymbol,
     customColors,
@@ -5682,6 +5708,22 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   if (superUserCanInviteMembers !== undefined) currentSettings.superUserCanInviteMembers = superUserCanInviteMembers;
   if (superUserCanArchiveMembers !== undefined) currentSettings.superUserCanArchiveMembers = superUserCanArchiveMembers;
   if (superUserCanEditMeals !== undefined) currentSettings.superUserCanEditMeals = superUserCanEditMeals;
+  if (mealTypes !== undefined && Array.isArray(mealTypes)) {
+    currentSettings.mealTypes = mealTypes;
+    logAudit(
+      req.user!.id,
+      req.user!.nickname || req.user!.name,
+      "UPDATE_MEAL_TYPES",
+      "",
+      JSON.stringify(mealTypes),
+      `Updated meal types configuration for mess (Breakfast toggled: ${mealTypes.find((t: any) => t.id === "breakfast")?.enabled ? "ON" : "OFF"})`,
+      {
+        userRole: role,
+        browser: req.headers["user-agent"] as string,
+        ipAddress: req.ip as string
+      }
+    );
+  }
   if (roleAnimations !== undefined) currentSettings.roleAnimations = roleAnimations;
   if (currencySymbol !== undefined) currentSettings.currencySymbol = currencySymbol;
   if (customColors !== undefined) currentSettings.customColors = { ...currentSettings.customColors, ...customColors };
@@ -6450,7 +6492,8 @@ router.post("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Re
 
   const id = "mess-" + Math.random().toString(36).substring(2, 9);
   const data = loadMesses();
-  data.messes.push({ id, name: name.trim() });
+  const uniqueCode = generateUniqueMessCode(data.messes);
+  data.messes.push({ id, name: name.trim(), messCode: uniqueCode });
   saveMesses(data);
 
   // If created by a branch admin, auto-add to their allowedMesses

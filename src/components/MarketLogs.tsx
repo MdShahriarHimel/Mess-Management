@@ -312,10 +312,18 @@ export default function MarketLogs({
     try {
       const authHeader = { "Authorization": `Bearer ${authToken}` };
       
-      const mRes = await fetch(`/api/markets/${activeId}`, { headers: authHeader });
-      const dRes = await fetch(`/api/duties/${activeId}`, { headers: authHeader });
-      const depRes = await fetch(`/api/deposits/${activeId}`, { headers: authHeader });
-      const holdRes = await fetch(`/api/holdings/${activeId}`, { headers: authHeader });
+      const [mRes, dRes, depRes, holdRes] = await Promise.all([
+        fetch(`/api/markets/${activeId}`, { headers: authHeader }),
+        fetch(`/api/duties/${activeId}`, { headers: authHeader }),
+        fetch(`/api/deposits/${activeId}`, { headers: authHeader }),
+        fetch(`/api/holdings/${activeId}`, { headers: authHeader })
+      ]);
+
+      // Guard: if view month changed while fetching, discard stale response
+      const currentActive = viewMonthId || currentMonthId;
+      if (activeId !== currentActive && !targetId) {
+        return;
+      }
       
       if (mRes.ok) {
         const mData = await mRes.json().catch(() => ({}));

@@ -39,6 +39,7 @@ interface FinanceSettlementProps {
   mealTypes?: any[];
   respectSenioritySettings?: RespectSenioritySettings;
   duties?: any[];
+  activeMessId?: string;
 }
 
 export default function FinanceSettlement({ 
@@ -56,7 +57,8 @@ export default function FinanceSettlement({
   logoText = "Ababil mess",
   mealTypes,
   respectSenioritySettings,
-  duties = []
+  duties = [],
+  activeMessId
 }: FinanceSettlementProps) {
   const authToken = getAuthToken(currentUser);
   const { refreshTriggers, isModuleDisabled } = useAutoRefresh();
@@ -65,14 +67,34 @@ export default function FinanceSettlement({
   const [isSavingOverrides, setIsSavingOverrides] = useState(false);
   const [overrideSaveStatus, setOverrideSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  const messStorageKey = useMemo(() => 
+    `custom_bill_overrides_${activeMessId || localStorage.getItem("active_mess_id") || "default"}`, 
+    [activeMessId]
+  );
+
   const [customBillOverrides, setCustomBillOverrides] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
     try {
-      const saved = localStorage.getItem("custom_bill_overrides");
+      const key = `custom_bill_overrides_${activeMessId || localStorage.getItem("active_mess_id") || "default"}`;
+      const saved = localStorage.getItem(key);
       return saved ? JSON.parse(saved) : {};
     } catch (e) {
       return {};
     }
   });
+
+  // Re-sync overrides when mess scope switches
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(messStorageKey);
+      if (saved) {
+        setCustomBillOverrides(JSON.parse(saved));
+      } else {
+        setCustomBillOverrides({});
+      }
+    } catch (e) {
+      setCustomBillOverrides({});
+    }
+  }, [messStorageKey]);
 
   // Calculate participating members for this mess month
   // (Admins with status "Not member (only for Admin)" [NOT_MEMBER] are excluded from mess calculations.
@@ -265,7 +287,7 @@ export default function FinanceSettlement({
         delete updated[currentMonthId];
       }
 
-      localStorage.setItem("custom_bill_overrides", JSON.stringify(updated));
+      localStorage.setItem(messStorageKey, JSON.stringify(updated));
       return updated;
     });
   };
@@ -284,7 +306,7 @@ export default function FinanceSettlement({
       });
 
       if (response.ok) {
-        localStorage.setItem("custom_bill_overrides", JSON.stringify(customBillOverrides));
+        localStorage.setItem(messStorageKey, JSON.stringify(customBillOverrides));
         setOverrideSaveStatus({ type: 'success', message: 'Individual member bill amounts saved successfully!' });
         setTimeout(() => setOverrideSaveStatus(null), 4000);
       } else {
@@ -470,7 +492,7 @@ export default function FinanceSettlement({
       };
 
       nextOverrides = updated;
-      localStorage.setItem("custom_bill_overrides", JSON.stringify(updated));
+      localStorage.setItem(messStorageKey, JSON.stringify(updated));
       return updated;
     });
 

@@ -66,6 +66,7 @@ export const months = pgTable("months", {
 
 export const meals = pgTable("meals", {
   id: text("id").primaryKey(),
+  messId: text("mess_id").default("default"),
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   date: text("date").notNull(),

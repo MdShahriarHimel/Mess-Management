@@ -51,7 +51,7 @@ import {
   mealRequests as mealRequestsTable,
   persistentFiles as persistentFilesTable
 } from "../src/db/schema.ts";
-import { sql, notInArray, eq } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { 
   UserRole, 
   MemberStatus, 
@@ -513,6 +513,8 @@ export async function initializeDbCache() {
           ALTER TABLE members ADD COLUMN IF NOT EXISTS room_label_id text;
           ALTER TABLE members ADD COLUMN IF NOT EXISTS room_label text;
           ALTER TABLE members ADD COLUMN IF NOT EXISTS room_rent real;
+          ALTER TABLE meals ADD COLUMN IF NOT EXISTS mess_id text DEFAULT 'default';
+          ALTER TABLE meals ADD COLUMN IF NOT EXISTS breakfast double precision DEFAULT 0;
         `);
       } catch (colErr) {
         console.warn("Notice: Column migration for academic/respect fields on members table:", colErr);
@@ -618,6 +620,9 @@ export async function initializeDbCache() {
         auditLogs: auditLogsList as any[],
         mealRequests: (mealRequestsList || []) as any[],
       };
+      dbCaches.set("default", dbCache);
+      isPostgresInitialized = true;
+      masterPostgresCache = dbCache;
       console.log("[TRACE E - initializeDbCache()] Loaded members from PostgreSQL. Total:", membersList.length, "Sample members:", membersList.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
       console.log("Cache loaded successfully from PostgreSQL.");
       // Trigger loadDB to run auto-transition check immediately on startup
@@ -629,33 +634,40 @@ export async function initializeDbCache() {
   }
 }
 
+export let isPostgresInitialized: boolean = false;
+export let masterPostgresCache: DatabaseSchema | null = null;
 export let lastSyncTime: string | null = null;
 export let lastWriteTime: string | null = null;
 export let syncState: "Idle" | "Syncing" | "Pending" = "Idle";
 
 let isSyncing = false;
-let pendingSyncCache: DatabaseSchema | null = null;
+const pendingSyncCaches = new Map<string, DatabaseSchema>();
 let syncTimer: NodeJS.Timeout | null = null;
 
 // Background sync function
-export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
-  pendingSyncCache = cache;
+export async function syncCacheToPostgresDirectly(cache: DatabaseSchema, targetMessId?: string) {
+  const messId = targetMessId || getActiveMessId() || "default";
+  pendingSyncCaches.set(messId, cache);
   syncState = "Pending";
   
   if (syncTimer) return;
   
   syncTimer = setTimeout(async () => {
     syncTimer = null;
-    if (isSyncing || !pendingSyncCache) return;
+    if (isSyncing || pendingSyncCaches.size === 0) return;
     
     isSyncing = true;
     syncState = "Syncing";
-    const cacheToSync = pendingSyncCache;
-    pendingSyncCache = null;
+
+    // Grab all queued messes snapshots
+    const queueToProcess = Array.from(pendingSyncCaches.entries());
+    pendingSyncCaches.clear();
     
     const syncPromise = (async () => {
       try {
-        await doActualSync(cacheToSync);
+        for (const [syncingMessId, cacheToSync] of queueToProcess) {
+          await doActualSync(cacheToSync, syncingMessId);
+        }
         lastSyncTime = new Date().toISOString();
         lastWriteTime = new Date().toISOString();
       } catch(err) {
@@ -663,8 +675,11 @@ export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
       } finally {
         isSyncing = false;
         syncState = "Idle";
-        if (pendingSyncCache) {
-          syncCacheToPostgresDirectly(pendingSyncCache);
+        if (pendingSyncCaches.size > 0) {
+          syncTimer = setTimeout(() => {
+            const first = pendingSyncCaches.entries().next().value;
+            if (first) syncCacheToPostgresDirectly(first[1], first[0]);
+          }, 500);
         }
       }
     })();
@@ -673,19 +688,15 @@ export async function syncCacheToPostgresDirectly(cache: DatabaseSchema) {
   return Promise.resolve();
 }
 
-async function doActualSync(cache: DatabaseSchema) {
+async function doActualSync(cache: DatabaseSchema, targetMessId: string = "default") {
   const startTime = Date.now();
-  console.log(`[TRACE D - doActualSync()] started`);
+  console.log(`[TRACE D - doActualSync()] started for mess: ${targetMessId}`);
   try {
     if (cache.members.length > 0) {
-      const activeMemberIds = cache.members.map(m => m.id);
-      if (activeMemberIds.length > 0) {
-        await db.delete(membersTable).where(notInArray(membersTable.id, activeMemberIds));
-      }
-
       for (const item of cache.members) {
         const mapped = {
           id: item.id,
+          messId: (item as any).messId || targetMessId,
           name: item.name,
           nickname: item.nickname,
           email: item.email,
@@ -744,6 +755,7 @@ async function doActualSync(cache: DatabaseSchema) {
       for (const item of cache.months) {
         const mapped = {
           id: item.id,
+          messId: (item as any).messId || targetMessId,
           name: item.name,
           startDate: item.startDate,
           endDate: item.endDate,
@@ -757,25 +769,10 @@ async function doActualSync(cache: DatabaseSchema) {
           set: mapped
         });
       }
-      
-      const activeMonthIds = cache.months.map(m => m.id);
-      if (activeMonthIds.length > 0) {
-        await db.delete(monthsTable).where(notInArray(monthsTable.id, activeMonthIds));
-      }
     }
 
-    // Clean up dynamic tables and bulk insert
-                                            try {
-          } catch (e) {
-      console.warn("Could not delete from meal_requests table:", e);
-    }
+    // Upsert dynamic tables
     if (cache.foodMenus.length > 0) {
-      const activeIds = cache.foodMenus.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(foodMenusTable).where(notInArray(foodMenusTable.id, activeIds as any));
-      } else {
-        await db.delete(foodMenusTable);
-      }
       for (const item of cache.foodMenus) {
         const mapped = {
         id: item.id,
@@ -792,12 +789,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.marketEntries.length > 0) {
-      const activeIds = cache.marketEntries.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(marketEntriesTable).where(notInArray(marketEntriesTable.id, activeIds as any));
-      } else {
-        await db.delete(marketEntriesTable);
-      }
       for (const item of cache.marketEntries) {
         const mapped = {
         id: item.id,
@@ -817,12 +808,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.deposits.length > 0) {
-      const activeIds = cache.deposits.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(depositsTable).where(notInArray(depositsTable.id, activeIds as any));
-      } else {
-        await db.delete(depositsTable);
-      }
       for (const item of cache.deposits) {
         const mapped = {
         id: item.id,
@@ -838,12 +823,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.bills.length > 0) {
-      const activeIds = cache.bills.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(billsTable).where(notInArray(billsTable.id, activeIds as any));
-      } else {
-        await db.delete(billsTable);
-      }
       for (const item of cache.bills) {
         const mapped = {
         id: item.id,
@@ -859,12 +838,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.duties.length > 0) {
-      const activeIds = cache.duties.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(dutiesTable).where(notInArray(dutiesTable.id, activeIds as any));
-      } else {
-        await db.delete(dutiesTable);
-      }
       for (const item of cache.duties) {
         const mapped = {
         id: item.id,
@@ -879,12 +852,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.managerHoldings.length > 0) {
-      const activeIds = cache.managerHoldings.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(managerHoldingsTable).where(notInArray(managerHoldingsTable.id, activeIds as any));
-      } else {
-        await db.delete(managerHoldingsTable);
-      }
       for (const item of cache.managerHoldings) {
         const mapped = {
         id: item.id,
@@ -900,12 +867,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.managerRatings.length > 0) {
-      const activeIds = cache.managerRatings.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(managerRatingsTable).where(notInArray(managerRatingsTable.id, activeIds as any));
-      } else {
-        await db.delete(managerRatingsTable);
-      }
       for (const item of cache.managerRatings) {
         const mapped = {
         id: item.id,
@@ -920,12 +881,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.notices.length > 0) {
-      const activeIds = cache.notices.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(noticesTable).where(notInArray(noticesTable.id, activeIds as any));
-      } else {
-        await db.delete(noticesTable);
-      }
       for (const item of cache.notices) {
         const mapped = {
         id: item.id,
@@ -943,13 +898,6 @@ async function doActualSync(cache: DatabaseSchema) {
     }
 
     if (cache.auditLogs.length > 0) {
-      const activeIds = cache.auditLogs.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(auditLogsTable).where(notInArray(auditLogsTable.id, activeIds as any));
-      } else {
-        await db.delete(auditLogsTable);
-      }
-      
       const modifiedAuditLogs: any[] = [];
       for (const item of cache.auditLogs) {
         const mapped = {
@@ -1008,26 +956,21 @@ async function doActualSync(cache: DatabaseSchema) {
 
     if (cache.mealRequests && cache.mealRequests.length > 0) {
       try {
-        const activeIds = cache.mealRequests.map((i: any) => i.id).filter(Boolean);
-      if (activeIds.length > 0) {
-        await db.delete(mealRequestsTable).where(notInArray(mealRequestsTable.id, activeIds as any));
-      } else {
-        await db.delete(mealRequestsTable);
-      }
-      for (const item of cache.mealRequests) {
-        const mapped = {
-          id: item.id,
-          monthId: item.monthId,
-          date: item.date,
-          requesterId: item.requesterId,
-          requesterName: item.requesterName,
-          mealsData: item.mealsData,
-          status: item.status,
-          timestamp: item.timestamp,
-        };
-        if (!isItemModified('mealRequests', item.id, mapped)) continue;
-        await db.insert(mealRequestsTable).values(mapped).onConflictDoUpdate({ target: mealRequestsTable.id, set: mapped });
-      }
+        for (const item of cache.mealRequests) {
+          const mapped = {
+            id: item.id,
+            messId: (item as any).messId || "default",
+            monthId: item.monthId,
+            date: item.date,
+            requesterId: item.requesterId,
+            requesterName: item.requesterName,
+            mealsData: item.mealsData,
+            status: item.status,
+            timestamp: item.timestamp,
+          };
+          if (!isItemModified('mealRequests', item.id, mapped)) continue;
+          await db.insert(mealRequestsTable).values(mapped).onConflictDoUpdate({ target: mealRequestsTable.id, set: mapped });
+        }
       } catch (err) {
         console.warn("Could not insert into meal_requests table during sync:", err);
       }
@@ -1094,6 +1037,13 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
   const messId = explicitMessId || getActiveMessId() || "default";
   let target = dbCaches.get(messId);
 
+  // If messId is default and dbCache or masterPostgresCache exists in memory from PostgreSQL, prioritize it!
+  const livePostgresData = dbCache || masterPostgresCache;
+  if (!target && messId === "default" && livePostgresData) {
+    target = livePostgresData;
+    dbCaches.set("default", target);
+  }
+
   if (!target) {
     ensureDBDir();
     const BACKUP_FILE = messId === "default"
@@ -1109,6 +1059,11 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
       }
     }
     
+    // If it is the default mess and postgres has live master data, use that
+    if (!target && messId === "default" && isPostgresInitialized && livePostgresData) {
+      target = JSON.parse(JSON.stringify(livePostgresData));
+    }
+
     if (!target) {
       target = getInitialSeedData();
     }
@@ -1132,12 +1087,12 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
   };
 
   // Automatic Month Transition Check
-  if (dbCache && dbCache.months && dbCache.months.length > 0) {
+  if (target && target.months && target.months.length > 0) {
     const now = new Date();
     let wasMonthModified = false;
 
     // Check for active (unlocked) months whose endDate has passed (excluding manually unlocked cycles)
-    const activeMonthsToClose = dbCache.months.filter(m => {
+    const activeMonthsToClose = target.months.filter(m => {
       if (m.isLocked) return false;
       if (m.manuallyUnlocked) return false;
       const endDate = parseDhakaDate(m.endDate);
@@ -1145,7 +1100,7 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     });
 
     for (const endedMonth of activeMonthsToClose) {
-      console.log(`[Auto-Transition] Month '${endedMonth.name}' cycle ended at ${endedMonth.endDate}. Closing cycle...`);
+      console.log(`[Auto-Transition] Mess '${messId}' Month '${endedMonth.name}' cycle ended at ${endedMonth.endDate}. Closing cycle...`);
       endedMonth.isLocked = true;
       wasMonthModified = true;
 
@@ -1156,13 +1111,13 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
         "Unlocked",
         "Locked",
         `System automatically locked ${endedMonth.name}.`,
-        { module: "CYCLE", actionType: "AUTOMATIC_CYCLE_LOCK", description: `System automatically locked ${endedMonth.name}.` }
+        { module: "CYCLE", actionType: "AUTOMATIC_CYCLE_LOCK", description: `System automatically locked ${endedMonth.name}.`, messId }
       );
 
       const endedEndDateStr = endedMonth.endDate;
 
       // Check if a next month exists
-      let nextMonth = dbCache.months.find(m => {
+      let nextMonth = target.months.find(m => {
         if (m.id === endedMonth.id) return false;
         return m.startDate >= endedEndDateStr || m.name.toLowerCase().includes("august");
       });
@@ -1177,7 +1132,7 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
           "Inactive",
           "Active",
           `System automatically transitioned to ${nextMonth.name}.`,
-          { module: "CYCLE", actionType: "AUTOMATIC_MONTH_TRANSITION", description: `System automatically transitioned to ${nextMonth.name}.` }
+          { module: "CYCLE", actionType: "AUTOMATIC_MONTH_TRANSITION", description: `System automatically transitioned to ${nextMonth.name}.`, messId }
         );
       } else {
         // Calculate next month name and dates starting EXACTLY at endedMonth.endDate
@@ -1197,7 +1152,7 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
         const nextMonthName = `${monthNames[nextStartObj.getMonth()]} ${nextStartObj.getFullYear()}`;
 
         // Double check if a month with nextMonthName already exists
-        const existingByName = dbCache.months.find(m => m.name.toLowerCase() === nextMonthName.toLowerCase());
+        const existingByName = target.months.find(m => m.name.toLowerCase() === nextMonthName.toLowerCase());
         if (existingByName) {
           existingByName.isLocked = false;
           console.log(`[Auto-Transition] Activated existing month by name '${existingByName.name}'.`);
@@ -1210,66 +1165,28 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
             isLocked: false,
             gracePeriodEnabled: true
           };
-          dbCache.months.push(newMonth);
-          console.log(`[Auto-Transition] Automatically created and activated next month '${newMonth.name}' (${newMonth.startDate} to ${newMonth.endDate}).`);
+          target.months.push(newMonth);
+          console.log(`[Auto-Transition] Automatically created and activated next month '${newMonth.name}' (${newMonth.startDate} to ${newMonth.endDate}) for mess ${messId}.`);
         }
       }
     }
 
     if (wasMonthModified) {
       try {
-        const messId = getActiveMessId();
         const backupFilename = messId === "default"
           ? "database_backup.json"
           : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(dbCache));
-        syncCacheToPostgresDirectly(dbCache);
+        writeAndPersistFile(backupFilename, JSON.stringify(target));
       } catch (err) {
         console.error("Error committing auto-transition month changes:", err);
       }
     }
   }
 
-  // Auto-delete market logs with vouchers older than 15 days
-  if (dbCache && dbCache.marketEntries && dbCache.marketEntries.length > 0) {
-    const today = new Date();
-    const fifteenDaysAgo = new Date(today.getTime() - 15 * 24 * 60 * 60 * 1000);
-    fifteenDaysAgo.setHours(0, 0, 0, 0);
-
-    let wasModified = false;
-    const initialCount = dbCache.marketEntries.length;
-
-    dbCache.marketEntries = dbCache.marketEntries.filter(entry => {
-      if (entry.receiptUrl && entry.receiptUrl.trim() !== "") {
-        const entryDate = new Date(entry.date);
-        if (!isNaN(entryDate.getTime()) && entryDate < fifteenDaysAgo) {
-          wasModified = true;
-          return false; // auto-delete
-        }
-      }
-      return true;
-    });
-
-    if (wasModified) {
-      console.log(`[Auto-Cleanup] Deleted ${initialCount - dbCache.marketEntries.length} market entries with vouchers older than 15 days.`);
-      try {
-        const messId = getActiveMessId();
-        const backupFilename = messId === "default"
-          ? "database_backup.json"
-          : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(dbCache));
-        syncCacheToPostgresDirectly(dbCache);
-      } catch (err) {
-        console.error("Error committing auto-deleted market entries:", err);
-      }
-    }
-  }
-
   // Auto-delete audit logs older than the configured retention period
-  if (dbCache && dbCache.auditLogs && dbCache.auditLogs.length > 0) {
+  if (target && target.auditLogs && target.auditLogs.length > 0) {
     let retentionDays = 30; // default 30 days
     try {
-      const messId = getActiveMessId();
       const settingsFile = messId === "default"
         ? path.join(DB_DIR, "settings.json")
         : path.join(DB_DIR, `settings_${messId}.json`);
@@ -1288,9 +1205,9 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     retentionLimit.setHours(0, 0, 0, 0);
 
     let wasAuditModified = false;
-    const initialAuditCount = dbCache.auditLogs.length;
+    const initialAuditCount = target.auditLogs.length;
 
-    dbCache.auditLogs = dbCache.auditLogs.filter(log => {
+    target.auditLogs = target.auditLogs.filter(log => {
       const logDate = new Date(log.timestamp);
       if (!isNaN(logDate.getTime()) && logDate < retentionLimit) {
         wasAuditModified = true;
@@ -1300,21 +1217,19 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     });
 
     if (wasAuditModified) {
-      console.log(`[Auto-Cleanup] Deleted ${initialAuditCount - dbCache.auditLogs.length} audit logs older than ${retentionDays} days.`);
+      console.log(`[Auto-Cleanup] Mess ${messId}: Deleted ${initialAuditCount - target.auditLogs.length} audit logs older than ${retentionDays} days.`);
       try {
-        const messId = getActiveMessId();
         const backupFilename = messId === "default"
           ? "database_backup.json"
           : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(dbCache));
-        syncCacheToPostgresDirectly(dbCache);
+        writeAndPersistFile(backupFilename, JSON.stringify(target));
       } catch (err) {
         console.error("Error committing auto-deleted audit logs:", err);
       }
     }
   }
 
-  return dbCache;
+  return target;
 }
 
 // Save database and trigger async background sync to Postgres
@@ -1323,11 +1238,14 @@ let lastBackupCacheContent = "";
 
 export function saveDB(explicitMessId?: string) {
   const messId = explicitMessId || getActiveMessId() || "default";
-  const target = dbCaches.get(messId) || dbCache;
+  let target = dbCaches.get(messId);
+  if (!target) {
+    target = loadDB(messId);
+  }
   if (!target) return;
   
-  // Trigger non-blocking async synchronization in the background
-  syncCacheToPostgresDirectly(target);
+  // Trigger non-blocking async synchronization in the background for this specific mess
+  syncCacheToPostgresDirectly(target, messId);
 
   try {
     const backupFilename = messId === "default"
@@ -2036,5 +1954,14 @@ export function deletePersistentFile(filename: string) {
   } catch (e) {
     console.error(`[Persistent Files] Error deleting file ${filename}:`, e);
   }
+}
+
+export function generateUniqueMessCode(existingMesses: any[]): string {
+  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
+  let code = "";
+  do {
+    code = Array.from({ length: 6 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join("");
+  } while (existingMesses && existingMesses.some((m: any) => m.messCode === code || m.id === code));
+  return code;
 }
 

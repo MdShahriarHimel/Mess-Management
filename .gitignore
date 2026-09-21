@@ -24,3 +24,8 @@ android-app/local.properties
 android-app/.idea/
 *.keystore
 *.jks
+
+# Database files & local data backups
+data/
+*.json.bak
+database_backup*.json

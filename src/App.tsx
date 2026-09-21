@@ -2051,6 +2051,10 @@ export default function App() {
         const data = await res.json();
         setActiveMessId(targetMessId);
         localStorage.setItem("active_mess_id", targetMessId);
+        // Clear previous mess cycle selection to prevent stale cross-mess queries
+        setCurrentMonthId("");
+        setMonths([]);
+        setMembersList([]);
         await Promise.all([
           fetchMonthsAndMembers(sessionToken, true),
           fetchSettings(sessionToken),
@@ -2722,11 +2726,15 @@ export default function App() {
 
       let response = await originalFetch(input, modInit);
 
-      // Track mess scope returned from server header
+      // Track mess scope returned from server header safely
       const resMessId = response.headers.get("x-mess-id");
-      if (resMessId && resMessId !== localStorage.getItem("active_mess_id")) {
-        localStorage.setItem("active_mess_id", resMessId);
-        setActiveMessId(resMessId);
+      const currentStored = localStorage.getItem("active_mess_id");
+      const isAuthBootstrap = typeof input === "string" && (input.startsWith("/api/auth/me") || input.startsWith("/api/auth/login"));
+      if (resMessId && (!currentStored || isAuthBootstrap)) {
+        if (resMessId !== currentStored) {
+          localStorage.setItem("active_mess_id", resMessId);
+          setActiveMessId(resMessId);
+        }
       }
 
       // If we receive a 401 Unauthorized or session expired from the backend
@@ -5541,6 +5549,7 @@ export default function App() {
               mealTypes={mealTypes}
               respectSenioritySettings={respectSenioritySettings}
               duties={dutiesList}
+              activeMessId={activeMessId}
             />
           )}
 
@@ -5694,6 +5703,8 @@ export default function App() {
                 logoText={logoText}
                 setLogoText={setLogoText}
                 activeMessId={activeMessId}
+                mealTypes={mealTypes}
+                setMealTypes={setMealTypes}
               />
 
               {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (

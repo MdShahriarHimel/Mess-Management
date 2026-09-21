@@ -65,13 +65,15 @@ export default function Deposits({
   const activeMonthObj = months?.find(m => m.id === currentMonthId);
   const isMonthLocked = activeMonthObj?.isLocked && !activeMonthObj?.manuallyUnlocked && !isUltimateAdmin;
 
-  const fetchDeposits = async () => {
-    if (!currentMonthId) return;
+  const fetchDeposits = async (targetId?: string) => {
+    const monthToFetch = targetId || currentMonthId;
+    if (!monthToFetch) return;
     try {
-      const response = await fetch(`/api/deposits/${currentMonthId}`, {
+      const response = await fetch(`/api/deposits/${monthToFetch}`, {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
+        if (monthToFetch !== currentMonthId && !targetId) return;
         const data = await response.json().catch(() => ({}));
         setDeposits(data.deposits || []);
       }
