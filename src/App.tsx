@@ -3456,8 +3456,9 @@ export default function App() {
 
   const handleDownloadBackup = async () => {
     try {
+      const activeToken = sessionToken || localStorage.getItem("mess_token") || "";
       const response = await fetch("/api/admin/backup/export", {
-        headers: { "Authorization": `Bearer ${sessionToken}` }
+        headers: { "Authorization": `Bearer ${activeToken}` }
       });
       if (!response.ok) {
         throw new Error("Failed to export backup");
@@ -3486,11 +3487,12 @@ export default function App() {
           const content = event.target?.result as string;
           const parsed = JSON.parse(content);
           
+          const activeToken = sessionToken || localStorage.getItem("mess_token") || "";
           const response = await fetch("/api/admin/backup/import", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${sessionToken}`
+              "Authorization": `Bearer ${activeToken}`
             },
             body: JSON.stringify(parsed)
           });
