@@ -97,36 +97,35 @@ export default function FinanceSettlement({
   }, [messStorageKey]);
 
   // Calculate participating members for this mess month
-  // (Admins with status "Not member (only for Admin)" [NOT_MEMBER] are excluded from mess calculations.
-  // Otherwise, if their status is ACTIVE or AWAY, they are included everywhere just like any other member.)
+  // (Admins with status "Not member (only for Admin)" [NOT_MEMBER] and TESTING sandbox members are excluded from mess calculations)
   const activeMembers = useMemo(() => {
     const currentMonthObj = (months || []).find((mo: any) => mo.id === currentMonthId);
-    const monthStart = currentMonthObj?.startDate ? currentMonthObj.startDate.split("T")[0] : null;
     const monthEnd = currentMonthObj?.endDate ? currentMonthObj.endDate.split("T")[0] : null;
 
-    return members.filter(m => {
+    const filtered = (members || []).filter(m => {
+      // 0. Completely exclude TESTING sandbox accounts from settlement sheet
+      if (m.status === MemberStatus.TESTING || (m.status as string) === "TESTING") {
+        return false;
+      }
+
       const settlement = (reportSummary?.memberSettlements || []).find((s: any) => s.memberId === m.id);
       const hasSettlement = !!settlement;
+      const hasFinancialContribution = hasSettlement && (
+        (settlement.mealsCount > 0) || 
+        (settlement.deposit > 0) || 
+        (settlement.market > 0) || 
+        (settlement.holdingPaid > 0) || 
+        (settlement.mealCost > 0) || 
+        (settlement.balance !== 0)
+      );
 
       // 1. If status is NOT_MEMBER (Only for Admin):
-      // Admin is not a participating member for this mess calculations unless they have an explicit settlement record
       if (m.status === MemberStatus.NOT_MEMBER || (m.status as string) === "NOT_MEMBER") {
-        if (hasSettlement) {
-          const hasFinancialContribution = (settlement.mealsCount > 0) || 
-            (settlement.deposit > 0) || 
-            (settlement.market > 0) || 
-            (settlement.holdingPaid > 0) || 
-            (settlement.mealCost > 0) || 
-            (settlement.balance !== 0);
-          return hasFinancialContribution;
-        }
-        return false;
+        return hasFinancialContribution;
       }
 
       // 2. For regular Active / Away members (including Admins whose status is ACTIVE/AWAY)
       if (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY) {
-        // In the active or unlocked cycle, all active/away members are included
-        // even if they join on the 26th or anywhere in the cycle
         if (currentMonthObj && !currentMonthObj.isLocked) {
           return true;
         }
@@ -137,16 +136,20 @@ export default function FinanceSettlement({
       }
 
       // 3. For Left, Archived, or Suspended members:
-      if (hasSettlement) {
-        return true;
-      } else if (m.status === MemberStatus.LEFT || m.status === MemberStatus.ARCHIVED) {
-        const joinedBeforeMonthEnd = !monthEnd || !m.joiningDate || m.joiningDate.split("T")[0] <= monthEnd;
-        const leftAfterMonthStart = !monthStart || !m.leavingDate || m.leavingDate.split("T")[0] >= monthStart;
-        return joinedBeforeMonthEnd && leftAfterMonthStart;
-      }
-
-      return false;
+      // Only show if they have active financial contributions or non-zero settlement in this month
+      return hasFinancialContribution;
     });
+
+    // Guarantee strict uniqueness by member id
+    const seen = new Set<string>();
+    const unique: Member[] = [];
+    for (const m of filtered) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        unique.push(m);
+      }
+    }
+    return unique;
   }, [members, reportSummary?.memberSettlements, currentMonthId, months]);
 
   // Mess Settings State & PDF Header Customization

@@ -27,7 +27,8 @@ export enum MemberStatus {
   LEFT = "LEFT",
   ARCHIVED = "ARCHIVED",
   AWAY = "AWAY",
-  NOT_MEMBER = "NOT_MEMBER"
+  NOT_MEMBER = "NOT_MEMBER",
+  TESTING = "TESTING"
 }
 
 export enum BillStatus {

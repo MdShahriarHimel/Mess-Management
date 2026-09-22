@@ -402,7 +402,23 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
         member.id = tokenUid;
         if (tokenPicture) member.photo = tokenPicture;
+        // Purge oldId record if present elsewhere in db.members
+        db.members = db.members.filter(m => m === member || (m.id !== oldId && m.email.toLowerCase() !== member.email.toLowerCase()));
         saveDB(targetMessId);
+
+        // Async clean oldId from PostgreSQL to prevent resurrected duplicates
+        (async () => {
+          try {
+            await pool.query("UPDATE bills SET collector_id = $1 WHERE collector_id = $2", [tokenUid, oldId]);
+            await pool.query("UPDATE duties SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
+            await pool.query("UPDATE deposits SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
+            await pool.query("UPDATE market_entries SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
+            await pool.query("UPDATE meals SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
+            await pool.query("DELETE FROM members WHERE id = $1", [oldId]);
+          } catch (e) {
+            console.error("[Link Firebase UID] DB cleanup error:", e);
+          }
+        })();
       }
 
       if (!member) {
@@ -1094,8 +1110,17 @@ router.post("/auth/change-password-audit", authMiddleware, (req: AuthenticatedRe
 // ---------------------------------------------------------
 router.get("/members", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const db = loadDB();
-  console.log("[TRACE F - GET /api/members] Returning members from dbCache. First 3 members:", db.members.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
-  res.json({ members: db.members });
+  const isAdminOrSuper = req.user?.role === UserRole.ADMIN || req.user?.role === UserRole.SUPERUSER;
+  
+  // Exclude TESTING/Sandbox members for regular members so test accounts are completely invisible to regular users
+  const visibleMembers = db.members.filter(m => {
+    if (m.status === MemberStatus.TESTING || (m.status as string) === "TESTING") {
+      return isAdminOrSuper || req.user?.id === m.id;
+    }
+    return true;
+  });
+
+  res.json({ members: visibleMembers });
 });
 
 // Create member (Admin, Super User, Assistant Super User, and Manager)
@@ -4175,16 +4200,18 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   const monthStart = monthObj?.startDate ? monthObj.startDate.split("T")[0] : null;
   const monthEnd = monthObj?.endDate ? monthObj.endDate.split("T")[0] : null;
 
+  // Set of test/sandbox member IDs that should never pollute mess statistics or settlement
+  const testingMemberIds = new Set(
+    db.members
+      .filter(m => m.status === MemberStatus.TESTING || (m.status as string) === "TESTING")
+      .map(m => m.id)
+  );
+
   // Filter members that participated in this monthly cycle (Active, Away, or Left/Archived who stayed during this cycle)
-  const monthMembers = db.members.filter(m => {
-    // If status is NOT_MEMBER (Not member only for Admin), exclude from mess calculations unless they have direct activity
-    if (m.status === MemberStatus.NOT_MEMBER || (m.status as string) === "NOT_MEMBER") {
-      const hasDirectActivity = monthDeposits.some(d => d.memberId === m.id) ||
-        monthMarkets.some(mk => mk.memberId === m.id) ||
-        monthMeals.some(ml => ml.memberId === m.id) ||
-        monthHoldings.some(h => h.memberId === m.id) ||
-        monthBills.some((b: any) => b.assignedMemberIds?.includes(m.id));
-      return hasDirectActivity;
+  const rawMonthMembers = db.members.filter(m => {
+    // 1. Exclude TESTING members completely from mess settlement calculations
+    if (m.status === MemberStatus.TESTING || (m.status as string) === "TESTING") {
+      return false;
     }
 
     // Check if member has direct activity/records in this cycle
@@ -4194,12 +4221,15 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
       monthHoldings.some(h => h.memberId === m.id) ||
       monthBills.some((b: any) => b.assignedMemberIds?.includes(m.id));
 
+    // If status is NOT_MEMBER (Not member only for Admin), exclude from mess calculations unless they have direct activity
+    if (m.status === MemberStatus.NOT_MEMBER || (m.status as string) === "NOT_MEMBER") {
+      return hasActivity;
+    }
+
     if (hasActivity) return true;
 
     // For Active / Away members (including Admins whose status is ACTIVE/AWAY)
     if (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY) {
-      // In an active/unlocked cycle, all active/away members are always included
-      // even if they join on the 26th or anywhere during the cycle
       if (monthObj && !monthObj.isLocked) {
         return true;
       }
@@ -4210,22 +4240,34 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
     }
 
     // For Left, Suspended, or Archived members:
-    // They are included in this month if their membership overlapped with this cycle
-    const joinedBeforeMonthEnd = !monthEnd || !m.joiningDate || m.joiningDate.split("T")[0] <= monthEnd;
-    const leftAfterMonthStart = !monthStart || !m.leavingDate || m.leavingDate.split("T")[0] >= monthStart;
-
-    if (joinedBeforeMonthEnd && leftAfterMonthStart) {
-      return true;
-    }
-
+    // Only include if they have actual records/activity in this cycle (never ghost rows)
     return false;
   });
 
-  // Sums
-  const totalDeposits = monthDeposits.reduce((sum, d) => sum + d.amount, 0);
-  const totalMarkets = monthMarkets.reduce((sum, m) => sum + m.amount, 0);
-  const managerMarketSpent = monthHoldings.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
-  const managerHoldingObj = monthHoldings.find(h => h.marketSpent !== undefined && h.marketSpent > 0) || monthHoldings[0];
+  // Strict deduplication of monthMembers by member id
+  const seenMemberIds = new Set<string>();
+  const monthMembers: Member[] = [];
+  for (const m of rawMonthMembers) {
+    if (!seenMemberIds.has(m.id)) {
+      seenMemberIds.add(m.id);
+      monthMembers.push(m);
+    }
+  }
+
+  // Sums (excluding sandbox/testing members so test transactions never pollute real mess financial metrics)
+  const totalDeposits = monthDeposits
+    .filter(d => !testingMemberIds.has(d.memberId))
+    .reduce((sum, d) => sum + d.amount, 0);
+
+  const totalMarkets = monthMarkets
+    .filter(m => !testingMemberIds.has(m.memberId))
+    .reduce((sum, m) => sum + m.amount, 0);
+
+  const managerMarketSpent = monthHoldings
+    .filter(h => !testingMemberIds.has(h.memberId))
+    .reduce((sum, h) => sum + (h.marketSpent || 0), 0);
+
+  const managerHoldingObj = monthHoldings.find(h => !testingMemberIds.has(h.memberId) && h.marketSpent !== undefined && h.marketSpent > 0) || monthHoldings[0];
   const managerMarketDescription = managerHoldingObj?.description || "";
 
   // Total Cost = Deposits + Market Expenses
@@ -4248,6 +4290,8 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
 
   let totalMeals = 0;
   monthMeals.forEach(meal => {
+    // Exclude meals recorded by testing/sandbox accounts
+    if (testingMemberIds.has(meal.memberId)) return;
     activeMealKeys.forEach((key: string) => {
       totalMeals += (meal as any)[key] || 0;
     });

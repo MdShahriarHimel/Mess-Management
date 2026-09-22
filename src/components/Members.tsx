@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { 
   Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, 
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
-  ChevronDown, ChevronUp, GraduationCap, Award, Home, DoorOpen
+  ChevronDown, ChevronUp, GraduationCap, Award, Home, DoorOpen, FlaskConical
 } from "lucide-react";
 import { Member, UserRole, MemberStatus, RespectSenioritySettings, RoomLabel } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
@@ -563,6 +563,11 @@ export default function Members({
   );
 
   const visibleMembers = filteredMembers.filter(m => {
+    // Hide TESTING members from users who are neither ADMIN nor SUPERUSER (unless it is their own profile)
+    if ((m.status === MemberStatus.TESTING || (m.status as string) === "TESTING") &&
+        currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.SUPERUSER && currentUser.id !== m.id) {
+      return false;
+    }
     // If hidden from directory by admin, only Admins can see them
     if (m.hideCardFromDirectoryByAdmin && currentUser.role !== UserRole.ADMIN) {
       return false;
@@ -575,7 +580,9 @@ export default function Members({
   });
 
   const activeMembers = visibleMembers.filter(m => 
-    m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY || m.status === MemberStatus.NOT_MEMBER
+    m.status === MemberStatus.ACTIVE || 
+    m.status === MemberStatus.AWAY || 
+    (m.status === MemberStatus.TESTING && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.id === m.id))
   );
 
   const pendingMembers = visibleMembers.filter(m => 
@@ -585,7 +592,8 @@ export default function Members({
   const inactiveMembers = visibleMembers.filter(m => 
     m.status === MemberStatus.SUSPENDED || 
     m.status === MemberStatus.LEFT || 
-    m.status === MemberStatus.ARCHIVED
+    m.status === MemberStatus.ARCHIVED ||
+    m.status === MemberStatus.NOT_MEMBER
   );
 
   const renderMemberCard = (member: Member) => {
@@ -675,12 +683,13 @@ export default function Members({
             <span className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold border uppercase tracking-wider ${
               member.status === MemberStatus.ACTIVE ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
               member.status === MemberStatus.AWAY ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
+              member.status === MemberStatus.TESTING ? "bg-purple-500/30 text-purple-300 border-purple-500/50" :
               member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
               member.status === MemberStatus.PENDING ? "bg-orange-500/20 text-orange-400 border-orange-500/30 animate-pulse" :
               member.status === MemberStatus.LEFT ? "bg-rose-500/25 text-rose-300 border-rose-500/40" :
               "bg-slate-500/20 text-slate-300 border-slate-500/30"
             }`}>
-              {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status === MemberStatus.LEFT ? "LEFT MESS" : member.status}
+              {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status === MemberStatus.LEFT ? "LEFT MESS" : member.status === MemberStatus.TESTING ? "SANDBOX / TEST" : member.status}
             </span>
           </div>
 
@@ -694,6 +703,12 @@ export default function Members({
                   {member.name}
                   {member.id === currentUser.id && (
                     <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase animate-pulse">Me</span>
+                  )}
+                  {member.status === MemberStatus.TESTING && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold tracking-wide bg-purple-500/25 text-purple-300 border border-purple-500/40 uppercase flex items-center gap-0.5">
+                      <FlaskConical size={10} className="text-purple-400" />
+                      TEST ACCOUNT
+                    </span>
                   )}
                 </h3>
                 <p className={`text-xs font-bold ${isDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
@@ -1629,7 +1644,15 @@ export default function Members({
                           )}
                           <option value={MemberStatus.LEFT}>LEFT MESS</option>
                           <option value={MemberStatus.ARCHIVED}>ARCHIVED</option>
+                          {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
+                            <option value={MemberStatus.TESTING}>TESTING (স্যান্ডবক্স / টেস্ট অ্যাকাউন্ট - নো ডেটা ইমপ্যাক্ট)</option>
+                          )}
                         </select>
+                        {editingMember.status === MemberStatus.TESTING && (
+                          <p className="text-[10px] text-purple-400 font-semibold mt-1">
+                            🧪 Sandbox Test Member: Fully functional account for testing features. Excluded from settlement sheets, meal rates, and invisible to regular members.
+                          </p>
+                        )}
                         {editingMember.status === MemberStatus.NOT_MEMBER && (
                           <p className="text-[10px] text-amber-400 font-medium mt-1">
                             Non-participating Admin: Excluded from all meal rates, shared bill splits, and mess calculations.

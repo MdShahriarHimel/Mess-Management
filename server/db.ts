@@ -403,6 +403,49 @@ export async function importBackupToPostgres(backupData: DatabaseSchema) {
   console.log("[Backup] Database import completed successfully!");
 }
 
+export function deduplicateMembers(members: Member[]): Member[] {
+  if (!Array.isArray(members)) return [];
+  const byEmail = new Map<string, Member>();
+  const byId = new Map<string, Member>();
+  const result: Member[] = [];
+
+  for (const m of members) {
+    if (!m || !m.id) continue;
+    const emailKey = (m.email || "").trim().toLowerCase();
+
+    // Check if duplicate email exists
+    if (emailKey && byEmail.has(emailKey)) {
+      const existing = byEmail.get(emailKey)!;
+      // If one is admin-uuid-0000 or NOT_MEMBER, and the other is ACTIVE with real UID, prefer the active one
+      if (existing.id === "admin-uuid-0000" && m.id !== "admin-uuid-0000") {
+        const idx = result.indexOf(existing);
+        if (idx !== -1) result[idx] = m;
+        byEmail.set(emailKey, m);
+        byId.delete(existing.id);
+        byId.set(m.id, m);
+      } else if (existing.status !== MemberStatus.ACTIVE && m.status === MemberStatus.ACTIVE) {
+        const idx = result.indexOf(existing);
+        if (idx !== -1) result[idx] = m;
+        byEmail.set(emailKey, m);
+        byId.delete(existing.id);
+        byId.set(m.id, m);
+      }
+      continue;
+    }
+
+    // Check if duplicate ID exists
+    if (byId.has(m.id)) {
+      continue;
+    }
+
+    if (emailKey) byEmail.set(emailKey, m);
+    byId.set(m.id, m);
+    result.push(m);
+  }
+
+  return result;
+}
+
 // Refresh the in-memory cache directly from the PostgreSQL single source of truth
 export async function refreshDbCache() {
   console.log("[Backup] Cache refresh started...");
@@ -440,7 +483,7 @@ export async function refreshDbCache() {
   }
 
   dbCache = {
-    members: membersList as any[],
+    members: deduplicateMembers(membersList as any[]),
     months: monthsList
       .filter((m: any) => !m.messId || m.messId === "default")
       .map((m: any) => ({
@@ -612,7 +655,7 @@ export async function initializeDbCache() {
       }
     } else {
       dbCache = {
-        members: membersList as any[],
+        members: deduplicateMembers(membersList as any[]),
         months: monthsList
           .filter((m: any) => !m.messId || m.messId === "default")
           .map((m: any) => ({
@@ -1086,6 +1129,10 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
   if (target && !target.messRules) {
     target.messRules = getDefaultMessRules(messId);
+  }
+
+  if (target && target.members) {
+    target.members = deduplicateMembers(target.members);
   }
 
   dbCache = target;
