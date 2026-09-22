@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import * as LucideIcons from "lucide-react";
+import { deduplicateMembersList } from "../utils/memberUtils.ts";
 
 interface Member {
   id: string;
@@ -94,8 +95,11 @@ export const CreditAndPermissions: React.FC<CreditAndPermissionsProps> = ({
   const [localShow, setLocalShow] = useState(creditConfig.showCreditPanel);
 
   // Selected member for permission management
-  const [selectedMemberId, setSelectedMemberId] = useState<string>(membersList[0]?.id || "");
-  const selectedMember = membersList.find(m => m.id === selectedMemberId);
+  const uniqueMembersList = useMemo(() => {
+    return deduplicateMembersList(membersList || []);
+  }, [membersList]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>(uniqueMembersList[0]?.id || "");
+  const selectedMember = uniqueMembersList.find(m => m.id === selectedMemberId);
   const selectedPermissions = selectedMemberId ? (appearancePermissions[selectedMemberId] || []) : [];
 
   const [savingCredit, setSavingCredit] = useState(false);
@@ -529,7 +533,7 @@ export const CreditAndPermissions: React.FC<CreditAndPermissionsProps> = ({
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
                   >
                     <option value="" disabled>-- Select a Member --</option>
-                    {membersList.map(m => (
+                    {uniqueMembersList.map(m => (
                       <option key={m.id} value={m.id}>{m.nickname} ({m.role})</option>
                     ))}
                   </select>

@@ -26,6 +26,7 @@ import { loadDB, saveDB, syncState,
   setDbCacheForMess,
   syncCacheToPostgresDirectly,
   getDefaultMessRules,
+  deduplicateMembers,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
@@ -186,13 +187,15 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
 
   const matchesMember = (m: Member): boolean => {
     if (!m) return false;
-    if (normEmail && m.email && typeof m.email === "string" && m.email.trim().toLowerCase() === normEmail) {
-      return true;
-    }
+    // 1. Strict Unique Key Constraint check first (Firebase Auth UID or unique ID)
     if (queryId && m.id === queryId) {
       return true;
     }
     if (queryPrevId && (m as any).previousIds && Array.isArray((m as any).previousIds) && (m as any).previousIds.includes(queryPrevId)) {
+      return true;
+    }
+    // 2. Email fallback only if unique ID was not matched
+    if (normEmail && m.email && typeof m.email === "string" && m.email.trim().toLowerCase() === normEmail) {
       return true;
     }
     return false;
@@ -1120,7 +1123,7 @@ router.get("/members", authMiddleware, (req: AuthenticatedRequest, res: Response
     return true;
   });
 
-  res.json({ members: visibleMembers });
+  res.json({ members: deduplicateMembers(visibleMembers) });
 });
 
 // Create member (Admin, Super User, Assistant Super User, and Manager)

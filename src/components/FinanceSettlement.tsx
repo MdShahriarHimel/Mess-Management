@@ -13,6 +13,7 @@ import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { getAuthToken } from "../lib/authHeader.ts";
+import { deduplicateMembersList } from "../utils/memberUtils.ts";
 
 interface FinanceSettlementProps {
   currentUser: Member;
@@ -102,7 +103,10 @@ export default function FinanceSettlement({
     const currentMonthObj = (months || []).find((mo: any) => mo.id === currentMonthId);
     const monthEnd = currentMonthObj?.endDate ? currentMonthObj.endDate.split("T")[0] : null;
 
-    const filtered = (members || []).filter(m => {
+    // First ensure incoming members are strictly deduplicated by unique key constraint
+    const deduplicated = deduplicateMembersList(members || []);
+
+    const filtered = deduplicated.filter(m => {
       // 0. Completely exclude TESTING sandbox accounts from settlement sheet
       if (m.status === MemberStatus.TESTING || (m.status as string) === "TESTING") {
         return false;

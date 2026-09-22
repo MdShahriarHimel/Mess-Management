@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { 
   Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, 
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
@@ -15,6 +15,7 @@ import { processProfilePhoto } from "../utils/imageOptimizer";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
+import { deduplicateMembersList } from "../utils/memberUtils.ts";
 
 
 const COLOR_PALETTES = [
@@ -554,8 +555,11 @@ export default function Members({
     }
   };
 
+  // Strictly deduplicate members list using unique key constraint
+  const uniqueMembers = useMemo(() => deduplicateMembersList(members), [members]);
+
   // Filter members list based on search
-  const filteredMembers = members.filter(m => 
+  const filteredMembers = uniqueMembers.filter(m => 
     m.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     m.nickname.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.email.toLowerCase().includes(searchTerm.toLowerCase()) ||

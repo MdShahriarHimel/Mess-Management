@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import * as LucideIcons from "lucide-react";
 import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
 import { ThemeEnginePanel } from "./ThemeEnginePanel";
@@ -8,6 +8,7 @@ import { RespectSenioritySettings, RoomLabel } from "../types";
 import { getRespectDisplayName } from "../utils/respectHelper";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { MessBackupModal } from "./MessBackupModal";
+import { deduplicateMembersList } from "../utils/memberUtils.ts";
 
 interface Member {
   id: string;
@@ -224,6 +225,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     ...(homeCustomization || {})
   });
   const effectiveAuthToken = sessionToken || getAuthToken(currentUser);
+
+  // Strictly deduplicate members list using unique key constraint
+  const uniqueMembersList = useMemo(() => {
+    return deduplicateMembersList(membersList || []);
+  }, [membersList]);
 
   useEffect(() => {
     if (dashboardVisibility) {
@@ -654,7 +660,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     setTranslationRows(prev => {
       const existingKeys = new Set(prev.map(r => r.originalKey.trim().toLowerCase()));
       const newItems: TranslationRowItem[] = [];
-      (membersList || []).forEach(m => {
+      (uniqueMembersList || []).forEach(m => {
         if (m.name && !existingKeys.has(m.name.trim().toLowerCase())) {
           newItems.push({
             id: `row-member-${m.id}-${Date.now()}`,
@@ -979,8 +985,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   };
 
   // Selected member for permission matrix (Level 3 Customization Matrix)
-  const [selectedMemberId, setSelectedMemberId] = useState<string>(membersList[0]?.id || "");
-  const selectedMember = membersList.find(m => m.id === selectedMemberId);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>(uniqueMembersList[0]?.id || "");
+  const selectedMember = uniqueMembersList.find(m => m.id === selectedMemberId);
   const selectedPermissions = selectedMemberId ? (appearancePermissions[selectedMemberId] || []) : [];
 
   const handleTogglePermission = async (perm: string, checked: boolean) => {
@@ -2644,7 +2650,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                     onChange={(e) => setSelectedMemberId(e.target.value)}
                     className="w-full px-3 py-2.5 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
                   >
-                    {membersList.map(m => (
+                    {uniqueMembersList.map(m => (
                       <option key={m.id} value={m.id}>
                         {getRespectDisplayName(currentUser, m, respectSenioritySettings)} ({m.name}) — {m.role}
                       </option>
@@ -3493,7 +3499,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {roomList.map((room) => {
-                      const assignedMembersCount = (membersList || []).filter(
+                      const assignedMembersCount = (uniqueMembersList || []).filter(
                         m => m.roomLabelId === room.id || m.roomLabel === room.label
                       ).length;
 
@@ -3628,7 +3634,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                           : "text-slate-400 hover:text-slate-200"
                       }`}
                     >
-                      Mess Members ({(membersList || []).length})
+                      Mess Members ({(uniqueMembersList || []).length})
                     </button>
                     <button
                       type="button"
@@ -3678,7 +3684,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                         <LucideIcons.Plus size={12} />
                         Add All Mess Members
                       </button>
-                      {(membersList || []).map(m => {
+                      {(uniqueMembersList || []).map(m => {
                         const isAlreadyAdded = translationRows.some(
                           r => r.originalKey.trim().toLowerCase() === m.name.trim().toLowerCase()
                         );
@@ -3929,7 +3935,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                               >
                                 <option value="" disabled>Pick...</option>
                                 <optgroup label="Mess Members">
-                                  {(membersList || []).map(m => (
+                                  {(uniqueMembersList || []).map(m => (
                                     <option key={m.id} value={m.name}>{m.name}</option>
                                   ))}
                                 </optgroup>
@@ -4017,7 +4023,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                           <span className="truncate">
                             Preview: <span className="font-semibold text-slate-400">"{row.originalKey || "(empty)"}"</span> → <span className="font-bold text-cyan-400">"{row.customValue || "(no change)"}"</span>
                           </span>
-                          {row.originalKey && membersList.some(m => m.name.toLowerCase() === row.originalKey.trim().toLowerCase()) && (
+                          {row.originalKey && uniqueMembersList.some(m => m.name.toLowerCase() === row.originalKey.trim().toLowerCase()) && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
                               Member Name
                             </span>

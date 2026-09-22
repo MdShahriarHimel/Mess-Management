@@ -38,6 +38,7 @@ import { BackgroundAudioPlayer } from "./components/BackgroundAudioPlayer.tsx";
 import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
+import { deduplicateMembersList, findMemberByUniqueKey } from "./utils/memberUtils.ts";
 
 // Types
 import { Member, MessMonth, UserRole, MemberStatus, CycleProposal, RespectSenioritySettings } from "./types.js";
@@ -1781,10 +1782,11 @@ export default function App() {
     { id: "breakfast", name: "Breakfast", enabled: false }
   ]);
 
-  // Memoized members list with custom translation matrix names applied
+  // Memoized members list with custom translation matrix names applied and strict unique key constraint
   const displayedMembersList = useMemo(() => {
-    if (!translations || Object.keys(translations).length === 0) return membersList;
-    return membersList.map(m => {
+    const unique = deduplicateMembersList(membersList);
+    if (!translations || Object.keys(translations).length === 0) return unique;
+    return unique.map(m => {
       const translatedName = translations[m.name];
       const translatedNickname = m.nickname ? translations[m.nickname] : undefined;
       if (!translatedName && !translatedNickname) return m;
@@ -2605,19 +2607,18 @@ export default function App() {
 
       if (membersRes.ok) {
         const membersData = await membersRes.json().catch(() => ({}));
-        const mList = membersData.members || [];
-        setMembersList(mList);
+        const rawMList: Member[] = membersData.members || [];
+        const uniqueMembers = deduplicateMembersList(rawMList);
+        setMembersList(uniqueMembers);
         if (currentUser) {
-          const freshUser = mList.find((m: Member) => 
-            m.id === currentUser.id || 
-            (m.email && currentUser.email && m.email.toLowerCase() === currentUser.email.toLowerCase())
-          );
+          // Strictly match by Unique Key Constraint (Firebase Auth UID or mapped ID)
+          const freshUser = findMemberByUniqueKey(uniqueMembers, currentUser.id, currentUser.email);
           if (freshUser && (freshUser.id !== currentUser.id || freshUser.status !== currentUser.status || freshUser.role !== currentUser.role)) {
             setCurrentUser(freshUser);
             localStorage.setItem("user", JSON.stringify(freshUser));
           }
         }
-        await checkSuperUserRecentLogs(token, mList, isInitialLoad);
+        await checkSuperUserRecentLogs(token, uniqueMembers, isInitialLoad);
       }
 
       // Fetch dynamic cycle proposals
@@ -5701,7 +5702,7 @@ export default function App() {
                 setRespectSenioritySettings={setRespectSenioritySettings}
                 appearancePermissions={appearancePermissions}
                 setAppearancePermissions={setAppearancePermissions}
-                membersList={membersList}
+                membersList={displayedMembersList}
                 messes={messes}
                 sessionToken={sessionToken || ""}
                 activeMonthId={currentMonthId}

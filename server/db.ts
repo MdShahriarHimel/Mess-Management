@@ -413,28 +413,40 @@ export function deduplicateMembers(members: Member[]): Member[] {
     if (!m || !m.id) continue;
     const emailKey = (m.email || "").trim().toLowerCase();
 
+    // Primary unique key constraint check: by member ID
+    if (byId.has(m.id)) {
+      continue;
+    }
+
     // Check if duplicate email exists
     if (emailKey && byEmail.has(emailKey)) {
       const existing = byEmail.get(emailKey)!;
-      // If one is admin-uuid-0000 or NOT_MEMBER, and the other is ACTIVE with real UID, prefer the active one
-      if (existing.id === "admin-uuid-0000" && m.id !== "admin-uuid-0000") {
-        const idx = result.indexOf(existing);
-        if (idx !== -1) result[idx] = m;
-        byEmail.set(emailKey, m);
-        byId.delete(existing.id);
-        byId.set(m.id, m);
+      const isExistingFirebaseUid = existing.id.length >= 26 && !existing.id.startsWith("idx_") && !existing.id.startsWith("seed_") && existing.id !== "admin-uuid-0000";
+      const isCurrentFirebaseUid = m.id.length >= 26 && !m.id.startsWith("idx_") && !m.id.startsWith("seed_") && m.id !== "admin-uuid-0000";
+
+      let shouldReplace = false;
+
+      if (!isExistingFirebaseUid && isCurrentFirebaseUid) {
+        shouldReplace = true;
+      } else if (existing.id === "admin-uuid-0000" && m.id !== "admin-uuid-0000") {
+        shouldReplace = true;
+      } else if (existing.role !== UserRole.ADMIN && m.role === UserRole.ADMIN) {
+        shouldReplace = true;
       } else if (existing.status !== MemberStatus.ACTIVE && m.status === MemberStatus.ACTIVE) {
+        shouldReplace = true;
+      }
+
+      if (shouldReplace) {
+        // Record existing id in previousIds if not present
+        if (!(m as any).previousIds) (m as any).previousIds = [];
+        if (!(m as any).previousIds.includes(existing.id)) (m as any).previousIds.push(existing.id);
+
         const idx = result.indexOf(existing);
         if (idx !== -1) result[idx] = m;
         byEmail.set(emailKey, m);
         byId.delete(existing.id);
         byId.set(m.id, m);
       }
-      continue;
-    }
-
-    // Check if duplicate ID exists
-    if (byId.has(m.id)) {
       continue;
     }
 
