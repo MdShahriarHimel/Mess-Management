@@ -2532,7 +2532,21 @@ export default function App() {
   };
 
   const sortMonthsDescending = <T extends { id: string; startDate?: string; endDate?: string; name?: string }>(list: T[]): T[] => {
-    return [...list].sort((a, b) => {
+    if (!list || list.length === 0) return [];
+    const seenIds = new Set<string>();
+    const seenNames = new Set<string>();
+    const uniqueList: T[] = [];
+
+    for (const m of list) {
+      if (!m || !m.id || seenIds.has(m.id)) continue;
+      const norm = (m.name || "").trim().toLowerCase();
+      if (norm && seenNames.has(norm)) continue;
+      seenIds.add(m.id);
+      if (norm) seenNames.add(norm);
+      uniqueList.push(m);
+    }
+
+    return uniqueList.sort((a, b) => {
       const parseMonthTime = (m: { startDate?: string; endDate?: string; name?: string }) => {
         if (m.startDate) {
           const t = new Date(m.startDate).getTime();
@@ -3476,7 +3490,8 @@ export default function App() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `mess_erp_full_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      const messPrefix = activeMessId ? `mess_${activeMessId}_` : "";
+      link.download = `${messPrefix}backup_${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -3495,6 +3510,31 @@ export default function App() {
           const content = event.target?.result as string;
           const parsed = JSON.parse(content);
           
+          const db = parsed.db || parsed;
+          const membersCount = Array.isArray(db?.members) ? db.members.length : 0;
+          const monthsCount = Array.isArray(db?.months) ? db.months.length : 0;
+          const mealsCount = Array.isArray(db?.meals) ? db.meals.length : 0;
+          const depositsCount = Array.isArray(db?.deposits) ? db.deposits.length : 0;
+          const marketCount = Array.isArray(db?.marketEntries) ? db.marketEntries.length : 0;
+
+          let warningMsg = "";
+          if (mealsCount === 0 || depositsCount === 0) {
+            warningMsg = "\n\n⚠️ সতর্কতা (WARNING): এই ব্যাকআপ ফাইলে কোনো মিল (Meals) বা ক্যাশ ডিপোজিট নেই! এটি ইমপোর্ট করলে আপনার মেসের সেটেলমেন্ট শিটের মিল ও ব্যালেন্স ০ হয়ে যাবে।";
+          }
+
+          const confirmMsg = `📋 ব্যাকআপ ফাইল বিবরণী (Backup Preview):\n` +
+            `• সদস্য (Members): ${membersCount} জন\n` +
+            `• মাস/সাইকেল (Months): ${monthsCount} টি\n` +
+            `• মিল রেকর্ড (Meals): ${mealsCount} টি\n` +
+            `• ডিপোজিট (Deposits): ${depositsCount} টি\n` +
+            `• বাজার এন্ট্রি (Market Entries): ${marketCount} টি\n` +
+            warningMsg +
+            `\n\nআপনি কি নিশ্চিতভাবে এই ব্যাকআপটি বর্তমান মেসে রিস্টোর করতে চান?\n(বর্তমান তথ্যের একটি সেফটি স্ন্যাপশট স্বয়ংক্রিয়ভাবে সংরক্ষিত থাকবে)`;
+
+          if (!window.confirm(confirmMsg)) {
+            return;
+          }
+
           const activeToken = sessionToken || localStorage.getItem("mess_token") || "";
           const response = await fetch("/api/admin/backup/import", {
             method: "POST",
@@ -3506,7 +3546,8 @@ export default function App() {
           });
           
           if (response.ok) {
-            alert("Database Backup Restored Successfully! The page will now reload.");
+            const resData = await response.json().catch(() => ({}));
+            alert(resData.message || "Database Backup Restored Successfully! The page will now reload.");
             window.location.reload();
           } else {
             const err = await response.json().catch(() => ({}));

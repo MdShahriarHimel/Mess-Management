@@ -7,6 +7,7 @@ import { MonetizationHub } from "./MonetizationHub";
 import { RespectSenioritySettings, RoomLabel } from "../types";
 import { getRespectDisplayName } from "../utils/respectHelper";
 import { getAuthToken } from "../lib/authHeader.ts";
+import { MessBackupModal } from "./MessBackupModal";
 
 interface Member {
   id: string;
@@ -200,6 +201,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
 
   // Dashboard Overview local state
   const [localVisibility, setLocalVisibility] = useState<any>({
@@ -341,6 +343,251 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     };
   });
   const [isSavingRespect, setIsSavingRespect] = useState(false);
+
+  // Daily Automated Database Backup State
+  const [todayBackupInfo, setTodayBackupInfo] = useState<{
+    id: string;
+    messId: string;
+    backupDate: string;
+    createdAt: string;
+    filename: string;
+    fileSize: number;
+    status: string;
+    triggerType: string;
+    integrityKey?: string;
+    counts?: Record<string, number>;
+  } | null>(null);
+  const [dailyBackupHistory, setDailyBackupHistory] = useState<any[]>([]);
+  const [loadingDailyBackup, setLoadingDailyBackup] = useState(false);
+  const [downloadingTodayBackup, setDownloadingTodayBackup] = useState(false);
+  const [triggeringManualSnapshot, setTriggeringManualSnapshot] = useState(false);
+
+  // Safety Snapshot & Undo/Redo Engine State
+  const [safetyStatus, setSafetyStatus] = useState<{
+    hasSafetySnapshot: boolean;
+    canUndo: boolean;
+    canRedo: boolean;
+    latestSnapshot: {
+      id: string;
+      createdAt: string;
+      filename: string;
+      triggerType: string;
+      counts?: Record<string, number>;
+    } | null;
+  } | null>(null);
+  const [isUndoingRollback, setIsUndoingRollback] = useState(false);
+
+  // Stored Backup Restore Modal State
+  const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<{
+    id: string;
+    backupDate: string;
+    filename: string;
+    createdAt?: string;
+    fileSize?: number;
+    triggerType?: string;
+    counts?: Record<string, number>;
+  } | null>(null);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [restoreConfirmedCheck, setRestoreConfirmedCheck] = useState(false);
+
+  const isAdminUser = isUltimateAdmin || currentUser.role === "ADMIN";
+
+  const fetchDailyBackupData = async () => {
+    if (!effectiveAuthToken) return;
+    setLoadingDailyBackup(true);
+    try {
+      const [todayRes, histRes, safetyRes] = await Promise.all([
+        fetch("/api/admin/backup/daily/today?json=true", {
+          headers: { Authorization: `Bearer ${effectiveAuthToken}` }
+        }),
+        fetch("/api/admin/backup/daily/history", {
+          headers: { Authorization: `Bearer ${effectiveAuthToken}` }
+        }),
+        fetch("/api/admin/backup/daily/safety-status", {
+          headers: { Authorization: `Bearer ${effectiveAuthToken}` }
+        })
+      ]);
+
+      if (todayRes.ok) {
+        const todayData = await todayRes.json();
+        if (todayData.success && todayData.backup) {
+          setTodayBackupInfo(todayData.backup);
+        }
+      }
+
+      if (histRes.ok) {
+        const histData = await histRes.json();
+        if (histData.success && Array.isArray(histData.history)) {
+          setDailyBackupHistory(histData.history);
+        }
+      }
+
+      if (safetyRes.ok) {
+        const safetyData = await safetyRes.json();
+        if (safetyData.success) {
+          setSafetyStatus(safetyData);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load daily backup info:", e);
+    } finally {
+      setLoadingDailyBackup(false);
+    }
+  };
+
+  const handleConfirmRestoreStoredBackup = async () => {
+    if (!selectedBackupForRestore || !effectiveAuthToken) return;
+    setIsRestoringBackup(true);
+    try {
+      const res = await fetch(`/api/admin/backup/daily/restore/${selectedBackupForRestore.id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${effectiveAuthToken}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "রিস্টোর ব্যর্থ হয়েছে");
+      }
+
+      showStatus("success", `সফলভাবে ${selectedBackupForRestore.backupDate} তারিখের ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর সম্পন্ন হয়েছে! (কোনো ভুল মনে হলে তাৎক্ষণিক আনডু করতে পারবেন)`);
+      setSelectedBackupForRestore(null);
+      setRestoreConfirmedCheck(false);
+      await fetchDailyBackupData();
+
+      // Refresh window after brief pause so all stores and tables refresh cleanly
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (e: any) {
+      showStatus("error", e.message || "রিস্টোর ব্যর্থ হয়েছে");
+    } finally {
+      setIsRestoringBackup(false);
+    }
+  };
+
+  const handleTriggerUndoRollback = async () => {
+    if (!effectiveAuthToken) return;
+    setIsUndoingRollback(true);
+    try {
+      const res = await fetch("/api/admin/backup/daily/undo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${effectiveAuthToken}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "আনডু/রোলব্যাক ব্যর্থ হয়েছে");
+      }
+
+      showStatus("success", data.message || "সফলভাবে পূর্বের ডাটা ফিরিয়ে আনা হয়েছে!");
+      await fetchDailyBackupData();
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (e: any) {
+      showStatus("error", e.message || "আনডু ব্যর্থ হয়েছে");
+    } finally {
+      setIsUndoingRollback(false);
+    }
+  };
+
+  const handleDownloadTodayBackup = async () => {
+    if (!effectiveAuthToken) return;
+    setDownloadingTodayBackup(true);
+    try {
+      const res = await fetch("/api/admin/backup/daily/today", {
+        headers: { Authorization: `Bearer ${effectiveAuthToken}` }
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "আজকের ব্যাকআপ ডাউনলোড করতে সমস্যা হয়েছে");
+      }
+
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get("Content-Disposition");
+      let downloadFilename = `daily_backup_${activeMessId}_${new Date().toISOString().split("T")[0]}.json`;
+      if (contentDisposition && contentDisposition.includes("filename=")) {
+        const match = contentDisposition.match(/filename=([^;]+)/);
+        if (match && match[1]) {
+          downloadFilename = match[1].trim().replace(/^["']|["']$/g, "");
+        }
+      }
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = downloadFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      showStatus("success", `আজকের ব্যাকআপ ফাইল সফলভাবে ডাউনলোড হয়েছে (${downloadFilename})!`);
+      fetchDailyBackupData();
+    } catch (e: any) {
+      showStatus("error", e.message || "আজকের ব্যাকআপ ডাউনলোড ব্যর্থ হয়েছে");
+    } finally {
+      setDownloadingTodayBackup(false);
+    }
+  };
+
+  const handleTriggerManualSnapshot = async () => {
+    if (!effectiveAuthToken) return;
+    setTriggeringManualSnapshot(true);
+    try {
+      const res = await fetch("/api/admin/backup/daily/trigger", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${effectiveAuthToken}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "স্ন্যাপশট নিতে সমস্যা হয়েছে");
+      }
+      showStatus("success", "আজকের ফ্রেশ ডাটাবেজ ব্যাকআপ স্ন্যাপশট ক্লাউড ডেটাবেজে সংরক্ষিত হয়েছে!");
+      fetchDailyBackupData();
+    } catch (e: any) {
+      showStatus("error", e.message || "স্ন্যাপশট তৈরি ব্যর্থ হয়েছে");
+    } finally {
+      setTriggeringManualSnapshot(false);
+    }
+  };
+
+  const handleDownloadHistoricalBackup = async (backupId: string, filename: string) => {
+    if (!effectiveAuthToken) return;
+    try {
+      const res = await fetch(`/api/admin/backup/daily/download/${backupId}`, {
+        headers: { Authorization: `Bearer ${effectiveAuthToken}` }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "ব্যাকআপ ফাইল ডাউনলোড করতে সমস্যা হয়েছে");
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename || `backup_${backupId}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      showStatus("success", `ব্যাকআপ ফাইল সফলভাবে ডাউনলোড হয়েছে (${filename})!`);
+    } catch (e: any) {
+      showStatus("error", e.message || "ডাউনলোড ব্যর্থ হয়েছে");
+    }
+  };
 
   useEffect(() => {
     if (propRespectSenioritySettings) {
@@ -590,6 +837,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   useEffect(() => {
     if (activeSubTab === "branding" && effectiveAuthToken) {
       fetchActiveMessSettings();
+    }
+    if (activeSubTab === "backup-restore" && effectiveAuthToken) {
+      fetchDailyBackupData();
     }
   }, [activeSubTab, activeMessId, effectiveAuthToken]);
 
@@ -892,6 +1142,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "room-rents", label: "Room Rents & Labels", role: "admin", icon: "Home" },
     { id: "translations", label: "Translation Matrix", role: "admin", icon: "Languages" },
     { id: "food-knowledge", label: "Food Dictionary & AI", role: "any", icon: "BookOpen" },
+    { id: "backup-restore", label: "Backup & Restore", role: "admin", icon: "Database" },
     { id: "monetization", label: "Monetization Hub", role: "ultimate-admin", icon: "DollarSign" },
     { id: "performance", label: "Performance Control", role: "ultimate-admin", icon: "Cpu" }
   ];
@@ -916,7 +1167,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         "respect-seniority", // Respect & Seniority Control
         "room-rents", // Room Rents & Size Labels
         "translations", // Translation Matrix
-        "food-knowledge" // Food Dictionary & AI
+        "food-knowledge", // Food Dictionary & AI
+        "backup-restore" // Backup & Restore
       ];
       return allowedAdminTabs.includes(tab.id);
     }
@@ -933,7 +1185,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         "cycles", // Cycle & System Rules
         "room-rents", // Room Rents & Size Labels
         "translations", // Translation Matrix
-        "food-knowledge" // Food Dictionary & AI
+        "food-knowledge", // Food Dictionary & AI
+        "backup-restore" // Backup & Restore
       ];
       return allowedAdminTabs.includes(tab.id);
     }
@@ -4533,8 +4786,605 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             </div>
           )}
 
+          {/* BACKUP & RESTORE PANEL */}
+          {activeSubTab === "backup-restore" && filteredTabs.some(t => t.id === "backup-restore") && (
+            <div className={`p-6 rounded-2xl border ${isDarkMode ? "bg-slate-900/60 border-slate-800 text-slate-100" : "bg-white border-slate-200 text-slate-800"} space-y-6 shadow-xl text-left`}>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/40 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <LucideIcons.Database className="w-5 h-5 text-cyan-400" />
+                    <h2 className="text-base font-bold font-display uppercase tracking-wider text-cyan-400">
+                      মেস ব্যাকআপ ও রিস্টোর কনসোল (Mess Backup & Restore)
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    সক্রিয় মেস: <span className="font-bold text-white">{messName || activeMessId}</span> ({activeMessId}) • স্বয়ংক্রিয় দৈনিক সার্ভার ক্রন ব্যাকআপ ও ক্লাউড ডেটাবেজ স্ন্যাপশট।
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBackupModalOpen(true)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <LucideIcons.Upload size={14} />
+                  ম্যানুয়াল এক্সপোর্ট ও রিস্টোর উইন্ডো
+                </button>
+              </div>
+
+              {/* DAILY AUTOMATED DATABASE BACKUP HERO CARD */}
+              <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-slate-900/80 to-blue-950/40 p-6 space-y-5 shadow-2xl">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        সার্ভার ক্রন শিডিউলার সক্রিয় (Server Cron 00:00 UTC)
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                        <LucideIcons.HardDrive size={12} />
+                        PostgreSQL Cloud Database
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2 mt-2">
+                      <LucideIcons.DownloadCloud className="w-5 h-5 text-cyan-400" />
+                      দৈনিক স্বয়ংক্রিয় ব্যাকআপ (Daily Automated Database Backup)
+                    </h3>
+                    <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                      প্রতিদিন রাত ১২:০০ টায় (00:00) স্বয়ংক্রিয় সার্ভার ক্রন জবের মাধ্যমে ক্লাউড ডেটাবেজে এই মেসের সকল মিল, বাজার খরচ, মেম্বার এবং ডিপোজিটের একটি সম্পূর্ণ JSON ডাম্প টাইমস্ট্যাম্প সহ সংরক্ষিত হয়।
+                    </p>
+                  </div>
+
+                  {/* ACTION BUTTONS */}
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0">
+                    <button
+                      type="button"
+                      id="download-todays-backup-btn"
+                      onClick={handleDownloadTodayBackup}
+                      disabled={downloadingTodayBackup}
+                      className="px-5 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-900/40 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {downloadingTodayBackup ? (
+                        <>
+                          <LucideIcons.RefreshCw size={16} className="animate-spin text-white" />
+                          <span>ডাউনলোড হচ্ছে...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LucideIcons.Download size={16} className="text-white" />
+                          <span>Download Today's Backup (আজকের ব্যাকআপ)</span>
+                        </>
+                      )}
+                    </button>
+
+                    {isAdminUser && todayBackupInfo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedBackupForRestore(todayBackupInfo);
+                          setRestoreConfirmedCheck(false);
+                        }}
+                        title="আজকের ব্যাকআপ দিয়ে সম্পূর্ণ ডাটাবেজ রিস্টোর করুন"
+                        className="px-4 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-white font-semibold text-xs rounded-xl border border-rose-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        <LucideIcons.RotateCcw size={15} className="text-rose-400" />
+                        <span>রিস্টোর করুন (Restore)</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleTriggerManualSnapshot}
+                      disabled={triggeringManualSnapshot}
+                      title="এখনই এই মেসের ডাটাবেজ ব্যাকআপ তৈরি ও সংরক্ষণ করুন"
+                      className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <LucideIcons.Camera size={15} className={triggeringManualSnapshot ? "animate-spin text-cyan-400" : "text-slate-400"} />
+                      <span>{triggeringManualSnapshot ? "স্ন্যাপশট হচ্ছে..." : "এখনই স্ন্যাপশট নিন"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* TODAY'S BACKUP STATUS PILLS */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-800/60">
+                  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                      <LucideIcons.Calendar size={12} className="text-cyan-400" />
+                      ব্যাকআপের তারিখ
+                    </div>
+                    <div className="text-xs font-bold text-slate-200 mt-1">
+                      {todayBackupInfo?.backupDate || new Date().toISOString().split("T")[0]}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                      <LucideIcons.Clock size={12} className="text-emerald-400" />
+                      সর্বশেষ রান টাইমস্ট্যাম্প
+                    </div>
+                    <div className="text-xs font-bold text-slate-200 mt-1 truncate" title={todayBackupInfo?.createdAt}>
+                      {todayBackupInfo?.createdAt ? new Date(todayBackupInfo.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "আজ সক্রিয়"}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                      <LucideIcons.FileText size={12} className="text-amber-400" />
+                      ফাইল সাইজ
+                    </div>
+                    <div className="text-xs font-bold text-slate-200 mt-1">
+                      {todayBackupInfo?.fileSize ? `${(todayBackupInfo.fileSize / 1024).toFixed(1)} KB` : "উপলব্ধ"}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                      <LucideIcons.ShieldCheck size={12} className="text-purple-400" />
+                      ইন্টিগ্রিটি সিগনেচার
+                    </div>
+                    <div className="text-xs font-bold text-emerald-400 mt-1 flex items-center gap-1">
+                      <LucideIcons.CheckCircle2 size={12} />
+                      HMAC SHA-256
+                    </div>
+                  </div>
+                </div>
+
+                {/* RECORD COUNTS SUMMARY CHIPS */}
+                {todayBackupInfo?.counts && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
+                    <span className="text-slate-500 font-medium">আজকের ব্যাকআপে অন্তর্ভুক্ত:</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300 font-semibold border border-slate-700">
+                      মেম্বার: {todayBackupInfo.counts.members ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300 font-semibold border border-slate-700">
+                      মাস: {todayBackupInfo.counts.months ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-emerald-300 font-semibold border border-slate-700">
+                      মিল: {todayBackupInfo.counts.meals ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-amber-300 font-semibold border border-slate-700">
+                      বাজার খরচ: {todayBackupInfo.counts.marketEntries ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-purple-300 font-semibold border border-slate-700">
+                      ডিপোজিট: {todayBackupInfo.counts.deposits ?? 0}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* SAFETY SNAPSHOT & UNDO / REDO BANNER */}
+              {safetyStatus?.hasSafetySnapshot && isAdminUser && (
+                <div className="p-4 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/30 via-slate-900/60 to-rose-950/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                      {safetyStatus.canUndo ? (
+                        <LucideIcons.Undo2 size={20} />
+                      ) : (
+                        <LucideIcons.Redo2 size={20} />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-amber-300">
+                          {safetyStatus.canUndo
+                            ? "রিস্টোর পূর্বাবস্থার জরুরি সুরক্ষা স্ন্যাপশট সংরক্ষিত আছে (Undo Ready)"
+                            : "রিস্টোর রিডো করার স্ন্যাপশট উপলব্ধ (Redo Ready)"}
+                        </h4>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          {safetyStatus.latestSnapshot?.triggerType === "PRE_RESTORE_SAFETY" ? "Pre-Restore Safety" : "Pre-Undo Safety"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                        {safetyStatus.canUndo
+                          ? "ভুল ব্যাকআপ রিস্টোর করে ফেলেছেন বা ডেটা উল্টোপাল্টা মনে হচ্ছে? চিন্তার কিছু নেই! এখনই 'Undo' বাটনে ক্লিক করলেই রিস্টোরের ঠিক পূর্বমুহূর্তের সঠিক ডেটাবেজ ফিরিয়ে আনা হবে।"
+                          : "আপনি সম্প্রতি একটি রিস্টোর অপারেশন আনডু করেছেন। প্রয়োজনে আপনি পুনরায় 'Redo' করে রিস্টোরকৃত অবস্থায় যেতে পারেন।"}
+                      </p>
+                      {safetyStatus.latestSnapshot?.createdAt && (
+                        <div className="text-[11px] text-amber-400/80 mt-1.5 flex items-center gap-1.5 font-medium">
+                          <LucideIcons.Clock size={12} />
+                          <span>স্ন্যাপশট নেওয়ার সময়: {new Date(safetyStatus.latestSnapshot.createdAt).toLocaleString()}</span>
+                          {safetyStatus.latestSnapshot.counts && (
+                            <span className="text-slate-400 ml-2">
+                              • মেম্বার: {safetyStatus.latestSnapshot.counts.members ?? 0}, মিল: {safetyStatus.latestSnapshot.counts.meals ?? 0}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTriggerUndoRollback}
+                    disabled={isUndoingRollback}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-900/40 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 shrink-0 w-full md:w-auto"
+                  >
+                    {isUndoingRollback ? (
+                      <>
+                        <LucideIcons.RefreshCw size={15} className="animate-spin text-white" />
+                        <span>রোলব্যাক হচ্ছে...</span>
+                      </>
+                    ) : safetyStatus.canUndo ? (
+                      <>
+                        <LucideIcons.Undo2 size={16} className="text-white" />
+                        <span>Undo / পূর্বাবস্থায় ফেরত যান (Rollback)</span>
+                      </>
+                    ) : (
+                      <>
+                        <LucideIcons.Redo2 size={16} className="text-white" />
+                        <span>Redo / পুনরায় রিস্টোরে যান</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* DEDICATED ADMIN-ONLY STORED JSON DATABASE BACKUPS INTERFACE */}
+              <div className="p-5 rounded-2xl bg-slate-950/40 border border-slate-800 space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                  <div className="flex items-center gap-2.5 text-slate-200">
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                      <LucideIcons.Database size={16} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>ক্লাউড ডেটাবেজে সংরক্ষিত ব্যাকআপ তালিকা (Stored JSON Backups)</span>
+                        {isAdminUser && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-300 border border-rose-500/30">
+                            🔒 অ্যাডমিন রিস্টোর প্যানেল
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        PostgreSQL ক্লাউড ডেটাবেজে সংরক্ষিত প্রতিটি ব্যাকআপ ফাইল থেকে যেকোনো সময় সম্পূর্ণ সিস্টেম রিস্টোর করতে পারবেন।
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 font-medium">
+                      মোট সংরক্ষিত: <span className="font-bold text-white">{dailyBackupHistory.length}</span> টি
+                    </span>
+                    <button
+                      type="button"
+                      onClick={fetchDailyBackupData}
+                      disabled={loadingDailyBackup}
+                      title="তালিকা রিফ্রেশ করুন"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer"
+                    >
+                      <LucideIcons.RotateCw size={13} className={loadingDailyBackup ? "animate-spin text-cyan-400" : ""} />
+                    </button>
+                  </div>
+                </div>
+
+                {loadingDailyBackup ? (
+                  <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2">
+                    <LucideIcons.RefreshCw size={20} className="animate-spin text-cyan-400" />
+                    <span>ক্লাউড ডেটাবেজ থেকে ব্যাকআপ তালিকা লোড হচ্ছে...</span>
+                  </div>
+                ) : dailyBackupHistory.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2 bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
+                    <LucideIcons.FolderArchive size={24} className="text-slate-600" />
+                    <span>এখনো কোনো সংরক্ষিত ব্যাকআপ রেকর্ড পাওয়া যায়নি।</span>
+                    <button
+                      type="button"
+                      onClick={handleTriggerManualSnapshot}
+                      className="mt-2 text-cyan-400 hover:underline text-xs"
+                    >
+                      এখনই প্রথম ব্যাকআপ স্ন্যাপশট তৈরি করুন
+                    </button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-800/60 max-h-80 overflow-y-auto pr-1">
+                    {dailyBackupHistory.map((item, idx) => {
+                      const isPreRestoreSafety = item.triggerType === "PRE_RESTORE_SAFETY";
+                      const isPreUndoSafety = item.triggerType === "PRE_UNDO_SAFETY";
+                      const isManual = item.triggerType === "MANUAL_SNAPSHOT";
+
+                      return (
+                        <div
+                          key={item.id || idx}
+                          className={`py-3 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs rounded-xl transition-colors hover:bg-slate-900/60 ${isPreRestoreSafety ? "bg-amber-500/5 border border-amber-500/10 mb-1" : ""}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isPreRestoreSafety ? "bg-amber-500/20 text-amber-400" : isPreUndoSafety ? "bg-emerald-500/20 text-emerald-400" : isManual ? "bg-purple-500/20 text-purple-400" : "bg-cyan-500/10 text-cyan-400"}`}>
+                              {isPreRestoreSafety || isPreUndoSafety ? (
+                                <LucideIcons.ShieldAlert size={15} />
+                              ) : (
+                                <LucideIcons.Database size={15} />
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="font-semibold text-slate-200 flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-bold text-white">{item.backupDate}</span>
+                                
+                                {isPreRestoreSafety ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                    <LucideIcons.Shield size={10} />
+                                    পূর্বাবস্থা সুরক্ষা স্ন্যাপশট
+                                  </span>
+                                ) : isPreUndoSafety ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                    <LucideIcons.Redo2 size={10} />
+                                    রিডো স্ন্যাপশট
+                                  </span>
+                                ) : isManual ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                                    ম্যানুয়াল স্ন্যাপশট
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                    দৈনিক সার্ভার ক্রন
+                                  </span>
+                                )}
+
+                                <span className="text-[11px] text-slate-400 font-mono">
+                                  {(item.fileSize / 1024).toFixed(1)} KB
+                                </span>
+                              </div>
+
+                              <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-2">
+                                <span>{item.createdAt ? new Date(item.createdAt).toLocaleString() : item.backupDate}</span>
+                                <span className="text-slate-600">•</span>
+                                <span className="font-mono text-[10px] text-slate-500 truncate max-w-xs" title={item.filename}>
+                                  {item.filename}
+                                </span>
+                              </div>
+
+                              {/* Counts Chips */}
+                              {item.counts && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px]">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    মেম্বার: {item.counts.members ?? 0}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    মিল: {item.counts.meals ?? 0}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    বাজার খরচ: {item.counts.marketEntries ?? 0}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    ডিপোজিট: {item.counts.deposits ?? 0}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* ACTION BUTTONS (Download + Admin-Only Restore) */}
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadHistoricalBackup(item.id, item.filename)}
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 font-medium text-[11px] rounded-lg border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+                              title="ব্যাকআপ ফাইলটি ডাউনলোড করুন"
+                            >
+                              <LucideIcons.Download size={12} />
+                              <span>ডাউনলোড</span>
+                            </button>
+
+                            {isAdminUser && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedBackupForRestore(item);
+                                  setRestoreConfirmedCheck(false);
+                                }}
+                                className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-100 font-semibold text-[11px] rounded-lg border border-rose-500/30 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-rose-950/50"
+                                title="এই ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর করুন"
+                              >
+                                <LucideIcons.RotateCcw size={12} className="text-rose-400" />
+                                <span>রিস্টোর করুন (Restore)</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Information Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <LucideIcons.ShieldCheck size={16} />
+                    <h3 className="text-xs font-bold uppercase tracking-wider">মাল্টি-টেন্যান্ট সিকিউরিটি ও মেস মিসম্যাচ গার্ড</h3>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    প্রত্যেকটি ব্যাকআপ ফাইল মেস আইডি ও ডিজিটাল সিকিউরিটি সিগনেচার দিয়ে সুরক্ষিত। মেস ক-এর ব্যাকআপ ফাইল ভুল করে বা ইচ্ছাকৃতভাবে মেস খ-তে দিলে সিস্টেম স্বয়ংক্রিয়ভাবে সনাক্ত করে বাতিল করে দেবে।
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-2">
+                  <div className="flex items-center gap-2 text-cyan-400">
+                    <LucideIcons.RefreshCw size={16} />
+                    <h3 className="text-xs font-bold uppercase tracking-wider">স্মার্ট মার্জ বনাম ফুল রিপ্লেস</h3>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    <strong>স্মার্ট মার্জ (Smart Merge):</strong> ব্যাকআপের পয়েন্টের পরের কোনো নতুন এন্ট্রি মুছে যাবে না, শুধু পূর্ববর্তী মিসিং ডেটা যোগ হবে (অ্যাডমিন ও সুপার ইউজার উভয়েই করতে পারবেন)।<br />
+                    <strong>ফুল রিপ্লেস (Full Replace):</strong> বর্তমান স্টেট পুরোপুরি ব্যাকআপ পয়েন্টে ফিরে যাবে (শুধুমাত্র অ্যাডমিন করতে পারবেন)।
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-start gap-3">
+                <LucideIcons.AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">স্বয়ংক্রিয় সেফটি স্ন্যাপশট ও ইনস্ট্যান্ট আনডু গ্যারান্টি (Safety Snapshot & Undo Guarantee)</p>
+                  <p className="text-[11px] text-amber-200/80 mt-0.5 leading-relaxed">
+                    যেকোনো রিস্টোর অপারেশন সম্পন্ন করার ঠিক আগের মুহূর্তের যাবতীয় তথ্যের একটি স্ন্যাপশট স্বয়ংক্রিয়ভাবে সার্ভার ডেটাবেজে সংরক্ষিত হয়। ফলে কোনো কারণে ভুল ব্যাকআপ দিয়ে ফেললে আপনি তাৎক্ষণিক <strong>'Undo'</strong> বাটনে চাপ দিয়েই পূর্বের সমস্ত ডেটা অক্ষত অবস্থায় ফিরিয়ে আনতে পারবেন।
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
+
+      <MessBackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        activeMessId={activeMessId}
+        activeMessName={messName || activeMessId}
+        currentUser={currentUser}
+        isPlatformOwner={isPlatformOwner}
+        onRestoreSuccess={() => {
+          showStatus("success", "ব্যাকআপ সফলভাবে রিস্টোর হয়েছে। সিস্টেম রিলোড হচ্ছে...");
+          setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        }}
+      />
+
+      {/* FULL SYSTEM RESTORE CONFIRMATION MODAL */}
+      {selectedBackupForRestore && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="relative w-full max-w-xl bg-slate-900 border border-rose-500/40 rounded-2xl shadow-2xl overflow-hidden my-8">
+            {/* Header with warning accent */}
+            <div className="p-6 bg-gradient-to-r from-rose-950/80 via-slate-900 to-amber-950/60 border-b border-rose-500/30 flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <LucideIcons.AlertTriangle size={24} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>ফুল সিস্টেম ব্যাকআপ রিস্টোর নিশ্চিতকরণ</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                    Full System Reset
+                  </span>
+                </h3>
+                <p className="text-xs text-rose-200/90 leading-relaxed">
+                  সতর্কতা: এটি মেসের বর্তমান যাবতীয় মিল, ডিপোজিট, বাজার খরচ ও মেম্বার ডাটাবেজ সম্পূর্ণভাবে প্রতিস্থাপিত করবে।
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isRestoringBackup) {
+                    setSelectedBackupForRestore(null);
+                    setRestoreConfirmedCheck(false);
+                  }
+                }}
+                disabled={isRestoringBackup}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors ml-auto cursor-pointer"
+              >
+                <LucideIcons.X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+              {/* Target Backup Metadata Box */}
+              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80">
+                  <span className="text-slate-400 font-medium">নির্বাচিত ব্যাকআপের বিবরণ:</span>
+                  <span className="font-mono text-cyan-300 font-semibold">{selectedBackupForRestore.backupDate}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">ফাইলের নাম:</span>
+                    <span className="font-mono text-[11px] text-slate-200 truncate block" title={selectedBackupForRestore.filename}>
+                      {selectedBackupForRestore.filename}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">সংরক্ষণের সময়:</span>
+                    <span className="text-[11px] text-slate-200">
+                      {selectedBackupForRestore.createdAt ? new Date(selectedBackupForRestore.createdAt).toLocaleString() : selectedBackupForRestore.backupDate}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Counts breakdown */}
+                {selectedBackupForRestore.counts && (
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <span className="text-[11px] text-slate-400 block mb-1.5 font-medium">এই ব্যাকআপে যা অন্তর্ভুক্ত রয়েছে:</span>
+                    <div className="flex flex-wrap gap-2 text-[11px]">
+                      <span className="px-2 py-1 rounded bg-slate-800 text-cyan-300 font-medium border border-slate-700">
+                        মেম্বার: {selectedBackupForRestore.counts.members ?? 0} জন
+                      </span>
+                      <span className="px-2 py-1 rounded bg-slate-800 text-cyan-300 font-medium border border-slate-700">
+                        মাস: {selectedBackupForRestore.counts.months ?? 0} টি
+                      </span>
+                      <span className="px-2 py-1 rounded bg-slate-800 text-emerald-300 font-medium border border-slate-700">
+                        মোট মিল: {selectedBackupForRestore.counts.meals ?? 0}
+                      </span>
+                      <span className="px-2 py-1 rounded bg-slate-800 text-amber-300 font-medium border border-slate-700">
+                        বাজার এন্ট্রি: {selectedBackupForRestore.counts.marketEntries ?? 0}
+                      </span>
+                      <span className="px-2 py-1 rounded bg-slate-800 text-purple-300 font-medium border border-slate-700">
+                        ডিপোজিট: {selectedBackupForRestore.counts.deposits ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Safety & Undo Guarantee Banner */}
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-start gap-2.5">
+                <LucideIcons.ShieldCheck size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-bold text-white">ভুল হলে আনডু (Undo) করার শতভাগ নিশ্চয়তা:</span>
+                  <p className="text-[11px] text-emerald-200/80 leading-relaxed">
+                    রিস্টোর প্রক্রিয়া শুরু করার ঠিক পূর্বমুহূর্তে মেসের বর্তমান সমস্ত ডেটার একটি <strong>'Pre-Restore Safety Snapshot'</strong> স্বয়ংক্রিয়ভাবে সংরক্ষিত হবে। যদি ভুল ফাইল রিস্টোর হয়ে যায়, তবে আপনি সেটিংসের ব্যাকআপ ট্যাবে থাকা <strong>'Undo / পূর্বাবস্থায় ফেরত যান'</strong> বাটনে চাপ দিয়েই আগের সমস্ত ডেটা ফিরে পাবেন।
+                  </p>
+                </div>
+              </div>
+
+              {/* Confirmation Checkbox */}
+              <label className="flex items-start gap-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="confirm-full-restore-checkbox"
+                  checked={restoreConfirmedCheck}
+                  onChange={(e) => setRestoreConfirmedCheck(e.target.checked)}
+                  disabled={isRestoringBackup}
+                  className="w-4 h-4 rounded text-rose-500 focus:ring-rose-500 border-slate-700 mt-0.5 cursor-pointer"
+                />
+                <span className="text-xs text-rose-200 font-medium leading-relaxed">
+                  আমি সম্পূর্ণ অবগত যে এই ব্যাকআপ ফাইল দিয়ে বর্তমান মেসের ডেটাবেজ ফুল রিসেট/রিস্টোর করা হবে। আমি এই রিস্টোর সম্পন্ন করতে সম্মত আছি।
+                </span>
+              </label>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBackupForRestore(null);
+                  setRestoreConfirmedCheck(false);
+                }}
+                disabled={isRestoringBackup}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+              >
+                বাতিল করুন (Cancel)
+              </button>
+
+              <button
+                type="button"
+                id="confirm-full-restore-btn"
+                onClick={handleConfirmRestoreStoredBackup}
+                disabled={!restoreConfirmedCheck || isRestoringBackup}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold shadow-lg shadow-rose-950/60 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isRestoringBackup ? (
+                  <>
+                    <LucideIcons.RefreshCw size={14} className="animate-spin text-white" />
+                    <span>সিস্টেম রিস্টোর হচ্ছে...</span>
+                  </>
+                ) : (
+                  <>
+                    <LucideIcons.RotateCcw size={14} className="text-white" />
+                    <span>হ্যাঁ, সম্পূর্ণ রিস্টোর করুন</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

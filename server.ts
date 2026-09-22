@@ -12,6 +12,7 @@ import { founderRouter, maintenanceMiddleware } from "./server/founder.js";
 import { initializeDbCache, pendingSyncPromises } from "./server/db.js";
 import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
+import { startDailyBackupCron } from "./server/backupCron.js";
 
 dotenv.config();
 
@@ -169,9 +170,13 @@ async function configureApp() {
 const initPromise = (async () => {
   await configureApp();
   // Trigger eager DB cache initialization in background
-  ensureDbInitialized().catch(err => {
-    console.error("Eager database initialization failed:", err);
-  });
+  ensureDbInitialized()
+    .then(() => {
+      startDailyBackupCron();
+    })
+    .catch(err => {
+      console.error("Eager database initialization failed:", err);
+    });
 
   if (!process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {

@@ -56,6 +56,7 @@ export const members = pgTable("members", {
 
 export const months = pgTable("months", {
   id: text("id").primaryKey(),
+  messId: text("mess_id").default("default"),
   name: text("name").notNull(),
   startDate: text("start_date").notNull(),
   endDate: text("end_date").notNull(),
@@ -416,6 +417,20 @@ export const tenantSettings = pgTable("tenant_settings", {
   creditConfig: text("credit_config").notNull(), // stringified object
   appearancePermissions: text("appearance_permissions").notNull(), // stringified object
   respectSenioritySettings: text("respect_seniority_settings").notNull().default('{"enabled":false,"logic":"AUTOMATIC_SENIORITY","defaultMaleTitle":"ভাই","defaultFemaleTitle":"আপু","manualOverride":false}'),
+});
+
+export const dailyBackups = pgTable("daily_backups", {
+  id: text("id").primaryKey(),
+  messId: text("mess_id").notNull(),
+  backupDate: text("backup_date").notNull(), // YYYY-MM-DD
+  createdAt: text("created_at").notNull(), // ISO String
+  filename: text("filename").notNull(),
+  data: text("data").notNull(), // Full JSON dump
+  counts: text("counts"), // stringified JSON counts
+  fileSize: integer("file_size").notNull().default(0), // bytes
+  status: text("status").notNull().default("SUCCESS"),
+  integrityKey: text("integrity_key"),
+  triggerType: text("trigger_type").notNull().default("CRON_AUTOMATED"), // CRON_AUTOMATED or MANUAL_SNAPSHOT
 });
 
 

@@ -116,6 +116,13 @@ const dbCaches = new Map<string, DatabaseSchema>();
 let dbCache: DatabaseSchema | null = null;
 let credentialsCache: CredentialsSchema | null = null;
 
+export function setDbCacheForMess(messId: string, data: DatabaseSchema) {
+  dbCaches.set(messId, data);
+  if (messId === "default") {
+    dbCache = data;
+  }
+}
+
 // Ensure directories exist
 function ensureDBDir() {
   if (!fs.existsSync(DB_DIR)) {
@@ -434,10 +441,12 @@ export async function refreshDbCache() {
 
   dbCache = {
     members: membersList as any[],
-    months: monthsList.map((m: any) => ({
-      ...m,
-      manuallyUnlocked: !!m.manuallyUnlocked
-    })) as any[],
+    months: monthsList
+      .filter((m: any) => !m.messId || m.messId === "default")
+      .map((m: any) => ({
+        ...m,
+        manuallyUnlocked: !!m.manuallyUnlocked
+      })) as any[],
     meals: [],
     foodMenus: foodMenusList as any[],
     marketEntries: marketEntriesList.map(item => ({
@@ -604,7 +613,12 @@ export async function initializeDbCache() {
     } else {
       dbCache = {
         members: membersList as any[],
-        months: monthsList as any[],
+        months: monthsList
+          .filter((m: any) => !m.messId || m.messId === "default")
+          .map((m: any) => ({
+            ...m,
+            manuallyUnlocked: !!m.manuallyUnlocked
+          })) as any[],
         meals: [],
         foodMenus: foodMenusList as any[],
         marketEntries: marketEntriesList.map(item => ({
@@ -1037,8 +1051,8 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
   const messId = explicitMessId || getActiveMessId() || "default";
   let target = dbCaches.get(messId);
 
-  // If messId is default and dbCache or masterPostgresCache exists in memory from PostgreSQL, prioritize it!
-  const livePostgresData = dbCache || masterPostgresCache;
+  // If messId is default and masterPostgresCache exists in memory from PostgreSQL, prioritize it!
+  const livePostgresData = messId === "default" ? masterPostgresCache : null;
   if (!target && messId === "default" && livePostgresData) {
     target = livePostgresData;
     dbCaches.set("default", target);
@@ -1086,12 +1100,52 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     return new Date(`${cleanStr}+06:00`);
   };
 
-  // Automatic Month Transition Check
+  // Automatic Month Transition & Deduplication Check
   if (target && target.months && target.months.length > 0) {
     const now = new Date();
     let wasMonthModified = false;
 
-    // Check for active (unlocked) months whose endDate has passed (excluding manually unlocked cycles)
+    // 1. Strict deduplication safeguard by ID and by normalized name
+    const seenIds = new Set<string>();
+    const seenNames = new Map<string, MessMonth>();
+    const cleanMonths: MessMonth[] = [];
+
+    for (const m of target.months) {
+      if (!m || !m.id || seenIds.has(m.id)) {
+        wasMonthModified = true;
+        continue;
+      }
+      seenIds.add(m.id);
+
+      const normName = (m.name || "").trim().toLowerCase();
+      if (seenNames.has(normName)) {
+        const existing = seenNames.get(normName)!;
+        // Prefer the month that has associated meals, deposits, market entries, or is currently unlocked
+        const existingHasData = (target.meals?.some(x => x.monthId === existing.id) ||
+          target.marketEntries?.some(x => x.monthId === existing.id) ||
+          target.deposits?.some(x => x.monthId === existing.id));
+        const mHasData = (target.meals?.some(x => x.monthId === m.id) ||
+          target.marketEntries?.some(x => x.monthId === m.id) ||
+          target.deposits?.some(x => x.monthId === m.id));
+
+        if (!existingHasData && mHasData) {
+          const idx = cleanMonths.indexOf(existing);
+          if (idx !== -1) cleanMonths[idx] = m;
+          seenNames.set(normName, m);
+        }
+        wasMonthModified = true;
+      } else {
+        seenNames.set(normName, m);
+        cleanMonths.push(m);
+      }
+    }
+
+    if (cleanMonths.length !== target.months.length) {
+      target.months = cleanMonths;
+      wasMonthModified = true;
+    }
+
+    // 2. Check for active (unlocked) months whose endDate has passed (excluding manually unlocked cycles)
     const activeMonthsToClose = target.months.filter(m => {
       if (m.isLocked) return false;
       if (m.manuallyUnlocked) return false;
@@ -1114,12 +1168,14 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
         { module: "CYCLE", actionType: "AUTOMATIC_CYCLE_LOCK", description: `System automatically locked ${endedMonth.name}.`, messId }
       );
 
-      const endedEndDateStr = endedMonth.endDate;
-
-      // Check if a next month exists
+      // Check if a next month or current month covering now already exists
+      const endedEndEpoch = parseDhakaDate(endedMonth.endDate).getTime();
       let nextMonth = target.months.find(m => {
         if (m.id === endedMonth.id) return false;
-        return m.startDate >= endedEndDateStr || m.name.toLowerCase().includes("august");
+        const mStartEpoch = parseDhakaDate(m.startDate).getTime();
+        const mEndEpoch = parseDhakaDate(m.endDate).getTime();
+        // covers now or starts on/after endedMonth end
+        return (now.getTime() >= mStartEpoch && now.getTime() <= mEndEpoch) || mStartEpoch >= endedEndEpoch;
       });
 
       if (nextMonth) {
@@ -1135,37 +1191,35 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
           { module: "CYCLE", actionType: "AUTOMATIC_MONTH_TRANSITION", description: `System automatically transitioned to ${nextMonth.name}.`, messId }
         );
       } else {
-        // Calculate next month name and dates starting EXACTLY at endedMonth.endDate
+        // Calculate next month name based on endedMonth end date
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        
-        const nextStartObj = parseDhakaDate(endedEndDateStr);
-        const nextEndObj = new Date(nextStartObj);
-        nextEndObj.setMonth(nextEndObj.getMonth() + 1);
-
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const formatISO = (d: Date) => {
-          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-        };
-
-        const nextStartDateStr = endedEndDateStr.length === 16 ? `${endedEndDateStr}:00` : endedEndDateStr;
-        const nextEndDateStr = formatISO(nextEndObj);
+        const nextStartObj = parseDhakaDate(endedMonth.endDate);
         const nextMonthName = `${monthNames[nextStartObj.getMonth()]} ${nextStartObj.getFullYear()}`;
 
-        // Double check if a month with nextMonthName already exists
-        const existingByName = target.months.find(m => m.name.toLowerCase() === nextMonthName.toLowerCase());
+        // Double check if a month with nextMonthName already exists in target.months
+        const existingByName = target.months.find(m => m.name.trim().toLowerCase() === nextMonthName.toLowerCase());
         if (existingByName) {
           existingByName.isLocked = false;
           console.log(`[Auto-Transition] Activated existing month by name '${existingByName.name}'.`);
         } else {
+          const nextEndObj = new Date(nextStartObj);
+          nextEndObj.setMonth(nextEndObj.getMonth() + 1);
+
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const formatISO = (d: Date) => {
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+          };
+
           const newMonth: MessMonth = {
             id: generateUUID(),
             name: nextMonthName,
-            startDate: nextStartDateStr,
-            endDate: nextEndDateStr,
+            startDate: endedMonth.endDate,
+            endDate: formatISO(nextEndObj),
             isLocked: false,
             gracePeriodEnabled: true
           };
           target.months.push(newMonth);
+          wasMonthModified = true;
           console.log(`[Auto-Transition] Automatically created and activated next month '${newMonth.name}' (${newMonth.startDate} to ${newMonth.endDate}) for mess ${messId}.`);
         }
       }

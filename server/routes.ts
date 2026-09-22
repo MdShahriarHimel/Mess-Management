@@ -6,6 +6,7 @@
 import express, { Router, Request, Response, NextFunction } from "express";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { loadDB, saveDB, syncState, 
   loadCredentials, 
   saveCredentials, 
@@ -22,11 +23,20 @@ import { loadDB, saveDB, syncState,
   deletePersistentFile,
   importBackupToPostgres,
   refreshDbCache,
+  setDbCacheForMess,
+  syncCacheToPostgresDirectly,
   getDefaultMessRules,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
-import { db as drizzleDb } from "../src/db/index.js";
+import { 
+  getTodayBackupForMess, 
+  getDailyBackupHistory, 
+  getDailyBackupById, 
+  saveDailyBackupToDatabase, 
+  generateDailyBackupPayload 
+} from "./backupCron.js";
+import { db as drizzleDb, pool } from "../src/db/index.js";
 import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings, meals as mealsTable } from "../src/db/schema.js";
 import { eq, sql, and, or } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
@@ -1603,7 +1613,36 @@ router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.
 // ---------------------------------------------------------
 router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const db = loadDB();
-  const sortedMonths = [...db.months].sort((a, b) => {
+  const seenIds = new Set<string>();
+  const seenNames = new Map<string, MessMonth>();
+  const uniqueMonths: MessMonth[] = [];
+
+  for (const m of (db.months || [])) {
+    if (!m || !m.id || seenIds.has(m.id)) continue;
+    seenIds.add(m.id);
+
+    const normName = (m.name || "").trim().toLowerCase();
+    if (seenNames.has(normName)) {
+      const existing = seenNames.get(normName)!;
+      const existingHasData = (db.meals?.some(x => x.monthId === existing.id) ||
+        db.marketEntries?.some(x => x.monthId === existing.id) ||
+        db.deposits?.some(x => x.monthId === existing.id));
+      const mHasData = (db.meals?.some(x => x.monthId === m.id) ||
+        db.marketEntries?.some(x => x.monthId === m.id) ||
+        db.deposits?.some(x => x.monthId === m.id));
+
+      if (!existingHasData && mHasData) {
+        const idx = uniqueMonths.indexOf(existing);
+        if (idx !== -1) uniqueMonths[idx] = m;
+        seenNames.set(normName, m);
+      }
+    } else {
+      seenNames.set(normName, m);
+      uniqueMonths.push(m);
+    }
+  }
+
+  const sortedMonths = uniqueMonths.sort((a, b) => {
     const parseMonthTime = (m: MessMonth) => {
       if (m.startDate) {
         const t = new Date(m.startDate).getTime();
@@ -4890,8 +4929,8 @@ async function saveSettingsToPostgres(messId: string, settings: any) {
 // ---------------------------------------------------------
 // CUSTOMIZABLE MESS NAME SETTINGS API
 // ---------------------------------------------------------
-function loadSettings() {
-  const messId = getActiveMessId();
+export function loadSettings(overrideMessId?: string) {
+  const messId = overrideMessId || getActiveMessId();
   const file = messId === "default"
     ? path.join(DB_DIR, "settings.json")
     : path.join(DB_DIR, `settings_${messId}.json`);
@@ -5130,6 +5169,10 @@ function loadSettings() {
   };
 
   return merged;
+}
+
+function loadSettingsForMess(targetMessId: string) {
+  return loadSettings(targetMessId);
 }
 
 function saveSettings(settings: any) {
@@ -6685,92 +6728,768 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
 });
 
 // ---------------------------------------------------------
-// DATABASE BACKUP IMPORT/EXPORT API (ADMIN ONLY)
+// DATABASE BACKUP IMPORT/EXPORT API (ADMIN & SUPER USER)
 // ---------------------------------------------------------
+const BACKUP_SIGNATURE_SALT = "MESS_ERP_SECURE_BACKUP_INTEGRITY_SALT_2026";
+
+function generateBackupIntegrityKey(messId: string, exportedAt: string, countsSummary: string): string {
+  try {
+    return crypto.createHmac("sha256", BACKUP_SIGNATURE_SALT)
+      .update(`${messId}:${exportedAt}:${countsSummary}`)
+      .digest("hex");
+  } catch (e) {
+    return `key_${Date.now()}`;
+  }
+}
+
+function performSmartMerge(currentDB: any, backupDB: any, backupExportDateStr?: string) {
+  let cutoffDate = "";
+  if (backupExportDateStr) {
+    cutoffDate = backupExportDateStr.split("T")[0];
+  }
+  if (!cutoffDate) {
+    const dates: string[] = [];
+    (backupDB.meals || []).forEach((m: any) => { if (m.date) dates.push(m.date); });
+    (backupDB.deposits || []).forEach((d: any) => { if (d.date) dates.push(d.date); });
+    (backupDB.marketEntries || []).forEach((m: any) => { if (m.date) dates.push(m.date); });
+    if (dates.length > 0) {
+      dates.sort();
+      cutoffDate = dates[dates.length - 1];
+    } else {
+      cutoffDate = new Date().toISOString().split("T")[0];
+    }
+  }
+
+  const merged = { ...currentDB };
+
+  // 1. Members: merge by member ID so new members created after backup are NOT deleted!
+  const currentMembersMap = new Map<string, any>((currentDB.members || []).map((m: any) => [m.id, m]));
+  for (const bMem of (backupDB.members || [])) {
+    currentMembersMap.set(bMem.id, { ...(currentMembersMap.get(bMem.id) || {}), ...bMem });
+  }
+  merged.members = Array.from(currentMembersMap.values());
+
+  // 2. Months: merge by month ID so active or newly created months are NOT deleted!
+  const currentMonthsMap = new Map<string, any>((currentDB.months || []).map((m: any) => [m.id, m]));
+  for (const bMonth of (backupDB.months || [])) {
+    currentMonthsMap.set(bMonth.id, { ...(currentMonthsMap.get(bMonth.id) || {}), ...bMonth });
+  }
+  merged.months = Array.from(currentMonthsMap.values());
+
+  // 3. Meals: Keep anything where date > cutoffDate! For date <= cutoffDate, restore/replace from backup
+  const liveFutureMeals = (currentDB.meals || []).filter((m: any) => m.date > cutoffDate);
+  const backupPastMeals = (backupDB.meals || []).filter((m: any) => m.date <= cutoffDate);
+  const backupMealKeys = new Set(backupPastMeals.map((m: any) => `${m.monthId}_${m.memberId}_${m.date}`));
+  const livePastUntouchedMeals = (currentDB.meals || []).filter((m: any) => 
+    m.date <= cutoffDate && !backupMealKeys.has(`${m.monthId}_${m.memberId}_${m.date}`)
+  );
+  merged.meals = [...backupPastMeals, ...livePastUntouchedMeals, ...liveFutureMeals];
+
+  // 4. Deposits: Keep anything where date > cutoffDate! For date <= cutoffDate, restore from backup
+  const liveFutureDeposits = (currentDB.deposits || []).filter((d: any) => d.date > cutoffDate);
+  const backupPastDeposits = (backupDB.deposits || []).filter((d: any) => d.date <= cutoffDate);
+  const backupDepIds = new Set(backupPastDeposits.map((d: any) => d.id));
+  const livePastUntouchedDeposits = (currentDB.deposits || []).filter((d: any) => 
+    d.date <= cutoffDate && !backupDepIds.has(d.id)
+  );
+  merged.deposits = [...backupPastDeposits, ...livePastUntouchedDeposits, ...liveFutureDeposits];
+
+  // 5. Market Entries: Keep anything where date > cutoffDate!
+  const liveFutureMarkets = (currentDB.marketEntries || []).filter((m: any) => m.date > cutoffDate);
+  const backupPastMarkets = (backupDB.marketEntries || []).filter((m: any) => m.date <= cutoffDate);
+  const backupMarketIds = new Set(backupPastMarkets.map((m: any) => m.id));
+  const livePastUntouchedMarkets = (currentDB.marketEntries || []).filter((m: any) => 
+    m.date <= cutoffDate && !backupMarketIds.has(m.id)
+  );
+  merged.marketEntries = [...backupPastMarkets, ...livePastUntouchedMarkets, ...liveFutureMarkets];
+
+  // 6. Food Menus: Keep anything where date > cutoffDate!
+  const liveFutureMenus = (currentDB.foodMenus || []).filter((f: any) => f.date > cutoffDate);
+  const backupPastMenus = (backupDB.foodMenus || []).filter((f: any) => f.date <= cutoffDate);
+  merged.foodMenus = [...backupPastMenus, ...liveFutureMenus];
+
+  // 7. Duties:
+  const liveDutiesMap = new Map<string, any>((currentDB.duties || []).map((d: any) => [d.id, d]));
+  for (const bDuty of (backupDB.duties || [])) {
+    liveDutiesMap.set(bDuty.id, bDuty);
+  }
+  merged.duties = Array.from(liveDutiesMap.values());
+
+  // 8. Manager Holdings:
+  const liveHoldingsMap = new Map<string, any>((currentDB.managerHoldings || []).map((h: any) => [h.id, h]));
+  for (const bH of (backupDB.managerHoldings || [])) {
+    liveHoldingsMap.set(bH.id, bH);
+  }
+  merged.managerHoldings = Array.from(liveHoldingsMap.values());
+
+  // 9. Bills:
+  const liveBillsMap = new Map<string, any>((currentDB.bills || []).map((b: any) => [b.id, b]));
+  for (const bBill of (backupDB.bills || [])) {
+    liveBillsMap.set(bBill.id, bBill);
+  }
+  merged.bills = Array.from(liveBillsMap.values());
+
+  // 10. Notices:
+  const liveNoticesMap = new Map<string, any>((currentDB.notices || []).map((n: any) => [n.id, n]));
+  for (const bN of (backupDB.notices || [])) {
+    liveNoticesMap.set(bN.id, bN);
+  }
+  merged.notices = Array.from(liveNoticesMap.values());
+
+  return { merged, cutoffDate };
+}
+
 router.get("/admin/backup/export", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
-    res.status(403).json({ error: "Only the main Admin can export backups" });
+  const isFounder = isPlatformOwnerEmail(req.user?.email);
+  const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+  const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+  if (!isAdmin && !isSuper) {
+    res.status(403).json({ error: "Only an authorized Admin, Superuser, or Founder can export backups" });
     return;
   }
-  const db = loadDB();
+
+  const scope = (req.query.scope as string) || "single_mess";
+
+  // 1. Full System Export (Founder Only)
+  if (scope === "full_system") {
+    if (!isFounder) {
+      res.status(403).json({ error: "Only the Platform Owner (Founder) can export full system backups." });
+      return;
+    }
+
+    const messesList = loadMesses().messes;
+    const messesData: Record<string, any> = {};
+    for (const m of messesList) {
+      messesData[m.id] = {
+        db: loadDB(m.id),
+        settings: loadSettingsForMess(m.id)
+      };
+    }
+
+    const exportedAt = new Date().toISOString();
+    const filename = `full_system_erp_backup_${exportedAt.split("T")[0]}.json`;
+    const integrityKey = generateBackupIntegrityKey("ALL_MESSES", exportedAt, `messes_${messesList.length}`);
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+    res.send(JSON.stringify({
+      exportType: "FULL_SYSTEM_BACKUP",
+      scope: "FULL_SYSTEM",
+      exportedAt,
+      exportedBy: req.user?.email,
+      integrityKey,
+      messes: messesList,
+      messesData
+    }, null, 2));
+    return;
+  }
+
+  // 2. Single Mess Export (Admin & Super User for their authorized active mess)
+  const messId = getActiveMessId();
+  const db = loadDB(messId);
   const settings = loadSettings();
+  const safeName = (settings.messName || messId).replace(/[^a-zA-Z0-9_\u0980-\u09FF-]/g, "_");
+  const exportedAt = new Date().toISOString();
+  const dateStr = exportedAt.split("T")[0];
+  const filename = `mess_${safeName}_${messId}_backup_${dateStr}.json`;
+
+  const counts = {
+    members: db?.members?.length || 0,
+    months: db?.months?.length || 0,
+    meals: db?.meals?.length || 0,
+    deposits: db?.deposits?.length || 0,
+    marketEntries: db?.marketEntries?.length || 0
+  };
+
+  const integrityKey = generateBackupIntegrityKey(messId, exportedAt, JSON.stringify(counts));
+
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Content-Disposition", "attachment; filename=mess_erp_full_backup.json");
-  res.send(JSON.stringify({ db, settings }, null, 2));
+  res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+  res.send(JSON.stringify({
+    exportType: "MESS_BACKUP",
+    scope: "SINGLE_MESS",
+    messId,
+    messName: settings.messName || messId,
+    allowedMessIds: [messId],
+    exportedAt,
+    integrityKey,
+    counts,
+    db,
+    settings
+  }, null, 2));
+});
+
+// ---------------------------------------------------------
+// RECURRING DAILY AUTOMATED DATABASE BACKUP API
+// ---------------------------------------------------------
+router.get("/admin/backup/daily/today", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+    const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+    if (!isAdmin && !isSuper) {
+      res.status(403).json({ error: "Only an authorized Admin, Superuser, or Founder can access daily backups" });
+      return;
+    }
+
+    const messId = getActiveMessId();
+    const backup = await getTodayBackupForMess(messId);
+
+    if (req.query.json === "true") {
+      res.json({
+        success: true,
+        backup: {
+          id: backup.id,
+          messId: backup.messId,
+          backupDate: backup.backupDate,
+          createdAt: backup.createdAt,
+          filename: backup.filename,
+          fileSize: backup.fileSize,
+          status: backup.status,
+          triggerType: backup.triggerType,
+          integrityKey: backup.integrityKey,
+          counts: backup.counts
+        }
+      });
+      return;
+    }
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename=${backup.filename}`);
+    res.send(backup.data);
+  } catch (err: any) {
+    console.error("[Daily Backup Today] Error retrieving today's backup:", err);
+    res.status(500).json({ error: err.message || "Failed to download today's backup" });
+  }
+});
+
+router.get("/admin/backup/daily/history", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+    const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+    if (!isAdmin && !isSuper) {
+      res.status(403).json({ error: "Only an authorized Admin, Superuser, or Founder can view backup history" });
+      return;
+    }
+
+    const messId = getActiveMessId();
+    const history = await getDailyBackupHistory(messId, 30);
+    res.json({ success: true, messId, history });
+  } catch (err: any) {
+    console.error("[Daily Backup History] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to fetch backup history" });
+  }
+});
+
+router.post("/admin/backup/daily/trigger", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+    const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+    if (!isAdmin && !isSuper) {
+      res.status(403).json({ error: "Only an authorized Admin, Superuser, or Founder can trigger backup snapshots" });
+      return;
+    }
+
+    const messId = getActiveMessId();
+    const backupRecord = generateDailyBackupPayload(messId, "MANUAL_SNAPSHOT");
+    const saved = await saveDailyBackupToDatabase(backupRecord);
+
+    if (!saved) {
+      res.status(500).json({ error: "Failed to persist daily backup to database" });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: "Today's database backup snapshot generated and saved successfully into database.",
+      backup: {
+        id: backupRecord.id,
+        messId: backupRecord.messId,
+        backupDate: backupRecord.backupDate,
+        createdAt: backupRecord.createdAt,
+        filename: backupRecord.filename,
+        fileSize: backupRecord.fileSize,
+        status: backupRecord.status,
+        triggerType: backupRecord.triggerType,
+        counts: JSON.parse(backupRecord.counts)
+      }
+    });
+  } catch (err: any) {
+    console.error("[Daily Backup Trigger] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to trigger backup" });
+  }
+});
+
+router.get("/admin/backup/daily/download/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+    const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+    if (!isAdmin && !isSuper) {
+      res.status(403).json({ error: "Only an authorized Admin, Superuser, or Founder can download backups" });
+      return;
+    }
+
+    const messId = getActiveMessId();
+    const backupId = req.params.id;
+    const backup = await getDailyBackupById(backupId, messId, isFounder);
+
+    if (!backup) {
+      res.status(404).json({ error: "Backup not found or unauthorized access to other mess backup" });
+      return;
+    }
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename=${backup.filename}`);
+    res.send(backup.data);
+  } catch (err: any) {
+    console.error("[Daily Backup Download] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to download backup" });
+  }
+});
+
+router.post("/admin/backup/daily/restore/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+
+    if (!isAdmin) {
+      res.status(403).json({ error: "অনুমতি অস্বীকৃত: শুধুমাত্র মেস অ্যাডমিন অথবা প্ল্যাটফর্ম ওনার ডাটাবেজ ব্যাকআপ রিস্টোর করতে পারবেন।" });
+      return;
+    }
+
+    const activeMessId = getActiveMessId();
+    const backupId = req.params.id;
+    const backup = await getDailyBackupById(backupId, activeMessId, isFounder);
+
+    if (!backup) {
+      res.status(404).json({ error: "ব্যাকআপ রেকর্ডটি পাওয়া যায়নি অথবা এটি অন্য মেসের অন্তর্ভুক্ত।" });
+      return;
+    }
+
+    let parsed: any;
+    try {
+      parsed = typeof backup.data === "string" ? JSON.parse(backup.data) : backup.data;
+    } catch (parseErr) {
+      res.status(400).json({ error: "ব্যাকআপ ডাটা করাপ্ট বা অবৈধ JSON।" });
+      return;
+    }
+
+    let dbPayload = parsed.db || (parsed.members || parsed.months ? parsed : null);
+    let settingsPayload = parsed.settings;
+
+    if (!dbPayload || !Array.isArray(dbPayload.members) || !Array.isArray(dbPayload.months)) {
+      res.status(400).json({ error: "অবৈধ ব্যাকআপ: মেম্বার ও মাসের তথ্য পাওয়া যায়নি।" });
+      return;
+    }
+
+    // 1. Automatic Pre-Restore Safety Snapshot (Rollback / Undo Guarantee)
+    const safetyRecord = generateDailyBackupPayload(activeMessId, "PRE_RESTORE_SAFETY");
+    safetyRecord.filename = `pre_restore_safety_${activeMessId}_${Date.now()}.json`;
+    await saveDailyBackupToDatabase(safetyRecord);
+    console.log(`[Backup Engine] Pre-restore safety snapshot persisted: ${safetyRecord.id}`);
+
+    // 2. Multi-Tenant Tagging
+    const finalPayload = { ...dbPayload };
+    if (finalPayload.members) {
+      finalPayload.members.forEach((m: any) => { (m as any).messId = activeMessId; });
+    }
+    if (finalPayload.meals) {
+      finalPayload.meals.forEach((m: any) => { (m as any).messId = activeMessId; });
+    }
+
+    // 3. Update isolated file & in-memory cache for active mess
+    const backupFilename = activeMessId === "default"
+      ? "database_backup.json"
+      : `database_backup_${activeMessId}.json`;
+    writeAndPersistFile(backupFilename, JSON.stringify(finalPayload, null, 2));
+    setDbCacheForMess(activeMessId, finalPayload);
+
+    // 4. Update settings if provided
+    if (settingsPayload) {
+      saveSettings(settingsPayload);
+      Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
+    }
+
+    // 5. Direct sync to PostgreSQL for this mess
+    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
+
+    // 6. Audit Logging
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "RESTORE_STORED_BACKUP",
+      "None",
+      `Restored backup ${backupId} (${backup.backupDate}) for mess ${activeMessId}`,
+      `Admin restored stored database backup (${backup.filename}). Pre-restore safety snapshot: ${safetyRecord.id}. Records: ${finalPayload.members?.length || 0} members, ${finalPayload.meals?.length || 0} meals, ${finalPayload.deposits?.length || 0} deposits.`
+    );
+
+    res.json({
+      success: true,
+      message: `সফলভাবে ${backup.backupDate} তারিখের ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর সম্পন্ন হয়েছে!`,
+      restoredBackupId: backupId,
+      backupDate: backup.backupDate,
+      filename: backup.filename,
+      safetySnapshotId: safetyRecord.id,
+      safetySnapshotCreatedAt: safetyRecord.createdAt,
+      counts: {
+        members: finalPayload.members?.length || 0,
+        months: finalPayload.months?.length || 0,
+        meals: finalPayload.meals?.length || 0,
+        deposits: finalPayload.deposits?.length || 0,
+        marketEntries: finalPayload.marketEntries?.length || 0
+      }
+    });
+  } catch (err: any) {
+    console.error("[Daily Backup Restore] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to restore backup" });
+  }
+});
+
+router.post("/admin/backup/daily/undo", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+
+    if (!isAdmin) {
+      res.status(403).json({ error: "অনুমতি অস্বীকৃত: শুধুমাত্র মেস অ্যাডমিন অথবা প্ল্যাটফর্ম ওনার আনডু / রোলব্যাক করতে পারবেন।" });
+      return;
+    }
+
+    const activeMessId = getActiveMessId();
+    
+    // Find latest safety snapshot for this mess
+    const resSnapshot = await pool.query(
+      `SELECT * FROM daily_backups 
+       WHERE mess_id = $1 AND trigger_type IN ('PRE_RESTORE_SAFETY', 'PRE_UNDO_SAFETY')
+       ORDER BY created_at DESC 
+       LIMIT 1;`,
+      [activeMessId]
+    );
+
+    if (!resSnapshot.rows || resSnapshot.rows.length === 0) {
+      res.status(404).json({ error: "কোনো পূর্বাবস্থার সুরক্ষা স্ন্যাপশট (Safety Snapshot) পাওয়া যায়নি। এখনো কোনো রিস্টোর করা হয়নি।" });
+      return;
+    }
+
+    const safetySnapshot = resSnapshot.rows[0];
+    let parsed: any;
+    try {
+      parsed = typeof safetySnapshot.data === "string" ? JSON.parse(safetySnapshot.data) : safetySnapshot.data;
+    } catch (parseErr) {
+      res.status(400).json({ error: "সুরক্ষা স্ন্যাপশটের ডাটা করাপ্ট।" });
+      return;
+    }
+
+    const dbPayload = parsed.db || (parsed.members || parsed.months ? parsed : null);
+    const settingsPayload = parsed.settings;
+
+    if (!dbPayload) {
+      res.status(400).json({ error: "সুরক্ষা স্ন্যাপশটে ডাটা পাওয়া যায়নি।" });
+      return;
+    }
+
+    // Toggle: if undoing a PRE_RESTORE_SAFETY, save current state as PRE_UNDO_SAFETY so user can REDO
+    const isUndoing = safetySnapshot.trigger_type === "PRE_RESTORE_SAFETY";
+    const nextTriggerType = isUndoing ? "PRE_UNDO_SAFETY" : "PRE_RESTORE_SAFETY";
+    const toggleRecord = generateDailyBackupPayload(activeMessId, nextTriggerType as any);
+    toggleRecord.filename = `${isUndoing ? "redo_state" : "pre_restore_safety"}_${activeMessId}_${Date.now()}.json`;
+    await saveDailyBackupToDatabase(toggleRecord);
+
+    const finalPayload = { ...dbPayload };
+    if (finalPayload.members) {
+      finalPayload.members.forEach((m: any) => { (m as any).messId = activeMessId; });
+    }
+    if (finalPayload.meals) {
+      finalPayload.meals.forEach((m: any) => { (m as any).messId = activeMessId; });
+    }
+
+    const backupFilename = activeMessId === "default"
+      ? "database_backup.json"
+      : `database_backup_${activeMessId}.json`;
+    writeAndPersistFile(backupFilename, JSON.stringify(finalPayload, null, 2));
+    setDbCacheForMess(activeMessId, finalPayload);
+
+    if (settingsPayload) {
+      saveSettings(settingsPayload);
+      Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
+    }
+
+    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
+
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      isUndoing ? "UNDO_RESTORE_SAFETY" : "REDO_RESTORE_SAFETY",
+      "None",
+      `${isUndoing ? "Rolled back" : "Redone"} mess ${activeMessId} using snapshot ${safetySnapshot.id}`,
+      `Safety rollback applied. Restored state from ${safetySnapshot.created_at}. Toggle state: ${toggleRecord.id}.`
+    );
+
+    res.json({
+      success: true,
+      action: isUndoing ? "UNDO" : "REDO",
+      message: isUndoing 
+        ? "সফলভাবে আনডু (Undo) সম্পন্ন হয়েছে! ভুল রিস্টোর বাতিল করে মেসের ডাটা রিস্টোরের ঠিক পূর্বের মূল অবস্থায় ফিরিয়ে আনা হয়েছে।"
+        : "সফলভাবে রিডো (Redo) সম্পন্ন হয়েছে! ডাটা পুনরায় রিস্টোরকৃত অবস্থায় নেওয়া হয়েছে।",
+      restoredFromTimestamp: safetySnapshot.created_at,
+      counts: {
+        members: finalPayload.members?.length || 0,
+        months: finalPayload.months?.length || 0,
+        meals: finalPayload.meals?.length || 0,
+        deposits: finalPayload.deposits?.length || 0,
+        marketEntries: finalPayload.marketEntries?.length || 0
+      }
+    });
+  } catch (err: any) {
+    console.error("[Daily Backup Undo] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to undo/rollback backup" });
+  }
+});
+
+router.get("/admin/backup/daily/safety-status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+    const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+    if (!isAdmin && !isSuper) {
+      res.status(403).json({ error: "Only admins can check safety status" });
+      return;
+    }
+
+    const activeMessId = getActiveMessId();
+    const resSnapshot = await pool.query(
+      `SELECT id, mess_id, backup_date, created_at, filename, counts, file_size, trigger_type 
+       FROM daily_backups 
+       WHERE mess_id = $1 AND trigger_type IN ('PRE_RESTORE_SAFETY', 'PRE_UNDO_SAFETY')
+       ORDER BY created_at DESC 
+       LIMIT 1;`,
+      [activeMessId]
+    );
+
+    if (!resSnapshot.rows || resSnapshot.rows.length === 0) {
+      res.json({ success: true, hasSafetySnapshot: false, latestSnapshot: null });
+      return;
+    }
+
+    const row = resSnapshot.rows[0];
+    res.json({
+      success: true,
+      hasSafetySnapshot: true,
+      canUndo: row.trigger_type === "PRE_RESTORE_SAFETY",
+      canRedo: row.trigger_type === "PRE_UNDO_SAFETY",
+      latestSnapshot: {
+        id: row.id,
+        messId: row.mess_id,
+        createdAt: row.created_at,
+        filename: row.filename,
+        triggerType: row.trigger_type,
+        counts: typeof row.counts === "string" ? JSON.parse(row.counts) : row.counts,
+        fileSize: row.file_size
+      }
+    });
+  } catch (err: any) {
+    console.error("[Daily Backup Safety Status] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to check safety status" });
+  }
 });
 
 router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN && !isPlatformOwnerEmail(req.user?.email)) {
-    res.status(403).json({ error: "Only the main Admin or Founder can import backups" });
+  const isFounder = isPlatformOwnerEmail(req.user?.email);
+  const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
+  const isSuper = req.user!.role === UserRole.SUPERUSER;
+
+  if (!isAdmin && !isSuper) {
+    res.status(403).json({ error: "Only an authorized Admin, Superuser, or Founder can import backups" });
+    return;
+  }
+
+  const mode = (req.body.mode || "smart_merge") as "smart_merge" | "full_replace";
+
+  // Permission Rule: ONLY Admin or Founder can perform Full Replace. Superuser can only Smart Merge.
+  if (mode === "full_replace" && !isAdmin) {
+    res.status(403).json({ 
+      error: "অনুমতি অস্বীকৃত: সুপার ইউজাররা শুধুমাত্র 'স্মার্ট মার্জ' (Smart Merge) করতে পারবেন। 'ফুল রিপ্লেস' (Full Replace) শুধুমাত্র মেস অ্যাডমিন বা প্ল্যাটফর্ম ওনার করতে পারবেন।" 
+    });
     return;
   }
   
-  console.log("[Backup] Backup started");
+  const activeMessId = getActiveMessId();
+  const currentSettings = loadSettings();
+  const activeMessName = currentSettings.messName || activeMessId;
+  
+  console.log(`[Backup] Backup restore request received for mess: ${activeMessId}, mode: ${mode}`);
   const importedData = req.body;
   if (!importedData) {
     res.status(400).json({ error: "Invalid backup. No content received." });
     return;
   }
 
-  // Detect wrapper format
+  // 1. FULL_SYSTEM Restore Handling (Founder Only)
+  if (importedData.scope === "FULL_SYSTEM") {
+    if (!isFounder) {
+      res.status(403).json({ error: "শুধুমাত্র প্ল্যাটফর্ম ওনার (Founder) সম্পূর্ণ সিস্টেমের ব্যাকআপ ইমপোর্ট করতে পারবেন।" });
+      return;
+    }
+
+    try {
+      const messesData = importedData.messesData || {};
+      for (const [targetMessId, pack] of Object.entries(messesData)) {
+        if (pack && (pack as any).db) {
+          const snapshotFilename = `safety_snapshot_${targetMessId}_${Date.now()}.json`;
+          const curDB = loadDB(targetMessId);
+          const curSet = loadSettingsForMess(targetMessId);
+          writeAndPersistFile(snapshotFilename, JSON.stringify({ db: curDB, settings: curSet }, null, 2));
+
+          const bName = targetMessId === "default" ? "database_backup.json" : `database_backup_${targetMessId}.json`;
+          writeAndPersistFile(bName, JSON.stringify((pack as any).db, null, 2));
+          
+          setDbCacheForMess(targetMessId, (pack as any).db);
+          await syncCacheToPostgresDirectly((pack as any).db, targetMessId);
+        }
+      }
+      return res.json({ success: true, message: "সম্পূর্ণ সিস্টেমের সমস্ত মেস সফলভাবে রিস্টোর করা হয়েছে।" });
+    } catch (err: any) {
+      return res.status(500).json({ error: `Full system restore failed: ${err.message || err}` });
+    }
+  }
+
+  // 2. SINGLE_MESS Restore Handling & Strict Multi-Tenant Mismatch Check
   let dbPayload = importedData.db;
   let settingsPayload = importedData.settings;
 
   if (!dbPayload && (importedData.members || importedData.months)) {
-    // Legacy support
+    // Legacy format
     dbPayload = importedData;
   }
 
-  if (!dbPayload || !dbPayload.members || !dbPayload.months) {
-    res.status(400).json({ error: "Invalid backup format. Backup must contain members and months arrays inside 'db' or at the root level." });
+  if (!dbPayload || !Array.isArray(dbPayload.members) || !Array.isArray(dbPayload.months)) {
+    res.status(400).json({ error: "Invalid backup format. Backup must contain members and months arrays." });
     return;
   }
 
-  console.log("[Backup] Validation completed");
+  if (dbPayload.members.length === 0 && dbPayload.months.length === 0) {
+    res.status(400).json({ error: "Safety Reject: The backup file contains 0 members and 0 months." });
+    return;
+  }
+
+  // Strict Tenant Isolation Verification: Check if backup belongs to this mess!
+  const fileMessId = importedData.messId || (dbPayload as any).messId;
+  const allowedMessIds: string[] = importedData.allowedMessIds || (fileMessId ? [fileMessId] : []);
+
+  if (fileMessId && fileMessId !== activeMessId && !allowedMessIds.includes(activeMessId)) {
+    const fileMessName = importedData.messName || fileMessId;
+    console.warn(`[Backup Guard] Blocked mismatch backup: file is for '${fileMessId}' (${fileMessName}), but active mess is '${activeMessId}' (${activeMessName})`);
+    res.status(400).json({
+      error: `❌ মেস মিসম্যাচ (Mess Mismatch)! এই ব্যাকআপ ফাইলটি মেস '${fileMessName}' (${fileMessId}) এর জন্য তৈরি। বর্তমান সক্রিয় মেস '${activeMessName}' (${activeMessId})-তে এটি রিস্টোর করা সম্পূর্ণ নিষিদ্ধ। অন্য মেসের ব্যাকআপ এই মেসে দেওয়া যাবে না।`
+    });
+    return;
+  }
+
+  // Cryptographic Integrity Verification: Prevent forged or manipulated cross-mess backups
+  if (importedData.integrityKey && fileMessId && importedData.exportedAt && importedData.counts) {
+    const expectedKey = generateBackupIntegrityKey(fileMessId, importedData.exportedAt, JSON.stringify(importedData.counts));
+    if (expectedKey !== importedData.integrityKey) {
+      console.warn(`[Backup Guard] Backup integrity signature mismatch for mess ${fileMessId}`);
+      res.status(400).json({
+        error: `❌ ব্যাকআপ ফাইল সিকিউরিটি ত্রুটি (Integrity Signature Mismatch)! ফাইলের ডিজিটাল সিকিউরিটি কি (Security Key) মেসের সাথে মেলেনি। ফাইলটি অন্য মেসের বা এতে পরিবর্তন করা হয়েছে।`
+      });
+      return;
+    }
+  }
 
   try {
-    // Write every table into PostgreSQL with database transactions, preserving IDs and relationships
-    await importBackupToPostgres(dbPayload);
-    console.log("[Backup] Database import completed");
+    // 1. Automatic Pre-Restore Safety Snapshot (Rollback Guarantee)
+    const currentDB = loadDB(activeMessId);
+    const safetySnapshotFilename = `safety_snapshot_${activeMessId}_${Date.now()}.json`;
+    writeAndPersistFile(safetySnapshotFilename, JSON.stringify({ db: currentDB, settings: currentSettings }, null, 2));
+    console.log(`[Backup] Pre-restore safety snapshot created: ${safetySnapshotFilename}`);
 
-    // Wait until every database write succeeds, then refresh in-memory cache
-    await refreshDbCache();
-    console.log("[Backup] Cache refreshed");
+    let finalPayload: any;
+    let cutoffDateUsed = "";
 
-    
-    
-    
-    
-    if (importedData.configs) {
-      for (const [filename, content] of Object.entries(importedData.configs)) {
-        if (typeof filename === 'string' && filename.endsWith('.json')) {
-           const filePath = path.join(DB_DIR, filename);
-           fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
-        }
-      }
-    } else if (settingsPayload) {
+    if (mode === "smart_merge") {
+      // Smart Merge: Preserve all new records created/dated after the backup date!
+      const mergeResult = performSmartMerge(currentDB, dbPayload, importedData.exportedAt);
+      finalPayload = mergeResult.merged;
+      cutoffDateUsed = mergeResult.cutoffDate;
+      console.log(`[Backup] Smart Merge applied with cutoff date: ${cutoffDateUsed}. Kept all entries dated > ${cutoffDateUsed}.`);
+    } else {
+      // Full Replace: Overwrite state with backup
+      finalPayload = dbPayload;
+      console.log(`[Backup] Full Replace applied. Complete state restored to backup point.`);
+    }
+
+    // 2. Multi-Tenant Tagging: ensure records are tagged with this messId
+    if (finalPayload.members) {
+      finalPayload.members.forEach((m: any) => { (m as any).messId = activeMessId; });
+    }
+    if (finalPayload.meals) {
+      finalPayload.meals.forEach((m: any) => { (m as any).messId = activeMessId; });
+    }
+
+    // 3. Update isolated file and in-memory cache for this mess ONLY
+    const backupFilename = activeMessId === "default"
+      ? "database_backup.json"
+      : `database_backup_${activeMessId}.json`;
+    writeAndPersistFile(backupFilename, JSON.stringify(finalPayload, null, 2));
+
+    setDbCacheForMess(activeMessId, finalPayload);
+
+    // 4. Update settings if in full_replace or if current has no custom settings
+    if (settingsPayload && (mode === "full_replace" || !currentSettings.messName)) {
       saveSettings(settingsPayload);
     }
 
     // Clear settings cache
     Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
-    const { invalidateFounderCache } = require('./founder');
-    if (invalidateFounderCache) invalidateFounderCache();
-    
-    // Synchronously save local backup JSON for redundancy and instant local startup fallback
-    const messId = getActiveMessId();
-    const backupFilename = messId === "default"
-      ? "database_backup.json"
-      : `database_backup_${messId}.json`;
-    writeAndPersistFile(backupFilename, JSON.stringify(dbPayload, null, 2));
+    try {
+      const { invalidateFounderCache } = await import("./founder.js");
+      if (invalidateFounderCache) invalidateFounderCache();
+    } catch (e) {}
 
-    logAudit(req.user!.id, req.user!.nickname, "IMPORT_BACKUP", "None", "Imported full database and settings backup", "Admin restored database and settings from file");
+    // 5. Sync to Postgres specifically for this mess (non-destructive to other messes)
+    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
+
+    logAudit(
+      req.user!.id, 
+      req.user!.nickname, 
+      "IMPORT_BACKUP", 
+      "None", 
+      `Restored backup for mess ${activeMessId} (Mode: ${mode})`, 
+      `User restored backup (${finalPayload.members?.length || 0} members, ${finalPayload.months?.length || 0} months, ${finalPayload.meals?.length || 0} meals, ${finalPayload.deposits?.length || 0} deposits). Mode: ${mode}. Snapshot: ${safetySnapshotFilename}`
+    );
     
-    console.log("[Backup] Backup completed");
-    res.json({ success: true, message: "Backup data and UI settings imported and synchronized successfully." });
+    console.log(`[Backup] Restore for mess ${activeMessId} (${mode}) completed successfully.`);
+    const successMsg = mode === "smart_merge"
+      ? `স্মার্ট মার্জ (Smart Merge) সফল হয়েছে! ব্যাকআপের পরের সমস্ত নতুন এন্ট্রি অক্ষত রয়েছে এবং পূর্বের ডেটা নিখুঁতভাবে রিস্টোর হয়েছে।`
+      : `ফুল রিপ্লেস (Full Replace) সফল হয়েছে! মেসের হিসাব হুবহু ব্যাকআপের পয়েন্টে ফিরিয়ে নেওয়া হয়েছে।`;
+
+    res.json({ 
+      success: true, 
+      mode,
+      message: successMsg,
+      cutoffDate: cutoffDateUsed,
+      snapshot: safetySnapshotFilename,
+      counts: {
+        members: finalPayload.members?.length || 0,
+        months: finalPayload.months?.length || 0,
+        meals: finalPayload.meals?.length || 0,
+        deposits: finalPayload.deposits?.length || 0,
+        marketEntries: finalPayload.marketEntries?.length || 0
+      }
+    });
   } catch (err: any) {
-    console.error("[Backup] Transaction failed and rolled back:", err);
-    res.status(500).json({ error: `Backup restore failed during database transaction: ${err.message || err}` });
+    console.error(`[Backup] Transaction failed for mess ${activeMessId}:`, err);
+    res.status(500).json({ error: `Backup restore failed: ${err.message || err}` });
   }
 });
 
