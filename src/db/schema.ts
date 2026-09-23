@@ -433,5 +433,12 @@ export const dailyBackups = pgTable("daily_backups", {
   triggerType: text("trigger_type").notNull().default("CRON_AUTOMATED"), // CRON_AUTOMATED or MANUAL_SNAPSHOT
 });
 
+export const userCredentials = pgTable("user_credentials", {
+  key: text("key").primaryKey(),
+  password: text("password").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+
 
 

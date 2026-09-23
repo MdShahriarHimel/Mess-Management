@@ -49,7 +49,8 @@ import {
   notices as noticesTable,
   auditLogs as auditLogsTable,
   mealRequests as mealRequestsTable,
-  persistentFiles as persistentFilesTable
+  persistentFiles as persistentFilesTable,
+  userCredentials as userCredentialsTable
 } from "../src/db/schema.ts";
 import { sql, eq } from "drizzle-orm";
 import { 
@@ -538,6 +539,29 @@ export async function initializeDbCache() {
       }
       fs.writeFileSync(localPath, file.content, "utf-8");
       console.log(`[Persistent Files Startup] Restored immediate config file: ${file.filename}`);
+    }
+
+    // Restore user credentials from user_credentials table and persistent_files
+    try {
+      if (!credentialsCache) credentialsCache = {};
+      const credFile = immediateFiles.find(f => f.filename === "credentials.json");
+      if (credFile && credFile.content) {
+        try {
+          const parsed = JSON.parse(credFile.content);
+          credentialsCache = { ...parsed, ...credentialsCache };
+        } catch (e) {}
+      }
+      const userCredRows = await db.select().from(userCredentialsTable);
+      for (const row of userCredRows) {
+        if (row.key && row.password) {
+          credentialsCache[row.key] = row.password;
+        }
+      }
+      console.log(`[Credentials Startup] Loaded ${Object.keys(credentialsCache).length} user credentials permanently from PostgreSQL.`);
+      const credPath = path.join(DB_DIR, "credentials.json");
+      fs.writeFileSync(credPath, JSON.stringify(credentialsCache, null, 2), "utf-8");
+    } catch (credErr) {
+      console.error("[Credentials Startup] Notice: could not load from user_credentials table yet:", credErr);
     }
   } catch (err) {
     console.error("[Persistent Files Startup] Failed to restore immediate files from PostgreSQL:", err);
@@ -1372,32 +1396,60 @@ export function saveDB(explicitMessId?: string) {
   }
 }
 
-// Load credentials (legacy fallback)
+// Load credentials safely without destroying database on empty read
 export function loadCredentials(): CredentialsSchema {
   ensureDBDir();
-  if (credentialsCache) return credentialsCache;
+  if (credentialsCache && Object.keys(credentialsCache).length > 0) return credentialsCache;
 
   if (fs.existsSync(CREDENTIALS_FILE)) {
     try {
       const data = fs.readFileSync(CREDENTIALS_FILE, "utf-8");
-      credentialsCache = JSON.parse(data);
-      return credentialsCache!;
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+        credentialsCache = parsed;
+        return credentialsCache!;
+      }
     } catch (e) {
       console.error("Error parsing credentials file:", e);
     }
   }
 
-  credentialsCache = {
-    "admin-uuid-0000": "Astagfirullah_Mess2026#!!"
-  };
-  saveCredentials();
-  return credentialsCache!;
+  // Fallback in memory only - DO NOT overwrite database with blank or seed credentials!
+  if (!credentialsCache) {
+    credentialsCache = {
+      "admin-uuid-0000": "Astagfirullah_Mess2026#!!"
+    };
+  }
+  return credentialsCache;
 }
 
-// Save credentials (legacy fallback)
+// Save credentials permanently to PostgreSQL user_credentials, persistent_files, and local disk
 export function saveCredentials() {
   if (!credentialsCache) return;
-  writeAndPersistFile("credentials.json", JSON.stringify(credentialsCache, null, 2));
+  const content = JSON.stringify(credentialsCache, null, 2);
+  writeAndPersistFile("credentials.json", content);
+
+  // Directly upsert entries into PostgreSQL user_credentials table for 100% durable persistence
+  const entries = Object.entries(credentialsCache);
+  const now = new Date().toISOString();
+  const dbPromise = (async () => {
+    try {
+      for (const [key, password] of entries) {
+        if (!key || !password) continue;
+        await db.insert(userCredentialsTable).values({
+          key,
+          password: String(password),
+          updatedAt: now
+        }).onConflictDoUpdate({
+          target: userCredentialsTable.key,
+          set: { password: String(password), updatedAt: now }
+        });
+      }
+    } catch (err) {
+      console.error("[user_credentials] Error saving credentials to PostgreSQL:", err);
+    }
+  })();
+  trackPromise(dbPromise);
 }
 
 // Generate unique UUID-like IDs

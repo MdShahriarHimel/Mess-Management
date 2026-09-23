@@ -44,20 +44,24 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
   const [success, setSuccess] = useState<string | null>(null);
   const [hasServerPassword, setHasServerPassword] = useState<boolean | null>(null);
 
+  const isGoogleUser = Boolean(
+    (firebaseUser?.providerData && firebaseUser.providerData.some((p: any) => p.providerId === "google.com")) ||
+    (sessionToken && sessionToken.startsWith("ey"))
+  );
+
   // Check backend server password status
   useEffect(() => {
+    let isMounted = true;
     const checkServerPassword = async () => {
       try {
         const res = await fetch("/api/auth/has-password", {
           headers: { "Authorization": `Bearer ${sessionToken}` }
         });
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const data = await res.json();
           const hasPass = Boolean(data.hasPassword);
           setHasServerPassword(hasPass);
-          if (!hasPass) {
-            setIsGoogleOnly(true);
-          }
+          setIsGoogleOnly(!hasPass);
         }
       } catch (e) {
         console.warn("Failed to check server password status:", e);
@@ -66,28 +70,21 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
     if (sessionToken) {
       checkServerPassword();
     }
+    return () => { isMounted = false; };
   }, [sessionToken]);
 
-  // Determine auth provider on mount with listener for state synchronization
+  // Sync Firebase user state
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setFirebaseUser(user);
       if (user) {
         setUserEmail(user.email || currentUser.email || "");
-        const isGoogle = user.providerData.some(p => p.providerId === "google.com") && 
-                         !user.providerData.some(p => p.providerId === "password");
-        if (isGoogle || hasServerPassword === false) {
-          setIsGoogleOnly(true);
-        }
       } else {
-        if (hasServerPassword === false) {
-          setIsGoogleOnly(true);
-        }
         setUserEmail(currentUser.email || "");
       }
     });
     return () => unsubscribe();
-  }, [currentUser, hasServerPassword]);
+  }, [currentUser]);
 
   // Password Validation Rules
   const hasMinLength = newPassword.length >= 8;
@@ -145,7 +142,7 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
       return;
     }
 
-    if (!isGoogleOnly && !currentPassword) {
+    if (!isGoogleOnly && !isGoogleUser && !currentPassword) {
       setError("Current Password is required.");
       return;
     }
@@ -181,13 +178,16 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
           }
         }
 
-        if (isGoogleOnly) {
+        if (isGoogleOnly || isGoogleUser) {
           // Link password credential (Set Password for Google account)
           try {
             const credential = EmailAuthProvider.credential(user.email!, newPassword);
             await linkWithCredential(user, credential);
           } catch (linkErr: any) {
             console.warn("Firebase linkWithCredential (continuing to backend sync):", linkErr);
+            try {
+              await updatePassword(user, newPassword);
+            } catch (_) {}
           }
           
           // CRITICAL: Sync password to backend server database so manual login works immediately!
@@ -207,8 +207,9 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
 
           // Success
           await triggerAuditLog(freshToken);
-          setSuccess("Password has been set successfully! You can now log in using either Google or your Email & Password.");
+          setSuccess(hasServerPassword ? "Password updated successfully! You can log in using either Google or your Email & Password." : "Password has been set successfully! You can now log in using either Google or your Email & Password.");
           setIsGoogleOnly(false); // No longer Google-only, now has password
+          setHasServerPassword(true);
           setCurrentPassword("");
           setNewPassword("");
           setConfirmPassword("");
@@ -261,6 +262,8 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
           // 4. Trigger audit log and clear form
           await triggerAuditLog(freshToken);
           setSuccess("Password changed successfully! You can now log in using your new password.");
+          setHasServerPassword(true);
+          setIsGoogleOnly(false);
           setCurrentPassword("");
           setNewPassword("");
           setConfirmPassword("");
@@ -495,6 +498,26 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
         </div>
       ) : (
         <form onSubmit={handlePasswordChange} className="space-y-4">
+          {/* Status badge when account has both Google and Password */}
+          {isGoogleUser && (
+            <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-xs text-emerald-400">
+              <div className="flex gap-2 items-start justify-between">
+                <div className="flex gap-2 items-start">
+                  <CheckCircle2 className="shrink-0 mt-0.5 text-emerald-400" size={15} />
+                  <div>
+                    <p className="font-bold">Google Sign-In & Direct Password Active</p>
+                    <p className="text-[11px] text-slate-300 opacity-90 mt-1 leading-relaxed">
+                      Your account is configured with both Google Sign-In and direct password access. You can update your direct password below at any time.
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shrink-0">
+                  Active
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Error & Success Messages */}
           {error && (
             <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-xs text-rose-400 flex gap-2 items-center animate-fade-in">
@@ -510,31 +533,33 @@ export default function SecuritySettings({ currentUser, isDarkMode, sessionToken
             </div>
           )}
 
-          {/* Current Password */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-orange-500 uppercase tracking-wider block">Current Password</label>
-            <div className="relative">
-              <span className="absolute left-3 top-2.5 text-slate-400">
-                <Lock size={14} />
-              </span>
-              <input
-                type={showCurrentPassword ? "text" : "password"}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Enter current password to re-authenticate"
-                disabled={loading}
-                required
-                className="w-full pl-9 pr-9 py-2 rounded-xl bg-slate-950/40 border border-slate-800 text-xs focus:border-cyan-500 focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
-              >
-                {showCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
+          {/* Current Password - Only required if not authenticated through Google */}
+          {!isGoogleUser && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-orange-500 uppercase tracking-wider block">Current Password</label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400">
+                  <Lock size={14} />
+                </span>
+                <input
+                  type={showCurrentPassword ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter current password to re-authenticate"
+                  disabled={loading}
+                  required
+                  className="w-full pl-9 pr-9 py-2 rounded-xl bg-slate-950/40 border border-slate-800 text-xs focus:border-cyan-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                >
+                  {showCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* New Password & Confirm */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

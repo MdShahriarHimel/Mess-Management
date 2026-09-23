@@ -265,6 +265,36 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
   return candidates[0];
 }
 
+/**
+ * Checks if a member with given email is currently ACTIVE (or not LEFT/ARCHIVED) in any other mess
+ */
+export function isMemberActiveInAnotherMess(email: string, currentMessId: string): { isActive: boolean; messName?: string; messId?: string } {
+  if (!email) return { isActive: false };
+  const normEmail = email.trim().toLowerCase();
+  const messesList = loadMesses().messes || [];
+  for (const m of messesList) {
+    if (m.id === currentMessId) continue;
+    try {
+      const otherDb = loadDB(m.id);
+      const otherMember = otherDb.members?.find(mem => mem.email && mem.email.trim().toLowerCase() === normEmail);
+      if (otherMember) {
+        const isStillInOtherMess = otherMember.status !== MemberStatus.LEFT && otherMember.status !== MemberStatus.ARCHIVED;
+        if (isStillInOtherMess) {
+          const otherMessName = m.name || m.id;
+          return {
+            isActive: true,
+            messName: otherMessName,
+            messId: m.id
+          };
+        }
+      }
+    } catch (e) {
+      console.error(`[isMemberActiveInAnotherMess] Error checking mess ${m.id}:`, e);
+    }
+  }
+  return { isActive: false };
+}
+
 // ---------------------------------------------------------
 // AUTH MIDDLEWARE
 // ---------------------------------------------------------
@@ -407,6 +437,17 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
         member.id = tokenUid;
         if (tokenPicture) member.photo = tokenPicture;
+        
+        // Preserve and forward password to tokenUid and tokenEmail
+        const creds = loadCredentials();
+        const existingPass = creds[oldId] || (tokenEmail ? creds[tokenEmail.toLowerCase()] : undefined) || (member.email ? creds[member.email.toLowerCase()] : undefined);
+        if (existingPass) {
+          creds[tokenUid] = existingPass;
+          if (tokenEmail) creds[tokenEmail.toLowerCase()] = existingPass;
+          if (member.email) creds[member.email.toLowerCase()] = existingPass;
+          saveCredentials();
+        }
+
         // Purge oldId record if present elsewhere in db.members
         db.members = db.members.filter(m => m === member || (m.id !== oldId && m.email.toLowerCase() !== member.email.toLowerCase()));
         saveDB(targetMessId);
@@ -533,10 +574,17 @@ router.get("/auth/has-password", authMiddleware, (req: AuthenticatedRequest, res
   const creds = loadCredentials();
   const memberId = req.user!.id;
   const email = req.user!.email ? req.user!.email.toLowerCase() : "";
+  
+  const memberLookup = findMemberAcrossAllMesses({ id: memberId, email });
+  const mem = memberLookup?.member;
+
   const hasPassword = Boolean(
     creds[memberId] || 
     (email && creds[email]) ||
-    ((req.user as any).previousIds && Array.isArray((req.user as any).previousIds) && (req.user as any).previousIds.some((pid: string) => Boolean(creds[pid])))
+    (mem?.id && creds[mem.id]) ||
+    (mem?.email && creds[mem.email.toLowerCase()]) ||
+    ((req.user as any).previousIds && Array.isArray((req.user as any).previousIds) && (req.user as any).previousIds.some((pid: string) => Boolean(creds[pid]))) ||
+    ((mem as any)?.previousIds && Array.isArray((mem as any)?.previousIds) && (mem as any)?.previousIds.some((pid: string) => Boolean(creds[pid])))
   );
   res.json({ hasPassword });
 });
@@ -647,6 +695,11 @@ router.post("/auth/login", (req: Request, res: Response): void => {
     ((member as any).previousIds ? (member as any).previousIds.map((id: string) => creds[id]).find(Boolean) : undefined);
 
   if (storedPassword === password) {
+    if (!creds[member.id] || (member.email && !creds[member.email.toLowerCase()])) {
+      creds[member.id] = password;
+      if (member.email) creds[member.email.toLowerCase()] = password;
+      saveCredentials();
+    }
     recordSuccessfulLogin(email, member.id, clientIp, userAgent);
     setUserActiveMessId(member.id, member.email, messId);
     logAudit(
@@ -974,13 +1027,23 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     }
   }
 
+  if (!targetMember && req.user?.email) {
+    const lookup = findMemberAcrossAllMesses({ email: req.user.email });
+    if (lookup) {
+      targetMember = lookup.member;
+    }
+  }
+
   if (!targetMember) {
     res.status(404).json({ error: "Member not found" });
     return;
   }
 
   // Check permission: Self can reset self password. Admin/Superuser can reset others.
-  const isSelf = req.user!.id === memberId;
+  const isSelf = req.user!.id === memberId || 
+    (req.user!.email && targetMember.email && req.user!.email.toLowerCase() === targetMember.email.toLowerCase()) ||
+    (req.user?.id && targetMember.id && req.user.id === targetMember.id) ||
+    ((req.user as any).previousIds && (req.user as any).previousIds.includes(memberId));
   const isAdmin = req.user!.role === UserRole.ADMIN;
   const isSuperUser = req.user!.role === UserRole.SUPERUSER;
   const isAdminOrSuper = isAdmin || isSuperUser;
@@ -1032,8 +1095,13 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   creds[memberId] = newPassword;
+  if (req.user?.id) creds[req.user.id] = newPassword;
+  if (targetMember.id) creds[targetMember.id] = newPassword;
   if (targetMember.email) {
     creds[targetMember.email.toLowerCase()] = newPassword;
+  }
+  if (req.user?.email) {
+    creds[req.user.email.toLowerCase()] = newPassword;
   }
   if ((targetMember as any).previousIds && Array.isArray((targetMember as any).previousIds)) {
     (targetMember as any).previousIds.forEach((pid: string) => {
@@ -1155,25 +1223,12 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
 
   // 2. Strict check across all other messes:
   // An email cannot be invited if it is currently an ACTIVE/PENDING/AWAY member in another mess
-  const messesList = loadMesses().messes || [];
-  for (const m of messesList) {
-    if (m.id === currentMessId) continue;
-    try {
-      const otherDb = loadDB(m.id);
-      const otherMember = otherDb.members?.find(mem => mem.email && mem.email.trim().toLowerCase() === targetEmail);
-      if (otherMember) {
-        const isStillInOtherMess = otherMember.status !== MemberStatus.LEFT && otherMember.status !== MemberStatus.ARCHIVED;
-        if (isStillInOtherMess) {
-          const otherMessName = m.name || m.id;
-          res.status(400).json({
-            error: `সতর্কতা: এই ইমেইল (${targetEmail}) বর্তমানে '${otherMessName}' মেসের সক্রিয় সদস্য হিসেবে নিবন্ধিত রয়েছে। কোনো সদস্য একই সাথে একাধিক মেসে সক্রিয় থাকতে পারেন না। ঐ মেস ছেড়ে না দেওয়া (Left Mess না হওয়া) পর্যন্ত তাকে এই মেসে ইনভাইট করা যাবে না।`
-          });
-          return;
-        }
-      }
-    } catch (e) {
-      console.error(`[checkAcrossMesses] Error checking mess ${m.id}:`, e);
-    }
+  const activeOtherMess = isMemberActiveInAnotherMess(targetEmail, currentMessId);
+  if (activeOtherMess.isActive) {
+    res.status(400).json({
+      error: `This email is already associated with an active account in another mess (${activeOtherMess.messName}). কোনো সদস্য একই সাথে একাধিক মেসে সক্রিয় থাকতে পারেন না।`
+    });
+    return;
   }
 
   const newId = generateUUID();
@@ -1398,6 +1453,18 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
   const isInactiveNow = [MemberStatus.ARCHIVED, MemberStatus.LEFT, MemberStatus.SUSPENDED].includes(updatedMember.status);
   const wasInactiveBefore = [MemberStatus.ARCHIVED, MemberStatus.LEFT, MemberStatus.SUSPENDED].includes(original.status);
 
+  // If reactivating/restoring an inactive or left member, ensure they are not actively registered in another mess
+  if (updates.status && !isInactiveNow && wasInactiveBefore) {
+    const currentMessId = getActiveMessId();
+    const activeCheck = isMemberActiveInAnotherMess(original.email, currentMessId);
+    if (activeCheck.isActive) {
+      res.status(400).json({
+        error: `এই সদস্যটি (${original.email}) বর্তমানে '${activeCheck.messName}' মেসের সক্রিয় সদস্য হিসেবে নিবন্ধিত রয়েছে। এক ব্যক্তি একই সাথে একাধিক মেসে সক্রিয় থাকতে পারেন না। তিনি ঐ মেস ত্যাগ (Left Mess) না করা পর্যন্ত এই মেসে তার স্ট্যাটাস সক্রিয় বা পরিবর্তন করা যাবে না।`
+      });
+      return;
+    }
+  }
+
   if (updates.leavingDate !== undefined) {
     updatedMember.leavingDate = updates.leavingDate || null;
   } else if (isInactiveNow && !wasInactiveBefore) {
@@ -1584,6 +1651,17 @@ router.post("/members/:id/restore", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   const original = db.members[index];
+
+  // Prevent restoring if the member is currently active in another mess
+  const currentMessId = getActiveMessId();
+  const activeCheck = isMemberActiveInAnotherMess(original.email, currentMessId);
+  if (activeCheck.isActive) {
+    res.status(400).json({
+      error: `এই সদস্যটি (${original.email}) বর্তমানে '${activeCheck.messName}' মেসের সক্রিয় সদস্য হিসেবে নিবন্ধিত রয়েছে। এক ব্যক্তি একই সাথে একাধিক মেসে সক্রিয় থাকতে পারেন না। তিনি ঐ মেস ত্যাগ (Left Mess) না করা পর্যন্ত এই মেসে রিস্টোর করা যাবে না।`
+    });
+    return;
+  }
+
   original.status = MemberStatus.ACTIVE;
   original.leavingDate = null;
   db.members[index] = original;
@@ -1662,6 +1740,16 @@ router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.
   }
 
   const { member } = db.deletedMembers[index];
+
+  // Prevent restoring if the member is active in another mess
+  const currentMessId = getActiveMessId();
+  const activeCheck = isMemberActiveInAnotherMess(member.email, currentMessId);
+  if (activeCheck.isActive) {
+    res.status(400).json({
+      error: `এই সদস্যটি (${member.email}) বর্তমানে '${activeCheck.messName}' মেসের সক্রিয় সদস্য হিসেবে নিবন্ধিত রয়েছে। এক ব্যক্তি একই সাথে একাধিক মেসে সক্রিয় থাকতে পারেন না। তিনি ঐ মেস ত্যাগ (Left Mess) না করা পর্যন্ত এই মেসে রিস্টোর করা যাবে না।`
+    });
+    return;
+  }
 
   // Check if member already exists by email
   const exists = db.members.some(m => m.email.toLowerCase() === member.email.toLowerCase());
