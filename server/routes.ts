@@ -201,26 +201,30 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
     return false;
   };
 
-  // 1. Check current active mess first
+  // 1. Gather all candidates across all messes
+  const candidates: MemberLookupResult[] = [];
   const activeMessId = getActiveMessId() || "default";
+  const userPreferredMess = getUserActiveMessId(queryId, normEmail);
+
+  // Check active mess
   try {
     const activeDb = loadDB(activeMessId);
     if (activeDb && Array.isArray(activeDb.members)) {
       const idx = activeDb.members.findIndex(matchesMember);
       if (idx !== -1) {
-        return {
+        candidates.push({
           member: activeDb.members[idx],
           memberIndex: idx,
           messId: activeMessId,
           db: activeDb
-        };
+        });
       }
     }
   } catch (e) {
     console.error(`[findMemberAcrossAllMesses] Error in active mess ${activeMessId}:`, e);
   }
 
-  // 2. Check all other messes defined in messes.json
+  // Check all other messes defined in messes.json
   const messesList = loadMesses().messes || [];
   for (const mess of messesList) {
     if (mess.id === activeMessId) continue;
@@ -229,12 +233,12 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
       if (mDb && Array.isArray(mDb.members)) {
         const idx = mDb.members.findIndex(matchesMember);
         if (idx !== -1) {
-          return {
+          candidates.push({
             member: mDb.members[idx],
             memberIndex: idx,
             messId: mess.id,
             db: mDb
-          };
+          });
         }
       }
     } catch (e) {
@@ -242,25 +246,23 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
     }
   }
 
-  // 3. Fallback to "default" if activeMessId was not "default"
-  if (activeMessId !== "default") {
-    try {
-      const defaultDb = loadDB("default");
-      if (defaultDb && Array.isArray(defaultDb.members)) {
-        const idx = defaultDb.members.findIndex(matchesMember);
-        if (idx !== -1) {
-          return {
-            member: defaultDb.members[idx],
-            memberIndex: idx,
-            messId: "default",
-            db: defaultDb
-          };
-        }
-      }
-    } catch (e) {}
+  if (candidates.length === 0) return null;
+
+  // Prioritize candidates:
+  // 1. Explicit user preferred mess if set
+  if (userPreferredMess) {
+    const preferred = candidates.find(c => c.messId === userPreferredMess);
+    if (preferred) return preferred;
   }
 
-  return null;
+  // 2. Active member (not LEFT and not ARCHIVED)
+  const activeCandidate = candidates.find(c => 
+    c.member.status !== MemberStatus.LEFT && c.member.status !== MemberStatus.ARCHIVED
+  );
+  if (activeCandidate) return activeCandidate;
+
+  // 3. Fallback to first matched candidate
+  return candidates[0];
 }
 
 // ---------------------------------------------------------
@@ -1136,21 +1138,42 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
 
   const targetEmail = memberData.email.trim().toLowerCase();
 
-  // Strict check across all messes: An email cannot be invited or added if it is already active in any mess
-  const existingAcross = findMemberAcrossAllMesses({ email: targetEmail });
-  if (existingAcross && existingAcross.member) {
-    const messName = loadMesses().messes.find(m => m.id === existingAcross.messId)?.name || existingAcross.messId;
-    res.status(400).json({
-      error: `This email (${targetEmail}) is already an active member in '${messName}'. A user cannot be invited or belong to multiple messes simultaneously.`
-    });
+  // 1. Strict check in current active mess first
+  const currentMessId = getActiveMessId();
+  const db = loadDB(currentMessId);
+  const existsInCurrent = db.members.find(m => m.email.toLowerCase() === targetEmail);
+  if (existsInCurrent) {
+    if (existsInCurrent.status === MemberStatus.LEFT || existsInCurrent.status === MemberStatus.ARCHIVED) {
+      res.status(400).json({
+        error: `এই সদস্যটি ইতিপূর্বে এই মেসে ছিলেন এবং বর্তমানে '${existsInCurrent.status === MemberStatus.LEFT ? 'LEFT MESS' : 'ARCHIVED'}' তালিকায় সংরক্ষিত আছেন। তাকে পুনরায় নতুন করে ইনভাইট না করে মেম্বার তালিকার 'Inactive / Archive' সেকশন থেকে সরাসরি 'Restore' করতে পারেন।`
+      });
+      return;
+    }
+    res.status(400).json({ error: "A member with this email already exists in this mess" });
     return;
   }
 
-  const db = loadDB();
-  const exists = db.members.some(m => m.email.toLowerCase() === targetEmail);
-  if (exists) {
-    res.status(400).json({ error: "A member with this email already exists" });
-    return;
+  // 2. Strict check across all other messes:
+  // An email cannot be invited if it is currently an ACTIVE/PENDING/AWAY member in another mess
+  const messesList = loadMesses().messes || [];
+  for (const m of messesList) {
+    if (m.id === currentMessId) continue;
+    try {
+      const otherDb = loadDB(m.id);
+      const otherMember = otherDb.members?.find(mem => mem.email && mem.email.trim().toLowerCase() === targetEmail);
+      if (otherMember) {
+        const isStillInOtherMess = otherMember.status !== MemberStatus.LEFT && otherMember.status !== MemberStatus.ARCHIVED;
+        if (isStillInOtherMess) {
+          const otherMessName = m.name || m.id;
+          res.status(400).json({
+            error: `সতর্কতা: এই ইমেইল (${targetEmail}) বর্তমানে '${otherMessName}' মেসের সক্রিয় সদস্য হিসেবে নিবন্ধিত রয়েছে। কোনো সদস্য একই সাথে একাধিক মেসে সক্রিয় থাকতে পারেন না। ঐ মেস ছেড়ে না দেওয়া (Left Mess না হওয়া) পর্যন্ত তাকে এই মেসে ইনভাইট করা যাবে না।`
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      console.error(`[checkAcrossMesses] Error checking mess ${m.id}:`, e);
+    }
   }
 
   const newId = generateUUID();
