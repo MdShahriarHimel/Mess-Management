@@ -1134,8 +1134,20 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
     return;
   }
 
+  const targetEmail = memberData.email.trim().toLowerCase();
+
+  // Strict check across all messes: An email cannot be invited or added if it is already active in any mess
+  const existingAcross = findMemberAcrossAllMesses({ email: targetEmail });
+  if (existingAcross && existingAcross.member) {
+    const messName = loadMesses().messes.find(m => m.id === existingAcross.messId)?.name || existingAcross.messId;
+    res.status(400).json({
+      error: `This email (${targetEmail}) is already an active member in '${messName}'. A user cannot be invited or belong to multiple messes simultaneously.`
+    });
+    return;
+  }
+
   const db = loadDB();
-  const exists = db.members.some(m => m.email.toLowerCase() === memberData.email!.toLowerCase());
+  const exists = db.members.some(m => m.email.toLowerCase() === targetEmail);
   if (exists) {
     res.status(400).json({ error: "A member with this email already exists" });
     return;
@@ -1559,7 +1571,7 @@ router.post("/members/:id/restore", authMiddleware, (req: AuthenticatedRequest, 
 });
 
 // Permanent Delete (Admin Only)
-router.delete("/members/:id", authMiddleware, checkRole([]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/members/:id", authMiddleware, checkRole([]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const db = loadDB();
   const index = db.members.findIndex(m => m.id === id);
@@ -1592,6 +1604,14 @@ router.delete("/members/:id", authMiddleware, checkRole([]), (req: Authenticated
 
   db.members.splice(index, 1);
   saveDB();
+
+  try {
+    if (drizzleDb) {
+      await drizzleDb.delete(members).where(eq(members.id, id));
+    }
+  } catch (err) {
+    console.warn("Could not delete member from PostgreSQL:", err);
+  }
 
   logAudit(req.user!.id, req.user!.nickname, "PERMANENT_DELETE_MEMBER", original.nickname, "Deleted", `Permanently deleted user: ${original.nickname}`);
   res.json({ success: true });
@@ -7580,7 +7600,7 @@ import {
 } from "./monetization.js";
 
 // Helper checks
-const isPlatformOwnerEmail = (email: string | undefined): boolean => {
+function isPlatformOwnerEmail(email: string | undefined): boolean {
   if (!email) return false;
   try {
     const filePath = path.join(DB_DIR, "platform_controls.json");
@@ -7593,19 +7613,19 @@ const isPlatformOwnerEmail = (email: string | undefined): boolean => {
     console.error("Error reading platform controls in routes.ts:", e);
   }
   return email.toLowerCase() === "mdshahriarhimel@gmail.com";
-};
+}
 
-const checkIsFounder = (req: AuthenticatedRequest): boolean => {
+function checkIsFounder(req: AuthenticatedRequest): boolean {
   return isPlatformOwnerEmail(req.user?.email);
-};
+}
 
-const checkIsUltimateAdmin = (req: AuthenticatedRequest): boolean => {
+function checkIsUltimateAdmin(req: AuthenticatedRequest): boolean {
   return isPlatformOwnerEmail(req.user?.email);
-};
+}
 
-const checkIsAdminOrSuper = (req: AuthenticatedRequest): boolean => {
+function checkIsAdminOrSuper(req: AuthenticatedRequest): boolean {
   return req.user?.role === UserRole.ADMIN || req.user?.role === UserRole.SUPERUSER || checkIsUltimateAdmin(req);
-};
+}
 
 // 1. Get entire monetization status for the active mess & logged in user
 router.get("/monetization/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
