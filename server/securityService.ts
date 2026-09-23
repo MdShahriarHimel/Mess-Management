@@ -276,9 +276,12 @@ export function getSessionVersion(memberId: string): string {
   return sessionVersionsMap.get(memberId)!;
 }
 
-export function invalidateMemberSessions(memberId: string): string {
+export function invalidateMemberSessions(memberId: string, previousIds?: string[]): string {
   const newVer = "s_" + generateUUID();
-  sessionVersionsMap.set(memberId, newVer);
+  const allIds = [memberId, ...(previousIds || [])].filter(Boolean);
+  for (const id of allIds) {
+    sessionVersionsMap.set(id, newVer);
+  }
   return newVer;
 }
 
@@ -287,23 +290,33 @@ export function generateSessionToken(memberId: string): string {
   return `${memberId}:${ver}`;
 }
 
-export function isValidMemberSessionToken(token: string, memberId: string): boolean {
-  // If session versions tracker hasn't explicitly invalidated sessions for this member yet, accept token
-  if (!sessionVersionsMap.has(memberId)) {
-    return true;
+export function isValidMemberSessionToken(token: string, memberId: string, previousIds?: string[]): boolean {
+  if (!token) return false;
+  const allIds = [memberId, ...(previousIds || [])].filter(Boolean);
+
+  // If session versions tracker hasn't explicitly invalidated sessions for any of this member's IDs, accept token
+  const hasInvalidation = allIds.some(id => sessionVersionsMap.has(id));
+  if (!hasInvalidation) {
+    const parts = token.split(":");
+    return allIds.includes(parts[0]);
   }
 
-  const activeVer = sessionVersionsMap.get(memberId);
-  if (token === memberId) {
-    // If sessions were invalidated, legacy token without matching version must be rejected
-    if (activeVer !== "v1") {
-      return false;
+  // Find the active version across user IDs
+  let activeVer = "v1";
+  for (const id of allIds) {
+    if (sessionVersionsMap.has(id)) {
+      activeVer = sessionVersionsMap.get(id)!;
+      break;
     }
-    return true;
+  }
+
+  if (allIds.includes(token)) {
+    // If sessions were invalidated, legacy token without matching version must be rejected
+    return activeVer === "v1";
   }
 
   const parts = token.split(":");
-  if (parts.length === 2 && parts[0] === memberId) {
+  if (parts.length === 2 && allIds.includes(parts[0])) {
     return parts[1] === activeVer;
   }
 

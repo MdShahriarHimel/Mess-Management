@@ -2492,9 +2492,17 @@ export default function App() {
       } else {
         handleLogoutLocal();
       }
-    } catch (e) {
-      console.error("Session verification failed:", e);
-      handleLogoutLocal();
+    } catch (e: any) {
+      const isNetworkError = e?.message?.includes("Failed to fetch") || 
+                            e?.message?.includes("NetworkError") || 
+                            e?.message?.includes("network-request-failed") ||
+                            (typeof navigator !== "undefined" && !navigator.onLine);
+      if (isNetworkError) {
+        console.warn("Network error during session verification. Preserving local session.", e);
+      } else {
+        console.error("Session verification failed:", e);
+        handleLogoutLocal();
+      }
     }
   };
 
@@ -2752,15 +2760,15 @@ export default function App() {
         }
       }
 
-      // If we receive a 401 Unauthorized or session expired from the backend
+      // If we receive a 401 Unauthorized specifically due to expired Firebase ID token
       if (response.status === 401 && auth.currentUser) {
         try {
           const cloneRes = response.clone();
           const errData = await cloneRes.json().catch(() => ({}));
           const isExpired = errData.code === "auth/id-token-expired" || 
-                            errData.error?.includes("expired") || 
-                            errData.error?.includes("Firebase") ||
-                            errData.error?.toLowerCase().includes("session");
+                            errData.error?.includes("auth/id-token-expired") ||
+                            errData.error?.includes("Invalid Firebase session") ||
+                            errData.error?.includes("Firebase ID token expired");
           
           if (isExpired) {
             console.warn("Detected expired Firebase ID token during API call. Auto-refreshing...");
@@ -2821,20 +2829,24 @@ export default function App() {
     };
   }, []);
 
-  // Periodically refresh the token every 20 minutes if the user is active
+  // Periodically check/refresh token if needed without forcing token churn
   useEffect(() => {
     const interval = setInterval(async () => {
       if (auth.currentUser) {
         try {
-          console.log("Periodically refreshing Firebase auth token...");
-          const freshToken = await auth.currentUser.getIdToken(true);
-          localStorage.setItem("mess_token", freshToken);
-          setSessionToken(freshToken);
+          const currentToken = localStorage.getItem("mess_token");
+          // Use getIdToken(false) so Firebase SDK only issues a new token when close to expiry
+          const freshToken = await auth.currentUser.getIdToken(false);
+          if (freshToken && freshToken !== currentToken) {
+            console.log("Firebase auth token refreshed via background sync.");
+            localStorage.setItem("mess_token", freshToken);
+            setSessionToken(freshToken);
+          }
         } catch (e) {
-          console.warn("Failed periodic token refresh, will retry next interval:", e);
+          console.warn("Failed background token refresh check:", e);
         }
       }
-    }, 20 * 60 * 1000);
+    }, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -2860,7 +2872,7 @@ export default function App() {
               );
               const payload = JSON.parse(jsonPayload);
               const exp = payload.exp * 1000;
-              if (Date.now() >= exp - 10000) {
+              if (Date.now() >= exp - 30000) {
                 console.log("[Auth] Cached token is expired or expiring soon, forcing refresh...");
                 freshToken = await firebaseUser.getIdToken(true);
               }
@@ -2870,9 +2882,13 @@ export default function App() {
           }
 
           if (!isMounted) return;
+          const prevToken = localStorage.getItem("mess_token");
           localStorage.setItem("mess_token", freshToken);
-          setSessionToken(freshToken);
           setFirebaseAuthChecked(true);
+
+          if (prevToken !== freshToken) {
+            setSessionToken(freshToken);
+          }
  
           // Validate against server database
           const response = await fetch("/api/auth/me", {

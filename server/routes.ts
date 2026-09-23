@@ -472,7 +472,8 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         return;
       }
 
-      if (!token.startsWith("ey") && !isValidMemberSessionToken(token, member.id)) {
+      const prevIds = (member as any).previousIds && Array.isArray((member as any).previousIds) ? (member as any).previousIds : [];
+      if (!token.startsWith("ey") && !isValidMemberSessionToken(token, member.id, prevIds)) {
         res.status(401).json({ error: "Unauthorized: Session invalidated due to password change. Please log in again." });
         return;
       }
@@ -790,7 +791,8 @@ router.post("/auth/register", (req: Request, res: Response): void => {
   setUserActiveMessId(member.id, member.email, messId);
 
   // Invalidate old sessions and create fresh session token
-  invalidateMemberSessions(member.id);
+  const memberPrevIds = (member as any).previousIds && Array.isArray((member as any).previousIds) ? (member as any).previousIds : [];
+  invalidateMemberSessions(member.id, memberPrevIds);
   const token = generateSessionToken(member.id);
 
   logAudit(member.id, member.nickname, "ACTIVATE_ACCOUNT", "PENDING", "ACTIVE", "User completed account activation.", { messId });
@@ -984,7 +986,8 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
   otpStore.delete(email.toLowerCase());
 
   // Terminate all existing sessions for this member
-  invalidateMemberSessions(member.id);
+  const memberPrevIds = (member as any).previousIds && Array.isArray((member as any).previousIds) ? (member as any).previousIds : [];
+  invalidateMemberSessions(member.id, memberPrevIds);
 
   logAudit(member.id, member.nickname, "FORGOT_PASSWORD_RESET_SUCCESS", "None", "None", "Password reset successfully using email OTP.");
 
@@ -1112,8 +1115,9 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
   addPasswordToHistory(memberId, newPassword);
 
   // Terminate all existing sessions for this member
-  invalidateMemberSessions(memberId);
-  const newToken = generateSessionToken(memberId);
+  const allTargetIds = [targetMember.id, memberId, ...((targetMember as any).previousIds || [])].filter(Boolean);
+  invalidateMemberSessions(targetMember.id, allTargetIds);
+  const newToken = generateSessionToken(targetMember.id);
 
   let auditMsg = `Reset password for user: ${targetMember.nickname}`;
   if (isAdmin && !isSelf) {
