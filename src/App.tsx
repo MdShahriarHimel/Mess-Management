@@ -39,6 +39,7 @@ import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
 import { deduplicateMembersList, findMemberByUniqueKey } from "./utils/memberUtils.ts";
+import { validateTokenIntegrity, setStoredTokenSafely, clearStoredTokenSafely } from "./utils/authUtils.ts";
 
 // Types
 import { Member, MessMonth, UserRole, MemberStatus, CycleProposal, RespectSenioritySettings } from "./types.js";
@@ -2456,9 +2457,7 @@ export default function App() {
   };
 
   const handleLogoutLocal = () => {
-    localStorage.removeItem("mess_token");
-    localStorage.removeItem("mess_token_expiry");
-    sessionStorage.removeItem("mess_token");
+    clearStoredTokenSafely();
     setSessionToken(null);
     setCurrentUser(null);
     setReportSummary(null);
@@ -2781,8 +2780,10 @@ export default function App() {
               freshToken = await auth.currentUser.getIdToken(true);
             }
             
-            localStorage.setItem("mess_token", freshToken);
-            window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken } as any));
+            const wasUpdated = setStoredTokenSafely(freshToken);
+            if (wasUpdated) {
+              window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken } as any));
+            }
 
             // Reconstruct options with new Authorization header
             const newInit = { ...init } as any;
@@ -2834,12 +2835,11 @@ export default function App() {
     const interval = setInterval(async () => {
       if (auth.currentUser) {
         try {
-          const currentToken = localStorage.getItem("mess_token");
           // Use getIdToken(false) so Firebase SDK only issues a new token when close to expiry
           const freshToken = await auth.currentUser.getIdToken(false);
-          if (freshToken && freshToken !== currentToken) {
+          const wasUpdated = setStoredTokenSafely(freshToken);
+          if (wasUpdated) {
             console.log("Firebase auth token refreshed via background sync.");
-            localStorage.setItem("mess_token", freshToken);
             setSessionToken(freshToken);
           }
         } catch (e) {
@@ -2882,11 +2882,11 @@ export default function App() {
           }
 
           if (!isMounted) return;
-          const prevToken = localStorage.getItem("mess_token");
-          localStorage.setItem("mess_token", freshToken);
+          // Compare token integrity with sessionStorage hash; skip write if token is unchanged
+          const tokenChanged = setStoredTokenSafely(freshToken);
           setFirebaseAuthChecked(true);
 
-          if (prevToken !== freshToken) {
+          if (tokenChanged || !sessionToken) {
             setSessionToken(freshToken);
           }
  
@@ -3120,12 +3120,11 @@ export default function App() {
   const handleLoginSuccess = async (token: string, user: Member, rememberMe?: boolean) => {
     try {
       if (rememberMe) {
-        localStorage.setItem("mess_token", token);
+        setStoredTokenSafely(token);
         localStorage.setItem("mess_token_expiry", String(Date.now() + 10 * 24 * 60 * 60 * 1000)); // 10 days
         sessionStorage.removeItem("mess_token");
       } else {
-        localStorage.removeItem("mess_token");
-        localStorage.removeItem("mess_token_expiry");
+        clearStoredTokenSafely();
         sessionStorage.setItem("mess_token", token);
       }
       if ((user as any)?.messId) {
