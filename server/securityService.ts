@@ -9,6 +9,7 @@ import nodemailer from "nodemailer";
 import { DB_DIR, writeAndPersistFile, loadDB, saveDB, generateUUID } from "./db.js";
 import { logFounderAction } from "./founder.js";
 import { Notice } from "../src/types.js";
+import { sendEmailWithFallback } from "./emailService.js";
 
 // ============================================================================
 // TYPES
@@ -181,10 +182,10 @@ export function checkForgotPasswordRateLimit(email: string): { limited: boolean;
   const requests = (forgotPasswordRequestsMap.get(normalizedEmail) || []).filter(ts => now - ts < FIFTEEN_MINS);
   forgotPasswordRequestsMap.set(normalizedEmail, requests);
 
-  if (requests.length >= 3) {
+  if (requests.length >= 6) {
     return {
       limited: true,
-      message: "Too many password reset requests. Please try again later."
+      message: "Too many password reset requests. Please wait a few minutes before trying again."
     };
   }
 
@@ -443,59 +444,31 @@ function createSecurityDashboardNotice(event: SecurityEvent): void {
 
 // Send email notification if SMTP is configured
 function sendSecurityEmailNotification(event: SecurityEvent): void {
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  const mailHtml = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #0284c7;">🔐 Mess ERP Security Notification</h2>
+      <p>A security event occurred on your Mess ERP account:</p>
+      <ul style="line-height: 1.8;">
+        <li><strong>Event:</strong> ${event.action}</li>
+        <li><strong>Email:</strong> ${event.email}</li>
+        <li><strong>Date & Time:</strong> ${event.date} at ${event.time} UTC</li>
+        <li><strong>IP Address:</strong> ${event.ip}</li>
+        <li><strong>Browser / Device:</strong> ${event.userAgent}</li>
+      </ul>
+      <div style="background-color: #fff7ed; border-left: 4px solid #f97316; padding: 12px; margin-top: 16px;">
+        <strong style="color: #c2410c;">⚠️ Warning:</strong> If you did not perform or authorize this action, please contact your Mess Administrator or Ultimate Admin immediately to secure your account.
+      </div>
+    </div>
+  `;
 
-  if (!smtpUser || !smtpPass) {
-    return;
-  }
-
-  try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
-      },
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
-
-    const mailOptions = {
-      from: `"Mess ERP Security" <${smtpUser}>`,
-      to: event.email,
-      subject: `[Mess ERP Security] Action Notification: ${event.action}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; border: 1px solid #e2e8f0; rounded: 8px;">
-          <h2 style="color: #0284c7;">🔐 Mess ERP Security Notification</h2>
-          <p>A security event occurred on your Mess ERP account:</p>
-          <ul style="line-height: 1.8;">
-            <li><strong>Event:</strong> ${event.action}</li>
-            <li><strong>Email:</strong> ${event.email}</li>
-            <li><strong>Date & Time:</strong> ${event.date} at ${event.time} UTC</li>
-            <li><strong>IP Address:</strong> ${event.ip}</li>
-            <li><strong>Browser / Device:</strong> ${event.userAgent}</li>
-          </ul>
-          <div style="background-color: #fff7ed; border-left: 4px solid #f97316; padding: 12px; margin-top: 16px;">
-            <strong style="color: #c2410c;">⚠️ Warning:</strong> If you did not perform or authorize this action, please contact your Mess Administrator or Ultimate Admin immediately to secure your account.
-          </div>
-        </div>
-      `
-    };
-
-    transporter.sendMail(mailOptions, (err) => {
-      if (err) {
-        console.error("Failed to send security email notification:", err);
-      } else {
-        console.log(`Security email notification sent to ${event.email}`);
-      }
-    });
-  } catch (err) {
-    console.error("Error setting up SMTP transporter:", err);
-  }
+  sendEmailWithFallback({
+    to: event.email,
+    subject: `[Mess ERP Security] Action Notification: ${event.action}`,
+    html: mailHtml,
+    fromName: "Mess ERP Security"
+  }).catch(err => {
+    console.error("Failed to send security email notification:", err);
+  });
 }
 
 // ============================================================================

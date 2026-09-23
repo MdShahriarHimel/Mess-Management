@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy } from "lucide-react";
+import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy, RefreshCw } from "lucide-react";
 import { Member } from "../types.js";
 
 interface LoginProps {
@@ -149,6 +149,29 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
   const animationClass = 
     animationType === "pulse" ? "animate-pulse" : 
     animationType === "bounce" ? "animate-bounce" : "";
+
+  const handleResendOtp = async () => {
+    if (!email) return;
+    setError(null);
+    setSuccess(null);
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to resend OTP");
+      }
+      setSuccess(data.message);
+    } catch (err: any) {
+      setError(err.message || "Failed to resend verification OTP.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -640,9 +663,11 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                 <div className="flex justify-between items-center text-xs">
                   <button
                     type="button"
-                    onClick={() => { setForgotStep("send"); setError(null); setSuccess(null); }}
-                    className="text-cyan-500 hover:underline cursor-pointer"
+                    disabled={loading}
+                    onClick={handleResendOtp}
+                    className="text-cyan-500 hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
+                    <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
                     Resend Code (OTP)
                   </button>
                   <button

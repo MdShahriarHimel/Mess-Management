@@ -42,6 +42,7 @@ import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings,
 import { eq, sql, and, or } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
+import { sendEmailWithFallback } from "./emailService.js";
 import {
   validatePasswordPolicy,
   checkLoginRateLimit,
@@ -856,70 +857,46 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
   console.log(`👉 CODE: ${otp} (Expires in 10 minutes) 👈`);
   console.log(`======================================================\n`);
 
-  // Attempt to send actual email via Google SMTP if credentials are set
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  // Attempt to send actual email via Google SMTP with dual-port fallback
+  const htmlContent = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <h2 style="color: #0ea5e9; text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">Mess ERP Password Reset</h2>
+      <p>Hello <strong>${member.name}</strong>,</p>
+      <p>We received a request to reset your password for your Mess ERP account (<strong>@${member.nickname}</strong>).</p>
+      <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 15px; text-align: center; margin: 20px 0; border-radius: 8px;">
+        <p style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin: 0 0 5px 0;">Your Reset OTP Code</p>
+        <h1 style="font-size: 32px; font-weight: bold; color: #0f172a; margin: 0; letter-spacing: 0.2em;">${otp}</h1>
+      </div>
+      <p style="font-size: 13px; color: #64748b;">This OTP code is valid for <strong>10 minutes</strong>. If you did not make this request, please change your password or contact your Mess Administrator immediately.</p>
+      <footer style="margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center;">
+        This is an automated security message from Mess ERP. Please do not reply directly to this email.
+      </footer>
+    </div>
+  `;
 
-  if (smtpUser && smtpPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
+  const emailResult = await sendEmailWithFallback({
+    to: email.toLowerCase(),
+    subject: `[Mess ERP] Password Reset Verification Code: ${otp}`,
+    html: htmlContent,
+    text: `Your Mess ERP password reset OTP code is: ${otp}. This code is valid for 10 minutes.`,
+    fromName: "Mess ERP Security"
+  });
 
-      const mailOptions = {
-        from: `"Mess ERP Security" <${smtpUser}>`,
-        to: email.toLowerCase(),
-        subject: `[Mess ERP] Password Reset Verification Code: ${otp}`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
-            <h2 style="color: #0ea5e9; text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">Mess ERP Password Reset</h2>
-            <p>Hello <strong>${member.name}</strong>,</p>
-            <p>We received a request to reset your password for your Mess ERP account (<strong>@${member.nickname}</strong>).</p>
-            <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 15px; text-align: center; margin: 20px 0; border-radius: 8px;">
-              <p style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin: 0 0 5px 0;">Your Reset OTP Code</p>
-              <h1 style="font-size: 32px; font-weight: bold; color: #0f172a; margin: 0; letter-spacing: 0.2em;">${otp}</h1>
-            </div>
-            <p style="font-size: 13px; color: #64748b;">This OTP code is valid for <strong>10 minutes</strong>. If you did not make this request, please change your password or contact your Mess Administrator immediately.</p>
-            <footer style="margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center;">
-              This is an automated security message from Mess ERP. Please do not reply directly to this email.
-            </footer>
-          </div>
-        `
-      };
-
-      await transporter.sendMail(mailOptions);
-      res.json({ success: true, message: `A 6-digit verification OTP code has been successfully sent to your email (${email}). Please check your inbox or spam folder.` });
-      return;
-    } catch (error: any) {
-      console.error("Nodemailer SMTP Error:", error);
-      const devMessage = process.env.NODE_ENV !== "production" 
-        ? ` (Dev Preview Fallback OTP: ${otp})` 
-        : "";
-      res.json({ 
-        success: true, 
-        message: `OTP generated, but an SMTP error occurred while sending email: "${error.message || error}". Please verify your Gmail app password.${devMessage}` 
-      });
-      return;
-    }
-  } else {
-    const devMessage = process.env.NODE_ENV !== "production" 
-      ? ` (Dev Preview Fallback OTP: ${otp})` 
-      : "";
+  if (emailResult.success) {
     res.json({ 
       success: true, 
-      message: `Forgot password process initiated. An OTP code has been logged to the server terminal console since SMTP credentials are not configured.${devMessage}` 
+      message: `A 6-digit verification OTP code has been successfully sent to your email (${email}). Please check your inbox or spam folder.` 
     });
     return;
   }
+
+  // If email sending failed, delete OTP and return error so unauthorized users cannot bypass email
+  otpStore.delete(email.toLowerCase());
+  console.error(`[ForgotPassword] Email delivery failed: ${emailResult.error}`);
+  res.status(502).json({
+    error: "ইমেইল সার্ভারে সংযোগ ব্যর্থ হয়েছে। আপনার ইমেইলে ওটিপি কোড পাঠানো সম্ভব হয়নি। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।"
+  });
+  return;
 });
 
 // Verify OTP and reset password (Unauthenticated)
