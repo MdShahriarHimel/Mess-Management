@@ -25,6 +25,7 @@ import { loadDB, saveDB, syncState,
   refreshDbCache,
   setDbCacheForMess,
   syncCacheToPostgresDirectly,
+  deleteNoticeFromPostgres,
   getDefaultMessRules,
   deduplicateMembers,
   DB_DIR
@@ -3686,19 +3687,32 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
   const activeMessId = getActiveMessId();
   const user = req.user!;
   
-  // Clean up any existing legacy automated profile update notices in db.notices
+  // Clean up any existing legacy automated profile update and security notices in db.notices
   if (db.notices && db.notices.length > 0) {
     const prevCount = db.notices.length;
+    const autoDeletedIds: string[] = [];
     db.notices = db.notices.filter(n => {
       const titleLower = (n.title || "").toLowerCase();
       const contentLower = (n.content || "").toLowerCase();
-      const isAutoAdminNotice = titleLower.startsWith("profile updated by") || 
-                                titleLower.includes("profile updated") || 
-                                contentLower.includes("updated your profile");
-      return !isAutoAdminNotice;
+      const isAutoNotice = titleLower.startsWith("profile updated by") || 
+                           titleLower.includes("profile updated") || 
+                           contentLower.includes("updated your profile") ||
+                           contentLower.includes("[security event]") ||
+                           titleLower.includes("security alert:") ||
+                           titleLower.includes("account activated successfully") ||
+                           n.authorId === "SECURITY_SYSTEM" ||
+                           n.authorName === "Security System";
+      if (isAutoNotice) {
+        autoDeletedIds.push(n.id);
+        return false;
+      }
+      return true;
     });
     if (db.notices.length !== prevCount) {
       saveDB();
+      if (autoDeletedIds.length > 0) {
+        deleteNoticeFromPostgres(autoDeletedIds).catch(() => {});
+      }
     }
   }
 
@@ -3709,6 +3723,8 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
     const contentLower = (n.content || "").toLowerCase();
     if (titleLower.startsWith("profile updated by") || titleLower.includes("profile updated")) return false;
     if (contentLower.includes("updated your profile")) return false;
+    if (contentLower.includes("[security event]") || titleLower.includes("security alert:") || titleLower.includes("account activated successfully")) return false;
+    if (n.authorId === "SECURITY_SYSTEM" || n.authorName === "Security System") return false;
     return true;
   });
 
@@ -3857,6 +3873,7 @@ router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest
   if (!db.notices) db.notices = [];
 
   const initialCount = db.notices.length;
+  const idsToDelete: string[] = [];
 
   // Preserve ALL pinned and global notices. Only delete unpinned notices in current mess/scope.
   db.notices = db.notices.filter(n => {
@@ -3867,6 +3884,7 @@ router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest
 
     if (isAdminOrSuper || isManager) {
       if (isCurrentMess || isAuthor) {
+        idsToDelete.push(n.id);
         return false; // Remove unpinned notice
       }
     }
@@ -3876,6 +3894,9 @@ router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest
 
   const deletedCount = initialCount - db.notices.length;
   saveDB();
+  if (idsToDelete.length > 0) {
+    deleteNoticeFromPostgres(idsToDelete).catch(() => {});
+  }
 
   logAudit(user.id, user.nickname, "BULK_DELETE_NOTICES", "Bulk Delete", `${deletedCount} notices`, `Bulk deleted ${deletedCount} unpinned notices (pinned notices preserved)`);
   res.json({ success: true, count: deletedCount });
@@ -3904,6 +3925,7 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
 
   db.notices.splice(index, 1);
   saveDB();
+  deleteNoticeFromPostgres(id).catch(() => {});
 
   res.json({ success: true });
 });

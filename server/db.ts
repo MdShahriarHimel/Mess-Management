@@ -52,7 +52,7 @@ import {
   persistentFiles as persistentFilesTable,
   userCredentials as userCredentialsTable
 } from "../src/db/schema.ts";
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, inArray } from "drizzle-orm";
 import { 
   UserRole, 
   MemberStatus, 
@@ -1393,6 +1393,35 @@ export function saveDB(explicitMessId?: string) {
     writeAndPersistFile(backupFilename, content);
   } catch (e) {
     console.error("Error writing dynamic backup file for mess " + messId, e);
+  }
+}
+
+// Permanently delete notice(s) from PostgreSQL database and all in-memory caches
+export async function deleteNoticeFromPostgres(noticeIdOrIds: string | string[]) {
+  try {
+    const rawIds = Array.isArray(noticeIdOrIds) ? noticeIdOrIds : [noticeIdOrIds];
+    const ids = rawIds.filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (db) {
+      await db.delete(noticesTable).where(inArray(noticesTable.id, ids));
+      console.log(`[Database] Permanently deleted ${ids.length} notice(s) from PostgreSQL:`, ids);
+    }
+
+    if (masterPostgresCache && masterPostgresCache.notices) {
+      masterPostgresCache.notices = masterPostgresCache.notices.filter(n => !ids.includes(n.id));
+    }
+
+    for (const [_, cacheObj] of dbCaches.entries()) {
+      if (cacheObj && cacheObj.notices) {
+        cacheObj.notices = cacheObj.notices.filter(n => !ids.includes(n.id));
+      }
+    }
+    if (dbCache && dbCache.notices) {
+      dbCache.notices = dbCache.notices.filter(n => !ids.includes(n.id));
+    }
+  } catch (err) {
+    console.warn("Failed to delete notice(s) from PostgreSQL:", err);
   }
 }
 

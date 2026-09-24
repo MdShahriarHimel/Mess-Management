@@ -400,46 +400,17 @@ export function recordSecurityEvent(params: {
     params.ip
   );
 
-  // Trigger Dashboard Notification for Security Events
+  // Send Email Notification for Security Events (do not pollute public hostel notice board)
   if (["PASSWORD_CHANGE", "PASSWORD_RESET_SUCCESS", "ACCOUNT_ACTIVATION"].includes(params.action)) {
-    createSecurityDashboardNotice(newEvent);
     sendSecurityEmailNotification(newEvent);
   }
 
   return newEvent;
 }
 
-// Create in-app Dashboard Notice for the user
-function createSecurityDashboardNotice(event: SecurityEvent): void {
-  try {
-    const db = loadDB();
-    if (!db.notices) db.notices = [];
-
-    const actionTitleMap: Record<string, string> = {
-      PASSWORD_CHANGE: "Security Alert: Password Changed",
-      PASSWORD_RESET_SUCCESS: "Security Alert: Password Reset Completed",
-      ACCOUNT_ACTIVATION: "Account Activated Successfully"
-    };
-
-    const title = actionTitleMap[event.action] || `Security Notice: ${event.action}`;
-    const noticeContent = `[SECURITY EVENT] ${title} for account ${event.email} at ${event.date} ${event.time}. Device/IP: ${event.ip} (${event.userAgent.substring(0, 50)}...). WARNING: If you did not perform this action, please contact the Mess Administrator or Ultimate Admin immediately.`;
-
-    const notice: Notice = {
-      id: generateUUID(),
-      title,
-      content: noticeContent,
-      pinned: true,
-      archived: false,
-      authorId: event.userId || "SECURITY_SYSTEM",
-      authorName: "Security System",
-      date: event.date
-    };
-
-    db.notices.unshift(notice);
-    saveDB();
-  } catch (err) {
-    console.error("Failed to create security dashboard notice:", err);
-  }
+// In-app notices are reserved for hostel announcements created by managers/admins
+function createSecurityDashboardNotice(_event: SecurityEvent): void {
+  // Deprecated: security events are logged to Audit Log and sent via email
 }
 
 // Send email notification if SMTP is configured
