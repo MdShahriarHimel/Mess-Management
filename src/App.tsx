@@ -3760,15 +3760,26 @@ export default function App() {
   const sizeStyle = fontSizeMap[fontSize] || fontSizeMap.normal;
 
   // Full-Screen Emergency Maintenance Lock Screen blocker
+  const isFounderEmergencyRoute = showFounderLogin || (typeof window !== "undefined" && (
+    window.location.search.includes("founder=1") || 
+    window.location.search.includes("admin=1") || 
+    window.location.hash.includes("founder")
+  ));
+
   if (maintenanceMode === "Full Lock" && !isPlatformOwner) {
-    if (showFounderLogin) {
+    if (isFounderEmergencyRoute) {
       return (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-md space-y-4">
             <div className="flex justify-between items-center">
               <button
                 type="button"
-                onClick={() => setShowFounderLogin(false)}
+                onClick={() => {
+                  setShowFounderLogin(false);
+                  if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, "", window.location.pathname);
+                  }
+                }}
                 className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 py-1 px-2.5 rounded border border-slate-800 bg-slate-900/60 transition-colors"
               >
                 ← Back to Maintenance Notice
@@ -3824,17 +3835,6 @@ export default function App() {
           <p className="text-[10px] font-mono text-slate-500 leading-normal">
             Thank you for your patience. Real-time synchronisation will automatically resume once maintenance completes.
           </p>
-
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={() => setShowFounderLogin(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-500 hover:text-cyan-400 transition-colors py-1.5 px-3 rounded border border-slate-800 hover:border-slate-700 bg-slate-900/50"
-            >
-              <Lock size={12} />
-              Platform Owner Sign-in
-            </button>
-          </div>
         </div>
       </div>
     );
