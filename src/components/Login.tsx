@@ -47,6 +47,11 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   const [liveCustomization, setLiveCustomization] = useState<any>(customization || null);
+  const [logoError, setLogoError] = useState(false);
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [liveCustomization?.customLogoUrl]);
 
   useEffect(() => {
     if (customization) {
@@ -435,8 +440,14 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                 <Trophy size={32} />
               ) : liveCustomization?.logoType === "lock" ? (
                 <Lock size={32} />
-              ) : liveCustomization?.logoType === "image" && liveCustomization?.customLogoUrl ? (
-                <img src={liveCustomization.customLogoUrl} alt="Logo" className="w-12 h-12 object-contain rounded-lg" referrerPolicy="no-referrer" />
+              ) : liveCustomization?.logoType === "image" && liveCustomization?.customLogoUrl && !logoError ? (
+                <img 
+                  src={liveCustomization.customLogoUrl} 
+                  alt="Logo" 
+                  className="w-12 h-12 object-contain rounded-lg" 
+                  referrerPolicy="no-referrer"
+                  onError={() => setLogoError(true)} 
+                />
               ) : (
                 <KeyRound size={32} />
               )}

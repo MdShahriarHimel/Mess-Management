@@ -306,17 +306,39 @@ export function LoginEnginePanel({
             </div>
 
             {custom.logoType === "image" && (
-              <div className="space-y-1.5">
-                <label className={`text-[10px] font-bold uppercase tracking-wider block ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Custom Logo Image URL</label>
-                <input
-                  type="text"
-                  placeholder="https://..."
-                  value={custom.customLogoUrl || ""}
-                  onChange={(e) => handleUpdate({ customLogoUrl: e.target.value })}
-                  className={`w-full px-3 py-2 rounded-lg border text-sm ${
-                    isDarkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
-                  } focus:outline-none focus:ring-1 focus:ring-cyan-500`}
-                />
+              <div className="space-y-1.5 md:col-span-2">
+                <label className={`text-[10px] font-bold uppercase tracking-wider block ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                  Custom Logo Direct Image URL (.png, .jpg, .svg, .webp)
+                </label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="https://i.imgur.com/...png or https://...jpg"
+                    value={custom.customLogoUrl || ""}
+                    onChange={(e) => handleUpdate({ customLogoUrl: e.target.value })}
+                    className={`flex-1 px-3 py-2 rounded-lg border text-sm ${
+                      isDarkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                    } focus:outline-none focus:ring-1 focus:ring-cyan-500`}
+                  />
+                  {custom.customLogoUrl && (
+                    <div className="w-10 h-10 rounded-lg border border-slate-700 bg-slate-900/50 flex items-center justify-center overflow-hidden shrink-0">
+                      <img 
+                        src={custom.customLogoUrl} 
+                        alt="Preview" 
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                          const parent = (e.target as HTMLElement).parentElement;
+                          if (parent) parent.innerHTML = '<span class="text-[9px] text-red-400 text-center leading-none">Invalid URL</span>';
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  💡 <strong>টিপস:</strong> ড্রিমসটাইম বা পিন্টারেস্টের ওয়েবসাইটের লিংক (Webpage URL) কাজ করবে না। ছবির উপর <em>Right Click &gt; Copy Image Address</em> করে সরাসরি ছবির লিংক দিন (যেমন Imgur, PostImages, Cloudinary ইত্যাদি ফ্রি হোস্টিং)।
+                </p>
               </div>
             )}
 
