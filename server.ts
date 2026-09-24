@@ -4,6 +4,7 @@
  */
 
 import express from "express";
+import http from "http";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -13,10 +14,13 @@ import { initializeDbCache, pendingSyncPromises } from "./server/db.js";
 import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
 import { startDailyBackupCron } from "./server/backupCron.js";
+import { initSocketIO } from "./server/socket.js";
 
 dotenv.config();
 
 const app = express();
+const httpServer = http.createServer(app);
+initSocketIO(httpServer);
 const PORT = 3000;
 
 // Increase payload size limit to allow base64 images for member profiles and receipts
@@ -179,7 +183,7 @@ const initPromise = (async () => {
     });
 
   if (!process.env.VERCEL) {
-    app.listen(PORT, "0.0.0.0", () => {
+    httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`Mess ERP server running on http://0.0.0.0:${PORT}`);
     });
   }

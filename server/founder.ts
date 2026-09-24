@@ -29,6 +29,7 @@ import {
   rewardPoints as rewardPointsTable
 } from "../src/db/schema.js";
 import { Member, UserRole } from "../src/types.js";
+import { getIO } from "./socket.js";
 
 const router = Router();
 
@@ -370,6 +371,29 @@ router.post("/controls", platformOwnerMiddleware, (req: AuthenticatedRequest, re
   };
 
   savePlatformControls(updated);
+
+  try {
+    const io = getIO();
+    if (io) {
+      io.emit("maintenance-mode-change", {
+        maintenanceMode: updated.maintenanceMode,
+        platformStatus: updated.platformStatus,
+        maintenanceDetails: {
+          reason: updated.maintenanceReason,
+          estimatedCompletion: updated.maintenanceEstimatedCompletion,
+          endTime: updated.maintenanceEndTime,
+          timezone: updated.maintenanceTimezone,
+          themeColor: updated.maintenanceThemeColor,
+          emoji: updated.maintenanceEmoji,
+          warningIcon: updated.maintenanceWarningIcon,
+          bannerImage: updated.maintenanceBannerImage
+        }
+      });
+    }
+  } catch (socketErr) {
+    console.warn("Failed to broadcast maintenance-mode-change socket signal:", socketErr);
+  }
+
   logFounderAction(
     req.user!.id, 
     req.user!.email, 

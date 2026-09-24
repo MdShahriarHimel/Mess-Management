@@ -5,6 +5,7 @@
 
 import { SyncIndicator } from "./components/SyncIndicator";
 import React, { useState, useEffect, useMemo } from "react";
+import { io } from "socket.io-client";
 import { onAuthStateChanged, onIdTokenChanged } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
@@ -1616,6 +1617,27 @@ export default function App() {
   useEffect(() => {
     fetchPlatformStatus();
   }, [currentUser]);
+
+  // Real-time Socket.io listener for instant maintenance mode changes across all connected clients
+  useEffect(() => {
+    const socket = io();
+
+    socket.on("maintenance-mode-change", (data: any) => {
+      if (data && data.maintenanceMode) {
+        setMaintenanceMode(data.maintenanceMode);
+        if (data.platformStatus) {
+          setPlatformStatus(data.platformStatus);
+        }
+        if (data.maintenanceDetails) {
+          setMaintenanceDetails(data.maintenanceDetails);
+        }
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   // Synchronise acting role for ultimate admin
   useEffect(() => {
