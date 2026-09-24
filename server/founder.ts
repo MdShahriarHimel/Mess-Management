@@ -52,13 +52,6 @@ export function loadPlatformControls() {
     try {
       const data = fs.readFileSync(filePath, "utf-8");
       cachedPlatformControls = JSON.parse(data);
-      if (cachedPlatformControls) {
-        if (cachedPlatformControls.maintenanceMode === "Full Lock" || cachedPlatformControls.platformStatus === "Database Upgrade") {
-          cachedPlatformControls.maintenanceMode = "Normal";
-          cachedPlatformControls.platformStatus = "Operational";
-          writeAndPersistFile("platform_controls.json", JSON.stringify(cachedPlatformControls, null, 2));
-        }
-      }
       // Migrate missing fields
       if (cachedPlatformControls && !cachedPlatformControls.geminiStats) {
         cachedPlatformControls.geminiStats = {
@@ -188,9 +181,10 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
   const fullUrl = req.originalUrl || req.path || "";
   const pathStr = req.path || "";
 
-  // Always allow founder paths, login, logout, and auth
+  // Always allow founder paths, login, logout, auth, health check, and system endpoints
   const isFounderPath = fullUrl.startsWith("/api/founder") || pathStr.startsWith("/founder") || pathStr.startsWith("/api/founder");
   const isAuthPath = fullUrl.startsWith("/api/login") || fullUrl.startsWith("/api/logout") || fullUrl.startsWith("/api/auth") || pathStr.startsWith("/login") || pathStr.startsWith("/logout") || pathStr.startsWith("/auth");
+  const isHealthOrSystem = fullUrl.startsWith("/api/health") || pathStr.startsWith("/health") || fullUrl.startsWith("/api/system") || pathStr.startsWith("/system");
 
   // Attempt to decode user email from req.user or Authorization header
   let userEmail = req.user?.email;
@@ -215,7 +209,7 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
 
   // If Full Lock is active
   if (controls.maintenanceMode === "Full Lock") {
-    if (isOwner || isFounderPath || isAuthPath || fullUrl.startsWith("/api/settings/public")) {
+    if (isOwner || isFounderPath || isAuthPath || isHealthOrSystem || fullUrl.startsWith("/api/settings/public")) {
       return next();
     }
 

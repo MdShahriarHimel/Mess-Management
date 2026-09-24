@@ -1578,6 +1578,7 @@ export default function App() {
       o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
     )
   );
+  const [showFounderLogin, setShowFounderLogin] = useState(false);
   const [dismissedGlobalAnnouncement, setDismissedGlobalAnnouncement] = useState(() => {
     try {
       return localStorage.getItem("dismissed_global_announcement") === "true";
@@ -3733,15 +3734,30 @@ export default function App() {
   const fonts = fontStyleMap[fontStyle] || fontStyleMap.sans;
   const sizeStyle = fontSizeMap[fontSize] || fontSizeMap.normal;
 
-  // Authentication gate
-  if (!sessionToken || !currentUser) {
-    return (
-      <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
-    );
-  }
-
   // Full-Screen Emergency Maintenance Lock Screen blocker
   if (maintenanceMode === "Full Lock" && !isPlatformOwner) {
+    if (showFounderLogin) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+          <div className="w-full max-w-md space-y-4">
+            <div className="flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => setShowFounderLogin(false)}
+                className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 py-1 px-2.5 rounded border border-slate-800 bg-slate-900/60 transition-colors"
+              >
+                ← Back to Maintenance Notice
+              </button>
+              <span className="text-[11px] font-mono text-rose-400 font-bold uppercase tracking-wider">
+                Full Lock Active
+              </span>
+            </div>
+            <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
+          </div>
+        </div>
+      );
+    }
+
     const r = maintenanceDetails || {};
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100 font-sans relative overflow-hidden select-none">
@@ -3783,8 +3799,26 @@ export default function App() {
           <p className="text-[10px] font-mono text-slate-500 leading-normal">
             Thank you for your patience. Real-time synchronisation will automatically resume once maintenance completes.
           </p>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShowFounderLogin(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-500 hover:text-cyan-400 transition-colors py-1.5 px-3 rounded border border-slate-800 hover:border-slate-700 bg-slate-900/50"
+            >
+              <Lock size={12} />
+              Platform Owner Sign-in
+            </button>
+          </div>
         </div>
       </div>
+    );
+  }
+
+  // Authentication gate
+  if (!sessionToken || !currentUser) {
+    return (
+      <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
     );
   }
   // Sidebar navigation menu options

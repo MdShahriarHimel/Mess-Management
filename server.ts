@@ -96,16 +96,7 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Apply server protection middleware for maintenance modes and feature flags
-app.use("/api", maintenanceMiddleware);
-
-// Mount API router
-app.use("/api", apiRouter);
-
-// Mount founder administration router
-app.use("/api/founder", founderRouter);
-
-// Health check route with cached DB version to minimize redundant queries
+// Health check route with cached DB version to minimize redundant queries (Mounted BEFORE maintenance middleware so Render health checks always succeed)
 let cachedDbVersion: string | null = null;
 app.get("/api/health", async (req, res) => {
   try {
@@ -126,6 +117,15 @@ app.get("/api/health", async (req, res) => {
     });
   }
 });
+
+// Apply server protection middleware for maintenance modes and feature flags
+app.use("/api", maintenanceMiddleware);
+
+// Mount API router
+app.use("/api", apiRouter);
+
+// Mount founder administration router
+app.use("/api/founder", founderRouter);
 
 // API error handling middleware (returns JSON error response on server exception)
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
