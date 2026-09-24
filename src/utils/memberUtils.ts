@@ -50,6 +50,19 @@ export function deduplicateMembersList(members: Member[]): Member[] {
 }
 
 /**
+ * Deterministically sorts members or settlements alphabetically by nickname (or name if nickname is absent).
+ * Uses localeCompare with base sensitivity for uniform A-Z ordering across Bengali and English.
+ */
+export function sortMembersAlphabetically<T extends { nickname?: string; name?: string }>(list: T[]): T[] {
+  if (!Array.isArray(list)) return [];
+  return [...list].sort((a, b) => {
+    const nameA = (a.nickname || a.name || "").trim();
+    const nameB = (b.nickname || b.name || "").trim();
+    return nameA.localeCompare(nameB, undefined, { sensitivity: "base", numeric: true });
+  });
+}
+
+/**
  * Finds a member strictly matching by unique key constraint (id), with optional fallback only if ID is missing.
  */
 export function findMemberByUniqueKey(members: Member[], targetId?: string | null, fallbackEmail?: string | null): Member | undefined {

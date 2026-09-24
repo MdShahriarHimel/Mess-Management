@@ -15,7 +15,7 @@ import { processProfilePhoto } from "../utils/imageOptimizer";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
-import { deduplicateMembersList } from "../utils/memberUtils.ts";
+import { deduplicateMembersList, sortMembersAlphabetically } from "../utils/memberUtils.ts";
 
 
 const COLOR_PALETTES = [
@@ -587,22 +587,34 @@ export default function Members({
     return true;
   });
 
-  const activeMembers = visibleMembers.filter(m => 
-    m.status === MemberStatus.ACTIVE || 
-    m.status === MemberStatus.AWAY || 
-    (m.status === MemberStatus.TESTING && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.id === m.id))
-  );
+  const activeMembers = useMemo(() => {
+    return sortMembersAlphabetically(
+      visibleMembers.filter(m => 
+        m.status === MemberStatus.ACTIVE || 
+        m.status === MemberStatus.AWAY || 
+        (m.status === MemberStatus.TESTING && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER || currentUser.id === m.id))
+      )
+    );
+  }, [visibleMembers, currentUser.role, currentUser.id]);
 
-  const pendingMembers = visibleMembers.filter(m => 
-    m.status === MemberStatus.PENDING
-  );
+  const pendingMembers = useMemo(() => {
+    return sortMembersAlphabetically(
+      visibleMembers.filter(m => 
+        m.status === MemberStatus.PENDING
+      )
+    );
+  }, [visibleMembers]);
 
-  const inactiveMembers = visibleMembers.filter(m => 
-    m.status === MemberStatus.SUSPENDED || 
-    m.status === MemberStatus.LEFT || 
-    m.status === MemberStatus.ARCHIVED ||
-    m.status === MemberStatus.NOT_MEMBER
-  );
+  const inactiveMembers = useMemo(() => {
+    return sortMembersAlphabetically(
+      visibleMembers.filter(m => 
+        m.status === MemberStatus.SUSPENDED || 
+        m.status === MemberStatus.LEFT || 
+        m.status === MemberStatus.ARCHIVED ||
+        m.status === MemberStatus.NOT_MEMBER
+      )
+    );
+  }, [visibleMembers]);
 
   const renderMemberCard = (member: Member) => {
     // Everyone can see contact info on cards (except masked admin info or admin override)

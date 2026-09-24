@@ -13,7 +13,7 @@ import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { getAuthToken } from "../lib/authHeader.ts";
-import { deduplicateMembersList } from "../utils/memberUtils.ts";
+import { deduplicateMembersList, sortMembersAlphabetically } from "../utils/memberUtils.ts";
 
 interface FinanceSettlementProps {
   currentUser: Member;
@@ -144,7 +144,7 @@ export default function FinanceSettlement({
       return hasFinancialContribution;
     });
 
-    // Guarantee strict uniqueness by member id
+    // Guarantee strict uniqueness by member id and sort alphabetically
     const seen = new Set<string>();
     const unique: Member[] = [];
     for (const m of filtered) {
@@ -153,8 +153,14 @@ export default function FinanceSettlement({
         unique.push(m);
       }
     }
-    return unique;
+    return sortMembersAlphabetically(unique);
   }, [members, reportSummary?.memberSettlements, currentMonthId, months]);
+
+  // Individual Month Balance Sheet settlements sorted alphabetically by member nickname/name
+  const sortedMemberSettlements = useMemo(() => {
+    const list = reportSummary?.memberSettlements || [];
+    return sortMembersAlphabetically(list);
+  }, [reportSummary?.memberSettlements]);
 
   // Mess Settings State & PDF Header Customization
   const [messSettings, setMessSettings] = useState<any>(null);
@@ -714,7 +720,7 @@ export default function FinanceSettlement({
       "Refund / Return Status"
     ];
     
-    const filteredSettlements = (reportSummary.memberSettlements || []);
+    const filteredSettlements = sortedMemberSettlements;
     
     const rows = filteredSettlements.map((m: any) => [
       m.nickname,
@@ -871,7 +877,7 @@ export default function FinanceSettlement({
     `;
 
     // All calculated month members are listed
-    const filteredSettlements = (reportSummary?.memberSettlements || []);
+    const filteredSettlements = sortedMemberSettlements;
 
     // Build Ledger Table (Strictly NO meal count columns!)
     const ledgerHtml = `
@@ -2202,7 +2208,7 @@ export default function FinanceSettlement({
                   <td colSpan={7} className="py-6 text-center text-slate-500">No calculations loaded. Log meals and expenses first.</td>
                 </tr>
               ) : (
-                (reportSummary.memberSettlements || []).map((m: any) => {
+                (sortedMemberSettlements || []).map((m: any) => {
                   const isPositive = m.balance >= 0;
                   return (
                     <tr 

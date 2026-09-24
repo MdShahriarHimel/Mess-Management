@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { DollarSign, Plus, X, Trash2 } from "lucide-react";
 import { Member, Deposit, UserRole, MessMonth } from "../types.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
+import { sortMembersAlphabetically } from "../utils/memberUtils.ts";
 
 interface DepositsProps {
   currentUser: Member;
@@ -59,7 +60,23 @@ export default function Deposits({
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
 
-  const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
+  // Active members sorted alphabetically for deposit registration
+  const activeMembers = useMemo(() => {
+    return sortMembersAlphabetically(
+      members.filter(m => m.status === "ACTIVE" || m.status === "AWAY")
+    );
+  }, [members]);
+
+  // All deposits sorted date-wise Descending (latest date at the top)
+  const sortedDeposits = useMemo(() => {
+    return [...deposits].sort((a, b) => {
+      const dateA = a.date || "";
+      const dateB = b.date || "";
+      const dateComp = dateB.localeCompare(dateA); // Descending (latest first)
+      if (dateComp !== 0) return dateComp;
+      return (b.id || "").localeCompare(a.id || "");
+    });
+  }, [deposits]);
 
   const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const activeMonthObj = months?.find(m => m.id === currentMonthId);
@@ -271,12 +288,12 @@ export default function Deposits({
               </tr>
             </thead>
             <tbody className="divide-y divide-cyan-500/5">
-              {deposits.length === 0 ? (
+              {sortedDeposits.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-6 text-center text-slate-500">No deposits recorded yet. Click register to record.</td>
                 </tr>
               ) : (
-                deposits.map((d) => {
+                sortedDeposits.map((d) => {
                   const targetM = members.find(u => u.id === d.memberId);
                   const recorder = members.find(u => u.id === d.enteredBy);
                   return (

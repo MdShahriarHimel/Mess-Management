@@ -38,7 +38,7 @@ import { BackgroundAudioPlayer } from "./components/BackgroundAudioPlayer.tsx";
 import FounderConsole from "./components/FounderConsole.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
-import { deduplicateMembersList, findMemberByUniqueKey } from "./utils/memberUtils.ts";
+import { deduplicateMembersList, findMemberByUniqueKey, sortMembersAlphabetically } from "./utils/memberUtils.ts";
 import { validateTokenIntegrity, setStoredTokenSafely, clearStoredTokenSafely } from "./utils/authUtils.ts";
 
 // Types
@@ -2616,7 +2616,8 @@ export default function App() {
         const membersData = await membersRes.json().catch(() => ({}));
         const rawMList: Member[] = membersData.members || [];
         const uniqueMembers = deduplicateMembersList(rawMList);
-        setMembersList(uniqueMembers);
+        const sortedMembers = sortMembersAlphabetically(uniqueMembers);
+        setMembersList(sortedMembers);
         if (currentUser) {
           // Strictly match by Unique Key Constraint (Firebase Auth UID or mapped ID)
           const freshUser = findMemberByUniqueKey(uniqueMembers, currentUser.id, currentUser.email);

@@ -1175,7 +1175,14 @@ router.get("/members", authMiddleware, (req: AuthenticatedRequest, res: Response
     return true;
   });
 
-  res.json({ members: deduplicateMembers(visibleMembers) });
+  const unique = deduplicateMembers(visibleMembers);
+  unique.sort((a, b) => {
+    const nameA = (a.nickname || a.name || "").trim();
+    const nameB = (b.nickname || b.name || "").trim();
+    return nameA.localeCompare(nameB, undefined, { sensitivity: "base", numeric: true });
+  });
+
+  res.json({ members: unique });
 });
 
 // Create member (Admin, Super User, Assistant Super User, and Manager)
@@ -3161,7 +3168,9 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
 router.get("/deposits/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
-  const deposits = db.deposits.filter(d => d.monthId === monthId);
+  const deposits = db.deposits
+    .filter(d => d.monthId === monthId)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id || "").localeCompare(a.id || ""));
   res.json({ deposits });
 });
 
@@ -4483,6 +4492,12 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
       return: Math.round(returnVal * 100) / 100,
       holdingPaid
     };
+  });
+
+  allMemberSettlements.sort((a, b) => {
+    const nameA = (a.nickname || a.name || "").trim();
+    const nameB = (b.nickname || b.name || "").trim();
+    return nameA.localeCompare(nameB, undefined, { sensitivity: "base", numeric: true });
   });
 
   const memberSettlements = allMemberSettlements;
