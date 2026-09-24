@@ -241,12 +241,84 @@ const INITIAL_FOOD_SEED = [
   { label: "বাঁধাকপি", category: "Vegetables", aliases: ["badhakopi", "cabbage", "বাঁধাকপি ভাজি"] },
   { label: "করলা", category: "Vegetables", aliases: ["korola", "bitter gourd", "করলা ভাজি"] },
   { label: "ঢেঁড়স", category: "Vegetables", aliases: ["dheros", "bhindi", "okra", "ঢেঁড়স ভাজি"] },
-  { label: "শাক", category: "Vegetables", aliases: ["shak", "saag", "পালং শাক", "লাল শাক", "কলমি শাক"] },
+  { label: "শাক", category: "Vegetables", aliases: ["shak", "saag", "শাক ভাজি"] },
+  { label: "ডাটা শাক", category: "Vegetables", aliases: ["ডাটাশাক", "ডাঁটা শাক", "data shak", "danta shak", "danta saag", "ডাটা", "ডাটা ভাজি", "ডাটা চচ্চড়ি"] },
+  { label: "লাল শাক", category: "Vegetables", aliases: ["লালশাক", "lal shak", "lal saag", "লাল শাক ভাজি"] },
+  { label: "কলমি শাক", category: "Vegetables", aliases: ["কলমিশাক", "kolmi shak", "kalmi saag"] },
+  { label: "পালং শাক", category: "Vegetables", aliases: ["পালংশাক", "palong shak", "palak saag", "পালং শাক ভাজি"] },
+  { label: "পাট শাক", category: "Vegetables", aliases: ["পাটশাক", "pat shak", "pat saag"] },
+  { label: "কচুর লতি", category: "Vegetables", aliases: ["kochur loti", "kocur loti", "kosur loti", "লতি", "কচুরলতি"] },
+  { label: "কচুর শাক", category: "Vegetables", aliases: ["kochur shak", "kochu shak", "কচু শাক"] },
+  { label: "মিষ্টি কুমড়া", category: "Vegetables", aliases: ["misti kumra", "sweet pumpkin", "মিষ্টিকুমড়া", "মিষ্টি কুমড়া ভাজি"] },
+  { label: "ঝিঙে", category: "Vegetables", aliases: ["jhinge", "jhinga", "ঝিঙ্গা"] },
+  { label: "চিচিঙ্গা", category: "Vegetables", aliases: ["chichinga", "snake gourd"] },
+  { label: "কাঁচকলা", category: "Vegetables", aliases: ["kachkola", "কাচকলা", "green banana"] },
+  { label: "শিম", category: "Vegetables", aliases: ["shim", "sheem", "শিম ভাজি"] },
+  { label: "বরবটি", category: "Vegetables", aliases: ["borboti", "yardlong bean", "বরবটি ভাজি"] },
+  { label: "শুটকি মাছ", category: "Fish", aliases: ["shutki", "sutki", "শুটকি", "শুটকী", "শুটকি ভুনা", "লইট্যা শুটকি"] },
+  { label: "বোয়াল মাছ", category: "Fish", aliases: ["boyal", "boal", "বোয়াল মাছ", "বোয়াল"] },
+  { label: "টাকি মাছ", category: "Fish", aliases: ["taki", "টাকি", "টাকি মাছের ভর্তা"] },
   { label: "সালাদ", category: "Vegetables", aliases: ["salad", "সালাদ"] },
 ];
 
 // Global rate-limit cooldown tracker to avoid spamming Gemini when 429 RESOURCE_EXHAUSTED is hit
 let geminiCooldownUntil = 0;
+
+/**
+ * Rule-based culinary heuristic classifier for Bengali foods.
+ * Recognizes categories offline with zero latency and resilience against API outages.
+ */
+export function classifyFoodHeuristically(rawName: string): { label: string; category: string } | null {
+  if (!rawName) return null;
+  const clean = rawName.normalize("NFC").toLowerCase().trim();
+
+  // 1. Leafy greens & Shak (Vegetables)
+  if (clean.endsWith("শাক") || clean.endsWith("সাখ") || clean.includes("শাক") || clean.endsWith("shak") || clean.endsWith("saag")) {
+    return { label: rawName.trim(), category: "Vegetables" };
+  }
+
+  // 2. Fish & Seafood (Fish)
+  if (clean.includes("মাছ") || clean.endsWith("mach") || clean.endsWith("fish") || clean.includes("শুটকি") || clean.includes("শুটকী") || clean.includes("চিংড়ি") || clean.includes("চিংড়ি") || clean.includes("ইলিশ") || clean.includes("রুই") || clean.includes("কাতলা") || clean.includes("পাঙ্গাস") || clean.includes("পাংগাস") || clean.includes("পাঙ্গাশ") || clean.includes("তেলাপিয়া") || clean.includes("তেলাপিয়া") || clean.includes("কই") || clean.includes("শিং") || clean.includes("মাগুর") || clean.includes("পাবদা") || clean.includes("বোয়াল") || clean.includes("বোয়াল") || clean.includes("টাকি") || clean.includes("মলা") || clean.includes("কাচকি")) {
+    return { label: rawName.trim(), category: "Fish" };
+  }
+
+  // 3. Chicken
+  if (clean.includes("মুরগি") || clean.includes("মুরগী") || clean.includes("চিকেন") || clean.includes("chicken") || clean.includes("murgi")) {
+    return { label: rawName.trim(), category: "Chicken" };
+  }
+
+  // 4. Beef
+  if (clean.includes("গরু") || clean.includes("বিফ") || clean.includes("beef") || clean.includes("gorur")) {
+    return { label: rawName.trim(), category: "Beef" };
+  }
+
+  // 5. Mutton
+  if (clean.includes("খাসি") || clean.includes("মটন") || clean.includes("mutton") || clean.includes("khasir")) {
+    return { label: rawName.trim(), category: "Mutton" };
+  }
+
+  // 6. Eggs
+  if (clean.includes("ডিম") || clean.includes("egg") || clean.includes("dim")) {
+    return { label: rawName.trim(), category: "Eggs" };
+  }
+
+  // 7. Lentils / Dal
+  if (clean.includes("ডাল") || clean.includes("dal") || clean.includes("daal")) {
+    return { label: rawName.trim(), category: "Lentils" };
+  }
+
+  // 8. Rice & Rice Dishes
+  if (clean.includes("ভাত") || clean.includes("bhat") || clean.includes("খিচুড়ি") || clean.includes("খিচুড়ি") || clean.includes("পোলাও") || clean.includes("বিরিয়ানি") || clean.includes("বিরিয়ানি")) {
+    return { label: rawName.trim(), category: "Rice" };
+  }
+
+  // 9. Common Vegetable preparations
+  if (clean.includes("ভর্তা") || clean.includes("ভাজি") || clean.includes("তরকারি") || clean.includes("লাউ") || clean.includes("আলু") || clean.includes("পটল") || clean.includes("করলা") || clean.includes("ফুলকপি") || clean.includes("বাঁধাকপি") || clean.includes("বেগুন") || clean.includes("ঢেঁড়স") || clean.includes("ঢেঁড়স") || clean.includes("ঝিঙে") || clean.includes("চিচিঙ্গা") || clean.includes("কচুর")) {
+    return { label: rawName.trim(), category: "Vegetables" };
+  }
+
+  return null;
+}
 
 /**
  * Initialize Cache from database or seed it if empty
@@ -472,6 +544,63 @@ export async function learnUnknownFoods(phrases: string[]): Promise<{
     return { learned: [], queued: phrases.map(p => ({ phrase: p, confidence: 0 })) };
   }
 
+  // Pre-filter with heuristic classifier before querying Gemini
+  const learnedList: any[] = [];
+  const remainingPhrases: string[] = [];
+  const timestamp = new Date().toISOString();
+
+  for (const phrase of phrases) {
+    const heuristic = classifyFoodHeuristically(phrase);
+    if (heuristic) {
+      const foodId = "food_" + generateUUID();
+      const allAliases = Array.from(new Set([
+        heuristic.label.toLowerCase().trim(),
+        phrase.toLowerCase().trim(),
+      ])).filter(Boolean);
+
+      try {
+        await db.insert(foodKnowledgeBase).values({
+          id: foodId,
+          label: heuristic.label,
+          category: heuristic.category,
+          aliases: JSON.stringify(allAliases),
+          confidence: 0.98,
+          timestamp,
+          frequency: 1,
+        }).onConflictDoNothing();
+
+        for (const alias of allAliases) {
+          await db.insert(foodAliases).values({
+            id: "alias_" + generateUUID(),
+            alias,
+            foodId,
+          }).onConflictDoNothing();
+          aliasCache.set(alias, foodId);
+        }
+
+        foodCache.set(foodId, {
+          id: foodId,
+          label: heuristic.label,
+          category: heuristic.category,
+          aliases: allAliases,
+          confidence: 0.98,
+          timestamp,
+          frequency: 1,
+        });
+
+        learnedList.push({ phrase, label: heuristic.label, category: heuristic.category });
+      } catch (e) {
+        remainingPhrases.push(phrase);
+      }
+    } else {
+      remainingPhrases.push(phrase);
+    }
+  }
+
+  if (remainingPhrases.length === 0) {
+    return { learned: learnedList, queued: [] };
+  }
+
   const prompt = `You are a culinary expert on Bengali foods and daily meal menus.
 Analyze the following list of raw food phrases from a meal menu dashboard.
 For each phrase, identify:
@@ -481,16 +610,16 @@ For each phrase, identify:
 4. Your confidence score (0.0 to 1.0) that this is indeed a recognized food item in Bangladesh/Bengal region. If you are uncertain or it is a random non-food word, set confidence low (under 0.95).
 
 Input Phrases:
-${JSON.stringify(phrases, null, 2)}
+${JSON.stringify(remainingPhrases, null, 2)}
 
 Return a strict JSON array conforming to the schema.`;
 
   try {
-    console.log(`[Gemini Teacher] Asking Gemini to teach us about unknown phrases: ${phrases.join(", ")}`);
+    console.log(`[Gemini Teacher] Asking Gemini to teach us about unknown phrases: ${remainingPhrases.join(", ")}`);
     let response;
     try {
       response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.8-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -528,17 +657,15 @@ Return a strict JSON array conforming to the schema.`;
         }
       });
     } catch (err: any) {
-      console.warn(`[Gemini Teacher] Primary model call failed (${err?.message}). Attempting fallback query...`);
+      console.info(`[Gemini Teacher] Primary model call failed (${err?.message}). Attempting fallback query...`);
       response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.8-flash",
         contents: prompt
       });
     }
 
     const results = JSON.parse(response.text.trim());
-    const learnedList: any[] = [];
     const queuedList: any[] = [];
-    const timestamp = new Date().toISOString();
 
     for (const res of results) {
       if (res.confidence >= 0.95) {
@@ -613,28 +740,30 @@ Return a strict JSON array conforming to the schema.`;
     console.log(`[Gemini Teacher] Finished teaching pipeline: Cataloged ${learnedList.length} foods automatically; Sent ${queuedList.length} items to the Review Queue.`);
     return { learned: learnedList, queued: queuedList };
   } catch (error: any) {
+    const isUnavailable = error?.status === 503 || error?.status === "UNAVAILABLE" || error?.message?.includes("503") || error?.message?.includes("high demand") || error?.message?.includes("UNAVAILABLE");
     const isQuota = error?.status === "RESOURCE_EXHAUSTED" || error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("quota") || error?.message?.includes("RESOURCE_EXHAUSTED");
-    if (isQuota) {
-      geminiCooldownUntil = Date.now() + 45000;
-      console.warn(`[Gemini Teacher] Gemini rate limit reached (429/RESOURCE_EXHAUSTED). Entering 45s cooldown.`);
+    if (isUnavailable || isQuota) {
+      geminiCooldownUntil = Date.now() + 60000;
+      console.info(`[Gemini Teacher] Gemini experiencing high demand / cooldown (503/429). Entering 60s cooldown.`);
     } else {
-      console.warn("[Gemini Teacher] Failed to execute Gemini learning pipeline:", error?.message || error);
+      console.info("[Gemini Teacher] Notice on Gemini learning pipeline:", error?.message || "Unavailable");
     }
-    // On error, write original phrases to review queue as PENDING so they are not lost
-    const timestamp = new Date().toISOString();
-    for (const p of phrases) {
+    // On error, write remaining phrases to review queue as PENDING so they are not lost
+    const queuedList: any[] = [];
+    for (const p of remainingPhrases) {
       try {
         await db.insert(foodReviewQueue).values({
           id: "review_" + generateUUID(),
           phrase: p,
-          detectedFood: "Failed Gemini pipeline",
+          detectedFood: "Pending categorization",
           confidence: 0.0,
           timestamp,
           status: "PENDING",
         }).onConflictDoNothing();
+        queuedList.push({ phrase: p, confidence: 0 });
       } catch (err) {}
     }
-    return { learned: [], queued: phrases.map(p => ({ phrase: p, confidence: 0 })) };
+    return { learned: learnedList, queued: queuedList };
   }
 }
 
@@ -698,7 +827,56 @@ export async function resolveCanonicalFood(rawName: string): Promise<{ label: st
     return { label: fuzzyMatch.label, category: fuzzyMatch.category, id: fuzzyMatch.id };
   }
 
-  // Priority 4: Gemini API (Last Resort ONLY when no local match exists)
+  // Priority 4: Rule-based Heuristic Semantic Classifier (Fast & Offline)
+  const heuristic = classifyFoodHeuristically(rawName);
+  if (heuristic) {
+    const foodId = "food_" + generateUUID();
+    const timestamp = new Date().toISOString();
+    const aliases = Array.from(new Set([
+      heuristic.label.toLowerCase().trim(),
+      normalized,
+      rawName.toLowerCase().trim()
+    ])).filter(Boolean);
+
+    try {
+      await db.insert(foodKnowledgeBase).values({
+        id: foodId,
+        label: heuristic.label,
+        category: heuristic.category,
+        aliases: JSON.stringify(aliases),
+        confidence: 0.98,
+        timestamp,
+        frequency: 1,
+      }).onConflictDoNothing();
+
+      for (const alias of aliases) {
+        await db.insert(foodAliases).values({
+          id: "alias_" + generateUUID(),
+          alias,
+          foodId,
+        }).onConflictDoNothing();
+        aliasCache.set(alias, foodId);
+      }
+
+      foodCache.set(foodId, {
+        id: foodId,
+        label: heuristic.label,
+        category: heuristic.category,
+        aliases,
+        confidence: 0.98,
+        timestamp,
+        frequency: 1,
+      });
+
+      console.log(`[Food Knowledge] Heuristically classified & learned: "${heuristic.label}" under "${heuristic.category}"`);
+      return { label: heuristic.label, category: heuristic.category, id: foodId };
+    } catch (err) {
+      console.error("[Food Knowledge] Error caching heuristic classification:", err);
+      return { label: heuristic.label, category: heuristic.category, id: "" };
+    }
+  }
+
+  // Priority 5: Gemini API (Last Resort ONLY when no local match exists)
   if (Date.now() < geminiCooldownUntil) {
     return { label: rawName, category: "Other", id: "" };
   }
@@ -744,7 +922,7 @@ OR if it's a completely different food:
 
     console.log(`[Food Knowledge] Calling Gemini AI for semantic recognition of: "${rawName}"`);
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -845,15 +1023,17 @@ OR if it's a completely different food:
     return { label: newLabel, category: newCategory, id: foodId };
 
   } catch (error: any) {
+    const isUnavailable = error?.status === 503 || error?.status === "UNAVAILABLE" || error?.message?.includes("503") || error?.message?.includes("high demand") || error?.message?.includes("UNAVAILABLE");
     const isQuota = error?.status === "RESOURCE_EXHAUSTED" || error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("quota") || error?.message?.includes("RESOURCE_EXHAUSTED");
-    if (isQuota) {
-      geminiCooldownUntil = Date.now() + 45000;
-      console.warn(`[Food Knowledge] Gemini rate limit reached (429/RESOURCE_EXHAUSTED) for "${rawName}". Entering 45s cooldown.`);
+    if (isUnavailable || isQuota) {
+      geminiCooldownUntil = Date.now() + 60000;
+      console.info(`[Food Knowledge] Gemini API temporarily experiencing high demand / cooldown (503/429) for "${rawName}". Entering 60s cooldown.`);
     } else {
-      console.warn(`[Food Knowledge] Gemini semantic recognition failed for "${rawName}":`, error?.message || error);
+      console.info(`[Food Knowledge] Gemini recognition skipped for "${rawName}":`, error?.message || "Unavailable");
     }
     // Graceful fallback to raw input in case of Gemini errors
-    return { label: rawName, category: "Other", id: "" };
+    const fallbackHeuristic = classifyFoodHeuristically(rawName);
+    return { label: rawName, category: fallbackHeuristic?.category || "Other", id: "" };
   }
 }
 

@@ -459,6 +459,73 @@ export function deduplicateMembers(members: Member[]): Member[] {
   return result;
 }
 
+export function deduplicateDeposits(deposits: Deposit[]): Deposit[] {
+  if (!Array.isArray(deposits)) return [];
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const result: Deposit[] = [];
+
+  for (const d of deposits) {
+    if (!d || !d.id) continue;
+    if (seenIds.has(d.id)) continue;
+    
+    // Deduplication signature: same month, same member, same date, same amount
+    const sig = `${d.monthId}_${d.memberId}_${d.date}_${Number(d.amount)}`;
+    if (seenSignatures.has(sig)) {
+      continue; // Drop duplicate
+    }
+
+    seenIds.add(d.id);
+    seenSignatures.add(sig);
+    result.push(d);
+  }
+  return result;
+}
+
+export function deduplicateMarketEntries(entries: MarketEntry[]): MarketEntry[] {
+  if (!Array.isArray(entries)) return [];
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const result: MarketEntry[] = [];
+
+  for (const m of entries) {
+    if (!m || !m.id) continue;
+    if (seenIds.has(m.id)) continue;
+    
+    const sig = `${m.monthId}_${m.memberId}_${m.date}_${Number(m.amount)}_${(m.description || "").trim().toLowerCase()}`;
+    if (seenSignatures.has(sig)) {
+      continue;
+    }
+
+    seenIds.add(m.id);
+    seenSignatures.add(sig);
+    result.push(m);
+  }
+  return result;
+}
+
+export function deduplicateDuties(duties: Duty[]): Duty[] {
+  if (!Array.isArray(duties)) return [];
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const result: Duty[] = [];
+
+  for (const d of duties) {
+    if (!d || !d.id) continue;
+    if (seenIds.has(d.id)) continue;
+    
+    const sig = `${d.monthId}_${d.memberId}_${(d.name || "").trim().toLowerCase()}_${(d.task || "").trim().toLowerCase()}`;
+    if (seenSignatures.has(sig)) {
+      continue;
+    }
+
+    seenIds.add(d.id);
+    seenSignatures.add(sig);
+    result.push(d);
+  }
+  return result;
+}
+
 // Refresh the in-memory cache directly from the PostgreSQL single source of truth
 export async function refreshDbCache() {
   console.log("[Backup] Cache refresh started...");
@@ -505,13 +572,13 @@ export async function refreshDbCache() {
       })) as any[],
     meals: [],
     foodMenus: foodMenusList as any[],
-    marketEntries: marketEntriesList.map(item => ({
+    marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
       ...item,
       coveredDates: parseCoveredDates(item.coveredDates)
-    })) as any[],
-    deposits: depositsList as any[],
+    })) as any[]),
+    deposits: deduplicateDeposits(depositsList as any[]),
     bills: billsList as any[],
-    duties: dutiesList as any[],
+    duties: deduplicateDuties(dutiesList as any[]),
     managerHoldings: managerHoldingsList as any[],
     managerRatings: managerRatingsList as any[],
     notices: noticesList as any[],
@@ -700,13 +767,13 @@ export async function initializeDbCache() {
           })) as any[],
         meals: [],
         foodMenus: foodMenusList as any[],
-        marketEntries: marketEntriesList.map(item => ({
+        marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
           ...item,
           coveredDates: parseCoveredDates(item.coveredDates)
-        })) as any[],
-        deposits: depositsList as any[],
+        })) as any[]),
+        deposits: deduplicateDeposits(depositsList as any[]),
         bills: billsList as any[],
-        duties: dutiesList as any[],
+        duties: deduplicateDuties(dutiesList as any[]),
         managerHoldings: managerHoldingsList as any[],
         managerRatings: managerRatingsList as any[],
         notices: noticesList as any[],
@@ -882,6 +949,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
     }
 
     if (cache.marketEntries.length > 0) {
+      cache.marketEntries = deduplicateMarketEntries(cache.marketEntries);
       for (const item of cache.marketEntries) {
         const mapped = {
         id: item.id,
@@ -901,6 +969,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
     }
 
     if (cache.deposits.length > 0) {
+      cache.deposits = deduplicateDeposits(cache.deposits);
       for (const item of cache.deposits) {
         const mapped = {
         id: item.id,
@@ -931,6 +1000,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
     }
 
     if (cache.duties.length > 0) {
+      cache.duties = deduplicateDuties(cache.duties);
       for (const item of cache.duties) {
         const mapped = {
         id: item.id,
@@ -1169,6 +1239,18 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
   if (target && target.members) {
     target.members = deduplicateMembers(target.members);
+  }
+
+  if (target && target.deposits) {
+    target.deposits = deduplicateDeposits(target.deposits);
+  }
+
+  if (target && target.marketEntries) {
+    target.marketEntries = deduplicateMarketEntries(target.marketEntries);
+  }
+
+  if (target && target.duties) {
+    target.duties = deduplicateDuties(target.duties);
   }
 
   dbCache = target;

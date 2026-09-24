@@ -67,9 +67,24 @@ export default function Deposits({
     );
   }, [members]);
 
-  // All deposits sorted date-wise Descending (latest date at the top)
+  // All deposits deduplicated and sorted date-wise Descending (latest date at the top)
   const sortedDeposits = useMemo(() => {
-    return [...deposits].sort((a, b) => {
+    const seenIds = new Set<string>();
+    const seenSignatures = new Set<string>();
+    const unique: Deposit[] = [];
+
+    for (const d of deposits) {
+      if (!d || !d.id) continue;
+      if (seenIds.has(d.id)) continue;
+      const sig = `${d.monthId}_${d.memberId}_${d.date}_${Number(d.amount)}`;
+      if (seenSignatures.has(sig)) continue;
+
+      seenIds.add(d.id);
+      seenSignatures.add(sig);
+      unique.push(d);
+    }
+
+    return unique.sort((a, b) => {
       const dateA = a.date || "";
       const dateB = b.date || "";
       const dateComp = dateB.localeCompare(dateA); // Descending (latest first)
@@ -198,7 +213,7 @@ export default function Deposits({
   };
 
   const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
-  const totalDepositedSum = deposits.reduce((sum, d) => sum + d.amount, 0);
+  const totalDepositedSum = sortedDeposits.reduce((sum, d) => sum + d.amount, 0);
 
   return (
     <div className="space-y-6" id="deposits-wrapper">

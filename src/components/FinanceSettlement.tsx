@@ -1622,13 +1622,33 @@ export default function FinanceSettlement({
 
       if (depRes.ok) {
         const depData = await depRes.json().catch(() => ({}));
-        const filteredDeps = (depData.deposits || []).filter((d: any) => d.memberId === memberId);
+        const rawDeps = (depData.deposits || []).filter((d: any) => d.memberId === memberId);
+        const seenDepIds = new Set<string>();
+        const seenDepSigs = new Set<string>();
+        const filteredDeps: any[] = [];
+        for (const d of rawDeps) {
+          if (!d || !d.id) continue;
+          if (seenDepIds.has(d.id)) continue;
+          const sig = `${d.monthId}_${d.memberId}_${d.date}_${Number(d.amount)}`;
+          if (seenDepSigs.has(sig)) continue;
+          seenDepIds.add(d.id);
+          seenDepSigs.add(sig);
+          filteredDeps.push(d);
+        }
         setMemberDeposits(filteredDeps);
       }
 
       if (marRes.ok) {
         const marData = await marRes.json().catch(() => ({}));
-        const filteredMars = (marData.markets || []).filter((m: any) => m.memberId === memberId);
+        const rawMars = (marData.markets || []).filter((m: any) => m.memberId === memberId);
+        const seenMarIds = new Set<string>();
+        const filteredMars: any[] = [];
+        for (const m of rawMars) {
+          if (!m || !m.id) continue;
+          if (seenMarIds.has(m.id)) continue;
+          seenMarIds.add(m.id);
+          filteredMars.push(m);
+        }
         setMemberMarkets(filteredMars);
       }
     } catch (e) {

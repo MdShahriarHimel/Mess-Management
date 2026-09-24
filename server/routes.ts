@@ -31,6 +31,7 @@ import { loadDB, saveDB, syncState,
   deleteDepositFromPostgres,
   getDefaultMessRules,
   deduplicateMembers,
+  deduplicateDeposits,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
@@ -3172,8 +3173,8 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
 router.get("/deposits/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
-  const deposits = db.deposits
-    .filter(d => d.monthId === monthId)
+  const rawDeposits = db.deposits.filter(d => d.monthId === monthId);
+  const deposits = deduplicateDeposits(rawDeposits)
     .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id || "").localeCompare(a.id || ""));
   res.json({ deposits });
 });
@@ -3203,16 +3204,33 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
     return;
   }
 
+  const targetDate = date || new Date().toISOString().split("T")[0];
+  const numAmount = Number(amount);
+
+  // Duplicate / Double-submission prevention guard
+  const existingDup = db.deposits.find(d => 
+    d.monthId === monthId && 
+    d.memberId === memberId && 
+    d.date === targetDate && 
+    Number(d.amount) === numAmount
+  );
+  if (existingDup) {
+    console.warn(`[Deposit Guard] Duplicate deposit prevented for member ${memberId} on ${targetDate} for amount ${numAmount}`);
+    res.json({ success: true, deposit: existingDup, duplicatePrevented: true });
+    return;
+  }
+
   const newDeposit: Deposit = {
     id: generateUUID(),
     monthId,
     memberId,
-    amount: Number(amount),
-    date: date || new Date().toISOString().split("T")[0],
+    amount: numAmount,
+    date: targetDate,
     enteredBy: req.user!.id
   };
 
   db.deposits.push(newDeposit);
+  db.deposits = deduplicateDeposits(db.deposits);
   saveDB();
 
   logAudit(req.user!.id, req.user!.nickname, "ENTER_DEPOSIT", "None", JSON.stringify(newDeposit), `Recorded deposit of Taka ${amount} for member ID ${memberId}`);
