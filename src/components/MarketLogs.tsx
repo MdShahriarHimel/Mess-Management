@@ -3,16 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus,
-  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight
+  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight, Printer, Download, Search, CheckCircle2
 } from "lucide-react";
-import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
+import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings, Meal, MemberStatus } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
+import { sortMembersAlphabetically, deduplicateMembersList } from "../utils/memberUtils.ts";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -57,8 +58,11 @@ export default function MarketLogs({
   const authToken = getAuthToken(currentUser);
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
   const [duties, setDuties] = useState<Duty[]>([]);
+  const [mealsList, setMealsList] = useState<Meal[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showDutyScheduleModal, setShowDutyScheduleModal] = useState(false);
+  const [scheduleSearchQuery, setScheduleSearchQuery] = useState("");
   const [viewMonthId, setViewMonthId] = useState<string>(currentMonthId);
   const [isCreatingNextCycle, setIsCreatingNextCycle] = useState(false);
 
@@ -312,11 +316,12 @@ export default function MarketLogs({
     try {
       const authHeader = { "Authorization": `Bearer ${authToken}` };
       
-      const [mRes, dRes, depRes, holdRes] = await Promise.all([
+      const [mRes, dRes, depRes, holdRes, mealsRes] = await Promise.all([
         fetch(`/api/markets/${activeId}`, { headers: authHeader }),
         fetch(`/api/duties/${activeId}`, { headers: authHeader }),
         fetch(`/api/deposits/${activeId}`, { headers: authHeader }),
-        fetch(`/api/holdings/${activeId}`, { headers: authHeader })
+        fetch(`/api/holdings/${activeId}`, { headers: authHeader }),
+        fetch(`/api/meals/${activeId}`, { headers: authHeader })
       ]);
 
       // Guard: if view month changed while fetching, discard stale response
@@ -354,6 +359,10 @@ export default function MarketLogs({
       if (holdRes.ok) {
         const holdData = await holdRes.json().catch(() => ({}));
         setHoldingsList(holdData.holdings || []);
+      }
+      if (mealsRes && mealsRes.ok) {
+        const mealsData = await mealsRes.json().catch(() => ({}));
+        setMealsList(mealsData.meals || []);
       }
     } catch (e) {
       console.error(e);
@@ -764,6 +773,463 @@ export default function MarketLogs({
   const totalManagerialCost = holdingsList.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
   const remainingDeposits = totalDeposits - totalManagerialCost;
 
+  // Active real mess members for the selected cycle:
+  // "ম্যাচ মেম্বারদের নামগুলো অ্যালফাবেটিক অর্ডারে থাকবে। এখানে শুধু আসল মেম্বাররা থাকবে, কোনো বট, অ্যাডমিন বা টেস্ট ইউজাররা নয়। যাদের মিল হচ্ছে, ডিপোজিট দিচ্ছে, খাচ্ছে বা একদিন হলেও হয়েছে, এমন মেম্বারদের নাম অ্যালফাবেটিক অর্ডারে থাকবে।"
+  const activeParticipatingMembers = useMemo(() => {
+    // Exclude test/bot accounts
+    const nonTestMembers = members.filter(m => {
+      if (m.status === MemberStatus.TESTING || (m.status as string) === "TESTING") return false;
+      if (m.role === ("TESTING" as any)) return false;
+      const nameUpper = (m.name || "").toUpperCase();
+      const nickUpper = (m.nickname || "").toUpperCase();
+      if (nameUpper.includes("TEST") || nickUpper.includes("TEST")) return false;
+      if (m.email?.toLowerCase().includes("test")) return false;
+      return true;
+    });
+
+    const uniqueCandidates = deduplicateMembersList(nonTestMembers);
+
+    const activeWithActivity = uniqueCandidates.filter(m => {
+      const hasDeposit = depositsList.some(d => d.memberId === m.id && Number(d.amount) > 0);
+      const hasMeal = mealsList.some(ml => ml.memberId === m.id && ((ml.lunch || 0) > 0 || (ml.dinner || 0) > 0 || (ml.breakfast || 0) > 0));
+      const hasMarket = markets.some(mkt => mkt.memberId === m.id && Number(mkt.amount) > 0);
+      const hasDuty = duties.some(d => d.memberId === m.id && (d.name?.toLowerCase().includes("market") || d.name?.toLowerCase().includes("bazar")));
+
+      // Only real members who participate in meal, deposit, market, or assigned market duties
+      if (hasDeposit || hasMeal || hasMarket || hasDuty) {
+        return true;
+      }
+
+      // If status is NOT_MEMBER or LEFT and zero activity, exclude
+      if (m.status === MemberStatus.NOT_MEMBER || (m.status as string) === "NOT_MEMBER" || m.status === MemberStatus.LEFT || (m.status as string) === "LEFT") {
+        return false;
+      }
+
+      return false;
+    });
+
+    return sortMembersAlphabetically(activeWithActivity);
+  }, [members, depositsList, mealsList, markets, duties]);
+
+  // Aggregate market duty schedule and dates per member (alphabetically sorted)
+  const memberDutySchedule = useMemo(() => {
+    return activeParticipatingMembers.map(member => {
+      const memDuties = duties.filter(d => 
+        d.memberId === member.id && 
+        (d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar"))
+      );
+
+      const datesSet = new Set<string>();
+      memDuties.forEach(d => {
+        const match = d.name.match(/(\d{4}-\d{2}-\d{2})/);
+        if (match) datesSet.add(match[1]);
+        else if (d.date) datesSet.add(d.date);
+      });
+
+      markets.filter(mkt => mkt.memberId === member.id).forEach(mkt => {
+        if (mkt.date) datesSet.add(mkt.date);
+        if (mkt.coveredDates && Array.isArray(mkt.coveredDates)) {
+          mkt.coveredDates.forEach(cd => datesSet.add(cd));
+        }
+      });
+
+      const assignedDates = Array.from(datesSet).sort();
+
+      const completedDates: string[] = [];
+      const pendingDates: string[] = [];
+
+      assignedDates.forEach(dStr => {
+        const isCompleted = markets.some(mkt => 
+          mkt.date === dStr || 
+          (mkt.coveredDates && Array.isArray(mkt.coveredDates) && mkt.coveredDates.includes(dStr))
+        );
+        if (isCompleted) {
+          completedDates.push(dStr);
+        } else {
+          pendingDates.push(dStr);
+        }
+      });
+
+      const formattedDateNumbers = assignedDates.map(d => {
+        const parts = d.split("-");
+        return parts[2] ? parts[2].replace(/^0/, "") : d;
+      }).join(", ");
+
+      return {
+        member,
+        assignedDates,
+        formattedDateNumbers,
+        totalDutyCount: assignedDates.length,
+        completedDates,
+        pendingDates
+      };
+    });
+  }, [activeParticipatingMembers, duties, markets]);
+
+  const filteredSchedule = useMemo(() => {
+    if (!scheduleSearchQuery.trim()) return memberDutySchedule;
+    const q = scheduleSearchQuery.toLowerCase().trim();
+    return memberDutySchedule.filter(item => 
+      (item.member.nickname || "").toLowerCase().includes(q) ||
+      (item.member.name || "").toLowerCase().includes(q)
+    );
+  }, [memberDutySchedule, scheduleSearchQuery]);
+
+  const currentViewingMonthObj = months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId);
+
+  const handlePrintDutySchedulePDF = () => {
+    const cycleName = currentViewingMonthObj?.name || "Current Cycle";
+    const startDateStr = currentViewingMonthObj?.startDate ? currentViewingMonthObj.startDate.split("T")[0] : "";
+    const endDateStr = currentViewingMonthObj?.endDate ? currentViewingMonthObj.endDate.split("T")[0] : "";
+    const activeManager = members.find(m => m.role === UserRole.MANAGER);
+    const managerDisplayName = activeManager ? (activeManager.nickname || activeManager.name) : "Manager";
+
+    const totalMembersCount = memberDutySchedule.length;
+    const totalDutiesCount = memberDutySchedule.reduce((sum, item) => sum + item.totalDutyCount, 0);
+    const totalCompletedCount = memberDutySchedule.reduce((sum, item) => sum + item.completedDates.length, 0);
+    const totalPendingCount = memberDutySchedule.reduce((sum, item) => sum + item.pendingDates.length, 0);
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="bn">
+      <head>
+        <meta charset="utf-8">
+        <title>Market Duty Schedule - ${cycleName}</title>
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 12mm 15mm 15mm 15mm;
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Noto Sans Bengali", SolaimanLipi;
+            color: #0f172a;
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
+            font-size: 10.5pt;
+            line-height: 1.4;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #0891b2;
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+          }
+          .mess-title {
+            font-size: 18pt;
+            font-weight: 800;
+            color: #0891b2;
+            letter-spacing: -0.5px;
+            margin: 0 0 3px 0;
+            text-transform: uppercase;
+          }
+          .report-subtitle {
+            font-size: 12pt;
+            font-weight: 700;
+            color: #334155;
+            margin: 0 0 3px 0;
+          }
+          .cycle-badge {
+            display: inline-block;
+            background: #ecfeff;
+            color: #0e7490;
+            border: 1px solid #a5f3fc;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-size: 9pt;
+            font-weight: 600;
+            margin-top: 3px;
+          }
+          .kpi-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 16px;
+          }
+          .kpi-box {
+            flex: 1;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 8px 10px;
+            text-align: center;
+          }
+          .kpi-label {
+            font-size: 7.5pt;
+            color: #64748b;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+          }
+          .kpi-value {
+            font-size: 14pt;
+            font-weight: 800;
+            color: #0891b2;
+            font-family: monospace;
+            margin-top: 2px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 9.5pt;
+          }
+          thead th {
+            background-color: #0f172a;
+            color: #ffffff;
+            padding: 7px 9px;
+            text-align: left;
+            font-weight: 700;
+            border: 1px solid #0f172a;
+          }
+          thead th.text-center { text-align: center; }
+          tbody tr {
+            border-bottom: 1px solid #e2e8f0;
+          }
+          tbody tr:nth-child(even) {
+            background-color: #f8fafc;
+          }
+          tbody td {
+            padding: 7px 9px;
+            vertical-align: middle;
+            border-left: 1px solid #e2e8f0;
+            border-right: 1px solid #e2e8f0;
+          }
+          tbody td.text-center { text-align: center; }
+          .member-name {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 10pt;
+          }
+          .member-fullname {
+            font-size: 8pt;
+            color: #64748b;
+          }
+          .date-badge {
+            display: inline-block;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            color: #1e293b;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-family: monospace;
+            font-size: 9pt;
+            margin: 1px 2px;
+          }
+          .date-badge.completed {
+            background: #ecfdf5;
+            border-color: #a7f3d0;
+            color: #065f46;
+          }
+          .duty-count {
+            font-weight: 800;
+            font-size: 11pt;
+            color: #0284c7;
+            font-family: monospace;
+          }
+          .status-pill {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 9999px;
+            font-size: 8pt;
+            font-weight: 700;
+          }
+          .status-completed {
+            background: #dcfce7;
+            color: #166534;
+          }
+          .status-pending {
+            background: #e0f2fe;
+            color: #0369a1;
+          }
+          .status-none {
+            background: #f1f5f9;
+            color: #64748b;
+          }
+          .signatures {
+            margin-top: 36px;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            page-break-inside: avoid;
+          }
+          .sig-block {
+            text-align: center;
+            width: 180px;
+          }
+          .sig-line {
+            border-top: 1px solid #334155;
+            margin-bottom: 5px;
+          }
+          .sig-title {
+            font-size: 8.5pt;
+            font-weight: 700;
+            color: #334155;
+          }
+          .sig-sub {
+            font-size: 7.5pt;
+            color: #64748b;
+          }
+          .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 7.5pt;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 6px;
+            page-break-inside: avoid;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="mess-title">MESS ERP SYSTEM</h1>
+          <h2 class="report-subtitle">Standard Market & Duties Schedule (বাজার দায়িত্ব ও তারিখ তালিকা)</h2>
+          <div class="cycle-badge">Cycle: ${cycleName} ${startDateStr && endDateStr ? `(${startDateStr} to ${endDateStr})` : ""}</div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi-box">
+            <div class="kpi-label">Active Members</div>
+            <div class="kpi-value">${totalMembersCount}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Total Assigned Duties</div>
+            <div class="kpi-value">${totalDutiesCount}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Completed Markets</div>
+            <div class="kpi-value" style="color: #16a34a;">${totalCompletedCount}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Pending / Scheduled</div>
+            <div class="kpi-value" style="color: #0284c7;">${totalPendingCount}</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 32px;">#</th>
+              <th style="width: 180px;">Member Name (সদস্যের নাম)</th>
+              <th class="text-center" style="width: 90px;">Duty Count (বাজার)</th>
+              <th>Market Dates (বাজারের তারিখসমূহ)</th>
+              <th class="text-center" style="width: 110px;">Status (অবস্থা)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${memberDutySchedule.map((item, idx) => {
+              const nick = item.member.nickname || item.member.name;
+              const full = item.member.name !== nick ? item.member.name : "";
+              const statusClass = item.totalDutyCount === 0 
+                ? "status-none" 
+                : item.pendingDates.length === 0 
+                  ? "status-completed" 
+                  : "status-pending";
+              const statusText = item.totalDutyCount === 0
+                ? "অব্যাহতি"
+                : item.completedDates.length > 0 && item.pendingDates.length > 0
+                  ? `${item.completedDates.length} সম্পন্ন, ${item.pendingDates.length} অপেক্ষমান`
+                  : item.pendingDates.length === 0
+                    ? "সম্পূর্ণ সম্পন্ন"
+                    : "শিডিউল নির্ধারিত";
+
+              return `
+                <tr>
+                  <td class="text-center font-mono">${idx + 1}</td>
+                  <td>
+                    <div class="member-name">${nick}</div>
+                    ${full ? `<div class="member-fullname">${full}</div>` : ""}
+                  </td>
+                  <td class="text-center">
+                    <span class="duty-count">${item.totalDutyCount}</span> টি
+                  </td>
+                  <td>
+                    ${item.assignedDates.length === 0 
+                      ? `<span style="color: #94a3b8; font-style: italic;">কোনো বাজার নির্ধারিত নেই</span>` 
+                      : item.assignedDates.map(dStr => {
+                          const dayNum = dStr.split("-")[2]?.replace(/^0/, "") || dStr;
+                          const isDone = item.completedDates.includes(dStr);
+                          return `<span class="date-badge ${isDone ? "completed" : ""}" title="${dStr} (${isDone ? "বাজার সম্পন্ন" : "অপেক্ষমান"})">${dayNum}</span>`;
+                        }).join(" ")
+                    }
+                    ${item.assignedDates.length > 0 ? `<div style="font-size: 8pt; color: #64748b; margin-top: 2px;">তারিখ: ${item.formattedDateNumbers}</div>` : ""}
+                  </td>
+                  <td class="text-center">
+                    <span class="status-pill ${statusClass}">${statusText}</span>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+
+        <div class="signatures">
+          <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-title">${managerDisplayName}</div>
+            <div class="sig-sub">Mess Manager</div>
+          </div>
+          <div class="sig-block">
+            <div class="sig-line"></div>
+            <div class="sig-title">Mess Administrator</div>
+            <div class="sig-sub">Audited & Verified</div>
+          </div>
+        </div>
+
+        <div class="footer">
+          Generated automatically on ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" })} (Dhaka Time) &bull; Official Mess Management System Report
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    try {
+      const printWin = window.open("", "_blank");
+      if (printWin) {
+        printWin.document.write(htmlContent);
+        printWin.document.close();
+        return;
+      }
+    } catch (e) {
+      console.warn("window.open failed, falling back to iframe:", e);
+    }
+
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+      iframe.contentWindow?.focus();
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+    }
+  };
+
   return (
     <div className="space-y-6" id="market-logs-wrapper">
       
@@ -792,6 +1258,17 @@ export default function MarketLogs({
 
           {subTab === "standard" ? (
             <>
+              <button
+                type="button"
+                onClick={() => setShowDutyScheduleModal(true)}
+                className="px-3.5 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                title="View & Download Market Duty Schedule PDF"
+              >
+                <FileText size={14} className="text-emerald-400" />
+                <span className="hidden sm:inline">DUTY SCHEDULE & PDF</span>
+                <span className="sm:hidden">PDF</span>
+              </button>
+
               {canEditMarketDuty && (
                 <button
                   onClick={() => { setShowScheduleModal(true); }}
@@ -973,8 +1450,17 @@ export default function MarketLogs({
               <Calendar size={18} />
               Market Duty & Expense Calendar
             </h3>
-            {/* Visual Status Legend */}
+            {/* Visual Status Legend & Duty PDF Report Button */}
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => setShowDutyScheduleModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition-all cursor-pointer shadow-sm mr-1"
+                title="View & Export Market Duty Schedule PDF"
+              >
+                <FileText size={13} className="text-emerald-400" />
+                <span>শিডিউল তালিকা ও PDF</span>
+              </button>
               <div className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 px-2 py-0.5 rounded-md">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Market Pushed (সবুজ = বাজার সম্পন্ন)</span>
@@ -2103,6 +2589,235 @@ export default function MarketLogs({
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. MARKET DUTY SCHEDULE & PDF MODAL */}
+      {showDutyScheduleModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-950/60 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold font-display text-white flex items-center gap-2">
+                    <span>বাজার দায়িত্ব ও তারিখ তালিকা (Duty Schedule)</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
+                      {currentViewingMonthObj?.name || "Active Cycle"}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    অ্যালফাবেটিক অর্ডারে আসল সক্রিয় মেম্বারদের নির্ধারিত বাজারের দিন ও মোট সংখ্যা
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintDutySchedulePDF}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md"
+                  title="পিডিএফ ডাউনলোড বা প্রিন্ট করুন"
+                >
+                  <Printer size={15} />
+                  <span className="hidden sm:inline">পিডিএফ / প্রিন্ট</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDutyScheduleModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter / Month Switcher Bar */}
+            <div className="p-3 sm:px-5 border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">মাস নির্বাচন:</span>
+                <select
+                  value={viewMonthId || currentMonthId}
+                  onChange={(e) => setViewMonthId(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-cyan-400 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer"
+                >
+                  {[...months].sort((a, b) => {
+                    const aTime = a.startDate ? new Date(a.startDate).getTime() : 0;
+                    const bTime = b.startDate ? new Date(b.startDate).getTime() : 0;
+                    return aTime - bTime;
+                  }).map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.id === currentMonthId ? "★ (Active)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative flex-1 sm:max-w-xs">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={scheduleSearchQuery}
+                  onChange={(e) => setScheduleSearchQuery(e.target.value)}
+                  placeholder="মেম্বারের নাম খুঁজুন..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
+              </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 sm:p-5 bg-slate-900/50 shrink-0">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">সক্রিয় মেম্বার</div>
+                <div className="text-xl font-bold font-mono text-cyan-400 mt-0.5">{memberDutySchedule.length} জন</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">মোট নির্ধারিত বাজার</div>
+                <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
+                  {memberDutySchedule.reduce((sum, i) => sum + i.totalDutyCount, 0)} দিন
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">সম্পন্ন বাজার</div>
+                <div className="text-xl font-bold font-mono text-teal-400 mt-0.5">
+                  {memberDutySchedule.reduce((sum, i) => sum + i.completedDates.length, 0)} দিন
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">অপেক্ষমান শিডিউল</div>
+                <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">
+                  {memberDutySchedule.reduce((sum, i) => sum + i.pendingDates.length, 0)} দিন
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable Content Table */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+              <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-950">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-900/90 text-slate-300 font-bold border-b border-slate-800 sticky top-0 z-10">
+                    <tr>
+                      <th className="py-2.5 px-3 text-center w-12">#</th>
+                      <th className="py-2.5 px-3">মেম্বার (Alphabetical)</th>
+                      <th className="py-2.5 px-3 text-center w-28">মোট বাজার</th>
+                      <th className="py-2.5 px-3">বাজারের তারিখসমূহ (Market Dates)</th>
+                      <th className="py-2.5 px-3 text-center w-32">অবস্থা</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {filteredSchedule.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-500">
+                          কোনো সক্রিয় মেম্বার পাওয়া যায়নি
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredSchedule.map((item, idx) => {
+                        const nick = item.member.nickname || item.member.name;
+                        const full = item.member.name !== nick ? item.member.name : "";
+                        return (
+                          <tr key={item.member.id} className="hover:bg-slate-900/50 transition-colors">
+                            <td className="py-3 px-3 text-center font-mono text-slate-500">
+                              {idx + 1}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-white text-sm flex items-center gap-1.5">
+                                {nick}
+                                {item.member.id === currentUser.id && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">আপনি</span>
+                                )}
+                              </div>
+                              {full && <div className="text-[11px] text-slate-400">{full}</div>}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold font-mono ${
+                                item.totalDutyCount > 0 
+                                  ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30" 
+                                  : "bg-slate-800 text-slate-500"
+                              }`}>
+                                {item.totalDutyCount} টি
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              {item.assignedDates.length === 0 ? (
+                                <span className="text-slate-500 italic">কোনো বাজার নির্ধারিত নেই</span>
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {item.assignedDates.map(dStr => {
+                                    const dayNum = dStr.split("-")[2]?.replace(/^0/, "") || dStr;
+                                    const isCompleted = item.completedDates.includes(dStr);
+                                    return (
+                                      <span
+                                        key={dStr}
+                                        title={`${dStr}: ${isCompleted ? "বাজার সম্পন্ন" : "অপেক্ষমান"}`}
+                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold font-mono transition-all ${
+                                          isCompleted
+                                            ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/40"
+                                            : "bg-slate-800 text-slate-300 border border-slate-700"
+                                        }`}
+                                      >
+                                        {isCompleted && <CheckCircle2 size={11} className="text-emerald-400" />}
+                                        <span>{dayNum} তারিখ</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {item.assignedDates.length > 0 && (
+                                <div className="text-[10px] text-slate-500 mt-1">
+                                  তারিখ: {item.formattedDateNumbers}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {item.totalDutyCount === 0 ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">অব্যাহতি</span>
+                              ) : item.pendingDates.length === 0 ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">সম্পূর্ণ সম্পন্ন</span>
+                              ) : item.completedDates.length > 0 ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/30 font-semibold">{item.completedDates.length} সম্পন্ন</span>
+                              ) : (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold">শিডিউল নির্ধারিত</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 sm:px-5 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3 shrink-0">
+              <div className="text-xs text-slate-400">
+                মোট <span className="font-bold text-white font-mono">{filteredSchedule.length}</span> জন সদস্য প্রদর্শিত
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintDutySchedulePDF}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md"
+                >
+                  <Printer size={15} />
+                  <span>পিডিএফ ডাউনলোড / প্রিন্ট</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDutyScheduleModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  বন্ধ করুন
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

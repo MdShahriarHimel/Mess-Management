@@ -1425,6 +1425,93 @@ export async function deleteNoticeFromPostgres(noticeIdOrIds: string | string[])
   }
 }
 
+// Permanently delete duty/duties from PostgreSQL database and all in-memory caches
+export async function deleteDutyFromPostgres(dutyIdOrIds: string | string[]) {
+  try {
+    const rawIds = Array.isArray(dutyIdOrIds) ? dutyIdOrIds : [dutyIdOrIds];
+    const ids = rawIds.filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (db) {
+      await db.delete(dutiesTable).where(inArray(dutiesTable.id, ids));
+      console.log(`[Database] Permanently deleted ${ids.length} duty/duties from PostgreSQL:`, ids);
+    }
+
+    if (masterPostgresCache && masterPostgresCache.duties) {
+      masterPostgresCache.duties = masterPostgresCache.duties.filter(d => !ids.includes(d.id));
+    }
+
+    for (const [_, cacheObj] of dbCaches.entries()) {
+      if (cacheObj && cacheObj.duties) {
+        cacheObj.duties = cacheObj.duties.filter(d => !ids.includes(d.id));
+      }
+    }
+    if (dbCache && dbCache.duties) {
+      dbCache.duties = dbCache.duties.filter(d => !ids.includes(d.id));
+    }
+  } catch (err) {
+    console.warn("Failed to delete duty/duties from PostgreSQL:", err);
+  }
+}
+
+// Permanently delete market entry/entries from PostgreSQL database and all in-memory caches
+export async function deleteMarketFromPostgres(marketIdOrIds: string | string[]) {
+  try {
+    const rawIds = Array.isArray(marketIdOrIds) ? marketIdOrIds : [marketIdOrIds];
+    const ids = rawIds.filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (db) {
+      await db.delete(marketEntriesTable).where(inArray(marketEntriesTable.id, ids));
+      console.log(`[Database] Permanently deleted ${ids.length} market entry/entries from PostgreSQL:`, ids);
+    }
+
+    if (masterPostgresCache && masterPostgresCache.marketEntries) {
+      masterPostgresCache.marketEntries = masterPostgresCache.marketEntries.filter(m => !ids.includes(m.id));
+    }
+
+    for (const [_, cacheObj] of dbCaches.entries()) {
+      if (cacheObj && cacheObj.marketEntries) {
+        cacheObj.marketEntries = cacheObj.marketEntries.filter(m => !ids.includes(m.id));
+      }
+    }
+    if (dbCache && dbCache.marketEntries) {
+      dbCache.marketEntries = dbCache.marketEntries.filter(m => !ids.includes(m.id));
+    }
+  } catch (err) {
+    console.warn("Failed to delete market entry/entries from PostgreSQL:", err);
+  }
+}
+
+// Permanently delete deposit(s) from PostgreSQL database and all in-memory caches
+export async function deleteDepositFromPostgres(depositIdOrIds: string | string[]) {
+  try {
+    const rawIds = Array.isArray(depositIdOrIds) ? depositIdOrIds : [depositIdOrIds];
+    const ids = rawIds.filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (db) {
+      await db.delete(depositsTable).where(inArray(depositsTable.id, ids));
+      console.log(`[Database] Permanently deleted ${ids.length} deposit(s) from PostgreSQL:`, ids);
+    }
+
+    if (masterPostgresCache && masterPostgresCache.deposits) {
+      masterPostgresCache.deposits = masterPostgresCache.deposits.filter(d => !ids.includes(d.id));
+    }
+
+    for (const [_, cacheObj] of dbCaches.entries()) {
+      if (cacheObj && cacheObj.deposits) {
+        cacheObj.deposits = cacheObj.deposits.filter(d => !ids.includes(d.id));
+      }
+    }
+    if (dbCache && dbCache.deposits) {
+      dbCache.deposits = dbCache.deposits.filter(d => !ids.includes(d.id));
+    }
+  } catch (err) {
+    console.warn("Failed to delete deposit(s) from PostgreSQL:", err);
+  }
+}
+
 // Load credentials safely without destroying database on empty read
 export function loadCredentials(): CredentialsSchema {
   ensureDBDir();

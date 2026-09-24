@@ -26,6 +26,9 @@ import { loadDB, saveDB, syncState,
   setDbCacheForMess,
   syncCacheToPostgresDirectly,
   deleteNoticeFromPostgres,
+  deleteDutyFromPostgres,
+  deleteMarketFromPostgres,
+  deleteDepositFromPostgres,
   getDefaultMessRules,
   deduplicateMembers,
   DB_DIR
@@ -3157,6 +3160,7 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
 
   db.marketEntries.splice(index, 1);
   saveDB();
+  deleteMarketFromPostgres(id).catch(() => {});
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_MARKET_ENTRY", JSON.stringify(original), "Deleted", `Deleted market expense of Taka ${original.amount}`);
   res.json({ success: true });
@@ -3246,6 +3250,7 @@ router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Us
 
   db.deposits.splice(index, 1);
   saveDB();
+  deleteDepositFromPostgres(id).catch(() => {});
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_DEPOSIT", JSON.stringify(original), "Deleted", `Deleted deposit record of Taka ${original.amount}`);
   res.json({ success: true });
@@ -3599,6 +3604,7 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
 
   db.duties.splice(index, 1);
   saveDB();
+  deleteDutyFromPostgres(id).catch(() => {});
 
   logAudit(req.user!.id, req.user!.nickname, "REMOVE_DUTY", JSON.stringify(original), "Removed", `Removed duty ${original.name}`);
   res.json({ success: true });
