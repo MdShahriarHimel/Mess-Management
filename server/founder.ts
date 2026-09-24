@@ -120,11 +120,25 @@ export function savePlatformControls(controls: any) {
   writeAndPersistFile("platform_controls.json", JSON.stringify(controls, null, 2));
 }
 
-// Check if a given user is a Platform Owner
+// Check if a given user is an Authorized Platform Owner (Primary Founder, Co-Founder, Moderator, Administrator)
 export function isPlatformOwner(email: string | undefined): boolean {
   if (!email) return false;
+  const cleanEmail = email.trim().toLowerCase();
   const controls = loadPlatformControls();
-  return controls.owners.some((o: any) => o.email.toLowerCase() === email.toLowerCase());
+  const allowedRoles = [
+    "primary founder",
+    "future co-founder",
+    "co-founder",
+    "global platform moderator",
+    "platform administrator"
+  ];
+  return (controls.owners || []).some((o: any) => {
+    if (!o || !o.email) return false;
+    const ownerEmail = o.email.trim().toLowerCase();
+    if (ownerEmail !== cleanEmail) return false;
+    const role = (o.role || "").trim().toLowerCase();
+    return !role || allowedRoles.includes(role);
+  });
 }
 
 // Log a Founder action to a dedicated Audit Log JSON file
@@ -186,23 +200,54 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
   const isAuthPath = fullUrl.startsWith("/api/login") || fullUrl.startsWith("/api/logout") || fullUrl.startsWith("/api/auth") || pathStr.startsWith("/login") || pathStr.startsWith("/logout") || pathStr.startsWith("/auth");
   const isHealthOrSystem = fullUrl.startsWith("/api/health") || pathStr.startsWith("/health") || fullUrl.startsWith("/api/system") || pathStr.startsWith("/system");
 
-  // Attempt to decode user email from req.user or Authorization header
+  // Attempt to decode user email from req.user, Authorization header, or custom headers
   let userEmail = req.user?.email;
   if (!userEmail && req.headers?.authorization) {
     try {
       const authHeader = req.headers.authorization;
       if (authHeader.startsWith("Bearer ")) {
         const token = authHeader.split(" ")[1];
-        if (!token.startsWith("ey")) {
-          const memberId = token.split(":")[0];
-          const db = loadDB();
-          const found = db.members.find((m: any) => m.id === memberId);
-          if (found) userEmail = found.email;
+        if (token) {
+          if (token.startsWith("ey")) {
+            // 1. Firebase ID token / JWT
+            try {
+              const payloadPart = token.split(".")[1];
+              if (payloadPart) {
+                const decodedStr = Buffer.from(payloadPart, "base64").toString("utf-8");
+                const payload = JSON.parse(decodedStr);
+                if (payload.email) {
+                  userEmail = payload.email.toLowerCase();
+                } else if (payload.user_id || payload.sub) {
+                  const uid = payload.user_id || payload.sub;
+                  const db = loadDB();
+                  const found = db.members?.find((m: any) => m.id === uid);
+                  if (found?.email) {
+                    userEmail = found.email.toLowerCase();
+                  }
+                }
+              }
+            } catch (jwtErr) {
+              // ignore json parse error
+            }
+          } else {
+            // 2. Custom session token: memberId:timestamp:signature
+            const memberId = token.split(":")[0];
+            const db = loadDB();
+            const found = db.members?.find((m: any) => m.id === memberId);
+            if (found?.email) {
+              userEmail = found.email.toLowerCase();
+            }
+          }
         }
       }
     } catch (e) {
       // ignore token parse errors in middleware
     }
+  }
+
+  // Check header fallback
+  if (!userEmail && req.headers?.["x-user-email"]) {
+    userEmail = String(req.headers["x-user-email"]).trim().toLowerCase();
   }
 
   const isOwner = isPlatformOwner(userEmail);

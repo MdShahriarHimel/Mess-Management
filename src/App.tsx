@@ -1689,6 +1689,9 @@ export default function App() {
       if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && actingRole) {
         headers.set("X-Acting-Role", actingRole);
       }
+      if (currentUser && currentUser.email) {
+        headers.set("X-User-Email", currentUser.email);
+      }
 
       const newInit = {
         ...init,
