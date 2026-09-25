@@ -43,6 +43,7 @@ import {
   saveDailyBackupToDatabase, 
   generateDailyBackupPayload 
 } from "./backupCron.js";
+import { loadPlatformControls, savePlatformControls } from "./founder.js";
 import { db as drizzleDb, pool } from "../src/db/index.js";
 import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings, meals as mealsTable } from "../src/db/schema.js";
 import { eq, sql, and, or } from "drizzle-orm";
@@ -375,7 +376,6 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   const requestedMess = ((req.headers["x-mess-id"] as string) || (req.query.messId as string) || "").trim();
 
   // Check if this user is an authorized Standalone Tenant Admin
-  const { loadPlatformControls } = await import("./founder.js");
   const platformControls = loadPlatformControls();
   const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
     (t: any) => t.email.toLowerCase() === userEmail && t.status === "ACTIVE"
@@ -416,8 +416,13 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     }
 
     allowedMesses = tenantAllowed;
-    if (requestedMess && allowedMesses.includes(requestedMess)) {
-      targetMessId = requestedMess;
+    if (requestedMess) {
+      if (allowedMesses.includes(requestedMess)) {
+        targetMessId = requestedMess;
+      } else {
+        res.status(403).json({ error: "Access denied: You are not authorized to access this mess." });
+        return;
+      }
     } else {
       const saved = getUserActiveMessId(userId, userEmail);
       if (saved && allowedMesses.includes(saved)) {
@@ -430,8 +435,13 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     targetMessId = requestedMess || getUserActiveMessId(userId, userEmail) || userHomeMessId || getActiveMessId() || "default";
   } else if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
     allowedMesses = userControls.allowedMesses;
-    if (requestedMess && allowedMesses.includes(requestedMess)) {
-      targetMessId = requestedMess;
+    if (requestedMess) {
+      if (allowedMesses.includes(requestedMess)) {
+        targetMessId = requestedMess;
+      } else {
+        res.status(403).json({ error: "Access denied: You are not authorized to access this mess." });
+        return;
+      }
     } else {
       const saved = getUserActiveMessId(userId, userEmail);
       if (saved && allowedMesses.includes(saved)) {
@@ -442,7 +452,12 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
     }
   } else {
     // Normal member: limited strictly to their assigned mess
-    targetMessId = (memberRef as any)?.messId || userHomeMessId || getUserActiveMessId(userId, userEmail) || "default";
+    const userAssignedMess = (memberRef as any)?.messId || userHomeMessId || getUserActiveMessId(userId, userEmail) || "default";
+    if (requestedMess && requestedMess !== userAssignedMess) {
+      res.status(403).json({ error: "Access denied: You are not authorized to access this mess." });
+      return;
+    }
+    targetMessId = userAssignedMess;
   }
 
   // 3. Execute request inside tenant context
@@ -507,8 +522,8 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
           res.status(403).json({ error: "Your email has not been invited to this Mess. Please ask your Admin to invite you." });
           return;
         }
-      } else if (tokenUid && member.id !== tokenUid && token.startsWith("ey")) {
-        // Link Firebase UID
+      } else if (tokenUid && member.id !== tokenUid && (token.startsWith("ey") || (member.email && userEmail && member.email.toLowerCase() === userEmail))) {
+        // Link Firebase UID or authenticated user ID
         const oldId = member.id;
         if (!(member as any).previousIds) (member as any).previousIds = [];
         if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
@@ -539,7 +554,7 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
             await pool.query("UPDATE meals SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
             await pool.query("DELETE FROM members WHERE id = $1", [oldId]);
           } catch (e) {
-            console.error("[Link Firebase UID] DB cleanup error:", e);
+            console.error("[Link UID] DB cleanup error:", e);
           }
         })();
       }
@@ -550,7 +565,15 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       }
 
       const prevIds = (member as any).previousIds && Array.isArray((member as any).previousIds) ? (member as any).previousIds : [];
-      if (!token.startsWith("ey") && !isValidMemberSessionToken(token, member.id, prevIds)) {
+      const userLookupPrevIds = (userLookup?.member as any)?.previousIds;
+      const allKnownIds = [
+        member.id,
+        ...(tokenUid ? [tokenUid] : []),
+        ...(userLookup?.member?.id ? [userLookup.member.id] : []),
+        ...(Array.isArray(userLookupPrevIds) ? userLookupPrevIds : []),
+        ...prevIds
+      ];
+      if (!token.startsWith("ey") && !isValidMemberSessionToken(token, member.id, allKnownIds)) {
         res.status(401).json({ error: "Unauthorized: Session invalidated due to password change. Please log in again." });
         return;
       }
@@ -755,7 +778,6 @@ router.post("/auth/login", (req: Request, res: Response): void => {
   const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
   if (!lookup) {
-    const { loadPlatformControls } = require("./founder.js");
     const platformControls = loadPlatformControls();
     const tenantAdmin = (platformControls.authorizedTenantAdmins || []).find(
       (t: any) => t.email.toLowerCase() === normalizedEmail && t.status === "ACTIVE"
@@ -847,8 +869,7 @@ router.post("/auth/login", (req: Request, res: Response): void => {
         messId
       }
     );
-    const { loadPlatformControls: getPlatformControls } = require("./founder.js");
-    const platformControlsObj = getPlatformControls();
+    const platformControlsObj = loadPlatformControls();
     const matchedTenantAdmin = (platformControlsObj.authorizedTenantAdmins || []).find(
       (t: any) => t.email.toLowerCase() === normalizedEmail && t.status === "ACTIVE"
     );
@@ -6845,7 +6866,6 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
     const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
-    const { loadPlatformControls } = require("./founder.js");
     const platformControls = loadPlatformControls();
     const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
       (t: any) => t.email.toLowerCase() === emailKey && t.status === "ACTIVE"
@@ -6909,7 +6929,6 @@ router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, r
   const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
   const adminControlsData = loadAdminControls();
   const userControls = (emailKey && adminControlsData.controls[emailKey]) || adminControlsData.controls[req.user!.id];
-  const { loadPlatformControls, savePlatformControls } = require("./founder.js");
   const platformControls = loadPlatformControls();
   const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
     (t: any) => t.email.toLowerCase() === emailKey && t.status === "ACTIVE"
