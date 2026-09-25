@@ -5632,6 +5632,7 @@ export default function App() {
               onSetMarketForcedFlowStep={setMarketForcedFlowStep}
               months={months}
               respectSenioritySettings={respectSenioritySettings}
+              logoText={logoText || (messes?.find(m => m.id === activeMessId)?.name) || "ABABIL MESS"}
             />
           )}
 

@@ -38,6 +38,7 @@ interface MarketLogsProps {
   onSetMarketForcedFlowStep?: (step: string | null) => void;
   months?: MessMonth[];
   respectSenioritySettings?: RespectSenioritySettings;
+  logoText?: string;
 }
 
 export default function MarketLogs({ 
@@ -53,7 +54,8 @@ export default function MarketLogs({
   marketForcedFlowStep,
   onSetMarketForcedFlowStep,
   months = [],
-  respectSenioritySettings
+  respectSenioritySettings,
+  logoText = "Ababil mess"
 }: MarketLogsProps) {
   const authToken = getAuthToken(currentUser);
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
@@ -878,6 +880,7 @@ export default function MarketLogs({
   const currentViewingMonthObj = months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId);
 
   const handlePrintDutySchedulePDF = () => {
+    const resolvedMessName = (logoText || (typeof window !== "undefined" ? localStorage.getItem("active_mess_name") : "") || "Ababil mess").trim().toUpperCase();
     const cycleName = currentViewingMonthObj?.name || "Current Cycle";
     const startDateStr = currentViewingMonthObj?.startDate ? currentViewingMonthObj.startDate.split("T")[0] : "";
     const endDateStr = currentViewingMonthObj?.endDate ? currentViewingMonthObj.endDate.split("T")[0] : "";
@@ -886,15 +889,13 @@ export default function MarketLogs({
 
     const totalMembersCount = memberDutySchedule.length;
     const totalDutiesCount = memberDutySchedule.reduce((sum, item) => sum + item.totalDutyCount, 0);
-    const totalCompletedCount = memberDutySchedule.reduce((sum, item) => sum + item.completedDates.length, 0);
-    const totalPendingCount = memberDutySchedule.reduce((sum, item) => sum + item.pendingDates.length, 0);
 
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="bn">
       <head>
         <meta charset="utf-8">
-        <title>Market Duty Schedule - ${cycleName}</title>
+        <title>${resolvedMessName} - Market Duty Schedule - ${cycleName}</title>
         <style>
           @page {
             size: A4 portrait;
@@ -948,30 +949,30 @@ export default function MarketLogs({
           .kpi-row {
             display: flex;
             justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 16px;
+            gap: 16px;
+            margin-bottom: 18px;
           }
           .kpi-box {
             flex: 1;
             background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 10px 16px;
             text-align: center;
           }
           .kpi-label {
-            font-size: 7.5pt;
-            color: #64748b;
+            font-size: 8.5pt;
+            color: #475569;
             text-transform: uppercase;
             font-weight: 700;
             letter-spacing: 0.5px;
           }
           .kpi-value {
-            font-size: 14pt;
+            font-size: 16pt;
             font-weight: 800;
             color: #0891b2;
             font-family: monospace;
-            margin-top: 2px;
+            margin-top: 3px;
           }
           table {
             width: 100%;
@@ -982,7 +983,7 @@ export default function MarketLogs({
           thead th {
             background-color: #0f172a;
             color: #ffffff;
-            padding: 7px 9px;
+            padding: 8px 10px;
             text-align: left;
             font-weight: 700;
             border: 1px solid #0f172a;
@@ -995,7 +996,7 @@ export default function MarketLogs({
             background-color: #f8fafc;
           }
           tbody td {
-            padding: 7px 9px;
+            padding: 8px 10px;
             vertical-align: middle;
             border-left: 1px solid #e2e8f0;
             border-right: 1px solid #e2e8f0;
@@ -1014,43 +1015,24 @@ export default function MarketLogs({
             display: inline-block;
             background: #f1f5f9;
             border: 1px solid #cbd5e1;
-            color: #1e293b;
-            padding: 1px 6px;
+            color: #0f172a;
+            padding: 2px 7px;
             border-radius: 4px;
             font-weight: 700;
             font-family: monospace;
             font-size: 9pt;
-            margin: 1px 2px;
+            margin: 1px 3px 2px 0;
           }
-          .date-badge.completed {
-            background: #ecfdf5;
-            border-color: #a7f3d0;
-            color: #065f46;
+          .date-summary {
+            font-size: 8pt;
+            color: #64748b;
+            margin-top: 3px;
           }
           .duty-count {
             font-weight: 800;
             font-size: 11pt;
             color: #0284c7;
             font-family: monospace;
-          }
-          .status-pill {
-            display: inline-block;
-            padding: 2px 7px;
-            border-radius: 9999px;
-            font-size: 8pt;
-            font-weight: 700;
-          }
-          .status-completed {
-            background: #dcfce7;
-            color: #166534;
-          }
-          .status-pending {
-            background: #e0f2fe;
-            color: #0369a1;
-          }
-          .status-none {
-            background: #f1f5f9;
-            color: #64748b;
           }
           .signatures {
             margin-top: 36px;
@@ -1089,56 +1071,35 @@ export default function MarketLogs({
       </head>
       <body>
         <div class="header">
-          <h1 class="mess-title">MESS ERP SYSTEM</h1>
+          <h1 class="mess-title">${resolvedMessName}</h1>
           <h2 class="report-subtitle">Standard Market & Duties Schedule (বাজার দায়িত্ব ও তারিখ তালিকা)</h2>
           <div class="cycle-badge">Cycle: ${cycleName} ${startDateStr && endDateStr ? `(${startDateStr} to ${endDateStr})` : ""}</div>
         </div>
 
         <div class="kpi-row">
           <div class="kpi-box">
-            <div class="kpi-label">Active Members</div>
-            <div class="kpi-value">${totalMembersCount}</div>
+            <div class="kpi-label">Active Members (সক্রিয় মেম্বার)</div>
+            <div class="kpi-value">${totalMembersCount} জন</div>
           </div>
           <div class="kpi-box">
-            <div class="kpi-label">Total Assigned Duties</div>
-            <div class="kpi-value">${totalDutiesCount}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Completed Markets</div>
-            <div class="kpi-value" style="color: #16a34a;">${totalCompletedCount}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Pending / Scheduled</div>
-            <div class="kpi-value" style="color: #0284c7;">${totalPendingCount}</div>
+            <div class="kpi-label">Total Assigned Markets (মোট নির্ধারিত বাজার)</div>
+            <div class="kpi-value">${totalDutiesCount} দিন</div>
           </div>
         </div>
 
         <table>
           <thead>
             <tr>
-              <th class="text-center" style="width: 32px;">#</th>
-              <th style="width: 180px;">Member Name (সদস্যের নাম)</th>
-              <th class="text-center" style="width: 90px;">Duty Count (বাজার)</th>
+              <th class="text-center" style="width: 36px;">#</th>
+              <th style="width: 220px;">Member Name (সদস্যের নাম)</th>
+              <th class="text-center" style="width: 120px;">Duty Count (মোট বাজার)</th>
               <th>Market Dates (বাজারের তারিখসমূহ)</th>
-              <th class="text-center" style="width: 110px;">Status (অবস্থা)</th>
             </tr>
           </thead>
           <tbody>
             ${memberDutySchedule.map((item, idx) => {
               const nick = item.member.nickname || item.member.name;
               const full = item.member.name !== nick ? item.member.name : "";
-              const statusClass = item.totalDutyCount === 0 
-                ? "status-none" 
-                : item.pendingDates.length === 0 
-                  ? "status-completed" 
-                  : "status-pending";
-              const statusText = item.totalDutyCount === 0
-                ? "অব্যাহতি"
-                : item.completedDates.length > 0 && item.pendingDates.length > 0
-                  ? `${item.completedDates.length} সম্পন্ন, ${item.pendingDates.length} অপেক্ষমান`
-                  : item.pendingDates.length === 0
-                    ? "সম্পূর্ণ সম্পন্ন"
-                    : "শিডিউল নির্ধারিত";
 
               return `
                 <tr>
@@ -1155,14 +1116,10 @@ export default function MarketLogs({
                       ? `<span style="color: #94a3b8; font-style: italic;">কোনো বাজার নির্ধারিত নেই</span>` 
                       : item.assignedDates.map(dStr => {
                           const dayNum = dStr.split("-")[2]?.replace(/^0/, "") || dStr;
-                          const isDone = item.completedDates.includes(dStr);
-                          return `<span class="date-badge ${isDone ? "completed" : ""}" title="${dStr} (${isDone ? "বাজার সম্পন্ন" : "অপেক্ষমান"})">${dayNum}</span>`;
+                          return `<span class="date-badge">${dayNum}</span>`;
                         }).join(" ")
                     }
-                    ${item.assignedDates.length > 0 ? `<div style="font-size: 8pt; color: #64748b; margin-top: 2px;">তারিখ: ${item.formattedDateNumbers}</div>` : ""}
-                  </td>
-                  <td class="text-center">
-                    <span class="status-pill ${statusClass}">${statusText}</span>
+                    ${item.assignedDates.length > 0 ? `<div class="date-summary">তারিখ: ${item.formattedDateNumbers}</div>` : ""}
                   </td>
                 </tr>
               `;
@@ -1184,7 +1141,7 @@ export default function MarketLogs({
         </div>
 
         <div class="footer">
-          Generated automatically on ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" })} (Dhaka Time) &bull; Official Mess Management System Report
+          Generated automatically on ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" })} (Dhaka Time) &bull; ${resolvedMessName} Official Schedule Report
         </div>
 
         <script>
