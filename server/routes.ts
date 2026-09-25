@@ -30,6 +30,7 @@ import { loadDB, saveDB, syncState,
   deleteMarketFromPostgres,
   deleteDepositFromPostgres,
   getDefaultMessRules,
+  getCleanMessData,
   deduplicateMembers,
   deduplicateDeposits,
   DB_DIR
@@ -373,10 +374,59 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   const userControls = (userEmail && adminControls[userEmail]) || (userId && adminControls[userId]);
   const requestedMess = ((req.headers["x-mess-id"] as string) || (req.query.messId as string) || "").trim();
 
+  // Check if this user is an authorized Standalone Tenant Admin
+  const { loadPlatformControls } = await import("./founder.js");
+  const platformControls = loadPlatformControls();
+  const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
+    (t: any) => t.email.toLowerCase() === userEmail && t.status === "ACTIVE"
+  );
+  const isStandaloneTenantAdmin = !!userControls?.isStandaloneTenantAdmin || !!tenantAdminEntry;
+
   let targetMessId = "default";
   let allowedMesses: string[] | null = null;
 
-  if (isUltimateAdmin) {
+  if (isStandaloneTenantAdmin) {
+    const tenantAllowed = tenantAdminEntry?.allowedMesses || userControls?.allowedMesses || [];
+    const maxQuota = tenantAdminEntry?.maxMesses || userControls?.maxAllowedMesses || 1;
+
+    // If this standalone tenant admin has no created mess yet:
+    if (tenantAllowed.length === 0) {
+      const standaloneAdminUser: any = {
+        id: userId || tenantAdminEntry?.id || `tenant-admin-${generateUUID().substring(0, 8)}`,
+        name: userName || tenantAdminEntry?.name || "Tenant Admin",
+        nickname: userNickname || (tenantAdminEntry?.name || "Admin").split(" ")[0],
+        email: userEmail,
+        phone: tenantAdminEntry?.phone || memberRef?.phone || "",
+        whatsapp: tenantAdminEntry?.phone || memberRef?.whatsapp || "",
+        bloodGroup: "O+",
+        occupation: "Mess Administrator",
+        joiningDate: new Date().toISOString().split("T")[0],
+        leavingDate: null,
+        role: UserRole.ADMIN,
+        status: MemberStatus.ACTIVE,
+        notes: "Authorized Standalone Tenant Admin",
+        photo: tokenPicture || memberRef?.photo || null,
+        isStandaloneTenantAdmin: true,
+        allowedMesses: [],
+        maxAllowedMesses: maxQuota,
+        needsMessCreation: true
+      };
+      req.user = standaloneAdminUser;
+      return next();
+    }
+
+    allowedMesses = tenantAllowed;
+    if (requestedMess && allowedMesses.includes(requestedMess)) {
+      targetMessId = requestedMess;
+    } else {
+      const saved = getUserActiveMessId(userId, userEmail);
+      if (saved && allowedMesses.includes(saved)) {
+        targetMessId = saved;
+      } else {
+        targetMessId = allowedMesses[0];
+      }
+    }
+  } else if (isUltimateAdmin) {
     targetMessId = requestedMess || getUserActiveMessId(userId, userEmail) || userHomeMessId || getActiveMessId() || "default";
   } else if (userControls && Array.isArray(userControls.allowedMesses) && userControls.allowedMesses.length > 0) {
     allowedMesses = userControls.allowedMesses;
@@ -410,7 +460,28 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       }
 
       if (!member) {
-        if (isUltimateAdmin || (allowedMesses && allowedMesses.includes(targetMessId))) {
+        if (isStandaloneTenantAdmin && allowedMesses && allowedMesses.includes(targetMessId)) {
+          // Auto-provision primary administrator in their authorized mess workspace
+          const primaryAdmin: Member = {
+            id: userId || tenantAdminEntry?.id || `admin-${targetMessId}-${generateUUID().substring(0, 8)}`,
+            name: userName || tenantAdminEntry?.name || "Mess Administrator",
+            nickname: userNickname || (userName || "Admin").split(" ")[0],
+            email: userEmail,
+            phone: tenantAdminEntry?.phone || memberRef?.phone || "01700000000",
+            whatsapp: tenantAdminEntry?.phone || memberRef?.whatsapp || "01700000000",
+            bloodGroup: "O+",
+            occupation: "Mess Administrator",
+            joiningDate: new Date().toISOString().split("T")[0],
+            leavingDate: null,
+            role: UserRole.ADMIN,
+            status: MemberStatus.ACTIVE,
+            notes: "Primary Administrator for this mess workspace",
+            photo: tokenPicture || memberRef?.photo || null,
+          };
+          db.members.push(primaryAdmin);
+          saveDB(targetMessId);
+          member = primaryAdmin;
+        } else if (isUltimateAdmin || (allowedMesses && allowedMesses.includes(targetMessId))) {
           // Auto-provision delegated admin in target mess with non-resident status
           const newMember: Member = {
             id: userId,
@@ -503,6 +574,12 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         if (actingRole && Object.values(UserRole).includes(actingRole as any)) {
           member = { ...member, role: actingRole as UserRole };
         }
+      }
+
+      if (isStandaloneTenantAdmin) {
+        (member as any).isStandaloneTenantAdmin = true;
+        (member as any).allowedMesses = allowedMesses || [];
+        (member as any).maxAllowedMesses = tenantAdminEntry?.maxMesses || userControls?.maxAllowedMesses || 1;
       }
 
       setUserActiveMessId(member.id, member.email, targetMessId);
@@ -678,6 +755,53 @@ router.post("/auth/login", (req: Request, res: Response): void => {
   const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
   if (!lookup) {
+    const { loadPlatformControls } = require("./founder.js");
+    const platformControls = loadPlatformControls();
+    const tenantAdmin = (platformControls.authorizedTenantAdmins || []).find(
+      (t: any) => t.email.toLowerCase() === normalizedEmail && t.status === "ACTIVE"
+    );
+
+    if (tenantAdmin) {
+      const creds = loadCredentials();
+      const storedPassword = creds[tenantAdmin.id] || creds[normalizedEmail];
+      // If password matches or if no password was set yet, accept and set password
+      if (!storedPassword || storedPassword === password) {
+        if (!storedPassword) {
+          creds[normalizedEmail] = password;
+          creds[tenantAdmin.id] = password;
+          saveCredentials();
+        }
+        recordSuccessfulLogin(email, tenantAdmin.id, clientIp, userAgent);
+        const adminMember: any = {
+          id: tenantAdmin.id,
+          name: tenantAdmin.name || "Tenant Admin",
+          nickname: (tenantAdmin.name || "Admin").split(" ")[0],
+          email: normalizedEmail,
+          phone: tenantAdmin.phone || "",
+          whatsapp: tenantAdmin.phone || "",
+          bloodGroup: "O+",
+          occupation: "Mess Administrator",
+          joiningDate: new Date().toISOString().split("T")[0],
+          leavingDate: null,
+          role: UserRole.ADMIN,
+          status: MemberStatus.ACTIVE,
+          notes: "Authorized Standalone Tenant Admin",
+          photo: null,
+          isStandaloneTenantAdmin: true,
+          allowedMesses: tenantAdmin.allowedMesses || [],
+          maxAllowedMesses: tenantAdmin.maxMesses || 1,
+          needsMessCreation: (!tenantAdmin.allowedMesses || tenantAdmin.allowedMesses.length === 0)
+        };
+        const activeMess = tenantAdmin.allowedMesses && tenantAdmin.allowedMesses.length > 0 ? tenantAdmin.allowedMesses[0] : null;
+        if (activeMess) {
+          setUserActiveMessId(tenantAdmin.id, normalizedEmail, activeMess);
+        }
+        const token = generateSessionToken(tenantAdmin.id);
+        res.json({ token, user: adminMember, activeMessId: activeMess });
+        return;
+      }
+    }
+
     recordFailedLogin(email, clientIp, userAgent);
     res.status(401).json({ error: "Invalid email or password" });
     return;
@@ -723,6 +847,17 @@ router.post("/auth/login", (req: Request, res: Response): void => {
         messId
       }
     );
+    const { loadPlatformControls: getPlatformControls } = require("./founder.js");
+    const platformControlsObj = getPlatformControls();
+    const matchedTenantAdmin = (platformControlsObj.authorizedTenantAdmins || []).find(
+      (t: any) => t.email.toLowerCase() === normalizedEmail && t.status === "ACTIVE"
+    );
+    if (matchedTenantAdmin) {
+      (member as any).isStandaloneTenantAdmin = true;
+      (member as any).allowedMesses = matchedTenantAdmin.allowedMesses || [];
+      (member as any).maxAllowedMesses = matchedTenantAdmin.maxMesses || 1;
+    }
+
     const token = generateSessionToken(member.id);
     res.json({ token, user: member, activeMessId: messId });
   } else {
@@ -1595,7 +1730,7 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
 });
 
 // Archive member / Soft Delete (Admin & Super User only)
-router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canSuspendMembers")) {
     res.status(403).json({ error: "Access denied. You do not have permission to suspend or archive members." });
     return;
@@ -1620,12 +1755,22 @@ router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSE
   db.members[index] = original;
   saveDB();
 
+  // Instant PostgreSQL table synchronization
+  try {
+    await drizzleDb.update(members).set({
+      status: MemberStatus.ARCHIVED,
+      leavingDate: original.leavingDate
+    }).where(eq(members.id, id));
+  } catch (err) {
+    console.warn("Direct Drizzle sync fallback in /members/:id/archive:", err);
+  }
+
   logAudit(req.user!.id, req.user!.nickname, "ARCHIVE_MEMBER", "ACTIVE/SUSPENDED", "ARCHIVED", `Archived member ${original.nickname}`);
   res.json({ success: true, member: original });
 });
 
 // Restore from Archive
-router.post("/members/:id/restore", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/members/:id/restore", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const isSelf = req.user!.id === id;
   const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER;
@@ -1659,6 +1804,16 @@ router.post("/members/:id/restore", authMiddleware, (req: AuthenticatedRequest, 
   original.leavingDate = null;
   db.members[index] = original;
   saveDB();
+
+  // Instant PostgreSQL table synchronization
+  try {
+    await drizzleDb.update(members).set({
+      status: MemberStatus.ACTIVE,
+      leavingDate: null
+    }).where(eq(members.id, id));
+  } catch (err) {
+    console.warn("Direct Drizzle sync fallback in /members/:id/restore:", err);
+  }
 
   logAudit(req.user!.id, req.user!.nickname, "RESTORE_MEMBER", "ARCHIVED", "ACTIVE", `Restored member ${original.nickname}`);
   res.json({ success: true, member: original });
@@ -6524,7 +6679,7 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
 // ---------------------------------------------------------
 const ADMIN_CONTROLS_FILE = path.join(DB_DIR, "admin_controls.json");
 
-function loadAdminControls() {
+export function loadAdminControls() {
   const defaultControls = { controls: {} };
   try {
     if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
@@ -6542,7 +6697,7 @@ function loadAdminControls() {
   return defaultControls;
 }
 
-function saveAdminControls(data: any) {
+export function saveAdminControls(data: any) {
   try {
     writeAndPersistFile("admin_controls.json", JSON.stringify(data, null, 2));
   } catch (e) {
@@ -6690,7 +6845,17 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
     const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
-    if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
+    const { loadPlatformControls } = require("./founder.js");
+    const platformControls = loadPlatformControls();
+    const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
+      (t: any) => t.email.toLowerCase() === emailKey && t.status === "ACTIVE"
+    );
+    const isStandaloneTenant = !!userControls?.isStandaloneTenantAdmin || !!tenantAdminEntry;
+
+    if (isStandaloneTenant) {
+      const allowed = tenantAdminEntry?.allowedMesses || userControls?.allowedMesses || [];
+      messes = messes.filter((m: any) => allowed.includes(m.id));
+    } else if (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0) {
       messes = messes.filter((m: any) => userControls.allowedMesses.includes(m.id));
     } else {
       const homeMessId = (req.user as any).messId || "default";
@@ -6739,9 +6904,30 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
   });
 });
 
-router.post("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
-  const canCreate = isUltimateAdmin || (req.user!.role === UserRole.ADMIN && checkAdminPermission(req, "canManageMessBranches"));
+  const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+  const adminControlsData = loadAdminControls();
+  const userControls = (emailKey && adminControlsData.controls[emailKey]) || adminControlsData.controls[req.user!.id];
+  const { loadPlatformControls, savePlatformControls } = require("./founder.js");
+  const platformControls = loadPlatformControls();
+  const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
+    (t: any) => t.email.toLowerCase() === emailKey && t.status === "ACTIVE"
+  );
+  const isStandaloneTenant = !!userControls?.isStandaloneTenantAdmin || !!tenantAdminEntry;
+
+  let canCreate = isUltimateAdmin || (req.user!.role === UserRole.ADMIN && checkAdminPermission(req, "canManageMessBranches"));
+  
+  if (isStandaloneTenant) {
+    const maxQuota = tenantAdminEntry?.maxMesses || userControls?.maxAllowedMesses || 1;
+    const currentMessesCount = (tenantAdminEntry?.allowedMesses || userControls?.allowedMesses || []).length;
+    if (currentMessesCount >= maxQuota) {
+      res.status(403).json({ error: `আপনার অনুমোদিত কোটা (${maxQuota} টি মেস) পূর্ণ হয়ে গেছে। আরও মেস তৈরি করতে প্ল্যাটফর্ম ওনারের সাথে যোগাযোগ করুন।` });
+      return;
+    }
+    canCreate = true;
+  }
+
   if (!canCreate) {
     res.status(403).json({ error: "Only the Platform Owner or authorized Admins with branch management permission can create new messes." });
     return;
@@ -6759,21 +6945,16 @@ router.post("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Re
   data.messes.push({ id, name: name.trim(), messCode: uniqueCode });
   saveMesses(data);
 
-  // If created by a branch admin, auto-add to their allowedMesses
-  if (!isUltimateAdmin) {
-    try {
-      const controlsData = loadAdminControls();
-      const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
-      const userControls = (emailKey && controlsData.controls[emailKey]) || controlsData.controls[req.user!.id];
-      if (userControls) {
-        if (!userControls.allowedMesses) userControls.allowedMesses = [];
-        if (!userControls.allowedMesses.includes(id)) userControls.allowedMesses.push(id);
-        saveAdminControls(controlsData);
-      }
-    } catch (e) {
-      console.error("Failed to auto-assign new mess to admin:", e);
-    }
-  }
+  // Initialize clean, completely isolated database for this newly created mess
+  const cleanData = getCleanMessData(id, {
+    id: req.user!.id,
+    name: req.user!.name,
+    nickname: req.user!.nickname,
+    email: req.user!.email,
+    phone: req.user!.phone,
+    photo: req.user!.photo
+  });
+  writeAndPersistFile(`database_backup_${id}.json`, JSON.stringify(cleanData, null, 2));
 
   // Initialize initial settings file for the newly created mess
   const initialSettings = {
@@ -6788,14 +6969,30 @@ router.post("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Re
     allowFutureMealPlanner: true,
     allowPreviousMealPlanner: true
   };
-  try {
-    writeAndPersistFile(`settings_${id}.json`, JSON.stringify(initialSettings, null, 2));
-  } catch (e) {
-    console.error(e);
+  writeAndPersistFile(`settings_${id}.json`, JSON.stringify(initialSettings, null, 2));
+
+  // If created by a standalone tenant admin or delegated branch admin, auto-add to allowedMesses
+  if (!isUltimateAdmin) {
+    try {
+      if (userControls) {
+        if (!userControls.allowedMesses) userControls.allowedMesses = [];
+        if (!userControls.allowedMesses.includes(id)) userControls.allowedMesses.push(id);
+        saveAdminControls(adminControlsData);
+      }
+      if (tenantAdminEntry) {
+        if (!tenantAdminEntry.allowedMesses) tenantAdminEntry.allowedMesses = [];
+        if (!tenantAdminEntry.allowedMesses.includes(id)) tenantAdminEntry.allowedMesses.push(id);
+        savePlatformControls(platformControls);
+      }
+    } catch (e) {
+      console.error("Failed to auto-assign new mess to admin:", e);
+    }
   }
 
-  logAudit(req.user!.id, req.user!.nickname, "CREATE_MESS", "None", name, `Created new managed mess: ${name}`);
-  res.json({ success: true, messes: data.messes, newMessId: id });
+  setUserActiveMessId(req.user!.id, req.user!.email, id);
+
+  logAudit(req.user!.id, req.user!.nickname, "CREATE_MESS", "None", name, `Created new managed mess: ${name} (ID: ${id})`);
+  res.json({ success: true, messes: data.messes, newMessId: id, activeMessId: id });
 });
 
 router.put("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {

@@ -15,12 +15,13 @@ import {
   DB_DIR, 
   generateUUID,
   loadCredentials,
+  saveCredentials,
   lastSyncTime,
   lastWriteTime,
   syncState,
   pendingSyncPromises
 } from "./db.js";
-import { authMiddleware } from "./routes.js";
+import { authMiddleware, loadMesses, loadAdminControls, saveAdminControls } from "./routes.js";
 import { getSecurityDashboardData } from "./securityService.js";
 import { 
   members as membersTable,
@@ -64,6 +65,9 @@ export function loadPlatformControls() {
           lastResetDate: new Date().toISOString().split("T")[0]
         };
       }
+      if (cachedPlatformControls && !cachedPlatformControls.authorizedTenantAdmins) {
+        cachedPlatformControls.authorizedTenantAdmins = [];
+      }
       return cachedPlatformControls;
     } catch (e) {
       console.error("Error reading platform controls file:", e);
@@ -78,6 +82,7 @@ export function loadPlatformControls() {
         role: "Primary Founder"
       }
     ],
+    authorizedTenantAdmins: [],
     platformStatus: "Operational",
     maintenanceMode: "Normal", // "Normal" | "Read Only" | "Full Lock"
     maintenanceReason: "Regular scheduled system upgrade and cloud optimization.",
@@ -726,6 +731,202 @@ router.get("/security-dashboard", platformOwnerMiddleware, (req: AuthenticatedRe
   } catch (err: any) {
     res.status(500).json({ error: "Failed to retrieve security dashboard: " + err.message });
   }
+});
+
+// ---------------------------------------------------------
+// 9. AUTHORIZED TENANT ADMINS MANAGEMENT (Platform Owner Only)
+// ---------------------------------------------------------
+
+// List all authorized tenant admins
+router.get("/tenant-admins", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const controls = loadPlatformControls();
+  const tenantAdmins = controls.authorizedTenantAdmins || [];
+  const allMesses = loadMesses().messes || [];
+
+  const enriched = tenantAdmins.map((t: any) => {
+    const messesList = (t.allowedMesses || []).map((mId: string) => {
+      const found = allMesses.find((m: any) => m.id === mId);
+      return found ? { id: mId, name: found.name, messCode: found.messCode } : { id: mId, name: mId };
+    });
+    return {
+      ...t,
+      createdMesses: messesList,
+      createdMessesCount: messesList.length
+    };
+  });
+
+  res.json({ tenantAdmins: enriched });
+});
+
+// Authorize new Tenant Admin
+router.post("/tenant-admins", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const { email, name, phone, maxMesses, notes, initialPassword } = req.body;
+  if (!email || typeof email !== "string" || !email.includes("@")) {
+    res.status(400).json({ error: "Valid email address is required" });
+    return;
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const controls = loadPlatformControls();
+  if (!controls.authorizedTenantAdmins) {
+    controls.authorizedTenantAdmins = [];
+  }
+
+  const exists = controls.authorizedTenantAdmins.find(
+    (t: any) => t.email.toLowerCase() === normalizedEmail
+  );
+  if (exists) {
+    res.status(400).json({ error: `Tenant Admin with email '${normalizedEmail}' is already authorized.` });
+    return;
+  }
+
+  const newAdmin = {
+    id: "tenant-admin-" + generateUUID().substring(0, 10),
+    email: normalizedEmail,
+    name: (name || "").trim() || "Tenant Admin",
+    phone: (phone || "").trim(),
+    maxMesses: Math.max(1, parseInt(maxMesses, 10) || 1),
+    status: "ACTIVE",
+    allowedMesses: [],
+    createdAt: new Date().toISOString(),
+    notes: (notes || "").trim()
+  };
+
+  controls.authorizedTenantAdmins.unshift(newAdmin);
+  savePlatformControls(controls);
+
+  // If initial password was supplied, store it into credentials.json
+  if (initialPassword && typeof initialPassword === "string" && initialPassword.trim().length >= 6) {
+    try {
+      const creds = loadCredentials();
+      creds[normalizedEmail] = initialPassword.trim();
+      creds[newAdmin.id] = initialPassword.trim();
+      saveCredentials();
+    } catch (credErr) {
+      console.warn("Could not save initial password for tenant admin:", credErr);
+    }
+  }
+
+  // Sync to admin_controls.json so permission checks recognize this admin
+  try {
+    const adminControlsData = loadAdminControls();
+    adminControlsData.controls[normalizedEmail] = {
+      allowedMesses: [],
+      canEditBills: true,
+      canManageMeals: true,
+      canAddMarkets: true,
+      canSuspendMembers: true,
+      canEditProfiles: true,
+      canEditCycles: true,
+      canManageMessIdentity: true,
+      canManageMessBranches: true,
+      maxAllowedMesses: newAdmin.maxMesses,
+      isStandaloneTenantAdmin: true
+    };
+    saveAdminControls(adminControlsData);
+  } catch (err) {
+    console.warn("Failed to sync admin_controls for new tenant admin:", err);
+  }
+
+  logFounderAction(
+    req.user!.id,
+    req.user!.email,
+    "AUTHORIZE_TENANT_ADMIN",
+    "FOUNDER",
+    `Authorized new Tenant Admin: ${normalizedEmail} with quota of ${newAdmin.maxMesses} mess(es).`,
+    req.ip
+  );
+
+  res.json({ success: true, tenantAdmin: newAdmin });
+});
+
+// Update Tenant Admin (quota, notes, status, details)
+router.put("/tenant-admins/:id", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, phone, maxMesses, notes, status } = req.body;
+  const controls = loadPlatformControls();
+  if (!controls.authorizedTenantAdmins) {
+    controls.authorizedTenantAdmins = [];
+  }
+
+  const index = controls.authorizedTenantAdmins.findIndex(
+    (t: any) => t.id === id || t.email.toLowerCase() === id.toLowerCase()
+  );
+  if (index === -1) {
+    res.status(404).json({ error: "Tenant Admin not found" });
+    return;
+  }
+
+  const target = controls.authorizedTenantAdmins[index];
+  if (name !== undefined) target.name = name.trim();
+  if (phone !== undefined) target.phone = phone.trim();
+  if (maxMesses !== undefined) target.maxMesses = Math.max(1, parseInt(maxMesses, 10) || 1);
+  if (notes !== undefined) target.notes = notes.trim();
+  if (status !== undefined && ["ACTIVE", "SUSPENDED"].includes(status)) target.status = status;
+
+  controls.authorizedTenantAdmins[index] = target;
+  savePlatformControls(controls);
+
+  // Sync to admin_controls.json
+  try {
+    const adminControlsData = loadAdminControls();
+    const emailKey = target.email.toLowerCase();
+    if (adminControlsData.controls[emailKey]) {
+      adminControlsData.controls[emailKey].maxAllowedMesses = target.maxMesses;
+      if (target.status === "SUSPENDED") {
+        adminControlsData.controls[emailKey].isSuspended = true;
+      } else {
+        delete adminControlsData.controls[emailKey].isSuspended;
+      }
+      saveAdminControls(adminControlsData);
+    }
+  } catch (err) {}
+
+  logFounderAction(
+    req.user!.id,
+    req.user!.email,
+    "UPDATE_TENANT_ADMIN",
+    "FOUNDER",
+    `Updated Tenant Admin: ${target.email} (Status: ${target.status}, Max Messes: ${target.maxMesses})`,
+    req.ip
+  );
+
+  res.json({ success: true, tenantAdmin: target });
+});
+
+// Revoke Tenant Admin authorization
+router.delete("/tenant-admins/:id", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const controls = loadPlatformControls();
+  if (!controls.authorizedTenantAdmins) controls.authorizedTenantAdmins = [];
+
+  const index = controls.authorizedTenantAdmins.findIndex(
+    (t: any) => t.id === id || t.email.toLowerCase() === id.toLowerCase()
+  );
+  if (index === -1) {
+    res.status(404).json({ error: "Tenant Admin not found" });
+    return;
+  }
+
+  const removed = controls.authorizedTenantAdmins.splice(index, 1)[0];
+  savePlatformControls(controls);
+
+  // Revoke from admin_controls.json
+  try {
+    const adminControlsData = loadAdminControls();
+    delete adminControlsData.controls[removed.email.toLowerCase()];
+    saveAdminControls(adminControlsData);
+  } catch (err) {}
+
+  logFounderAction(
+    req.user!.id,
+    req.user!.email,
+    "REVOKE_TENANT_ADMIN",
+    "FOUNDER",
+    `Revoked Tenant Admin: ${removed.email}`,
+    req.ip
+  );
+
+  res.json({ success: true, message: `Tenant Admin ${removed.email} revoked successfully.` });
 });
 
 export { router as founderRouter };

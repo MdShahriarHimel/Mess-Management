@@ -55,6 +55,10 @@ export function MessSwitcher({
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   const isUltimateAdmin = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isStandaloneTenant = !!(currentUser as any)?.isStandaloneTenantAdmin;
+  const canCreateNewMess = isUltimateAdmin || isStandaloneTenant;
+  const maxQuota = (currentUser as any)?.maxAllowedMesses || 1;
+  const canCreateWithinQuota = isUltimateAdmin || (isStandaloneTenant && messes.length < maxQuota);
   const activeMess = messes.find(m => m.id === activeMessId) || (messes.length > 0 ? messes[0] : { id: activeMessId, name: "Active Mess" });
 
   React.useEffect(() => {
@@ -262,11 +266,17 @@ export function MessSwitcher({
 
             {/* Bottom Admin Tools */}
             <div className="mt-3 pt-3 border-t border-slate-800/40 space-y-2">
-              {isUltimateAdmin && (
+              {canCreateNewMess && (
                 <>
                   {!showCreateForm ? (
                     <button
-                      onClick={() => setShowCreateForm(true)}
+                      onClick={() => {
+                        if (!canCreateWithinQuota) {
+                          alert(`আপনার অনুমোদিত কোটা (${maxQuota} টি মেস) পূর্ণ হয়ে গেছে। আরও মেস তৈরি করতে প্ল্যাটফর্ম ওনারের সাথে যোগাযোগ করুন।`);
+                          return;
+                        }
+                        setShowCreateForm(true);
+                      }}
                       className={`w-full py-2 px-3 rounded-xl border border-dashed flex items-center justify-center gap-1.5 text-xs font-bold cursor-pointer transition-all ${
                         isDarkMode 
                           ? "border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10" 
@@ -274,7 +284,10 @@ export function MessSwitcher({
                       }`}
                     >
                       <Plus size={14} />
-                      <span>নতুন মেস তৈরি করুন (Create New Mess)</span>
+                      <span>
+                        নতুন মেস তৈরি করুন
+                        {isStandaloneTenant && ` (কোটা: ${messes.length}/${maxQuota})`}
+                      </span>
                     </button>
                   ) : (
                     <form onSubmit={handleCreate} className="p-2.5 rounded-xl border bg-slate-900/30 border-cyan-500/20 space-y-2">

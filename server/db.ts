@@ -595,7 +595,7 @@ export async function initializeDbCache() {
   // Restore ONLY immediate startup configuration files from PostgreSQL to local disk
   try {
     const immediateFiles = await db.select().from(persistentFilesTable).where(
-      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%'`
+      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'database_backup_%'`
     );
     console.log(`[Persistent Files Startup] Restoring ${immediateFiles.length} immediate startup config files...`);
     for (const file of immediateFiles) {
@@ -852,6 +852,18 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
   const startTime = Date.now();
   console.log(`[TRACE D - doActualSync()] started for mess: ${targetMessId}`);
   try {
+    // CRITICAL MULTI-TENANT ISOLATION SAFEGUARD:
+    // If this is a separate tenant mess branch (not "default"), persist its state strictly to its own
+    // dedicated database_backup_${targetMessId}.json file (which is also stored permanently in PostgreSQL
+    // via persistent_files table). DO NOT insert into the unpartitioned flat tables, as that would pollute
+    // or overwrite the main mess's database!
+    if (targetMessId !== "default") {
+      const tenantFilename = `database_backup_${targetMessId}.json`;
+      writeAndPersistFile(tenantFilename, JSON.stringify(cache));
+      console.log(`[TRACE D - doActualSync()] Persisted tenant mess ${targetMessId} safely and completely to ${tenantFilename} (elapsed: ${Date.now() - startTime} ms)`);
+      return;
+    }
+
     if (cache.members.length > 0) {
       for (const item of cache.members) {
         const mapped = {
@@ -1228,9 +1240,23 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     }
 
     if (!target) {
-      target = getInitialSeedData();
+      if (messId === "default") {
+        target = getInitialSeedData();
+      } else {
+        target = getCleanMessData(messId);
+      }
+      dbCaches.set(messId, target);
+      try {
+        const backupFilename = messId === "default"
+          ? "database_backup.json"
+          : `database_backup_${messId}.json`;
+        writeAndPersistFile(backupFilename, JSON.stringify(target, null, 2));
+      } catch (e) {
+        console.error("Error writing initial backup file for mess " + messId, e);
+      }
+    } else {
+      dbCaches.set(messId, target);
     }
-    dbCaches.set(messId, target);
   }
 
   if (target && !target.messRules) {
@@ -1253,7 +1279,9 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     target.duties = deduplicateDuties(target.duties);
   }
 
-  dbCache = target;
+  if (messId === "default") {
+    dbCache = target;
+  }
 
   // Helper to parse dates in Asia/Dhaka (+06:00) timezone
   const parseDhakaDate = (dateStr: string): Date => {
@@ -1722,10 +1750,82 @@ function getInitialSeedData(): DatabaseSchema {
   };
 }
 
+// Generate an isolated, pristine clean database schema for newly created messes
+export function getCleanMessData(
+  messId: string, 
+  adminUser?: { id: string; name?: string; nickname?: string; email: string; phone?: string; photo?: string | null }
+): DatabaseSchema {
+  const currentYear = new Date().getFullYear();
+  const currentMonthIdx = new Date().getMonth();
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const currentMonthName = `${monthNames[currentMonthIdx]} ${currentYear}`;
+  
+  const startDateStr = new Date(currentYear, currentMonthIdx, 1, 18, 0, 0).toISOString().split(".")[0];
+  const endDateStr = new Date(currentYear, currentMonthIdx + 1, 1, 14, 0, 0).toISOString().split(".")[0];
+  const monthId = `month-${messId}-${currentYear}${String(currentMonthIdx + 1).padStart(2, "0")}`;
+
+  const initialMonth: MessMonth = {
+    id: monthId,
+    name: currentMonthName,
+    startDate: startDateStr,
+    endDate: endDateStr,
+    isLocked: false,
+    gracePeriodEnabled: true
+  };
+
+  const membersList: Member[] = [];
+  if (adminUser && adminUser.email) {
+    const adminId = adminUser.id || `admin-${messId}-${generateUUID().substring(0, 8)}`;
+    membersList.push({
+      id: adminId,
+      name: adminUser.name || "Mess Administrator",
+      nickname: adminUser.nickname || (adminUser.name || "Admin").split(" ")[0],
+      email: adminUser.email.toLowerCase(),
+      phone: adminUser.phone || "01700000000",
+      whatsapp: adminUser.phone || "01700000000",
+      bloodGroup: "O+",
+      occupation: "Hostel Administrator",
+      joiningDate: new Date().toISOString().split("T")[0],
+      leavingDate: null,
+      role: UserRole.ADMIN,
+      status: MemberStatus.ACTIVE,
+      notes: "Primary Administrator for this mess workspace.",
+      photo: adminUser.photo || null
+    });
+  }
+
+  return {
+    members: membersList,
+    months: [initialMonth],
+    meals: [],
+    foodMenus: [],
+    marketEntries: [],
+    deposits: [],
+    bills: [],
+    duties: [],
+    managerHoldings: [],
+    managerRatings: [],
+    notices: [],
+    auditLogs: [{
+      id: generateUUID(),
+      userId: adminUser?.id || "system",
+      userName: adminUser?.nickname || "System",
+      action: "INIT_MESS",
+      oldValue: "None",
+      newValue: `Independent workspace initialized for mess ${messId} with month cycle ${currentMonthName}.`,
+      timestamp: new Date().toISOString(),
+      reason: "Initial isolated mess tenant creation",
+      messId: messId
+    }],
+    mealRequests: [],
+    messRules: getDefaultMessRules(messId)
+  };
+}
+
 export function getDefaultMessRules(messId: string = "default"): MessRule[] {
   return [
     {
-      id: "rule-mess-1",
+      id: `rule-${messId}-1`,
       messId,
       type: "MESS",
       title: "Meal Turn On/Off Schedule & Deadlines",
@@ -1743,7 +1843,7 @@ export function getDefaultMessRules(messId: string = "default"): MessRule[] {
       agreedMembers: []
     },
     {
-      id: "rule-mess-2",
+      id: `rule-${messId}-2`,
       messId,
       type: "MESS",
       title: "Monthly Deposit & Utility Deadline",
@@ -1761,7 +1861,7 @@ export function getDefaultMessRules(messId: string = "default"): MessRule[] {
       agreedMembers: []
     },
     {
-      id: "rule-mess-3",
+      id: `rule-${messId}-3`,
       messId,
       type: "MESS",
       title: "Market Duty Schedule & Fresh Purchasing",
@@ -1779,7 +1879,7 @@ export function getDefaultMessRules(messId: string = "default"): MessRule[] {
       agreedMembers: []
     },
     {
-      id: "rule-mess-4",
+      id: `rule-${messId}-4`,
       messId,
       type: "MESS",
       title: "Night Gate Hours & Noise Level Regulation",
@@ -1797,7 +1897,7 @@ export function getDefaultMessRules(messId: string = "default"): MessRule[] {
       agreedMembers: []
     },
     {
-      id: "rule-mess-5",
+      id: `rule-${messId}-5`,
       messId,
       type: "MESS",
       title: "Guest & Overnight Stay Policy",
@@ -1815,7 +1915,7 @@ export function getDefaultMessRules(messId: string = "default"): MessRule[] {
       agreedMembers: []
     },
     {
-      id: "rule-mess-6",
+      id: `rule-${messId}-6`,
       messId,
       type: "MESS",
       title: "Dining Table & Sink Hygiene",
@@ -1833,7 +1933,7 @@ export function getDefaultMessRules(messId: string = "default"): MessRule[] {
       agreedMembers: []
     },
     {
-      id: "rule-mess-7",
+      id: `rule-${messId}-7`,
       messId,
       type: "MESS",
       title: "Gas Stove, Kitchen & Fire Safety",

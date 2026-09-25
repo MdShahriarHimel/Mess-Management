@@ -37,6 +37,7 @@ import { CreditAndPermissions } from "./components/CreditAndPermissions.tsx";
 import { UnifiedSettingsDashboard } from "./components/UnifiedSettingsDashboard.tsx";
 import { BackgroundAudioPlayer } from "./components/BackgroundAudioPlayer.tsx";
 import FounderConsole from "./components/FounderConsole.tsx";
+import { TenantAdminOnboarding } from "./components/TenantAdminOnboarding.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
 import { deduplicateMembersList, findMemberByUniqueKey, sortMembersAlphabetically } from "./utils/memberUtils.ts";
@@ -5537,7 +5538,20 @@ export default function App() {
             </div>
           )}
           
-          {activeTab === "dashboard" && (
+          {currentUser && (currentUser as any)?.isStandaloneTenantAdmin && (messes.length === 0 || (currentUser as any)?.needsMessCreation) ? (
+            <TenantAdminOnboarding
+              currentUser={currentUser as any}
+              onCreateMess={async (name: string) => {
+                await handleCreateMess(name);
+                if (currentUser) {
+                  (currentUser as any).needsMessCreation = false;
+                }
+              }}
+              isDarkMode={activeIsDarkMode}
+            />
+          ) : (
+            <>
+              {activeTab === "dashboard" && (
             <Dashboard 
               currentUser={currentUser}
               currentMonthId={currentMonthId}
@@ -5835,15 +5849,17 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === "founder-console" && isPlatformOwner && (
-            <div className="space-y-6 animate-fadeIn" id="founder-console-view-wrapper">
-              <FounderConsole 
-                currentUser={currentUser!}
-                isDarkMode={activeIsDarkMode}
-                t={t}
-                onRefreshPlatformStatus={fetchPlatformStatus}
-              />
-            </div>
+              {activeTab === "founder-console" && isPlatformOwner && (
+                <div className="space-y-6 animate-fadeIn" id="founder-console-view-wrapper">
+                  <FounderConsole 
+                    currentUser={currentUser!}
+                    isDarkMode={activeIsDarkMode}
+                    t={t}
+                    onRefreshPlatformStatus={fetchPlatformStatus}
+                  />
+                </div>
+              )}
+            </>
           )}
 
         </div>

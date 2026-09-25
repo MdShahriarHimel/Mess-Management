@@ -31,8 +31,15 @@ import {
   X,
   HelpCircle,
   FileText,
-  Key
-, Download, Upload} from "lucide-react";
+  Key,
+  Building,
+  Edit3,
+  UserCheck,
+  UserX,
+  ExternalLink,
+  Download, 
+  Upload
+} from "lucide-react";
 import { Member } from "../types.js";
 
 interface FounderConsoleProps {
@@ -44,7 +51,7 @@ interface FounderConsoleProps {
 
 export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPlatformStatus }: FounderConsoleProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "logs" | "backup"
+    "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "tenantAdmins" | "logs" | "backup"
   >("dashboard");
 
   const defaultControls = {
@@ -121,6 +128,28 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
   const [transferConfirm, setTransferConfirm] = useState(false);
   const [verifyPassword, setVerifyPassword] = useState("");
   const [verifyPasscode, setVerifyPasscode] = useState("");
+
+  // Authorized Tenant Admins state
+  const [tenantAdmins, setTenantAdmins] = useState<any[]>([]);
+  const [tenantAdminsLoading, setTenantAdminsLoading] = useState(false);
+  const [tenantSearch, setTenantSearch] = useState("");
+  const [tenantStatusFilter, setTenantStatusFilter] = useState<"ALL" | "ACTIVE" | "SUSPENDED">("ALL");
+
+  // New Tenant Admin Form
+  const [newTenantEmail, setNewTenantEmail] = useState("");
+  const [newTenantName, setNewTenantName] = useState("");
+  const [newTenantPhone, setNewTenantPhone] = useState("");
+  const [newTenantMaxMesses, setNewTenantMaxMesses] = useState<number>(1);
+  const [newTenantPassword, setNewTenantPassword] = useState("");
+  const [newTenantNotes, setNewTenantNotes] = useState("");
+  const [addingTenant, setAddingTenant] = useState(false);
+
+  // Edit Tenant Admin Modal state
+  const [editingTenant, setEditingTenant] = useState<any | null>(null);
+  const [editMaxMesses, setEditMaxMesses] = useState<number>(1);
+  const [editNotes, setEditNotes] = useState("");
+  const [editStatus, setEditStatus] = useState<"ACTIVE" | "SUSPENDED">("ACTIVE");
+  const [savingEditTenant, setSavingEditTenant] = useState(false);
 
   // General Notification Banner within console
   const [banner, setBanner] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -315,10 +344,114 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       fetchGeminiStatus();
     } else if (activeSubTab === "analytics" && !analytics) {
       fetchPlatformAnalytics();
+    } else if (activeSubTab === "tenantAdmins") {
+      fetchTenantAdmins();
     } else if (activeSubTab === "logs") {
       fetchAuditLogs();
     }
   }, [activeSubTab]);
+
+  // Authorized Tenant Admins Operations
+  const fetchTenantAdmins = async () => {
+    setTenantAdminsLoading(true);
+    try {
+      const res = await fetch("/api/founder/tenant-admins", { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setTenantAdmins(data.tenantAdmins || []);
+      } else {
+        showBanner("Failed to retrieve authorized tenant admins list.", "error");
+      }
+    } catch (e) {
+      showBanner("Failed to fetch tenant admins API.", "error");
+    } finally {
+      setTenantAdminsLoading(false);
+    }
+  };
+
+  const handleAddTenantAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTenantEmail || !newTenantEmail.includes("@")) {
+      showBanner("Please specify a valid email address.", "error");
+      return;
+    }
+    setAddingTenant(true);
+    try {
+      const res = await fetch("/api/founder/tenant-admins", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          email: newTenantEmail.trim().toLowerCase(),
+          name: newTenantName.trim(),
+          phone: newTenantPhone.trim(),
+          maxMesses: Math.max(1, Number(newTenantMaxMesses) || 1),
+          initialPassword: newTenantPassword.trim(),
+          notes: newTenantNotes.trim()
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showBanner(`Tenant Admin ${newTenantEmail} successfully authorized with quota of ${newTenantMaxMesses} mess(es)!`, "success");
+        setNewTenantEmail("");
+        setNewTenantName("");
+        setNewTenantPhone("");
+        setNewTenantMaxMesses(1);
+        setNewTenantPassword("");
+        setNewTenantNotes("");
+        fetchTenantAdmins();
+      } else {
+        showBanner(data.error || "Failed to authorize tenant admin.", "error");
+      }
+    } catch (err) {
+      showBanner("Network error authorizing tenant admin.", "error");
+    } finally {
+      setAddingTenant(false);
+    }
+  };
+
+  const handleUpdateTenantAdmin = async (id: string, updates: any) => {
+    setSavingEditTenant(true);
+    try {
+      const res = await fetch(`/api/founder/tenant-admins/${id}`, {
+        method: "PUT",
+        headers: getHeaders(),
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showBanner("Tenant Admin configurations updated successfully!", "success");
+        setEditingTenant(null);
+        fetchTenantAdmins();
+      } else {
+        showBanner(data.error || "Failed to update tenant admin.", "error");
+      }
+    } catch (err) {
+      showBanner("Network error updating tenant admin.", "error");
+    } finally {
+      setSavingEditTenant(false);
+    }
+  };
+
+  const handleRevokeTenantAdmin = async (id: string, email: string) => {
+    if (!confirm(`Are you sure you want to revoke authorization for tenant admin ${email}? They will immediately lose access to manage messes.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/founder/tenant-admins/${id}`, {
+        method: "DELETE",
+        headers: getHeaders()
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showBanner(`Tenant Admin ${email} revoked successfully.`, "success");
+        fetchTenantAdmins();
+      } else {
+        showBanner(data.error || "Failed to revoke tenant admin.", "error");
+      }
+    } catch (err) {
+      showBanner("Network error revoking tenant admin.", "error");
+    }
+  };
 
   // Handle Feature Flag toggles
   const handleFeatureFlagToggle = (key: string) => {
@@ -549,6 +682,7 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
           { id: "gemini", label: "AI & Gemini", icon: <Cpu size={14} /> },
           { id: "analytics", label: "Platform Analytics", icon: <TrendingUp size={14} /> },
           { id: "owners", label: "Platform Owners", icon: <Users size={14} /> },
+          { id: "tenantAdmins", label: "🏢 Authorized Tenant Admins", icon: <Building size={14} /> },
           { id: "logs", label: "Audit Log", icon: <FileText size={14} /> },
           { id: "backup", label: "Backup & Restore", icon: <Download size={14} /> }
         ].map((item) => (
@@ -2031,8 +2165,428 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       )}
 
       {/* =========================================================================
-          TAB 9: SEARCHABLE FOUNDER AUDIT LOG
+          TAB: AUTHORIZED TENANT ADMIN MANAGEMENT (ERP TENANT ISOLATION)
           ========================================================================= */}
+      {activeSubTab === "tenantAdmins" && (
+        <div id="founder-tab-tenant-admins" className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div className="flex items-center space-x-2">
+              <Building className="text-cyan-400" size={20} />
+              <div>
+                <h2 className="text-base font-bold font-sans text-white">Authorized Tenant Admin Management</h2>
+                <p className="text-xs font-mono text-cyan-400">অথরাইজড টেনেন্ট অ্যাডমিন ও স্বাধীন মেস ওয়ার্কস্পেস ব্যবস্থাপনা</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchTenantAdmins}
+              disabled={tenantAdminsLoading}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-mono bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded transition-all w-fit"
+            >
+              <RefreshCw size={12} className={tenantAdminsLoading ? "animate-spin" : ""} />
+              <span>Refresh List</span>
+            </button>
+          </div>
+
+          <p className="text-xs font-mono text-slate-400 max-w-3xl leading-relaxed">
+            এখানে আপনি নতুন মেস অ্যাডমিনদের ইমেইল ও কোটা অনুমোদন করতে পারবেন। অনুমোদিত অ্যাডমিনরা স্বাধীনভাবে লগইন করে তাদের নিজস্ব মেস ওয়ার্কস্পেস তৈরি ও পরিচালনা করতে পারবেন। তারা আপনার আসল মেসের কোনো তথ্য দেখতে বা পরিবর্তন করতে পারবে না; তাদের সকল ডেটাবেজ ও আইডি সম্পূর্ণ আলাদা ও সুরক্ষিত থাকবে।
+          </p>
+
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="p-3.5 bg-slate-950 border border-slate-800/80 rounded-lg space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Total Tenant Admins</span>
+              <span className="text-xl font-bold font-mono text-cyan-400">{tenantAdmins.length}</span>
+              <span className="text-[10px] font-mono text-slate-400 block">অনুমোদিত অ্যাডমিন</span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950 border border-slate-800/80 rounded-lg space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Total Quota Allocated</span>
+              <span className="text-xl font-bold font-mono text-purple-400">
+                {tenantAdmins.reduce((sum, a) => sum + (a.maxMesses || 1), 0)}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400 block">বরাদ্দকৃত মেস কোটা</span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950 border border-slate-800/80 rounded-lg space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Created Messes</span>
+              <span className="text-xl font-bold font-mono text-emerald-400">
+                {tenantAdmins.reduce((sum, a) => sum + (a.createdMessesCount || (a.allowedMesses?.length || 0)), 0)}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400 block">সক্রিয় তৈরি মেস</span>
+            </div>
+
+            <div className="p-3.5 bg-slate-950 border border-slate-800/80 rounded-lg space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">Active Status</span>
+              <span className="text-xl font-bold font-mono text-amber-400">
+                {tenantAdmins.filter(a => a.status === "ACTIVE").length} / {tenantAdmins.length}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400 block">সচল অ্যাকাউন্ট</span>
+            </div>
+          </div>
+
+          {/* Form: Authorize New Tenant Admin */}
+          <div className="p-5 bg-slate-950 border border-cyan-500/20 rounded-xl space-y-4 shadow-sm">
+            <div className="flex items-center space-x-2 text-xs font-bold text-cyan-400 uppercase tracking-wider font-mono">
+              <Plus size={14} />
+              <span>Authorize New Tenant Admin / নতুন টেনেন্ট অ্যাডমিন অনুমোদন</span>
+            </div>
+
+            <form onSubmit={handleAddTenantAdmin} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+                <div className="space-y-1">
+                  <label className="text-slate-400 block">Admin Email Address <span className="text-rose-400">*</span></label>
+                  <input
+                    type="email"
+                    required
+                    value={newTenantEmail}
+                    onChange={(e) => setNewTenantEmail(e.target.value)}
+                    placeholder="e.g. admin@gmail.com"
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+                  />
+                  <p className="text-[10px] text-slate-500">Google বা Password দিয়ে এই ইমেইলে লগইন করবেন।</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 block">Admin Name</label>
+                  <input
+                    type="text"
+                    value={newTenantName}
+                    onChange={(e) => setNewTenantName(e.target.value)}
+                    placeholder="e.g. মোঃ রহিম আহমেদ"
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 block">Phone / WhatsApp</label>
+                  <input
+                    type="text"
+                    value={newTenantPhone}
+                    onChange={(e) => setNewTenantPhone(e.target.value)}
+                    placeholder="e.g. 01712345678"
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 block">Allowed Mess Quota (সর্বোচ্চ কয়টি মেস তৈরি করতে পারবেন)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={newTenantMaxMesses}
+                    onChange={(e) => setNewTenantMaxMesses(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400"
+                  />
+                  <p className="text-[10px] text-slate-500">যেমন: ১, ২ বা ৩ টি মেস।</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 block">Initial Password (ঐচ্ছিক - পাসওয়ার্ড লগইনের জন্য)</label>
+                  <input
+                    type="password"
+                    value={newTenantPassword}
+                    onChange={(e) => setNewTenantPassword(e.target.value)}
+                    placeholder="নূন্যতম ৬ অক্ষর (বা Google Login ব্যবহার করবেন)"
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 block">Internal Notes (রেফারেন্স বা সাবস্ক্রিপশন নোট)</label>
+                  <input
+                    type="text"
+                    value={newTenantNotes}
+                    onChange={(e) => setNewTenantNotes(e.target.value)}
+                    placeholder="e.g. 3 Messes plan - Paid 1500 BDT via bKash"
+                    className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={addingTenant}
+                  className="flex items-center space-x-1.5 px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-mono text-xs rounded transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  <UserCheck size={14} />
+                  <span>{addingTenant ? "AUTHORIZING..." : "AUTHORIZE TENANT ADMIN / অ্যাডমিন অনুমোদন করুন"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono">
+            <div className="relative w-full sm:w-72">
+              <Search size={14} className="absolute left-3 top-2.5 text-slate-500" />
+              <input
+                type="text"
+                value={tenantSearch}
+                onChange={(e) => setTenantSearch(e.target.value)}
+                placeholder="Search by email, name, phone..."
+                className="w-full bg-slate-950 border border-slate-800 rounded pl-8 pr-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 self-start sm:self-auto">
+              <span className="text-slate-500">Filter:</span>
+              {(["ALL", "ACTIVE", "SUSPENDED"] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setTenantStatusFilter(filter)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-mono border transition-all ${
+                    tenantStatusFilter === filter
+                      ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                      : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tenant Admins List */}
+          {tenantAdminsLoading ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-mono animate-pulse">
+              Loading authorized tenant admins from platform controls...
+            </div>
+          ) : (
+            (() => {
+              const filtered = tenantAdmins.filter((t) => {
+                if (tenantStatusFilter !== "ALL" && t.status !== tenantStatusFilter) return false;
+                if (!tenantSearch.trim()) return true;
+                const q = tenantSearch.toLowerCase();
+                return (
+                  t.email?.toLowerCase().includes(q) ||
+                  t.name?.toLowerCase().includes(q) ||
+                  t.phone?.toLowerCase().includes(q) ||
+                  t.notes?.toLowerCase().includes(q) ||
+                  (t.createdMesses || []).some((m: any) => m.name?.toLowerCase().includes(q) || m.messCode?.toLowerCase().includes(q))
+                );
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="p-8 text-center text-slate-500 text-xs font-mono bg-slate-950 border border-slate-800/80 rounded-lg">
+                    {tenantAdmins.length === 0 
+                      ? "এখনো কোনো টেনেন্ট অ্যাডমিন অনুমোদন করা হয়নি। ওপরের ফর্মটি পূরণ করে অ্যাডমিন যুক্ত করুন।"
+                      : "কোনো অ্যাডমিন মেলেনি। সার্চ বা ফিল্টার পরিবর্তন করুন।"}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filtered.map((t) => {
+                    const messesCount = t.createdMessesCount || (t.allowedMesses?.length || 0);
+                    const maxAllowed = t.maxMesses || 1;
+                    const quotaPct = Math.min(100, Math.round((messesCount / maxAllowed) * 100));
+
+                    return (
+                      <div
+                        key={t.id || t.email}
+                        className="p-4 bg-slate-950 border border-slate-800/80 hover:border-slate-700 rounded-xl transition-all space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-850 pb-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-bold text-sm text-white font-sans">{t.name || "Tenant Admin"}</span>
+                              <span className={`px-2 py-0.5 text-[10px] font-mono rounded border ${
+                                t.status === "ACTIVE"
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                              }`}>
+                                {t.status || "ACTIVE"}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-400">
+                              <span className="text-cyan-400">{t.email}</span>
+                              {t.phone && <span>📞 {t.phone}</span>}
+                              {t.createdAt && <span className="text-[10px] text-slate-500">অনুমোদিত: {new Date(t.createdAt).toLocaleDateString()}</span>}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2 self-start sm:self-auto">
+                            <button
+                              onClick={() => {
+                                setEditingTenant(t);
+                                setEditMaxMesses(t.maxMesses || 1);
+                                setEditNotes(t.notes || "");
+                                setEditStatus(t.status || "ACTIVE");
+                              }}
+                              className="flex items-center space-x-1 px-2.5 py-1 text-xs font-mono bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded transition-all"
+                              title="Edit Quota & Notes"
+                            >
+                              <Edit3 size={12} />
+                              <span>Edit Quota</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleUpdateTenantAdmin(t.id || t.email, {
+                                status: t.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE"
+                              })}
+                              className={`p-1.5 rounded border transition-all text-xs font-mono ${
+                                t.status === "ACTIVE"
+                                  ? "bg-rose-950/20 border-rose-800/40 text-rose-400 hover:bg-rose-900/30"
+                                  : "bg-emerald-950/20 border-emerald-800/40 text-emerald-400 hover:bg-emerald-900/30"
+                              }`}
+                              title={t.status === "ACTIVE" ? "Suspend Admin" : "Activate Admin"}
+                            >
+                              {t.status === "ACTIVE" ? <UserX size={13} /> : <UserCheck size={13} />}
+                            </button>
+
+                            <button
+                              onClick={() => handleRevokeTenantAdmin(t.id || t.email, t.email)}
+                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded border border-transparent hover:border-rose-800/30 transition-all"
+                              title="Revoke Admin Access"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Quota & Created Messes overview */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono pt-1">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-400">Mess Creation Quota:</span>
+                              <span className="font-bold text-slate-200">
+                                {messesCount} / {maxAllowed} Messes Created ({quotaPct}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                              <div
+                                className={`h-full transition-all duration-500 ${
+                                  messesCount >= maxAllowed ? "bg-amber-400" : "bg-cyan-400"
+                                }`}
+                                style={{ width: `${quotaPct}%` }}
+                              />
+                            </div>
+                            {t.notes && (
+                              <p className="text-[11px] text-slate-400 pt-1 italic">
+                                📝 {t.notes}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <span className="text-slate-400 text-[11px] block">Created Isolated Mess Workspaces:</span>
+                            {t.createdMesses && t.createdMesses.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {t.createdMesses.map((m: any) => (
+                                  <span
+                                    key={m.id}
+                                    className="px-2 py-0.5 rounded text-[11px] bg-slate-900 border border-slate-800 text-slate-200 flex items-center space-x-1"
+                                  >
+                                    <Building size={10} className="text-cyan-400" />
+                                    <span>{m.name}</span>
+                                    {m.messCode && <span className="text-[9px] text-slate-500 font-mono">({m.messCode})</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 italic block">
+                                এই অ্যাডমিন এখনো কোনো মেস তৈরি করেননি (No mess created yet).
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          )}
+
+          {/* Edit Tenant Admin Modal */}
+          {editingTenant && (
+            <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center space-x-2">
+                    <Edit3 size={16} className="text-cyan-400" />
+                    <h3 className="text-sm font-bold text-white font-sans">Edit Tenant Admin Quota</h3>
+                  </div>
+                  <button
+                    onClick={() => setEditingTenant(null)}
+                    className="text-slate-400 hover:text-white transition-all p-1"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs font-mono">
+                  <div className="p-3 bg-slate-950 rounded border border-slate-800">
+                    <span className="text-slate-400 block text-[10px]">Admin Target</span>
+                    <span className="font-bold text-cyan-400 block text-sm">{editingTenant.email}</span>
+                    <span className="text-slate-500 block text-[11px]">{editingTenant.name || "Tenant Admin"}</span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-400 block">Max Allowed Messes Quota (কোটা বৃদ্ধি/হ্রাস)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={editMaxMesses}
+                      onChange={(e) => setEditMaxMesses(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400"
+                    />
+                    <p className="text-[10px] text-slate-500">বর্তমানে তৈরি আছে: {editingTenant.createdMessesCount || (editingTenant.allowedMesses?.length || 0)} টি মেস</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-400 block">Account Status</label>
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value as any)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400"
+                    >
+                      <option value="ACTIVE">ACTIVE (সক্রিয়)</option>
+                      <option value="SUSPENDED">SUSPENDED (স্থগিত / সাময়িক লক)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-400 block">Internal Notes</label>
+                    <textarea
+                      rows={3}
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      placeholder="e.g. Extended subscription to 5 messes on Sep 25"
+                      className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 focus:outline-none focus:border-cyan-400 placeholder-slate-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
+                  <button
+                    onClick={() => setEditingTenant(null)}
+                    className="px-3 py-1.5 text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={savingEditTenant}
+                    onClick={() => handleUpdateTenantAdmin(editingTenant.id || editingTenant.email, {
+                      maxMesses: editMaxMesses,
+                      status: editStatus,
+                      notes: editNotes
+                    })}
+                    className="px-4 py-1.5 text-xs font-mono bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded transition-all disabled:opacity-50"
+                  >
+                    {savingEditTenant ? "SAVING..." : "SAVE CHANGES"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       
       {/* =========================================================================
           TAB 10: BACKUP & RESTORE

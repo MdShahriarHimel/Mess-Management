@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from "react";
 import { 
-  Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, 
+  Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, ShieldCheck,
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
   ChevronDown, ChevronUp, GraduationCap, Award, Home, DoorOpen, FlaskConical
 } from "lucide-react";
@@ -605,13 +605,20 @@ export default function Members({
     );
   }, [visibleMembers]);
 
+  const nonResidentAdmins = useMemo(() => {
+    return sortMembersAlphabetically(
+      visibleMembers.filter(m => 
+        m.status === MemberStatus.NOT_MEMBER
+      )
+    );
+  }, [visibleMembers]);
+
   const inactiveMembers = useMemo(() => {
     return sortMembersAlphabetically(
       visibleMembers.filter(m => 
         m.status === MemberStatus.SUSPENDED || 
         m.status === MemberStatus.LEFT || 
-        m.status === MemberStatus.ARCHIVED ||
-        m.status === MemberStatus.NOT_MEMBER
+        m.status === MemberStatus.ARCHIVED
       )
     );
   }, [visibleMembers]);
@@ -704,12 +711,12 @@ export default function Members({
               member.status === MemberStatus.ACTIVE ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
               member.status === MemberStatus.AWAY ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
               member.status === MemberStatus.TESTING ? "bg-purple-500/30 text-purple-300 border-purple-500/50" :
-              member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
+              member.status === MemberStatus.NOT_MEMBER ? "bg-indigo-500/25 text-indigo-300 border-indigo-500/40" :
               member.status === MemberStatus.PENDING ? "bg-orange-500/20 text-orange-400 border-orange-500/30 animate-pulse" :
               member.status === MemberStatus.LEFT ? "bg-rose-500/25 text-rose-300 border-rose-500/40" :
               "bg-slate-500/20 text-slate-300 border-slate-500/30"
             }`}>
-              {member.status === MemberStatus.NOT_MEMBER ? "NOT MEMBER" : member.status === MemberStatus.LEFT ? "LEFT MESS" : member.status === MemberStatus.TESTING ? "SANDBOX / TEST" : member.status}
+              {member.status === MemberStatus.NOT_MEMBER ? "NON-RESIDENT ADMIN" : member.status === MemberStatus.LEFT ? "LEFT MESS" : member.status === MemberStatus.TESTING ? "SANDBOX / TEST" : member.status}
             </span>
           </div>
 
@@ -844,26 +851,28 @@ export default function Members({
                     <Edit2 size={13} />
                   </button>
 
-                  {member.status !== MemberStatus.ARCHIVED ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleArchive(member.id); }}
-                      className={`p-1.5 rounded-lg border cursor-pointer hover:border-orange-500 hover:text-orange-500 transition-all ${
-                        isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                      }`}
-                      title="Archive member"
-                    >
-                      <Archive size={13} />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
-                      className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
-                        isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
-                      }`}
-                      title="Restore member"
-                    >
-                      <RotateCcw size={13} />
-                    </button>
+                  {member.role !== UserRole.ADMIN && (
+                    member.status !== MemberStatus.ARCHIVED ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleArchive(member.id); }}
+                        className={`p-1.5 rounded-lg border cursor-pointer hover:border-orange-500 hover:text-orange-500 transition-all ${
+                          isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                        }`}
+                        title="Archive member"
+                      >
+                        <Archive size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
+                        className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
+                          isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                        }`}
+                        title="Restore member"
+                      >
+                        <RotateCcw size={13} />
+                      </button>
+                    )
                   )}
 
                   {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
@@ -972,6 +981,30 @@ export default function Members({
         </div>
       )}
 
+      {/* Non-Resident Admins / Off-Premise Authorities */}
+      {nonResidentAdmins.length > 0 && (
+        <div className="space-y-4 pt-6 border-t border-slate-900/30" id="non-resident-admins-wrapper">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-2 font-display">
+              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+              Non-Resident Admins & Off-Premise Authorities ({nonResidentAdmins.length})
+            </h3>
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+              isDarkMode ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : "bg-indigo-50 text-indigo-600 border border-indigo-200"
+            }`}>
+              Off-Premise (No Mess Dues)
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            These administrators possess full administrative management privileges over the mess but do not reside or dine in the mess. They are excluded from daily meals, meal rates, grocery shopping duties, and mess dues.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="non-resident-admins-grid">
+            {nonResidentAdmins.map((member) => renderMemberCard(member))}
+          </div>
+        </div>
+      )}
+
       {/* Archive Box (Suspended & Departed Inactive Bucket visible to everyone) */}
       {inactiveMembers.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-900/40" id="inactive-bucket-wrapper">
@@ -998,7 +1031,7 @@ export default function Members({
                   </span>
                 </h3>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  Click to view archived, left, or suspended resident profiles
+                  Click to view departed or suspended resident profiles (Left: {inactiveMembers.filter(m => m.status === MemberStatus.LEFT).length}, Suspended: {inactiveMembers.filter(m => m.status === MemberStatus.SUSPENDED).length}, Archived: {inactiveMembers.filter(m => m.status === MemberStatus.ARCHIVED).length})
                 </p>
               </div>
             </div>
@@ -1657,7 +1690,7 @@ export default function Members({
                           <option value={MemberStatus.ACTIVE}>ACTIVE</option>
                           <option value={MemberStatus.AWAY}>AWAY</option>
                           {editingMember.role === UserRole.ADMIN && (
-                            <option value={MemberStatus.NOT_MEMBER}>Not member (only for Admin)</option>
+                            <option value={MemberStatus.NOT_MEMBER}>Not member (only for Admin - অফ-প্রেমিস অ্যাডমিন)</option>
                           )}
                           {editingMember.role !== UserRole.ADMIN && (
                             <option value={MemberStatus.SUSPENDED}>SUSPENDED</option>
@@ -1674,8 +1707,8 @@ export default function Members({
                           </p>
                         )}
                         {editingMember.status === MemberStatus.NOT_MEMBER && (
-                          <p className="text-[10px] text-amber-400 font-medium mt-1">
-                            Non-participating Admin: Excluded from all meal rates, shared bill splits, and mess calculations.
+                          <p className="text-[10px] text-indigo-400 font-medium mt-1">
+                            Non-Resident Admin: Excluded from all meal rates, shared bill splits, and mess calculations. Displayed in the dedicated Non-Resident Admins section.
                           </p>
                         )}
                         {originalRole === UserRole.ADMIN && isEditingSelf && (
