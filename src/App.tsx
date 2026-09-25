@@ -1715,6 +1715,10 @@ export default function App() {
       if (currentUser && currentUser.email) {
         headers.set("X-User-Email", currentUser.email);
       }
+      const activeMess = localStorage.getItem("active_mess_id") || "default";
+      if (!headers.has("X-Mess-Id") && !headers.has("x-mess-id")) {
+        headers.set("X-Mess-Id", activeMess);
+      }
 
       const newInit = {
         ...init,

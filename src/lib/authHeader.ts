@@ -10,8 +10,13 @@ export function getAuthToken(currentUser?: { id?: string } | null): string {
 
 export function getAuthHeader(currentUser?: { id?: string } | null, extraHeaders: Record<string, string> = {}): Record<string, string> {
   const token = getAuthToken(currentUser);
+  let activeMess = "default";
+  try {
+    activeMess = localStorage.getItem("active_mess_id") || "default";
+  } catch (_) {}
   return {
     "Authorization": `Bearer ${token}`,
+    "X-Mess-Id": activeMess,
     ...extraHeaders
   };
 }
