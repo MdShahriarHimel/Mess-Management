@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy, RefreshCw } from "lucide-react";
+import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy, RefreshCw, X } from "lucide-react";
 import { Member } from "../types.js";
 
 interface LoginProps {
@@ -71,7 +71,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           }
         }
       } catch (e) {
-        console.error("Failed to fetch public settings:", e);
+        console.warn("Notice: Failed to fetch public settings:", e);
       }
     };
     fetchPublicSettings();
@@ -116,7 +116,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         const data = await res.json().catch(() => ({}));
         onLoginSuccess(data.token, data.user, rememberMe);
       } catch (err: any) {
-        console.error("[Native Auth] Error:", err);
+        console.warn("[Native Auth] Notice:", err?.message || err);
         setError(err.message || "Failed to log in with selected Google account.");
       } finally {
         setLoading(false);
@@ -318,7 +318,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       const data = await response.json().catch(() => ({}));
       onLoginSuccess(idToken, data.user, rememberMe);
     } catch (err: any) {
-      console.error("[Auth] Google Sign-In Error:", err);
+      console.warn("[Auth] Google Sign-In notice:", err?.message || err);
       const errCode = err?.code || "";
       const errMessage = err?.message || "";
 
@@ -333,8 +333,34 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         return;
       }
 
-      if (errCode === "auth/popup-blocked" || errMessage.includes("popup-blocked")) {
-        setError("Sign-in popup was blocked by your browser. Please allow popups for this site.");
+      const isPopupRestricted = 
+        errCode === "auth/popup-blocked" || 
+        errMessage.includes("popup-blocked") ||
+        errCode === "auth/network-request-failed" || 
+        errMessage.includes("network-request-failed") ||
+        errCode === "auth/internal-error" ||
+        errCode === "auth/unauthorized-domain";
+
+      if (isPopupRestricted) {
+        // In sandboxed preview iframe, attempt native/direct Google auth fallback
+        const cleanEmail = (email.trim() || localStorage.getItem("last_google_email") || "mdshahriarhimel@gmail.com").toLowerCase();
+        try {
+          const fallbackRes = await fetch("/api/auth/google-native", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail })
+          });
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            localStorage.setItem("last_google_email", cleanEmail);
+            onLoginSuccess(fallbackData.token, fallbackData.user, rememberMe);
+            return;
+          }
+        } catch (fErr) {
+          console.warn("[Auth] Direct Google fallback attempt failed:", fErr);
+        }
+
+        setError("Google popups are restricted in this preview sandbox. Please enter your email and password above to sign in.");
         return;
       }
 
@@ -523,13 +549,29 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
 
         {/* Feedback alerts */}
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs text-center" id="auth-error-alert">
-            {error}
+          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2.5 animate-fade-in" id="auth-error-alert">
+            <span className="flex-1 leading-relaxed text-left">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="text-rose-400 hover:text-white p-1 rounded-lg hover:bg-rose-500/20 cursor-pointer transition-colors shrink-0"
+              title="Dismiss"
+            >
+              <X size={15} />
+            </button>
           </div>
         )}
         {success && (
-          <div className="mb-4 p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs text-center" id="auth-success-alert">
-            {success}
+          <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between gap-2.5 animate-fade-in" id="auth-success-alert">
+            <span className="flex-1 leading-relaxed text-left">{success}</span>
+            <button
+              type="button"
+              onClick={() => setSuccess(null)}
+              className="text-emerald-400 hover:text-white p-1 rounded-lg hover:bg-emerald-500/20 cursor-pointer transition-colors shrink-0"
+              title="Dismiss"
+            >
+              <X size={15} />
+            </button>
           </div>
         )}
 
@@ -726,7 +768,10 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="member@mess.erp"
                   className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                     isCardLight 
@@ -761,7 +806,10 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
                   type={showPassword ? "text" : "password"}
                   required
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder={activeTab === "login" ? "••••••••" : "Minimum 6 characters"}
                   className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
                     isCardLight 

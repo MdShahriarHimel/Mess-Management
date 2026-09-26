@@ -6,18 +6,41 @@
 import { Member, RespectSenioritySettings } from "../types";
 
 /**
+ * Converts Bengali digits (০-৯) to Western Arabic digits (0-9)
+ */
+function convertBengaliDigits(str: string): string {
+  const bengaliDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  return str.replace(/[০-৯]/g, d => String(bengaliDigits.indexOf(d)));
+}
+
+/**
  * Extracts a numeric starting year from a seniorityYear or admissionSession string/number.
- * E.g., "2019-2020" -> 2019, "2021" -> 2021.
+ * E.g., "2019-2020" -> 2019, "2021" -> 2021, "২০২৩" -> 2023.
  */
 function parseSeniorityYear(value?: string | number | null): number | null {
   if (!value) return null;
-  const strValue = String(value).trim();
+  const strValue = convertBengaliDigits(String(value)).trim();
   const match = strValue.match(/\d{4}/);
   if (match) {
     const year = parseInt(match[0], 10);
     return isNaN(year) ? null : year;
   }
   return null;
+}
+
+/**
+ * Helper to extract seniority/session year from any supported member property
+ */
+export function getMemberSeniorityYear(member?: Partial<Member> | null): number | null {
+  if (!member) return null;
+  return parseSeniorityYear(
+    member.seniorityYear ||
+    member.admissionSession ||
+    (member as any).educationSession ||
+    (member as any).session ||
+    (member as any).academicSession ||
+    (member as any).batch
+  );
 }
 
 /**
@@ -43,10 +66,19 @@ function computeRespectDisplayName(
   const nickname = (targetMember.nickname || targetMember.name || "").trim();
   if (!nickname) return "";
 
-  // Rule 1: If Respect System is OFF, return base nickname
-  if (!settings || !settings.enabled) {
+  // If settings object is provided but enabled is explicitly false, respect system is off
+  if (settings && settings.enabled === false) {
     return nickname;
   }
+
+  // Resilient fallback settings if not yet loaded or null
+  const effectiveSettings = (settings && typeof settings === "object") ? settings : {
+    enabled: true,
+    logic: "AUTOMATIC_SENIORITY",
+    defaultMaleTitle: "ভাই",
+    defaultFemaleTitle: "আপু",
+    manualOverride: false
+  };
 
   // Rule 2: If Manual Title exists and manual override is allowed (or title is directly set)
   if (targetMember.manualTitle && targetMember.manualTitle.trim()) {
@@ -59,14 +91,14 @@ function computeRespectDisplayName(
     return nickname;
   }
 
-  const viewerYear = parseSeniorityYear(viewer.seniorityYear || viewer.admissionSession);
-  const targetYear = parseSeniorityYear(targetMember.seniorityYear || targetMember.admissionSession);
+  const viewerYear = getMemberSeniorityYear(viewer);
+  const targetYear = getMemberSeniorityYear(targetMember);
 
   if (viewerYear === null || targetYear === null) {
     return nickname;
   }
 
-  // An earlier year (e.g. 2019 vs 2021) indicates an older / senior member
+  // An earlier year (e.g. 2020 vs 2023) indicates an older / senior member
   if (targetYear < viewerYear) {
     const genderStr = (targetMember.gender || "").toLowerCase().trim();
     const isFemale =
@@ -77,8 +109,8 @@ function computeRespectDisplayName(
       genderStr === "মহিলা";
 
     const defaultTitle = isFemale
-      ? settings.defaultFemaleTitle || "আপু"
-      : settings.defaultMaleTitle || "ভাই";
+      ? effectiveSettings.defaultFemaleTitle || "আপু"
+      : effectiveSettings.defaultMaleTitle || "ভাই";
 
     return `${nickname} ${defaultTitle}`;
   }
@@ -96,22 +128,20 @@ export function getRespectDisplayName(
 
   // Extract relevant parameters for cache key
   const viewerId = viewer?.id || "";
-  const viewerSeniority = viewer?.seniorityYear ?? "";
-  const viewerSession = viewer?.admissionSession ?? "";
+  const viewerYear = getMemberSeniorityYear(viewer) ?? "";
 
   const targetId = targetMember.id || "";
   const targetNickname = targetMember.nickname ?? "";
   const targetName = targetMember.name ?? "";
   const targetTitle = targetMember.manualTitle ?? "";
-  const targetSeniority = targetMember.seniorityYear ?? "";
-  const targetSession = targetMember.admissionSession ?? "";
+  const targetYear = getMemberSeniorityYear(targetMember) ?? "";
   const targetGender = targetMember.gender ?? "";
 
   const settingsEnabled = settings?.enabled ? "1" : "0";
   const settingsMale = settings?.defaultMaleTitle ?? "";
   const settingsFemale = settings?.defaultFemaleTitle ?? "";
 
-  const cacheKey = `${viewerId}:${viewerSeniority}:${viewerSession}|${targetId}:${targetNickname}:${targetName}:${targetTitle}:${targetSeniority}:${targetSession}:${targetGender}|${settingsEnabled}:${settingsMale}:${settingsFemale}`;
+  const cacheKey = `${viewerId}:${viewerYear}|${targetId}:${targetNickname}:${targetName}:${targetTitle}:${targetYear}:${targetGender}|${settingsEnabled}:${settingsMale}:${settingsFemale}`;
 
   if (respectNameCache.has(cacheKey)) {
     return respectNameCache.get(cacheKey)!;

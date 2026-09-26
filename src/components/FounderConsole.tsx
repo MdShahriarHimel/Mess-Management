@@ -38,18 +38,34 @@ import {
   UserX,
   ExternalLink,
   Download, 
-  Upload
+  Upload,
+  Globe,
+  QrCode,
+  Copy,
+  Check
 } from "lucide-react";
 import { Member } from "../types.js";
+import QRCode from "qrcode";
 
 interface FounderConsoleProps {
   currentUser: Member;
   isDarkMode: boolean;
   t: (key: string) => string;
   onRefreshPlatformStatus: () => void;
+  systemWebsiteUrl?: string;
+  systemBrandingName?: string;
+  onUpdateSystemWebsite?: (url: string, name: string) => void;
 }
 
-export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPlatformStatus }: FounderConsoleProps) {
+export default function FounderConsole({ 
+  currentUser, 
+  isDarkMode, 
+  t, 
+  onRefreshPlatformStatus,
+  systemWebsiteUrl: propWebsiteUrl,
+  systemBrandingName: propBrandingName,
+  onUpdateSystemWebsite
+}: FounderConsoleProps) {
   const [activeSubTab, setActiveSubTab] = useState<
     "dashboard" | "security" | "maintenance" | "announcements" | "flags" | "storage" | "gemini" | "analytics" | "owners" | "tenantAdmins" | "logs" | "backup"
   >("dashboard");
@@ -57,6 +73,8 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
   const defaultControls = {
     platformStatus: "Operational",
     maintenanceMode: "Normal",
+    systemWebsiteUrl: propWebsiteUrl || "https://mymessmanagement.onrender.com",
+    systemBrandingName: propBrandingName || "My Mess (Mess ERP)",
     maintenanceReason: "",
     maintenanceEstimatedCompletion: "",
     maintenanceTimezone: "Asia/Dhaka",
@@ -151,6 +169,32 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
   const [editStatus, setEditStatus] = useState<"ACTIVE" | "SUSPENDED">("ACTIVE");
   const [savingEditTenant, setSavingEditTenant] = useState(false);
 
+  // Global Website URL and Branding configuration states
+  const [websiteUrl, setWebsiteUrl] = useState<string>(
+    propWebsiteUrl || "https://mymessmanagement.onrender.com"
+  );
+  const [brandingName, setBrandingName] = useState<string>(
+    propBrandingName || "My Mess (Mess ERP)"
+  );
+  const [qrCodePreview, setQrCodePreview] = useState<string>("");
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [savingWebsiteConfig, setSavingWebsiteConfig] = useState(false);
+
+  // Auto-generate live QR Code when websiteUrl changes
+  useEffect(() => {
+    const targetUrl = (websiteUrl || "https://mymessmanagement.onrender.com").trim();
+    QRCode.toDataURL(targetUrl, {
+      margin: 1,
+      width: 180,
+      color: { dark: "#0f172a", light: "#ffffff" }
+    })
+      .then(url => setQrCodePreview(url))
+      .catch(err => {
+        console.warn("QR preview err:", err);
+        setQrCodePreview(`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(targetUrl)}`);
+      });
+  }, [websiteUrl]);
+
   // General Notification Banner within console
   const [banner, setBanner] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
@@ -180,6 +224,8 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
             announcements: data.announcements || [],
             owners: data.owners || []
           });
+          if (data.systemWebsiteUrl) setWebsiteUrl(data.systemWebsiteUrl);
+          if (data.systemBrandingName) setBrandingName(data.systemBrandingName);
         }
       } else {
         showBanner("Failed to load platform controls. Verify you are an owner.", "error");
@@ -236,6 +282,40 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
       showBanner("Error saving platform controls.", "error");
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  // Save Website URL and Branding Name
+  const handleSaveWebsiteBranding = async () => {
+    setSavingWebsiteConfig(true);
+    try {
+      const cleanUrl = (websiteUrl || "").trim() || "https://mymessmanagement.onrender.com";
+      const cleanBranding = (brandingName || "").trim() || "My Mess (Mess ERP)";
+
+      const updated = {
+        ...controls,
+        systemWebsiteUrl: cleanUrl,
+        systemBrandingName: cleanBranding
+      };
+
+      const res = await fetch("/api/founder/controls", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(updated)
+      });
+
+      if (res.ok) {
+        setControls(updated);
+        onUpdateSystemWebsite?.(cleanUrl, cleanBranding);
+        showBanner("ওয়েবসাইট লিংক ও ব্র্যান্ডিং নাম সফলভাবে সংরক্ষিত হয়েছে! সকল ম্যাচের মার্কেট শিডিউল পিডিএফ ও কিউআর কোড স্বয়ংক্রিয়ভাবে আপডেট হয়ে গেছে।", "success");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showBanner(err.error || "Failed to update system website settings", "error");
+      }
+    } catch (e: any) {
+      showBanner(e.message || "Error saving website settings", "error");
+    } finally {
+      setSavingWebsiteConfig(false);
     }
   };
 
@@ -752,6 +832,130 @@ export default function FounderConsole({ currentUser, isDarkMode, t, onRefreshPl
                 <span className="text-xs font-mono text-slate-500">
                   Multiple Authorized
                 </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Global Web Portal URL & Duty Schedule QR Branding */}
+          <div className="bg-slate-900 border border-cyan-500/30 rounded-xl p-6 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 mb-5">
+              <div>
+                <h2 className="text-base font-bold font-display text-white flex items-center gap-2">
+                  <Globe className="text-cyan-400" size={18} />
+                  <span>গ্লোবাল সিস্টেম ওয়েব লিংক ও প্রিন্ট কিউআর কোড (System Portal & QR Branding)</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  এখানে সেট করা ওয়েবসাইট লিংক ও ব্র্যান্ডিং নাম সমস্ত মেসে মার্কেট শিডিউল প্রিন্ট, পিডিএফ ও কিউআর কোডে যুক্ত হবে। ক্যামেরা দিয়ে স্ক্যান করলে সরাসরি এই লিংকে প্রবেশ করবে।
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-mono">
+                  All Messes Synced
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* Left Column: Form Fields */}
+              <div className="lg:col-span-2 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Globe size={13} className="text-cyan-400" />
+                      সরাসরি ওয়েব / অ্যাপ লিংক (Portal Website URL)
+                    </span>
+                    <span className="text-[10px] text-slate-500 lowercase font-mono">domain / web app address</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={websiteUrl}
+                      onChange={(e) => setWebsiteUrl(e.target.value)}
+                      placeholder="https://mymessmanagement.onrender.com"
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded-lg px-3 py-2.5 text-xs text-white font-mono focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    বর্তমান ডিফল্ট: <code className="text-cyan-400 font-mono">https://mymessmanagement.onrender.com</code>। ভবিষ্যতে নিজস্ব কাস্টম ডোমেইন বসালেও কিউআর কোড স্বয়ংক্রিয়ভাবে নতুন ডোমেইন নিয়ে তৈরি হবে।
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                    সিস্টেম / প্ল্যাটফর্ম ব্র্যান্ডিং নাম (System Branding Name)
+                  </label>
+                  <input
+                    type="text"
+                    value={brandingName}
+                    onChange={(e) => setBrandingName(e.target.value)}
+                    placeholder="My Mess (Mess ERP)"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded-lg px-3 py-2.5 text-xs text-white font-sans focus:outline-none transition-colors"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    মার্কেট শিডিউল পিডিএফে প্রতিটি মেসে নামের পাশে ব্র্যাকেটে যেমন: <span className="text-slate-300 font-semibold">[ {brandingName || "My Mess (Mess ERP)"} ]</span> হিসেবে প্রদর্শিত হবে।
+                  </p>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveWebsiteBranding}
+                    disabled={savingWebsiteConfig}
+                    className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-950 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    {savingWebsiteConfig ? <RefreshCw className="animate-spin" size={14} /> : <Check size={14} />}
+                    <span>লিংক ও ব্র্যান্ডিং সংরক্ষণ করুন (Save & Apply)</span>
+                  </button>
+
+                  <a
+                    href={websiteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+                  >
+                    <ExternalLink size={13} />
+                    <span>সাইট ওপেন করে দেখুন</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Right Column: Live Auto-Generated QR Code Preview */}
+              <div className="lg:col-span-1 bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col items-center justify-center text-center">
+                <div className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <QrCode size={14} />
+                  <span>লাইভ কিউআর কোড প্রিভিউ</span>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl shadow-inner border border-slate-700 inline-block">
+                  {qrCodePreview ? (
+                    <img src={qrCodePreview} alt="Live QR Preview" className="w-36 h-36 block mx-auto rounded" />
+                  ) : (
+                    <div className="w-36 h-36 bg-slate-200 animate-pulse rounded flex items-center justify-center text-slate-400 text-xs">
+                      Generating...
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 w-full">
+                  <p className="text-[10px] text-slate-400 line-clamp-1 font-mono break-all px-2">
+                    {websiteUrl || "https://mymessmanagement.onrender.com"}
+                  </p>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(websiteUrl || "https://mymessmanagement.onrender.com");
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2500);
+                    }}
+                    className="mt-2 text-xs text-cyan-400 hover:text-cyan-300 font-bold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedLink ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                    <span>{copiedLink ? "লিংক কপি হয়েছে!" : "লিংক কপি করুন"}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

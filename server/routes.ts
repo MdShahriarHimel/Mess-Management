@@ -5824,6 +5824,7 @@ router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequ
 // Public settings (Unauthenticated) for customizing login page
 router.get("/settings/public", (req: Request, res: Response) => {
   const s = loadSettings();
+  const pc = loadPlatformControls();
   res.json({
     messName: s.messName,
     siteColor: s.siteColor,
@@ -5836,12 +5837,20 @@ router.get("/settings/public", (req: Request, res: Response) => {
     messAnimations: s.messAnimations,
     loginCustomization: s.loginCustomization,
     disableBackgroundAudio: s.disableBackgroundAudio,
-    activeAudioSettings: s.activeAudioSettings
+    activeAudioSettings: s.activeAudioSettings,
+    systemWebsiteUrl: pc.systemWebsiteUrl || "https://mymessmanagement.onrender.com",
+    systemBrandingName: pc.systemBrandingName || "My Mess (Mess ERP)"
   });
 });
 
 router.get("/settings", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  res.json(loadSettings());
+  const s = loadSettings();
+  const pc = loadPlatformControls();
+  res.json({
+    ...s,
+    systemWebsiteUrl: pc.systemWebsiteUrl || "https://mymessmanagement.onrender.com",
+    systemBrandingName: pc.systemBrandingName || "My Mess (Mess ERP)"
+  });
 });
 
 router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
@@ -6299,6 +6308,19 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     }
   }
 
+  if (isUltimateAdmin) {
+    if (req.body.systemWebsiteUrl !== undefined || req.body.systemBrandingName !== undefined) {
+      const pc = loadPlatformControls();
+      if (req.body.systemWebsiteUrl !== undefined) {
+        pc.systemWebsiteUrl = String(req.body.systemWebsiteUrl).trim();
+      }
+      if (req.body.systemBrandingName !== undefined) {
+        pc.systemBrandingName = String(req.body.systemBrandingName).trim();
+      }
+      savePlatformControls(pc);
+    }
+  }
+
   saveSettings(currentSettings);
   if (req.body.isDarkMode !== undefined || req.body.defaultMode !== undefined) {
     const messId = getActiveMessId();
@@ -6307,7 +6329,16 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     if (req.body.defaultMode !== undefined) app.defaultMode = req.body.defaultMode;
     saveMessAppearance(messId, app);
   }
-  res.json({ success: true, settings: loadSettings() });
+  const savedSettings = loadSettings();
+  const savedPc = loadPlatformControls();
+  res.json({ 
+    success: true, 
+    settings: {
+      ...savedSettings,
+      systemWebsiteUrl: savedPc.systemWebsiteUrl || "https://mymessmanagement.onrender.com",
+      systemBrandingName: savedPc.systemBrandingName || "My Mess (Mess ERP)"
+    }
+  });
 });
 
 router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, res: Response) => {

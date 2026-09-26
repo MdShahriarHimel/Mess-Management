@@ -68,6 +68,12 @@ export function loadPlatformControls() {
       if (cachedPlatformControls && !cachedPlatformControls.authorizedTenantAdmins) {
         cachedPlatformControls.authorizedTenantAdmins = [];
       }
+      if (cachedPlatformControls && !cachedPlatformControls.systemWebsiteUrl) {
+        cachedPlatformControls.systemWebsiteUrl = "https://mymessmanagement.onrender.com";
+      }
+      if (cachedPlatformControls && !cachedPlatformControls.systemBrandingName) {
+        cachedPlatformControls.systemBrandingName = "My Mess (Mess ERP)";
+      }
       return cachedPlatformControls;
     } catch (e) {
       console.error("Error reading platform controls file:", e);
@@ -83,6 +89,8 @@ export function loadPlatformControls() {
       }
     ],
     authorizedTenantAdmins: [],
+    systemWebsiteUrl: "https://mymessmanagement.onrender.com",
+    systemBrandingName: "My Mess (Mess ERP)",
     platformStatus: "Operational",
     maintenanceMode: "Normal", // "Normal" | "Read Only" | "Full Lock"
     maintenanceReason: "Regular scheduled system upgrade and cloud optimization.",
@@ -333,6 +341,8 @@ router.get("/status", (req: Request, res: Response) => {
   res.json({
     platformStatus: controls.platformStatus,
     maintenanceMode: controls.maintenanceMode,
+    systemWebsiteUrl: controls.systemWebsiteUrl || "https://mymessmanagement.onrender.com",
+    systemBrandingName: controls.systemBrandingName || "My Mess (Mess ERP)",
     maintenanceDetails: {
       reason: controls.maintenanceReason,
       estimatedCompletion: controls.maintenanceEstimatedCompletion,

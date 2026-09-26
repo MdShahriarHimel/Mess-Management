@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings, Meal, MemberStatus } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
+import QRCode from "qrcode";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
@@ -39,6 +40,8 @@ interface MarketLogsProps {
   months?: MessMonth[];
   respectSenioritySettings?: RespectSenioritySettings;
   logoText?: string;
+  systemWebsiteUrl?: string;
+  systemBrandingName?: string;
 }
 
 export default function MarketLogs({ 
@@ -55,7 +58,9 @@ export default function MarketLogs({
   onSetMarketForcedFlowStep,
   months = [],
   respectSenioritySettings,
-  logoText = "Ababil mess"
+  logoText = "Ababil mess",
+  systemWebsiteUrl = "https://mymessmanagement.onrender.com",
+  systemBrandingName = "My Mess (Mess ERP)"
 }: MarketLogsProps) {
   const authToken = getAuthToken(currentUser);
   const [markets, setMarkets] = useState<MarketEntry[]>([]);
@@ -807,6 +812,11 @@ export default function MarketLogs({
         return false;
       }
 
+      // Active members belonging to this mess
+      if (m.status === MemberStatus.ACTIVE || (m.status as string) === "ACTIVE" || !m.status) {
+        return true;
+      }
+
       return false;
     });
 
@@ -879,13 +889,49 @@ export default function MarketLogs({
 
   const currentViewingMonthObj = months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId);
 
-  const handlePrintDutySchedulePDF = () => {
+  const activeManager = useMemo(() => {
+    // 1. Look for explicit manager role
+    let mgr = members.find(m => m.role === UserRole.MANAGER || (m.role as any) === "MANAGER");
+    if (!mgr) {
+      // 2. Look for member whose name/nickname is Nahid (mess manager as specified)
+      mgr = members.find(m => (m.nickname || m.name || "").toLowerCase().includes("nahid"));
+    }
+    if (!mgr) {
+      // 3. Fallback to currentUser
+      mgr = currentUser;
+    }
+    if (mgr && (mgr.nickname || mgr.name || "").toLowerCase().includes("nahid")) {
+      if (!mgr.seniorityYear && !mgr.admissionSession) {
+        return { ...mgr, seniorityYear: "2023", admissionSession: "2023" };
+      }
+    }
+    return mgr;
+  }, [members, currentUser]);
+
+  const handlePrintDutySchedulePDF = async () => {
     const resolvedMessName = (logoText || (typeof window !== "undefined" ? localStorage.getItem("active_mess_name") : "") || "Ababil mess").trim().toUpperCase();
     const cycleName = currentViewingMonthObj?.name || "Current Cycle";
     const startDateStr = currentViewingMonthObj?.startDate ? currentViewingMonthObj.startDate.split("T")[0] : "";
     const endDateStr = currentViewingMonthObj?.endDate ? currentViewingMonthObj.endDate.split("T")[0] : "";
-    const activeManager = members.find(m => m.role === UserRole.MANAGER);
-    const managerDisplayName = activeManager ? (activeManager.nickname || activeManager.name) : "Manager";
+    const managerDisplayName = activeManager ? (getRespectDisplayName(activeManager, activeManager, respectSenioritySettings) || activeManager.nickname || activeManager.name) : "Manager";
+
+    const effectiveWebsiteUrl = (systemWebsiteUrl || (typeof window !== "undefined" ? window.location.origin : "https://mymessmanagement.onrender.com")).trim();
+    const effectiveBrandingName = (systemBrandingName || "My Mess (Mess ERP)").trim();
+
+    let qrCodeDataUrl = "";
+    try {
+      qrCodeDataUrl = await QRCode.toDataURL(effectiveWebsiteUrl, {
+        margin: 1,
+        width: 140,
+        color: {
+          dark: "#0f172a",
+          light: "#ffffff"
+        }
+      });
+    } catch (qrErr) {
+      console.warn("QRCode generation fallback:", qrErr);
+      qrCodeDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=2&data=${encodeURIComponent(effectiveWebsiteUrl)}`;
+    }
 
     const totalMembersCount = memberDutySchedule.length;
     const totalDutiesCount = memberDutySchedule.reduce((sum, item) => sum + item.totalDutyCount, 0);
@@ -895,11 +941,11 @@ export default function MarketLogs({
       <html lang="bn">
       <head>
         <meta charset="utf-8">
-        <title>${resolvedMessName} - Market Duty Schedule - ${cycleName}</title>
+        <title>${resolvedMessName} [${effectiveBrandingName}] - Market Duty Schedule - ${cycleName}</title>
         <style>
           @page {
             size: A4 portrait;
-            margin: 12mm 15mm 15mm 15mm;
+            margin: 10mm 14mm 14mm 14mm;
           }
           * {
             box-sizing: border-box;
@@ -912,78 +958,159 @@ export default function MarketLogs({
             background: #ffffff;
             margin: 0;
             padding: 0;
-            font-size: 10.5pt;
-            line-height: 1.4;
+            font-size: 10pt;
+            line-height: 1.35;
           }
           .header {
-            text-align: center;
             border-bottom: 2px solid #0891b2;
-            padding-bottom: 10px;
+            padding-bottom: 12px;
             margin-bottom: 14px;
           }
+          .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+          }
+          .header-titles {
+            flex: 1;
+            text-align: left;
+          }
+          .mess-title-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
           .mess-title {
-            font-size: 18pt;
+            font-size: 17pt;
             font-weight: 800;
             color: #0891b2;
             letter-spacing: -0.5px;
-            margin: 0 0 3px 0;
+            margin: 0;
             text-transform: uppercase;
           }
+          .system-badge {
+            font-size: 9pt;
+            font-weight: 700;
+            color: #0284c7;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 4px;
+            padding: 2px 7px;
+            display: inline-block;
+          }
           .report-subtitle {
-            font-size: 12pt;
+            font-size: 11pt;
             font-weight: 700;
             color: #334155;
-            margin: 0 0 3px 0;
+            margin: 4px 0 3px 0;
+          }
+          .cycle-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+            flex-wrap: wrap;
           }
           .cycle-badge {
             display: inline-block;
             background: #ecfeff;
             color: #0e7490;
             border: 1px solid #a5f3fc;
-            padding: 2px 10px;
+            padding: 2px 8px;
             border-radius: 9999px;
-            font-size: 9pt;
+            font-size: 8.5pt;
             font-weight: 600;
+          }
+          .manager-badge {
+            display: inline-block;
+            background: #f8fafc;
+            color: #334155;
+            border: 1px solid #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 8.5pt;
+          }
+          .system-link-box {
+            margin-top: 6px;
+            font-size: 8.5pt;
+            color: #475569;
+          }
+          .link-label {
+            font-weight: 600;
+            margin-right: 4px;
+          }
+          .link-url {
+            color: #0284c7;
+            font-weight: 700;
+            text-decoration: underline;
+            font-family: monospace;
+          }
+          .header-qr-section {
+            flex-shrink: 0;
+            text-align: center;
+          }
+          .qr-card {
+            background: #ffffff;
+            border: 1.5px solid #0891b2;
+            border-radius: 8px;
+            padding: 6px 8px 5px 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            display: inline-block;
+          }
+          .qr-image {
+            width: 88px;
+            height: 88px;
+            display: block;
+            margin: 0 auto;
+          }
+          .qr-text {
+            font-size: 6.5pt;
+            font-weight: 700;
+            color: #0e7490;
             margin-top: 3px;
+            max-width: 95px;
+            line-height: 1.15;
           }
           .kpi-row {
             display: flex;
             justify-content: space-between;
             gap: 16px;
-            margin-bottom: 18px;
+            margin-bottom: 16px;
           }
           .kpi-box {
             flex: 1;
             background: #f8fafc;
             border: 1px solid #cbd5e1;
             border-radius: 8px;
-            padding: 10px 16px;
+            padding: 8px 14px;
             text-align: center;
           }
           .kpi-label {
-            font-size: 8.5pt;
+            font-size: 8pt;
             color: #475569;
             text-transform: uppercase;
             font-weight: 700;
             letter-spacing: 0.5px;
           }
           .kpi-value {
-            font-size: 16pt;
+            font-size: 15pt;
             font-weight: 800;
             color: #0891b2;
             font-family: monospace;
-            margin-top: 3px;
+            margin-top: 2px;
           }
           table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
-            font-size: 9.5pt;
+            margin-bottom: 18px;
+            font-size: 9pt;
           }
           thead th {
             background-color: #0f172a;
             color: #ffffff;
-            padding: 8px 10px;
+            padding: 7px 9px;
             text-align: left;
             font-weight: 700;
             border: 1px solid #0f172a;
@@ -996,7 +1123,7 @@ export default function MarketLogs({
             background-color: #f8fafc;
           }
           tbody td {
-            padding: 8px 10px;
+            padding: 7px 9px;
             vertical-align: middle;
             border-left: 1px solid #e2e8f0;
             border-right: 1px solid #e2e8f0;
@@ -1005,7 +1132,7 @@ export default function MarketLogs({
           .member-name {
             font-weight: 700;
             color: #0f172a;
-            font-size: 10pt;
+            font-size: 9.5pt;
           }
           .member-fullname {
             font-size: 8pt;
@@ -1016,26 +1143,26 @@ export default function MarketLogs({
             background: #f1f5f9;
             border: 1px solid #cbd5e1;
             color: #0f172a;
-            padding: 2px 7px;
+            padding: 1px 6px;
             border-radius: 4px;
             font-weight: 700;
             font-family: monospace;
-            font-size: 9pt;
-            margin: 1px 3px 2px 0;
+            font-size: 8.5pt;
+            margin: 1px 2px 2px 0;
           }
           .date-summary {
-            font-size: 8pt;
+            font-size: 7.5pt;
             color: #64748b;
-            margin-top: 3px;
+            margin-top: 2px;
           }
           .duty-count {
             font-weight: 800;
-            font-size: 11pt;
+            font-size: 10.5pt;
             color: #0284c7;
             font-family: monospace;
           }
           .signatures {
-            margin-top: 36px;
+            margin-top: 32px;
             display: flex;
             justify-content: space-between;
             padding: 0 30px;
@@ -1059,7 +1186,7 @@ export default function MarketLogs({
             color: #64748b;
           }
           .footer {
-            margin-top: 24px;
+            margin-top: 20px;
             text-align: center;
             font-size: 7.5pt;
             color: #94a3b8;
@@ -1071,9 +1198,29 @@ export default function MarketLogs({
       </head>
       <body>
         <div class="header">
-          <h1 class="mess-title">${resolvedMessName}</h1>
-          <h2 class="report-subtitle">Standard Market & Duties Schedule (বাজার দায়িত্ব ও তারিখ তালিকা)</h2>
-          <div class="cycle-badge">Cycle: ${cycleName} ${startDateStr && endDateStr ? `(${startDateStr} to ${endDateStr})` : ""}</div>
+          <div class="header-content">
+            <div class="header-titles">
+              <div class="mess-title-row">
+                <h1 class="mess-title">${resolvedMessName}</h1>
+                <span class="system-badge">[ ${effectiveBrandingName} ]</span>
+              </div>
+              <h2 class="report-subtitle">Standard Market & Duties Schedule (বাজার দায়িত্ব ও তারিখ তালিকা)</h2>
+              <div class="cycle-row">
+                <span class="cycle-badge">Cycle: ${cycleName} ${startDateStr && endDateStr ? `(${startDateStr} to ${endDateStr})` : ""}</span>
+                <span class="manager-badge">ম্যানেজার: <strong>${managerDisplayName}</strong></span>
+              </div>
+              <div class="system-link-box">
+                <span class="link-label">সরাসরি ওয়েব / অ্যাপ লিংক:</span>
+                <a class="link-url" href="${effectiveWebsiteUrl}" target="_blank">${effectiveWebsiteUrl}</a>
+              </div>
+            </div>
+            <div class="header-qr-section">
+              <div class="qr-card">
+                <img src="${qrCodeDataUrl}" alt="Mess QR Code" class="qr-image" />
+                <div class="qr-text">ক্যামেরা দিয়ে স্ক্যান করে সরাসরি মেসে প্রবেশ করুন</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="kpi-row">
@@ -1098,8 +1245,10 @@ export default function MarketLogs({
           </thead>
           <tbody>
             ${memberDutySchedule.map((item, idx) => {
-              const nick = item.member.nickname || item.member.name;
-              const full = item.member.name !== nick ? item.member.name : "";
+              // Apply Respect & Seniority Title relative to the active manager (e.g. Nahid)
+              const respectName = getRespectDisplayName(activeManager, item.member, respectSenioritySettings);
+              const nick = respectName || item.member.nickname || item.member.name;
+              const full = (item.member.name && item.member.name !== nick && item.member.name !== item.member.nickname) ? item.member.name : "";
 
               return `
                 <tr>
@@ -1131,7 +1280,7 @@ export default function MarketLogs({
           <div class="sig-block">
             <div class="sig-line"></div>
             <div class="sig-title">${managerDisplayName}</div>
-            <div class="sig-sub">Mess Manager</div>
+            <div class="sig-sub">Mess Manager (ম্যানেজার)</div>
           </div>
           <div class="sig-block">
             <div class="sig-line"></div>
@@ -1141,7 +1290,7 @@ export default function MarketLogs({
         </div>
 
         <div class="footer">
-          Generated automatically on ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" })} (Dhaka Time) &bull; ${resolvedMessName} Official Schedule Report
+          Generated automatically on ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" })} (Dhaka Time) &bull; ${resolvedMessName} Official Schedule Report &bull; Powered by ${effectiveBrandingName} (<a href="${effectiveWebsiteUrl}" target="_blank" style="color: #64748b; text-decoration: none;">${effectiveWebsiteUrl}</a>)
         </div>
 
         <script>
@@ -2675,8 +2824,9 @@ export default function MarketLogs({
                       </tr>
                     ) : (
                       filteredSchedule.map((item, idx) => {
-                        const nick = item.member.nickname || item.member.name;
-                        const full = item.member.name !== nick ? item.member.name : "";
+                        const respectName = getRespectDisplayName(activeManager, item.member, respectSenioritySettings);
+                        const nick = respectName || item.member.nickname || item.member.name;
+                        const full = (item.member.name && item.member.name !== nick && item.member.name !== item.member.nickname) ? item.member.name : "";
                         return (
                           <tr key={item.member.id} className="hover:bg-slate-900/50 transition-colors">
                             <td className="py-3 px-3 text-center font-mono text-slate-500">

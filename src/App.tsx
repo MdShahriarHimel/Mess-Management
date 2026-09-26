@@ -1906,12 +1906,14 @@ export default function App() {
   });
   const [appearancePermissions, setAppearancePermissions] = useState<Record<string, string[]>>({});
   const [respectSenioritySettings, setRespectSenioritySettings] = useState<RespectSenioritySettings>({
-    enabled: false,
+    enabled: true,
     logic: "AUTOMATIC_SENIORITY",
     defaultMaleTitle: "ভাই",
     defaultFemaleTitle: "আপু",
     manualOverride: false
   });
+  const [systemWebsiteUrl, setSystemWebsiteUrl] = useState<string>("https://mymessmanagement.onrender.com");
+  const [systemBrandingName, setSystemBrandingName] = useState<string>("My Mess (Mess ERP)");
 
   // 3-Level settings and customization states
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<string>("mess-appearance");
@@ -2204,6 +2206,8 @@ export default function App() {
         if (data.appearancePermissions) setAppearancePermissions(data.appearancePermissions);
         if (data.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(data.disableBackgroundAudio);
         if (data.activeAudioSettings) setActiveAudioSettings(data.activeAudioSettings);
+        if (data.systemWebsiteUrl) setSystemWebsiteUrl(data.systemWebsiteUrl);
+        if (data.systemBrandingName) setSystemBrandingName(data.systemBrandingName);
         // Load independent level-specific settings
         await fetchThreeLevelSettings(token);
       }
@@ -2425,6 +2429,8 @@ export default function App() {
           if (s.appearancePermissions) setAppearancePermissions(s.appearancePermissions);
           if (s.disableBackgroundAudio !== undefined) setDisableBackgroundAudio(s.disableBackgroundAudio);
           if (s.activeAudioSettings) setActiveAudioSettings(s.activeAudioSettings);
+          if (s.systemWebsiteUrl) setSystemWebsiteUrl(s.systemWebsiteUrl);
+          if (s.systemBrandingName) setSystemBrandingName(s.systemBrandingName);
           if (s.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(s.allowSuperUserUnlock);
           if (s.memberHistoryWindowMonths !== undefined) setMemberHistoryWindowMonths(Number(s.memberHistoryWindowMonths) || 0);
         }
@@ -2732,17 +2738,13 @@ export default function App() {
 
   useEffect(() => {
     if (sessionToken) {
-      if (sessionToken.startsWith("ey") && !firebaseAuthChecked) {
-        // Skip initial check of Firebase token, wait for onAuthStateChanged to refresh/verify
-        return;
-      }
       validateSession(sessionToken);
       fetchMonthsAndMembers(sessionToken, true);
       fetchSettings(sessionToken);
       fetchMesses(sessionToken);
       fetchElections(sessionToken);
     }
-  }, [sessionToken, firebaseAuthChecked]);
+  }, [sessionToken]);
 
   useEffect(() => {
     const handleRefreshUser = () => {
@@ -2951,10 +2953,10 @@ export default function App() {
           }
         }
       } else {
-        // No Firebase user
+        // No Firebase SDK user in active memory
         const localToken = localStorage.getItem("mess_token") || sessionStorage.getItem("mess_token");
-        if (localToken && !localToken.startsWith("ey")) {
-          // It's a legacy or password-based token, let's keep and validate it
+        if (localToken) {
+          // Keep existing session alive and let validateSession verify with backend
           if (isMounted) {
             validateSession(localToken);
             setFirebaseAuthChecked(true);
@@ -5651,6 +5653,8 @@ export default function App() {
               months={months}
               respectSenioritySettings={respectSenioritySettings}
               logoText={logoText || (messes?.find(m => m.id === activeMessId)?.name) || "ABABIL MESS"}
+              systemWebsiteUrl={systemWebsiteUrl}
+              systemBrandingName={systemBrandingName}
             />
           )}
 
@@ -5860,6 +5864,12 @@ export default function App() {
                     isDarkMode={activeIsDarkMode}
                     t={t}
                     onRefreshPlatformStatus={fetchPlatformStatus}
+                    systemWebsiteUrl={systemWebsiteUrl}
+                    systemBrandingName={systemBrandingName}
+                    onUpdateSystemWebsite={(url, name) => {
+                      if (url) setSystemWebsiteUrl(url);
+                      if (name) setSystemBrandingName(name);
+                    }}
                   />
                 </div>
               )}
