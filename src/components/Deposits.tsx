@@ -178,6 +178,9 @@ export default function Deposits({
         setAmount("");
         fetchDeposits();
         onRefresh();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("mess:finance-updated"));
+        }
       } else {
         const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to save deposit");
@@ -203,6 +206,9 @@ export default function Deposits({
       if (response.ok) {
         fetchDeposits();
         onRefresh();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("mess:finance-updated"));
+        }
       } else {
         const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to delete deposit");

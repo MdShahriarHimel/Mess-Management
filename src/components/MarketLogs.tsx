@@ -603,6 +603,9 @@ export default function MarketLogs({
       resetForm();
       fetchMarketsAndSchedules();
       onRefresh();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("mess:finance-updated"));
+      }
     } catch (err: any) {
       setError(err.message || "Connection failure");
     } finally {
@@ -712,6 +715,9 @@ export default function MarketLogs({
       if (response.ok) {
         fetchMarketsAndSchedules();
         onRefresh();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("mess:finance-updated"));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -733,6 +739,9 @@ export default function MarketLogs({
       if (response.ok) {
         fetchMarketsAndSchedules();
         onRefresh();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("mess:finance-updated"));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -765,6 +774,9 @@ export default function MarketLogs({
         setManagerialDate(new Date().toISOString().split("T")[0]);
         fetchMarketsAndSchedules();
         onRefresh();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("mess:finance-updated"));
+        }
       } else {
         const err = await response.json().catch(() => ({}));
         alert(err.error || "Failed to save managerial cost");
@@ -941,7 +953,7 @@ export default function MarketLogs({
       <html lang="bn">
       <head>
         <meta charset="utf-8">
-        <title>${resolvedMessName} [${effectiveBrandingName}] - Market Duty Schedule - ${cycleName}</title>
+        <title></title>
         <style>
           @page {
             size: A4 portrait;
@@ -999,12 +1011,6 @@ export default function MarketLogs({
             border-radius: 4px;
             padding: 2px 7px;
             display: inline-block;
-          }
-          .report-subtitle {
-            font-size: 11pt;
-            font-weight: 700;
-            color: #334155;
-            margin: 4px 0 3px 0;
           }
           .cycle-row {
             display: flex;
@@ -1204,7 +1210,6 @@ export default function MarketLogs({
                 <h1 class="mess-title">${resolvedMessName}</h1>
                 <span class="system-badge">[ ${effectiveBrandingName} ]</span>
               </div>
-              <h2 class="report-subtitle">Standard Market & Duties Schedule (বাজার দায়িত্ব ও তারিখ তালিকা)</h2>
               <div class="cycle-row">
                 <span class="cycle-badge">Cycle: ${cycleName} ${startDateStr && endDateStr ? `(${startDateStr} to ${endDateStr})` : ""}</span>
                 <span class="manager-badge">ম্যানেজার: <strong>${managerDisplayName}</strong></span>
@@ -1556,17 +1561,8 @@ export default function MarketLogs({
               <Calendar size={18} />
               Market Duty & Expense Calendar
             </h3>
-            {/* Visual Status Legend & Duty PDF Report Button */}
+            {/* Visual Status Legend */}
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
-              <button
-                type="button"
-                onClick={() => setShowDutyScheduleModal(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition-all cursor-pointer shadow-sm mr-1"
-                title="View & Export Market Duty Schedule PDF"
-              >
-                <FileText size={13} className="text-emerald-400" />
-                <span>শিডিউল তালিকা ও PDF</span>
-              </button>
               <div className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 px-2 py-0.5 rounded-md">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Market Pushed (সবুজ = বাজার সম্পন্ন)</span>

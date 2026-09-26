@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   DollarSign, FileSpreadsheet, Plus, X, UserCheck, Check, AlertCircle, Coins, ShieldAlert, Save, RefreshCw, Printer, ShoppingCart, Edit3, Trash2, Search, Users, FileText
 } from "lucide-react";
@@ -96,6 +96,43 @@ export default function FinanceSettlement({
       setCustomBillOverrides({});
     }
   }, [messStorageKey]);
+
+  // Subtle 'flicker-on-update' animation state for finance overview balance
+  const [isBalanceFlickering, setIsBalanceFlickering] = useState(false);
+  const prevFinanceValuesRef = useRef<{ deposits: number; market: number; remaining: number } | null>(null);
+
+  useEffect(() => {
+    const totalD = Number(reportSummary?.totalDeposits) || 0;
+    const totalM = Number(reportSummary?.managerMarketSpent) || 0;
+    const currentRemaining = totalD - totalM;
+
+    if (prevFinanceValuesRef.current !== null) {
+      const prev = prevFinanceValuesRef.current;
+      if (prev.deposits !== totalD || prev.market !== totalM || prev.remaining !== currentRemaining) {
+        setIsBalanceFlickering(true);
+        const timer = setTimeout(() => {
+          setIsBalanceFlickering(false);
+        }, 850);
+        prevFinanceValuesRef.current = { deposits: totalD, market: totalM, remaining: currentRemaining };
+        return () => clearTimeout(timer);
+      }
+    }
+    prevFinanceValuesRef.current = { deposits: totalD, market: totalM, remaining: currentRemaining };
+  }, [reportSummary?.totalDeposits, reportSummary?.managerMarketSpent]);
+
+  useEffect(() => {
+    const handleFinanceEvent = () => {
+      setIsBalanceFlickering(true);
+      const timer = setTimeout(() => {
+        setIsBalanceFlickering(false);
+      }, 850);
+      return () => clearTimeout(timer);
+    };
+    window.addEventListener("mess:finance-updated", handleFinanceEvent);
+    return () => {
+      window.removeEventListener("mess:finance-updated", handleFinanceEvent);
+    };
+  }, []);
 
   // Calculate participating members for this mess month
   // (Admins with status "Not member (only for Admin)" [NOT_MEMBER] and TESTING sandbox members are excluded from mess calculations)
@@ -2638,22 +2675,39 @@ export default function FinanceSettlement({
           </div>
 
           {/* RIGHT: STATS SUMMARY BOX / REMAINING DEPOSITS SUMMARY */}
-          <div className={`p-5 rounded-2xl border lg:col-span-4 xl:col-span-3 h-fit ${
+          <div className={`p-5 rounded-2xl border lg:col-span-4 xl:col-span-3 h-fit transition-all duration-300 relative overflow-hidden ${
+            isBalanceFlickering ? "card-flicker-update border-cyan-400/80 shadow-lg shadow-cyan-500/20" : ""
+          } ${
             isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
           }`} id="finance-holding-overview">
-            <h3 className="text-sm font-bold font-display text-cyan-300 mb-3 flex items-center gap-1.5">
-              <Coins className="text-cyan-400 animate-bounce" size={16} />
-              Remaining Deposits
+            <h3 className="text-sm font-bold font-display text-cyan-300 mb-3 flex items-center justify-between gap-1.5">
+              <span className="flex items-center gap-1.5">
+                <Coins className="text-cyan-400 animate-bounce" size={16} />
+                Remaining Deposits
+              </span>
+              {isBalanceFlickering && (
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 animate-pulse">
+                  Updated
+                </span>
+              )}
             </h3>
 
             <div className="space-y-3">
-              <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
+              <div className={`p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs transition-all ${
+                isBalanceFlickering ? "border-cyan-500/30" : ""
+              }`}>
                 <span className="text-slate-400 font-medium">Total Deposits Pool</span>
-                <span className="font-extrabold font-mono text-cyan-400">৳ {reportSummary?.totalDeposits || 0}</span>
+                <span className={`font-extrabold font-mono text-cyan-400 ${
+                  isBalanceFlickering ? "animate-flicker-update" : ""
+                }`}>৳ {reportSummary?.totalDeposits || 0}</span>
               </div>
-              <div className="p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs">
+              <div className={`p-2.5 bg-slate-950/40 rounded-xl border border-slate-850/50 flex justify-between items-center text-xs transition-all ${
+                isBalanceFlickering ? "border-orange-500/30" : ""
+              }`}>
                 <span className="text-slate-400 font-medium">Manager Monthly Market</span>
-                <span className="font-extrabold font-mono text-orange-400">৳ {reportSummary?.managerMarketSpent || 0}</span>
+                <span className={`font-extrabold font-mono text-orange-400 ${
+                  isBalanceFlickering ? "animate-flicker-update" : ""
+                }`}>৳ {reportSummary?.managerMarketSpent || 0}</span>
               </div>
 
               {(() => {
@@ -2663,13 +2717,15 @@ export default function FinanceSettlement({
                 const isNegative = remaining < 0;
 
                 return (
-                  <div className={`p-3 rounded-xl border text-center ${
+                  <div className={`p-3 rounded-xl border text-center transition-all duration-300 ${
                     isNegative 
                       ? "bg-rose-500/10 border-rose-500/20 text-rose-400" 
                       : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                  }`}>
+                  } ${isBalanceFlickering ? "ring-2 ring-cyan-400/40" : ""}`}>
                     <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Remaining Deposits</span>
-                    <span className="text-lg font-black font-mono">৳ {remaining}</span>
+                    <span className={`text-lg font-black font-mono transition-all duration-300 ${
+                      isBalanceFlickering ? "animate-flicker-update text-cyan-300" : ""
+                    }`}>৳ {remaining}</span>
                   </div>
                 );
               })()}

@@ -740,3 +740,70 @@ div.relative.overflow-hidden.w-64.p-3.rounded-xl > div:not(.absolute) {
   position: relative;
   z-index: 10;
 }
+
+/* ==========================================
+   FLICKER-ON-UPDATE ANIMATION FOR FINANCE CARD
+   ========================================== */
+@keyframes flickerOnUpdate {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+    opacity: 1;
+  }
+  15% {
+    transform: scale(1.08);
+    filter: brightness(1.75) drop-shadow(0 0 12px rgba(34, 211, 238, 0.9));
+    color: #67e8f9;
+    opacity: 0.95;
+  }
+  35% {
+    transform: scale(0.98);
+    filter: brightness(1.3) drop-shadow(0 0 6px rgba(16, 185, 129, 0.7));
+    opacity: 0.85;
+  }
+  55% {
+    transform: scale(1.04);
+    filter: brightness(1.5) drop-shadow(0 0 10px rgba(34, 211, 238, 0.75));
+    color: #38bdf8;
+    opacity: 1;
+  }
+  75% {
+    transform: scale(0.99);
+    filter: brightness(1.2);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    opacity: 1;
+  }
+}
+
+.animate-flicker-update {
+  animation: flickerOnUpdate 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  display: inline-block;
+  will-change: transform, filter, opacity, color;
+}
+
+@keyframes cardFlickerBorder {
+  0% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0);
+    border-color: rgba(6, 182, 212, 0.15);
+  }
+  25% {
+    box-shadow: 0 0 24px 3px rgba(6, 182, 212, 0.45), inset 0 0 14px rgba(6, 182, 212, 0.15);
+    border-color: rgba(34, 211, 238, 0.8);
+  }
+  60% {
+    box-shadow: 0 0 14px 1px rgba(6, 182, 212, 0.25);
+    border-color: rgba(34, 211, 238, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0);
+    border-color: rgba(6, 182, 212, 0.15);
+  }
+}
+
+.card-flicker-update {
+  animation: cardFlickerBorder 0.85s ease-out forwards;
+}
