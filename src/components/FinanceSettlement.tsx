@@ -1183,8 +1183,12 @@ export default function FinanceSettlement({
     if (!currentMonthId) return;
     setMealsLoading(true);
     try {
-      const response = await fetch(`/api/meals/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/meals/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -1218,8 +1222,12 @@ export default function FinanceSettlement({
   const fetchAllMarkets = async () => {
     if (!currentMonthId) return;
     try {
-      const response = await fetch(`/api/markets/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/markets/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -1239,11 +1247,10 @@ export default function FinanceSettlement({
     const handleGlobalRefresh = () => {
       fetchMeals();
       fetchAllMarkets();
-      onRefresh();
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, []);
+  }, [currentMonthId, authToken]);
 
   const handleCellChange = (memberId: string, dateStr: string, rawVal: string) => {
     const parsed = rawVal === "" ? 0 : Number(rawVal);
@@ -2238,6 +2245,7 @@ export default function FinanceSettlement({
                   fetchMeals(),
                   fetchAllMarkets()
                 ]);
+                if (onRefresh) onRefresh();
               }}
             />
             <span className="text-[10px] text-slate-400 bg-cyan-500/10 px-2 py-0.5 rounded font-bold">
@@ -2399,12 +2407,16 @@ export default function FinanceSettlement({
                 )}
                 <button
                   type="button"
-                  onClick={fetchMeals}
+                  onClick={async () => {
+                    await fetchMeals();
+                    if (onRefresh) onRefresh();
+                  }}
                   disabled={mealsLoading || saveLoading}
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-all active:scale-95"
-                  title="Reset/Reload meals data"
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 px-2.5"
+                  title="Reload daily meals data & recalculate summary"
                 >
-                  <RefreshCw size={14} className={mealsLoading ? "animate-spin" : ""} />
+                  <RefreshCw size={14} className={mealsLoading ? "animate-spin text-cyan-400" : ""} />
+                  <span className="text-[11px] font-bold">Refresh</span>
                 </button>
                 <button
                   type="button"

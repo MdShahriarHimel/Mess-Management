@@ -321,14 +321,19 @@ export default function MarketLogs({
     const activeId = targetId || viewMonthId || currentMonthId;
     if (!activeId) return;
     try {
-      const authHeader = { "Authorization": `Bearer ${authToken}` };
+      const authHeader = { 
+        "Authorization": `Bearer ${authToken}`,
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache"
+      };
+      const ts = Date.now();
       
       const [mRes, dRes, depRes, holdRes, mealsRes] = await Promise.all([
-        fetch(`/api/markets/${activeId}`, { headers: authHeader }),
-        fetch(`/api/duties/${activeId}`, { headers: authHeader }),
-        fetch(`/api/deposits/${activeId}`, { headers: authHeader }),
-        fetch(`/api/holdings/${activeId}`, { headers: authHeader }),
-        fetch(`/api/meals/${activeId}`, { headers: authHeader })
+        fetch(`/api/markets/${activeId}?_t=${ts}`, { headers: authHeader }),
+        fetch(`/api/duties/${activeId}?_t=${ts}`, { headers: authHeader }),
+        fetch(`/api/deposits/${activeId}?_t=${ts}`, { headers: authHeader }),
+        fetch(`/api/holdings/${activeId}?_t=${ts}`, { headers: authHeader }),
+        fetch(`/api/meals/${activeId}?_t=${ts}`, { headers: authHeader })
       ]);
 
       // Guard: if view month changed while fetching, discard stale response
@@ -388,7 +393,7 @@ export default function MarketLogs({
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, []);
+  }, [viewMonthId, currentMonthId, authToken]);
 
   useEffect(() => {
     if (marketForcedFlowStep === "submit_voucher") {

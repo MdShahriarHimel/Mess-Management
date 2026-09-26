@@ -8,6 +8,11 @@ export function getAuthToken(currentUser?: { id?: string } | null): string {
   return currentUser?.id || "";
 }
 
+export function appendCacheBuster(url: string): string {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}_t=${Date.now()}`;
+}
+
 export function getAuthHeader(currentUser?: { id?: string } | null, extraHeaders: Record<string, string> = {}): Record<string, string> {
   const token = getAuthToken(currentUser);
   let activeMess = "default";
@@ -17,6 +22,8 @@ export function getAuthHeader(currentUser?: { id?: string } | null, extraHeaders
   return {
     "Authorization": `Bearer ${token}`,
     "X-Mess-Id": activeMess,
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
     ...extraHeaders
   };
 }

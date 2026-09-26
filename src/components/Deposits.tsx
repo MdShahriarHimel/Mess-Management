@@ -101,8 +101,12 @@ export default function Deposits({
     const monthToFetch = targetId || currentMonthId;
     if (!monthToFetch) return;
     try {
-      const response = await fetch(`/api/deposits/${monthToFetch}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/deposits/${monthToFetch}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         if (monthToFetch !== currentMonthId && !targetId) return;
@@ -126,7 +130,7 @@ export default function Deposits({
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, []);
+  }, [currentMonthId, authToken]);
 
   const handleAddDeposit = async (e: React.FormEvent) => {
     e.preventDefault();

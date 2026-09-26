@@ -81,8 +81,12 @@ export default function MealsTracker({
   const fetchPendingRequests = async () => {
     if (!currentMonthId || !isManagementRole) return;
     try {
-      const response = await fetch(`/api/meal-requests/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/meal-requests/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -100,8 +104,12 @@ export default function MealsTracker({
     fetchCounter++;
     const currentCount = fetchCounter;
     try {
-      const response = await fetch(`/api/meals/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/meals/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -172,8 +180,12 @@ export default function MealsTracker({
   const checkMonthLock = async () => {
     if (!currentMonthId) return;
     try {
-      const response = await fetch("/api/months", {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/months?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -202,7 +214,7 @@ export default function MealsTracker({
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, []);
+  }, [currentMonthId, selectedDate, authToken]);
 
   // Handle meal count selection
   const updateMealCell = (memberId: string, type: string, val: number | string) => {

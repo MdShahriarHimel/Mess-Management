@@ -142,8 +142,12 @@ export default function Members({
   const fetchDeletedMembers = async () => {
     if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.SUPERUSER) return;
     try {
-      const response = await fetch("/api/members/deleted-list", {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/members/deleted-list?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json();
@@ -162,12 +166,11 @@ export default function Members({
 
   React.useEffect(() => {
     const handleGlobalRefresh = () => {
-      onRefresh();
       fetchDeletedMembers();
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, []);
+  }, [showDeletedMembers, currentUser, authToken]);
 
   const handleUndoDelete = async (memberId: string) => {
     try {

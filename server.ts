@@ -122,6 +122,15 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
+// Ensure all dynamic API responses are never cached by browsers, proxies or CDNs
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
+
 // Apply server protection middleware for maintenance modes and feature flags
 app.use("/api", maintenanceMiddleware);
 

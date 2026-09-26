@@ -42,6 +42,7 @@ import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
 import { deduplicateMembersList, findMemberByUniqueKey, sortMembersAlphabetically } from "./utils/memberUtils.ts";
 import { validateTokenIntegrity, setStoredTokenSafely, clearStoredTokenSafely } from "./utils/authUtils.ts";
+import { getAuthToken } from "./lib/authHeader.ts";
 
 // Types
 import { Member, MessMonth, UserRole, MemberStatus, CycleProposal, RespectSenioritySettings } from "./types.js";
@@ -2618,10 +2619,15 @@ export default function App() {
   // Fetch core constants
   const fetchMonthsAndMembers = async (token: string, isInitialLoad = false) => {
     try {
-      const authHeader = { "Authorization": `Bearer ${token}` };
+      const authHeader = { 
+        "Authorization": `Bearer ${token}`,
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache"
+      };
+      const ts = Date.now();
       
-      const monthsRes = await fetch("/api/months", { headers: authHeader });
-      const membersRes = await fetch("/api/members", { headers: authHeader });
+      const monthsRes = await fetch(`/api/months?_t=${ts}`, { headers: authHeader });
+      const membersRes = await fetch(`/api/members?_t=${ts}`, { headers: authHeader });
 
       if (monthsRes.ok) {
         const monthsData = await monthsRes.json().catch(() => ({}));
@@ -2668,7 +2674,7 @@ export default function App() {
 
       // Fetch dynamic cycle proposals
       try {
-        const propRes = await fetch("/api/cycle-proposals", { headers: authHeader });
+        const propRes = await fetch(`/api/cycle-proposals?_t=${ts}`, { headers: authHeader });
         if (propRes.ok) {
           const propData = await propRes.json().catch(() => ({}));
           setCycleProposals(propData.proposals || []);
@@ -2683,10 +2689,16 @@ export default function App() {
 
   // Fetch report numbers
   const fetchReportSummary = async () => {
-    if (!sessionToken || !currentMonthId) return;
+    const effectiveToken = sessionToken || getAuthToken(currentUser);
+    const activeMonthId = currentMonthId || (months && months[0]?.id);
+    if (!effectiveToken || !activeMonthId) return;
     try {
-      const response = await fetch(`/api/reports/summary/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${sessionToken}` }
+      const response = await fetch(`/api/reports/summary/${activeMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${effectiveToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -2698,10 +2710,16 @@ export default function App() {
   };
 
   const fetchDuties = async () => {
-    if (!sessionToken || !currentMonthId) return;
+    const effectiveToken = sessionToken || getAuthToken(currentUser);
+    const activeMonthId = currentMonthId || (months && months[0]?.id);
+    if (!effectiveToken || !activeMonthId) return;
     try {
-      const response = await fetch(`/api/duties/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${sessionToken}` }
+      const response = await fetch(`/api/duties/${activeMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${effectiveToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -3179,13 +3197,16 @@ export default function App() {
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
 
   const handleRefreshAll = async () => {
+    if (isRefreshingAll) return;
     setIsRefreshingAll(true);
     try {
-      if (sessionToken) {
+      const effectiveToken = sessionToken || getAuthToken(currentUser);
+      if (effectiveToken) {
         await Promise.all([
-          fetchMonthsAndMembers(sessionToken),
+          fetchMonthsAndMembers(effectiveToken),
           fetchReportSummary(),
-          fetchDuties()
+          fetchDuties(),
+          fetchElections(effectiveToken)
         ]);
       }
       window.dispatchEvent(new CustomEvent("app-global-refresh"));

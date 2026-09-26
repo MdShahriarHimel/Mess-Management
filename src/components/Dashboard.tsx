@@ -262,8 +262,12 @@ export default function Dashboard({
   // Fetch members for Duty Roster
   const fetchMembers = async () => {
     try {
-      const response = await fetch("/api/members", {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/members?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json();
@@ -278,8 +282,12 @@ export default function Dashboard({
   const fetchRatings = async () => {
     if (!currentMonthId) return;
     try {
-      const response = await fetch(`/api/ratings/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/ratings/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json();
@@ -294,8 +302,12 @@ export default function Dashboard({
   const fetchMyMeals = async () => {
     if (!currentMonthId || !currentUser) return;
     try {
-      const response = await fetch(`/api/meals/${currentMonthId}`, {
-        headers: { "Authorization": `Bearer ${authToken}` }
+      const response = await fetch(`/api/meals/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
       if (response.ok) {
         const data = await response.json();
@@ -334,7 +346,7 @@ export default function Dashboard({
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, []);
+  }, [currentMonthId, currentUser, authToken]);
 
   const handleRateManager = async (score: number) => {
     setRatingError(null);

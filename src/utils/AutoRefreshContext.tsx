@@ -125,6 +125,15 @@ export const AutoRefreshProvider: React.FC<{ children: React.ReactNode; erpBrand
     return () => clearInterval(tickInterval);
   }, [refreshSettings, refreshTriggers]);
 
+  // Sync with global system refresh events
+  useEffect(() => {
+    const handleGlobal = () => {
+      refreshAllModules();
+    };
+    window.addEventListener("app-global-refresh", handleGlobal);
+    return () => window.removeEventListener("app-global-refresh", handleGlobal);
+  }, []);
+
   return (
     <AutoRefreshContext.Provider value={{ refreshSettings, refreshTriggers, refreshModule, refreshAllModules, isModuleDisabled }}>
       {children}
