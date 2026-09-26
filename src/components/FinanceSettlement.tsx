@@ -743,6 +743,133 @@ export default function FinanceSettlement({
     }
   };
 
+  // Helper to format system role display (ADMIN/Himel shows MEMBER, while SUPERUSER and MANAGER remain)
+  const getSystemRoleDisplay = (m: Member) => {
+    const roleStr = (m.role || "").toUpperCase();
+    if (roleStr === "ADMIN") {
+      return "MEMBER";
+    }
+    if (roleStr === "SUPERUSER") {
+      return "SUPERUSER";
+    }
+    if (roleStr === "MANAGER" || roleStr === "PARTIAL_MANAGER") {
+      return "MANAGER";
+    }
+    return roleStr ? roleStr.replace(/_/g, " ") : "MEMBER";
+  };
+
+  // Helper to resolve assigned work duty for a member in this month
+  const getMemberAssignedDuty = (m: Member) => {
+    const dutiesFound: string[] = [];
+
+    // 1. Check registered bills for this active month where this member is the designated collector
+    const currentMonthBills = (reportSummary?.bills || []).filter(
+      (b: any) => (!b.monthId || b.monthId === currentMonthId) && b.collectorId === m.id
+    );
+    currentMonthBills.forEach((b: any) => {
+      const cleanName = (b.name || "").replace(/\s*\([^)]+\)$/, "").trim();
+      const parts = cleanName.split(":");
+      let title = cleanName;
+      if (parts.length >= 2) {
+        title = parts.slice(1).join(":").trim();
+      } else {
+        const match = cleanName.match(/^(RENT|WORKER|UTILITY|EXTRA)\s+(.*)$/i);
+        if (match) title = match[2].trim();
+      }
+
+      const lower = cleanName.toLowerCase();
+      if (!title || title.toLowerCase() === "default bill") {
+        if (lower.includes("rent") || lower.includes("ভাড়া") || lower.includes("ভাড়া") || lower.includes("বাসা")) title = "House Rent / মেস ভাড়া";
+        else if (lower.includes("worker") || lower.includes("maid") || lower.includes("বুয়া") || lower.includes("বুয়া")) title = "Maid / বুয়া বিল";
+        else if (lower.includes("elect") || lower.includes("বিদ্যুৎ") || lower.includes("কারেন্ট") || lower.includes("water") || lower.includes("পানি")) title = "Utility / কারেন্ট বিল";
+        else if (lower.includes("wifi") || lower.includes("wi-fi") || lower.includes("ওয়াইফাই") || lower.includes("ওয়াইফাই") || lower.includes("internet")) title = "WiFi";
+        else title = "Mess Duty";
+      }
+      if (title && !dutiesFound.includes(title)) {
+        dutiesFound.push(title);
+      }
+    });
+
+    // 2. Check work duties from duties prop (excluding market duties)
+    const workDuties = (duties || []).filter(
+      (d: any) => (!d.monthId || d.monthId === currentMonthId) &&
+                  d.memberId === m.id &&
+                  !d.name?.toLowerCase()?.startsWith("market duty:")
+    );
+    workDuties.forEach((d: any) => {
+      const name = (d.name || "").trim();
+      if (name && !dutiesFound.includes(name)) {
+        dutiesFound.push(name);
+      }
+    });
+
+    // 3. Check m.assignedTask profile field
+    if (m.assignedTask && m.assignedTask.trim()) {
+      const taskTrimmed = m.assignedTask.trim();
+      const alreadyHasSimilar = dutiesFound.some(df => 
+        df.toLowerCase().includes(taskTrimmed.toLowerCase()) || 
+        taskTrimmed.toLowerCase().includes(df.toLowerCase())
+      );
+      if (!alreadyHasSimilar) {
+        dutiesFound.push(taskTrimmed);
+      }
+    }
+
+    return dutiesFound.length > 0 ? dutiesFound.join(" • ") : "General Member";
+  };
+
+  // Helper to format market dates with coveredDates support (e.g. 2026-09-04, 05 or 2026-09-10, 11)
+  const formatMarketDates = (m: any) => {
+    let dates: string[] = [];
+    if (Array.isArray(m.coveredDates) && m.coveredDates.length > 0) {
+      dates = [...m.coveredDates];
+    } else if (m.date) {
+      dates = [m.date];
+    }
+
+    // Correlate with duty schedule consecutive days if single date
+    if (dates.length === 1 && duties && duties.length > 0) {
+      const dStr = dates[0];
+      const memDutyDates = (duties || [])
+        .filter((d: any) => d.memberId === m.memberId && (!d.monthId || d.monthId === currentMonthId) && d.name?.startsWith("Market duty:"))
+        .map((d: any) => d.name.replace("Market duty:", "").trim())
+        .filter(Boolean);
+      
+      if (memDutyDates.includes(dStr)) {
+        const dObj = new Date(dStr);
+        dObj.setDate(dObj.getDate() + 1);
+        const nextDayStr = dObj.toISOString().split("T")[0];
+        if (memDutyDates.includes(nextDayStr) && !dates.includes(nextDayStr)) {
+          const marketSource = pdfMarkets.length > 0 ? pdfMarkets : allMarkets;
+          const hasOtherVoucher = marketSource.some(
+            (other: any) => other.id !== m.id && other.memberId === m.memberId && other.date === nextDayStr
+          );
+          if (!hasOtherVoucher) {
+            dates.push(nextDayStr);
+          }
+        }
+      }
+    }
+
+    dates = Array.from(new Set(dates.filter(Boolean))).sort();
+    if (dates.length === 0) return m.date || "";
+    if (dates.length === 1) return dates[0];
+
+    const first = dates[0];
+    const prefix = first.substring(0, 7);
+    const allSameMonth = dates.every(d => d.startsWith(prefix));
+
+    if (allSameMonth) {
+      const formatted = dates.map((d, idx) => {
+        if (idx === 0) return d;
+        return d.substring(8);
+      });
+      return formatted.join(", ");
+    }
+
+    return dates.join(", ");
+  };
+
   const exportToExcel = () => {
     if (!reportSummary?.memberSettlements) return;
     
@@ -811,6 +938,76 @@ export default function FinanceSettlement({
     ];
     
     XLSX.utils.book_append_sheet(wb, ws, "Settlement Summary");
+
+    // Sheet 2: Members Roles & Assigned Work Duties
+    const memberHeaders = [
+      "Member Name (Nickname)",
+      "System Role",
+      "Assigned Work Duty",
+      "Phone",
+      "Email"
+    ];
+    const memberRows = activeMembers.map(m => [
+      `${m.name} (${m.nickname})`,
+      getSystemRoleDisplay(m),
+      getMemberAssignedDuty(m),
+      m.phone || "N/A",
+      m.email || "N/A"
+    ]);
+    const memberSheetData = [
+      [`${messSettings?.messName || logoText || "MESS"} - MEMBERS ROLES & ASSIGNED WORK DUTIES`],
+      [`Cycle: ${currentMonthId} - Generated: ${new Date().toLocaleDateString()}`],
+      [],
+      memberHeaders,
+      ...memberRows
+    ];
+    const wsMembers = XLSX.utils.aoa_to_sheet(memberSheetData);
+    wsMembers["!cols"] = [
+      { wch: 30 },
+      { wch: 18 },
+      { wch: 32 },
+      { wch: 18 },
+      { wch: 25 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsMembers, "Roles & Duties");
+
+    // Sheet 3: Market Expenditures Breakdown
+    const marketEntriesToExport = (pdfMarkets.length > 0 ? pdfMarkets : allMarkets);
+    if (marketEntriesToExport.length > 0) {
+      const marketHeaders = [
+        "Date",
+        "Purchased Item Description",
+        "Buyer Nickname",
+        "Amount Spent (৳)"
+      ];
+      const marketRows = marketEntriesToExport.map((m: any) => {
+        const buyer = members.find(mem => mem.id === m.memberId);
+        return [
+          formatMarketDates(m),
+          m.description || "Groceries",
+          buyer?.nickname || buyer?.name || "Member",
+          m.amount
+        ];
+      });
+      const marketSheetData = [
+        [`MARKET EXPENDITURES BREAKDOWN (WHERE MONEY WAS SPENT)`],
+        [`Cycle: ${currentMonthId} - Generated: ${new Date().toLocaleDateString()}`],
+        [],
+        marketHeaders,
+        ...marketRows,
+        [],
+        ["Total Raw Market Spending", "", "", reportSummary?.totalMarkets || 0]
+      ];
+      const wsMarkets = XLSX.utils.aoa_to_sheet(marketSheetData);
+      wsMarkets["!cols"] = [
+        { wch: 20 },
+        { wch: 55 },
+        { wch: 20 },
+        { wch: 18 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsMarkets, "Market Expenses");
+    }
+
     XLSX.writeFile(wb, `Mess_Settlement_Sheet_${currentMonthId}.xlsx`);
   };
 
@@ -822,7 +1019,8 @@ export default function FinanceSettlement({
       : "No ratings yet";
 
     // Build Markets spend breakdown (only if checkbox selected)
-    const marketHtml = pdfIncludeMarkets && pdfMarkets.length > 0 
+    const marketEntriesToPrint = pdfMarkets.length > 0 ? pdfMarkets : allMarkets;
+    const marketHtml = pdfIncludeMarkets && marketEntriesToPrint.length > 0 
       ? `
         <div class="section">
           <h2>Market Expenditures Breakdown (Where Money Was Spent)</h2>
@@ -836,11 +1034,11 @@ export default function FinanceSettlement({
               </tr>
             </thead>
             <tbody>
-              ${pdfMarkets.map(m => {
+              ${marketEntriesToPrint.map(m => {
                 const buyer = members.find(mem => mem.id === m.memberId);
                 return `
                   <tr>
-                    <td>${m.date}</td>
+                    <td>${formatMarketDates(m)}</td>
                     <td>${m.description || "Groceries"}</td>
                     <td>${buyer?.nickname || "Member"}</td>
                     <td>৳ ${m.amount}</td>
@@ -903,8 +1101,8 @@ export default function FinanceSettlement({
             ${activeMembers.map(m => `
               <tr>
                 <td><strong>${m.name} (${m.nickname})</strong></td>
-                <td>${m.role.replace(/_/g, " ")}</td>
-                <td>${m.assignedTask || "General Member"}</td>
+                <td>${getSystemRoleDisplay(m)}</td>
+                <td>${getMemberAssignedDuty(m)}</td>
                 ${pdfIncludeContactInfo ? `<td>${m.hideContactInfoByAdmin ? "Hidden" : m.email}</td><td>${m.hideContactInfoByAdmin ? "Hidden" : (m.phone || "N/A")}</td>` : ""}
               </tr>
             `).join("")}
