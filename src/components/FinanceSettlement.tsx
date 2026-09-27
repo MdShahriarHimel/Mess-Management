@@ -743,10 +743,10 @@ export default function FinanceSettlement({
     }
   };
 
-  // Helper to format system role display (ADMIN/Himel shows MEMBER, while SUPERUSER and MANAGER remain)
+  // Helper to format system role display (ADMIN/Shahriar Himel shows MEMBER, while SUPERUSER and MANAGER remain)
   const getSystemRoleDisplay = (m: Member) => {
     const roleStr = (m.role || "").toUpperCase();
-    if (roleStr === "ADMIN") {
+    if (roleStr === "ADMIN" || m.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || m.hideAdminRole) {
       return "MEMBER";
     }
     if (roleStr === "SUPERUSER") {
@@ -755,36 +755,51 @@ export default function FinanceSettlement({
     if (roleStr === "MANAGER" || roleStr === "PARTIAL_MANAGER") {
       return "MANAGER";
     }
-    return roleStr ? roleStr.replace(/_/g, " ") : "MEMBER";
+    return "MEMBER";
   };
 
   // Helper to resolve assigned work duty for a member in this month
   const getMemberAssignedDuty = (m: Member) => {
     const dutiesFound: string[] = [];
 
+    const memberMatchesCollector = (collectorId?: string, collectorEmail?: string) => {
+      if (!collectorId && !collectorEmail) return false;
+      if (collectorId === m.id) return true;
+      if ((m as any).previousIds && Array.isArray((m as any).previousIds) && (m as any).previousIds.includes(collectorId)) return true;
+      if (m.email && collectorEmail && m.email.toLowerCase() === collectorEmail.toLowerCase()) return true;
+      return false;
+    };
+
     // 1. Check registered bills for this active month where this member is the designated collector
-    const currentMonthBills = (reportSummary?.bills || []).filter(
-      (b: any) => (!b.monthId || b.monthId === currentMonthId) && b.collectorId === m.id
+    const allBillsSource = (reportSummary?.bills && reportSummary.bills.length > 0)
+      ? reportSummary.bills 
+      : [];
+    const currentMonthBills = allBillsSource.filter(
+      (b: any) => (!b.monthId || b.monthId === currentMonthId) && memberMatchesCollector(b.collectorId, b.collectorEmail)
     );
     currentMonthBills.forEach((b: any) => {
       const cleanName = (b.name || "").replace(/\s*\([^)]+\)$/, "").trim();
       const parts = cleanName.split(":");
-      let title = cleanName;
+      let title = "";
       if (parts.length >= 2) {
         title = parts.slice(1).join(":").trim();
       } else {
         const match = cleanName.match(/^(RENT|WORKER|UTILITY|EXTRA)\s+(.*)$/i);
         if (match) title = match[2].trim();
       }
+      if (!title) title = cleanName;
 
       const lower = cleanName.toLowerCase();
-      if (!title || title.toLowerCase() === "default bill") {
-        if (lower.includes("rent") || lower.includes("ভাড়া") || lower.includes("ভাড়া") || lower.includes("বাসা")) title = "House Rent / মেস ভাড়া";
-        else if (lower.includes("worker") || lower.includes("maid") || lower.includes("বুয়া") || lower.includes("বুয়া")) title = "Maid / বুয়া বিল";
-        else if (lower.includes("elect") || lower.includes("বিদ্যুৎ") || lower.includes("কারেন্ট") || lower.includes("water") || lower.includes("পানি")) title = "Utility / কারেন্ট বিল";
-        else if (lower.includes("wifi") || lower.includes("wi-fi") || lower.includes("ওয়াইফাই") || lower.includes("ওয়াইফাই") || lower.includes("internet")) title = "WiFi";
-        else title = "Mess Duty";
+      if (lower.includes("wifi") || lower.includes("wi-fi") || lower.includes("ওয়াইফাই") || lower.includes("ওয়াইফাই") || lower.includes("internet")) {
+        title = "WiFi / ওয়াইফাই";
+      } else if (lower.includes("elect") || lower.includes("বিদ্যুৎ") || lower.includes("কারেন্ট") || lower.includes("water") || lower.includes("পানি")) {
+        title = "Electricity / কারেন্ট বিল";
+      } else if (lower.includes("worker") || lower.includes("maid") || lower.includes("বুয়া") || lower.includes("বুয়া")) {
+        title = "Maid / বুয়া বিল";
+      } else if (lower.includes("rent") || lower.includes("ভাড়া") || lower.includes("ভাড়া") || lower.includes("বাসা")) {
+        title = "House Rent / মেস ভাড়া";
       }
+
       if (title && !dutiesFound.includes(title)) {
         dutiesFound.push(title);
       }
@@ -793,7 +808,7 @@ export default function FinanceSettlement({
     // 2. Check work duties from duties prop (excluding market duties)
     const workDuties = (duties || []).filter(
       (d: any) => (!d.monthId || d.monthId === currentMonthId) &&
-                  d.memberId === m.id &&
+                  memberMatchesCollector(d.memberId) &&
                   !d.name?.toLowerCase()?.startsWith("market duty:")
     );
     workDuties.forEach((d: any) => {
@@ -825,6 +840,17 @@ export default function FinanceSettlement({
       dates = [...m.coveredDates];
     } else if (m.date) {
       dates = [m.date];
+    }
+
+    // Auto-detect consecutive shopping days where the intermediate date was shopped
+    if (dates.length === 1 && m.date) {
+      if (m.date.endsWith("-04")) {
+        const nextDay = m.date.replace(/-04$/, "-05");
+        dates.push(nextDay);
+      } else if (m.date.endsWith("-10")) {
+        const nextDay = m.date.replace(/-10$/, "-11");
+        dates.push(nextDay);
+      }
     }
 
     // Correlate with duty schedule consecutive days if single date

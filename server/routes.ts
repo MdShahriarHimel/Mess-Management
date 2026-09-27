@@ -257,19 +257,34 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
   if (candidates.length === 0) return null;
 
   // Prioritize candidates:
-  // 1. Explicit user preferred mess if set
-  if (userPreferredMess) {
-    const preferred = candidates.find(c => c.messId === userPreferredMess);
-    if (preferred) return preferred;
+  // 0. If ultimate admin, prefer candidate from 'default' mess or one with real name/nickname
+  if (normEmail === "mdshahriarhimel@gmail.com") {
+    const defaultCand = candidates.find(c => c.messId === "default" && c.member.name !== "Mess Administrator");
+    if (defaultCand) return defaultCand;
   }
 
-  // 2. Active member (not LEFT and not ARCHIVED)
+  // 1. Explicit user preferred mess if set (and not placeholder name)
+  if (userPreferredMess) {
+    const preferred = candidates.find(c => c.messId === userPreferredMess && c.member.name !== "Mess Administrator");
+    if (preferred) return preferred;
+    const preferredFallback = candidates.find(c => c.messId === userPreferredMess);
+    if (preferredFallback) return preferredFallback;
+  }
+
+  // 2. Candidate with real custom name and active status (not placeholder 'Mess Administrator' and not 'Admin')
+  const realNameCandidate = candidates.find(c => 
+    c.member.status !== MemberStatus.LEFT && c.member.status !== MemberStatus.ARCHIVED &&
+    c.member.name !== "Mess Administrator" && c.member.nickname !== "Admin"
+  );
+  if (realNameCandidate) return realNameCandidate;
+
+  // 3. Active member (not LEFT and not ARCHIVED)
   const activeCandidate = candidates.find(c => 
     c.member.status !== MemberStatus.LEFT && c.member.status !== MemberStatus.ARCHIVED
   );
   if (activeCandidate) return activeCandidate;
 
-  // 3. Fallback to first matched candidate
+  // 4. Fallback to first matched candidate
   return candidates[0];
 }
 
@@ -361,8 +376,9 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
 
   const userId = tokenUid || memberRef?.id || "";
   const userEmail = (tokenEmail || memberRef?.email || "").toLowerCase();
-  const userName = tokenName || memberRef?.name || "Admin";
-  const userNickname = memberRef?.nickname || (userName.split(" ")[0] || "Admin");
+  const isUltimateAdmin = userEmail === "mdshahriarhimel@gmail.com";
+  const userName = isUltimateAdmin ? "Md. Shahriar" : (memberRef?.name || tokenName || "Admin");
+  const userNickname = isUltimateAdmin ? "Himel" : (memberRef?.nickname || (userName.split(" ")[0] || "Admin"));
 
   if (!userId && !userEmail) {
     res.status(401).json({ error: "Unauthorized: Invalid session credentials" });
@@ -370,7 +386,6 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   }
 
   // 2. Determine authorized mess scope
-  const isUltimateAdmin = userEmail === "mdshahriarhimel@gmail.com";
   const adminControls = loadAdminControls().controls;
   const userControls = (userEmail && adminControls[userEmail]) || (userId && adminControls[userId]);
   const requestedMess = ((req.headers["x-mess-id"] as string) || (req.query.messId as string) || "").trim();
@@ -497,22 +512,29 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
           saveDB(targetMessId);
           member = primaryAdmin;
         } else if (isUltimateAdmin || (allowedMesses && allowedMesses.includes(targetMessId))) {
-          // Auto-provision delegated admin in target mess with non-resident status
+          // Auto-provision admin in target mess workspace with ACTIVE status (never forced to NOT_MEMBER)
+          const targetStatus = (memberRef?.status && memberRef.status !== MemberStatus.NOT_MEMBER)
+            ? memberRef.status 
+            : MemberStatus.ACTIVE;
+
           const newMember: Member = {
-            id: userId,
-            name: userName,
-            nickname: userNickname,
+            id: isUltimateAdmin ? "B846zoR80ueVCTDbAoN9mxJKyZL2" : userId,
+            name: isUltimateAdmin ? "Md. Shahriar" : (memberRef?.name || userName || "Administrator"),
+            nickname: isUltimateAdmin ? "Himel" : (memberRef?.nickname || userNickname || "Admin"),
             email: userEmail,
-            phone: memberRef?.phone || "01712345678",
-            whatsapp: memberRef?.whatsapp || "01712345678",
+            phone: memberRef?.phone || (isUltimateAdmin ? "01841410163" : "01712345678"),
+            whatsapp: memberRef?.whatsapp || (isUltimateAdmin ? "01712345678" : "01712345678"),
             bloodGroup: memberRef?.bloodGroup || "O+",
-            occupation: memberRef?.occupation || "Admin",
+            occupation: memberRef?.occupation || (isUltimateAdmin ? "Student" : "Mess Administrator"),
             joiningDate: memberRef?.joiningDate || new Date().toISOString().split("T")[0],
             leavingDate: null,
             role: UserRole.ADMIN,
-            status: isUltimateAdmin ? MemberStatus.ACTIVE : MemberStatus.NOT_MEMBER, // Not a dining member!
-            notes: isUltimateAdmin ? "Platform Owner" : "Delegated Admin authorized by Platform Owner",
-            photo: tokenPicture || memberRef?.photo || null,
+            status: targetStatus, // ALWAYS ACTIVE by default, never forced to NOT_MEMBER!
+            notes: isUltimateAdmin ? "Platform Owner" : "Authorized Mess Administrator",
+            photo: tokenPicture || memberRef?.photo || (isUltimateAdmin ? "https://lh3.googleusercontent.com/a/ACg8ocIdPvmGLFO3q7RHon9ePLdZ9FNS9OlmvWMEBc6SOFG4hjiigPzk=s96-c" : null),
+            hideAdminRole: isUltimateAdmin ? true : (memberRef?.hideAdminRole || false),
+            seniorityYear: memberRef?.seniorityYear || (isUltimateAdmin ? "2023" : null),
+            gender: memberRef?.gender || (isUltimateAdmin ? "Male" : null)
           };
 
           db.members.push(newMember);
@@ -1625,6 +1647,40 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
   // Update memory cache
   db.members[index] = updatedMember;
   saveDB();
+
+  // If this is the Ultimate Admin or self-profile update, sync their name, nickname, phone, photo across all messes
+  if (isSelf || isActorUltimateAdmin) {
+    try {
+      const thisMessId = getActiveMessId();
+      const messesList = loadMesses().messes || [];
+      for (const m of messesList) {
+        if (m.id === thisMessId) continue;
+        try {
+          const otherDb = loadDB(m.id);
+          const otherMem = otherDb.members?.find(mem => 
+            mem.id === updatedMember.id || 
+            (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
+          );
+          if (otherMem) {
+            otherMem.name = updatedMember.name;
+            otherMem.nickname = updatedMember.nickname;
+            otherMem.phone = updatedMember.phone;
+            otherMem.whatsapp = updatedMember.whatsapp;
+            otherMem.photo = updatedMember.photo;
+            otherMem.occupation = updatedMember.occupation;
+            otherMem.bloodGroup = updatedMember.bloodGroup;
+            if (isActorUltimateAdmin && otherMem.email.toLowerCase() === "mdshahriarhimel@gmail.com") {
+              otherMem.status = MemberStatus.ACTIVE;
+              otherMem.hideAdminRole = updatedMember.hideAdminRole;
+            }
+            saveDB(m.id);
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.error("Cross-mess profile sync error:", e);
+    }
+  }
 
   // Directly update PostgreSQL table for instant DB synchronization
   try {

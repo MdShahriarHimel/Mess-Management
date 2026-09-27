@@ -1209,7 +1209,7 @@ export function setActiveMessId(messId: string) {
 
 // Load database from file/memory
 export function loadDB(explicitMessId?: string): DatabaseSchema {
-  const messId = explicitMessId || getActiveMessId() || "default";
+  const messId = (typeof explicitMessId === "string" && explicitMessId.trim()) ? explicitMessId.trim() : (getActiveMessId() || "default");
   let target = dbCaches.get(messId);
 
   // If messId is default and masterPostgresCache exists in memory from PostgreSQL, prioritize it!
@@ -1685,24 +1685,27 @@ export function generateUUID(): string {
 
 // Seed helper
 function getInitialSeedData(): DatabaseSchema {
-  const adminId = "admin-uuid-0000";
+  const adminId = "B846zoR80ueVCTDbAoN9mxJKyZL2";
   const monthId = "month-uuid-202607";
 
   const admin: Member = {
     id: adminId,
-    name: "Mess Administrator",
-    nickname: "Admin",
+    name: "Md. Shahriar",
+    nickname: "Himel",
     email: "mdshahriarhimel@gmail.com",
-    phone: "01712345678",
+    phone: "01841410163",
     whatsapp: "01712345678",
     bloodGroup: "O+",
-    occupation: "System Admin",
-    joiningDate: "2026-07-01",
+    occupation: "Student",
+    joiningDate: "2024-09-14",
     leavingDate: null,
     role: UserRole.ADMIN,
     status: MemberStatus.ACTIVE,
     notes: "System seeded secure Administrator account.",
-    photo: null
+    photo: "https://lh3.googleusercontent.com/a/ACg8ocIdPvmGLFO3q7RHon9ePLdZ9FNS9OlmvWMEBc6SOFG4hjiigPzk=s96-c",
+    hideAdminRole: true,
+    seniorityYear: "2023",
+    gender: "Male"
   };
 
   const initialMonth: MessMonth = {
@@ -1775,22 +1778,26 @@ export function getCleanMessData(
 
   const membersList: Member[] = [];
   if (adminUser && adminUser.email) {
-    const adminId = adminUser.id || `admin-${messId}-${generateUUID().substring(0, 8)}`;
+    const isOwner = adminUser.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+    const adminId = adminUser.id || (isOwner ? "B846zoR80ueVCTDbAoN9mxJKyZL2" : `admin-${messId}-${generateUUID().substring(0, 8)}`);
     membersList.push({
       id: adminId,
-      name: adminUser.name || "Mess Administrator",
-      nickname: adminUser.nickname || (adminUser.name || "Admin").split(" ")[0],
+      name: isOwner ? "Md. Shahriar" : (adminUser.name || "Administrator"),
+      nickname: isOwner ? "Himel" : (adminUser.nickname || (adminUser.name || "Admin").split(" ")[0]),
       email: adminUser.email.toLowerCase(),
-      phone: adminUser.phone || "01700000000",
-      whatsapp: adminUser.phone || "01700000000",
+      phone: adminUser.phone || (isOwner ? "01841410163" : "01700000000"),
+      whatsapp: adminUser.phone || (isOwner ? "01712345678" : "01700000000"),
       bloodGroup: "O+",
-      occupation: "Hostel Administrator",
+      occupation: isOwner ? "Student" : "Hostel Administrator",
       joiningDate: new Date().toISOString().split("T")[0],
       leavingDate: null,
       role: UserRole.ADMIN,
       status: MemberStatus.ACTIVE,
-      notes: "Primary Administrator for this mess workspace.",
-      photo: adminUser.photo || null
+      notes: isOwner ? "Platform Owner Administrator" : "Primary Administrator for this mess workspace.",
+      photo: adminUser.photo || (isOwner ? "https://lh3.googleusercontent.com/a/ACg8ocIdPvmGLFO3q7RHon9ePLdZ9FNS9OlmvWMEBc6SOFG4hjiigPzk=s96-c" : null),
+      hideAdminRole: isOwner ? true : false,
+      seniorityYear: isOwner ? "2023" : null,
+      gender: isOwner ? "Male" : null
     });
   }
 
