@@ -1612,7 +1612,8 @@ export default function App() {
         setActiveAnnouncements(active);
       }
     } catch (err) {
-      console.error("Failed to fetch platform status:", err);
+      // Graceful fallback during server startup or offline state
+      console.warn("Could not retrieve platform status on this attempt:", err);
     }
   };
 
@@ -2068,7 +2069,7 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error("Failed to fetch messes:", e);
+      console.warn("Could not retrieve messes on this attempt:", e);
     }
   };
 
@@ -2166,7 +2167,7 @@ export default function App() {
         setElections(data);
       }
     } catch (e) {
-      console.error("Failed to fetch elections:", e);
+      console.warn("Could not retrieve elections on this attempt:", e);
     }
   };
 
@@ -2213,7 +2214,7 @@ export default function App() {
         await fetchThreeLevelSettings(token);
       }
     } catch (e) {
-      console.error("Failed to fetch settings:", e);
+      console.warn("Could not retrieve settings on this attempt:", e);
     }
   };
 
@@ -2254,7 +2255,7 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error("Failed to fetch three-level settings:", e);
+      console.warn("Could not retrieve three-level settings on this attempt:", e);
     }
   };
 
@@ -2680,10 +2681,10 @@ export default function App() {
           setCycleProposals(propData.proposals || []);
         }
       } catch (err) {
-        console.error("Error fetching cycle proposals:", err);
+        console.warn("Error fetching cycle proposals:", err);
       }
     } catch (e) {
-      console.error(e);
+      console.warn("Could not fetch months and members on this attempt:", e);
     }
   };
 
@@ -2705,7 +2706,7 @@ export default function App() {
         setReportSummary(data);
       }
     } catch (e) {
-      console.error(e);
+      console.warn("Could not fetch report summary on this attempt:", e);
     }
   };
 
@@ -2726,7 +2727,7 @@ export default function App() {
         setDutiesList(data.duties || []);
       }
     } catch (e) {
-      console.error("Error fetching duties in App:", e);
+      console.warn("Error fetching duties in App on this attempt:", e);
     }
   };
 
@@ -2748,7 +2749,7 @@ export default function App() {
           if (data.logoText) setLogoText(data.logoText);
         }
       } catch (e) {
-        console.error("Error fetching public settings on mount in App:", e);
+        console.warn("Could not fetch public settings on mount in App:", e);
       }
     };
     fetchPublicSettings();
@@ -2798,7 +2799,23 @@ export default function App() {
         modInit = { ...init, headers };
       }
 
-      let response = await originalFetch(input, modInit);
+      let response: Response;
+      const isGetOrHead = !modInit?.method || modInit.method.toUpperCase() === "GET" || modInit.method.toUpperCase() === "HEAD";
+
+      // Resilient execution with retry for transient server restarts / network drops
+      const executeRequest = async (attempt = 0): Promise<Response> => {
+        try {
+          return await originalFetch(input, modInit);
+        } catch (fetchErr: any) {
+          if (isGetOrHead && attempt < 2) {
+            await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+            return executeRequest(attempt + 1);
+          }
+          throw fetchErr;
+        }
+      };
+
+      response = await executeRequest();
 
       // Track mess scope returned from server header safely
       const resMessId = response.headers.get("x-mess-id");

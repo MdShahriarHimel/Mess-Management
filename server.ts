@@ -137,8 +137,9 @@ app.use("/api", maintenanceMiddleware);
 // Mount API router
 app.use("/api", apiRouter);
 
-// Mount founder administration router
+// Mount founder administration router and platform status alias
 app.use("/api/founder", founderRouter);
+app.use("/api/platform", founderRouter);
 
 // API error handling middleware (returns JSON error response on server exception)
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

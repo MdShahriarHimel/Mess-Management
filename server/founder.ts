@@ -209,8 +209,8 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
   const fullUrl = req.originalUrl || req.path || "";
   const pathStr = req.path || "";
 
-  // Always allow founder paths, login, logout, auth, health check, and system endpoints
-  const isFounderPath = fullUrl.startsWith("/api/founder") || pathStr.startsWith("/founder") || pathStr.startsWith("/api/founder");
+  // Always allow founder paths, platform paths, login, logout, auth, health check, and system endpoints
+  const isFounderPath = fullUrl.startsWith("/api/founder") || pathStr.startsWith("/founder") || pathStr.startsWith("/api/founder") || fullUrl.startsWith("/api/platform") || pathStr.startsWith("/platform") || pathStr.startsWith("/api/platform");
   const isAuthPath = fullUrl.startsWith("/api/login") || fullUrl.startsWith("/api/logout") || fullUrl.startsWith("/api/auth") || pathStr.startsWith("/login") || pathStr.startsWith("/logout") || pathStr.startsWith("/auth");
   const isHealthOrSystem = fullUrl.startsWith("/api/health") || pathStr.startsWith("/health") || fullUrl.startsWith("/api/system") || pathStr.startsWith("/system");
 
