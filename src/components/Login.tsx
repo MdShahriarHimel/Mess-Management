@@ -170,6 +170,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       if (!response.ok) {
         throw new Error(data.error || "Failed to resend OTP");
       }
+      if (data.devOtp) {
+        setOtp(data.devOtp);
+      }
       setSuccess(data.message);
     } catch (err: any) {
       setError(err.message || "Failed to resend verification OTP.");
@@ -195,6 +198,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           const data = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(data.error || "Failed to process request");
+          }
+          if (data.devOtp) {
+            setOtp(data.devOtp);
           }
           setSuccess(data.message);
           setForgotStep("verify");

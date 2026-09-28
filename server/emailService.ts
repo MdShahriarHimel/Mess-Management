@@ -54,9 +54,9 @@ export async function sendEmailWithFallback(options: SendMailOptions): Promise<S
         user: smtpUser,
         pass: smtpPass
       },
-      connectionTimeout: 7000,
-      greetingTimeout: 7000,
-      socketTimeout: 9000,
+      connectionTimeout: 3500,
+      greetingTimeout: 3500,
+      socketTimeout: 5000,
       tls: {
         rejectUnauthorized: false
       }
@@ -90,9 +90,9 @@ export async function sendEmailWithFallback(options: SendMailOptions): Promise<S
           user: smtpUser,
           pass: smtpPass
         },
-        connectionTimeout: 7000,
-        greetingTimeout: 7000,
-        socketTimeout: 9000,
+        connectionTimeout: 3500,
+        greetingTimeout: 3500,
+        socketTimeout: 5000,
         tls: {
           rejectUnauthorized: false
         }
