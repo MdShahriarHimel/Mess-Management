@@ -1095,14 +1095,11 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
     return;
   }
 
-  // Graceful Fallback: When outbound SMTP is blocked by cloud provider, network timeout or credentials fail
-  // Do NOT delete the OTP! Allow the user to reset their password using the generated verification code.
-  console.warn(`[ForgotPassword] Email delivery failed: ${emailResult.error}. Providing secure on-screen fallback OTP.`);
-  res.json({
-    success: true,
-    message: `ইমেইল সার্ভারে সংযোগ না থাকায় ওটিপি কোড সরাসরি প্রদান করা হলো: ${otp}`,
-    devOtp: otp,
-    fallback: true
+  // If email sending failed, delete OTP immediately and return an error so no one can bypass email
+  otpStore.delete(email.toLowerCase());
+  console.error(`[ForgotPassword] Email delivery failed: ${emailResult.error}`);
+  res.status(502).json({
+    error: "ইমেইল সার্ভারে সংযোগ ব্যর্থ হয়েছে। আপনার ইমেইলে ওটিপি কোড পাঠানো সম্ভব হয়নি। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।"
   });
   return;
 });

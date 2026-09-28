@@ -3,7 +3,19 @@ import path from "path";
 
 export const BASE_URL = process.env.TEST_API_URL || "http://localhost:3000/api";
 export const ADMIN_EMAIL = "mdshahriarhimel@gmail.com";
-export const ADMIN_PASSWORD = "Astagfirullah_Mess2026#!!";
+
+function getEffectiveAdminPassword(): string {
+  try {
+    const credsPath = path.resolve(process.cwd(), "data", "credentials.json");
+    if (fs.existsSync(credsPath)) {
+      const data = JSON.parse(fs.readFileSync(credsPath, "utf-8"));
+      if (data && data[ADMIN_EMAIL]) return data[ADMIN_EMAIL];
+    }
+  } catch {}
+  return process.env.TEST_ADMIN_PASSWORD || "Ababil@2025";
+}
+
+export const ADMIN_PASSWORD = getEffectiveAdminPassword();
 
 export interface TestSession {
   token: string;
