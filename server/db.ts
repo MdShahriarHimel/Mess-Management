@@ -22,7 +22,7 @@ function isItemModified(tableName: string, id: string, mappedItem: any): boolean
   return false;
 }
 
-function parseCoveredDates(val: any): string[] {
+export function parseCoveredDates(val: any): string[] {
   if (!val) return [];
   if (Array.isArray(val)) return val;
   try {
@@ -526,12 +526,34 @@ export function deduplicateDuties(duties: Duty[]): Duty[] {
   return result;
 }
 
+export const lastCacheRefreshTimestamp = new Map<string, number>();
+export const lastKnownDbVersion = new Map<string, number>();
+const lastVersionCheckTimestamps = new Map<string, number>();
+
 // Refresh the in-memory cache directly from the PostgreSQL single source of truth
-export async function refreshDbCache() {
-  console.log("[Backup] Cache refresh started...");
+export async function refreshDbCache(targetMessId: string = "default") {
+  console.log(`[Cache Sync] Refreshing cache from PostgreSQL single source of truth for mess: ${targetMessId}...`);
+  if (targetMessId !== "default") {
+    // For tenant mess, load the updated persistent backup file
+    const tenantFilename = `database_backup_${targetMessId}.json`;
+    try {
+      const tenantRow = await db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, tenantFilename)).limit(1);
+      if (tenantRow[0]?.content) {
+        const parsed = JSON.parse(tenantRow[0].content);
+        dbCaches.set(targetMessId, parsed);
+        lastCacheRefreshTimestamp.set(targetMessId, Date.now());
+        return parsed;
+      }
+    } catch (e) {
+      console.error(`[Cache Sync] Error refreshing tenant cache for ${targetMessId}:`, e);
+    }
+    return dbCaches.get(targetMessId) || loadDB(targetMessId);
+  }
+
   const [
     membersList,
     monthsList,
+    mealsList,
     foodMenusList,
     marketEntriesList,
     depositsList,
@@ -540,10 +562,12 @@ export async function refreshDbCache() {
     managerHoldingsList,
     managerRatingsList,
     noticesList,
-    auditLogsList
+    auditLogsList,
+    backupRow
   ] = await Promise.all([
     db.select().from(membersTable),
     db.select().from(monthsTable),
+    db.select().from(mealsTable),
     db.select().from(foodMenusTable),
     db.select().from(marketEntriesTable),
     db.select().from(depositsTable),
@@ -552,8 +576,16 @@ export async function refreshDbCache() {
     db.select().from(managerHoldingsTable),
     db.select().from(managerRatingsTable),
     db.select().from(noticesTable),
-    db.select().from(auditLogsTable)
+    db.select().from(auditLogsTable),
+    db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, "database_backup.json")).limit(1).catch(() => [])
   ]);
+
+  let parsedBackup: any = null;
+  if (backupRow && backupRow.length > 0 && backupRow[0]?.content) {
+    try {
+      parsedBackup = JSON.parse(backupRow[0].content);
+    } catch {}
+  }
 
   let mealRequestsList: any[] = [];
   try {
@@ -562,7 +594,7 @@ export async function refreshDbCache() {
     mealRequestsList = [];
   }
 
-  dbCache = {
+  const refreshedCache: DatabaseSchema = {
     members: deduplicateMembers(membersList as any[]),
     months: monthsList
       .filter((m: any) => !m.messId || m.messId === "default")
@@ -570,7 +602,18 @@ export async function refreshDbCache() {
         ...m,
         manuallyUnlocked: !!m.manuallyUnlocked
       })) as any[],
-    meals: [],
+    meals: (mealsList || [])
+      .filter((m: any) => !m.messId || m.messId === "default")
+      .map((m: any) => ({
+        id: m.id,
+        messId: m.messId || "default",
+        monthId: m.monthId,
+        memberId: m.memberId,
+        date: m.date,
+        lunch: Number(m.lunch) || 0,
+        dinner: Number(m.dinner) || 0,
+        breakfast: Number(m.breakfast) || 0
+      })),
     foodMenus: foodMenusList as any[],
     marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
       ...item,
@@ -584,8 +627,59 @@ export async function refreshDbCache() {
     notices: noticesList as any[],
     auditLogs: auditLogsList as any[],
     mealRequests: mealRequestsList as any[],
+    cycleProposals: parsedBackup?.cycleProposals || dbCache?.cycleProposals || [],
+    messRules: parsedBackup?.messRules || dbCache?.messRules || [],
+    deletedMembers: parsedBackup?.deletedMembers || dbCache?.deletedMembers || []
   };
-  console.log("[Backup] Cache refreshed successfully from PostgreSQL single source of truth!");
+
+  dbCache = refreshedCache;
+  dbCaches.set("default", refreshedCache);
+  masterPostgresCache = refreshedCache;
+  const now = Date.now();
+  lastCacheRefreshTimestamp.set("default", now);
+  console.log("[Cache Sync] Cache refreshed successfully from PostgreSQL single source of truth!");
+
+  ensureDBDir();
+  const localBackupFile = path.join(DB_DIR, "database_backup.json");
+  try {
+    fs.writeFileSync(localBackupFile, JSON.stringify(refreshedCache), "utf-8");
+  } catch {}
+
+  return refreshedCache;
+}
+
+// Smart sync check: checks if PostgreSQL version is newer than in-memory cache across all servers (Render & AI Studio)
+export async function checkAndSyncDbCacheIfNeeded(targetMessId: string = "default", force: boolean = false) {
+  const now = Date.now();
+  const lastCheck = lastVersionCheckTimestamps.get(targetMessId) || 0;
+  // Throttle version check to at most once per 1000ms unless forced
+  if (!force && (now - lastCheck) < 1000) {
+    return;
+  }
+  lastVersionCheckTimestamps.set(targetMessId, now);
+
+  try {
+    const versionFile = `db_version_${targetMessId}.json`;
+    const rows = await db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, versionFile)).limit(1);
+    if (rows && rows.length > 0 && rows[0]?.content) {
+      try {
+        const parsed = JSON.parse(rows[0].content);
+        const remoteVersion = Number(parsed.v) || 0;
+        const localVersion = lastKnownDbVersion.get(targetMessId) || 0;
+        if (force || remoteVersion > localVersion) {
+          console.log(`[Cache Sync] Detected newer DB version (${remoteVersion} > ${localVersion}) for mess: ${targetMessId}. Refreshing cache...`);
+          await refreshDbCache(targetMessId);
+          lastKnownDbVersion.set(targetMessId, remoteVersion);
+        }
+      } catch (pe) {
+        // ignore parse error
+      }
+    } else if (force) {
+      await refreshDbCache(targetMessId);
+    }
+  } catch (err) {
+    // Non-blocking catch
+  }
 }
 
 // Asynchronous Cache Initialization from PostgreSQL with robust retry mechanism
@@ -765,7 +859,15 @@ export async function initializeDbCache() {
             ...m,
             manuallyUnlocked: !!m.manuallyUnlocked
           })) as any[],
-        meals: [],
+        meals: (mealsList || []).map((m: any) => ({
+          id: m.id,
+          monthId: m.monthId,
+          memberId: m.memberId,
+          date: m.date,
+          lunch: m.lunch,
+          dinner: m.dinner,
+          breakfast: m.breakfast || 0
+        })),
         foodMenus: foodMenusList as any[],
         marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
           ...item,
@@ -844,7 +946,7 @@ export async function syncCacheToPostgresDirectly(cache: DatabaseSchema, targetM
       }
     })();
     trackPromise(syncPromise);
-  }, 2000);
+  }, 300);
   return Promise.resolve();
 }
 
@@ -957,6 +1059,35 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       };
         if (!isItemModified('foodMenus', item.id, mapped)) continue;
         await db.insert(foodMenusTable).values(mapped).onConflictDoUpdate({ target: foodMenusTable.id, set: mapped });
+      }
+    }
+
+    if (cache.meals && cache.meals.length > 0) {
+      const mealsToInsert = cache.meals.map(item => ({
+        id: item.id || generateUUID(),
+        messId: targetMessId || "default",
+        monthId: item.monthId,
+        memberId: item.memberId,
+        date: item.date,
+        lunch: Number(item.lunch) || 0,
+        dinner: Number(item.dinner) || 0,
+        breakfast: Number(item.breakfast) || 0,
+      }));
+      const modifiedMeals = mealsToInsert.filter(m => isItemModified('meals', m.id, m));
+      for (let i = 0; i < modifiedMeals.length; i += 500) {
+        const chunk = modifiedMeals.slice(i, i + 500);
+        await db.insert(mealsTable).values(chunk).onConflictDoUpdate({
+          target: mealsTable.id,
+          set: {
+            lunch: sql`excluded.lunch`,
+            dinner: sql`excluded.dinner`,
+            breakfast: sql`excluded.breakfast`,
+            date: sql`excluded.date`,
+            monthId: sql`excluded.month_id`,
+            memberId: sql`excluded.member_id`,
+            messId: sql`excluded.mess_id`
+          }
+        });
       }
     }
 
@@ -1491,6 +1622,10 @@ export function saveDB(explicitMessId?: string) {
   }
   if (!target) return;
   
+  const newVersion = Date.now();
+  lastKnownDbVersion.set(messId, newVersion);
+  lastCacheRefreshTimestamp.set(messId, newVersion);
+
   // Trigger non-blocking async synchronization in the background for this specific mess
   syncCacheToPostgresDirectly(target, messId);
 
@@ -1501,6 +1636,9 @@ export function saveDB(explicitMessId?: string) {
       
     const content = JSON.stringify(target);
     writeAndPersistFile(backupFilename, content);
+
+    // Bump version in PostgreSQL so all running instances (Render, AI Studio, dev) immediately detect update
+    writeAndPersistFile(`db_version_${messId}.json`, JSON.stringify({ v: newVersion, at: new Date().toISOString() }));
   } catch (e) {
     console.error("Error writing dynamic backup file for mess " + messId, e);
   }
@@ -1619,6 +1757,64 @@ export async function deleteDepositFromPostgres(depositIdOrIds: string | string[
     }
   } catch (err) {
     console.warn("Failed to delete deposit(s) from PostgreSQL:", err);
+  }
+}
+
+// Permanently delete manager holding(s) from PostgreSQL database and all in-memory caches
+export async function deleteHoldingFromPostgres(holdingIdOrIds: string | string[]) {
+  try {
+    const rawIds = Array.isArray(holdingIdOrIds) ? holdingIdOrIds : [holdingIdOrIds];
+    const ids = rawIds.filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (db) {
+      await db.delete(managerHoldingsTable).where(inArray(managerHoldingsTable.id, ids));
+      console.log(`[Database] Permanently deleted ${ids.length} manager holding(s) from PostgreSQL:`, ids);
+    }
+
+    if (masterPostgresCache && masterPostgresCache.managerHoldings) {
+      masterPostgresCache.managerHoldings = masterPostgresCache.managerHoldings.filter(h => !ids.includes(h.id));
+    }
+
+    for (const [_, cacheObj] of dbCaches.entries()) {
+      if (cacheObj && cacheObj.managerHoldings) {
+        cacheObj.managerHoldings = cacheObj.managerHoldings.filter(h => !ids.includes(h.id));
+      }
+    }
+    if (dbCache && dbCache.managerHoldings) {
+      dbCache.managerHoldings = dbCache.managerHoldings.filter(h => !ids.includes(h.id));
+    }
+  } catch (err) {
+    console.warn("Failed to delete manager holding(s) from PostgreSQL:", err);
+  }
+}
+
+// Permanently delete bill(s) from PostgreSQL database and all in-memory caches
+export async function deleteBillFromPostgres(billIdOrIds: string | string[]) {
+  try {
+    const rawIds = Array.isArray(billIdOrIds) ? billIdOrIds : [billIdOrIds];
+    const ids = rawIds.filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (db) {
+      await db.delete(billsTable).where(inArray(billsTable.id, ids));
+      console.log(`[Database] Permanently deleted ${ids.length} bill(s) from PostgreSQL:`, ids);
+    }
+
+    if (masterPostgresCache && masterPostgresCache.bills) {
+      masterPostgresCache.bills = masterPostgresCache.bills.filter(b => !ids.includes(b.id));
+    }
+
+    for (const [_, cacheObj] of dbCaches.entries()) {
+      if (cacheObj && cacheObj.bills) {
+        cacheObj.bills = cacheObj.bills.filter(b => !ids.includes(b.id));
+      }
+    }
+    if (dbCache && dbCache.bills) {
+      dbCache.bills = dbCache.bills.filter(b => !ids.includes(b.id));
+    }
+  } catch (err) {
+    console.warn("Failed to delete bill(s) from PostgreSQL:", err);
   }
 }
 
@@ -2377,24 +2573,22 @@ export function writeAndPersistFile(filename: string, content: string) {
       fs.mkdirSync(dir, { recursive: true });
     }
     
-    // Write atomically to avoid zero-byte file windows during concurrent reads
+    // Save to Postgres immediately without waiting for disk I/O
+    const dbPromise = db.insert(persistentFilesTable).values({
+      filename,
+      content
+    }).onConflictDoUpdate({
+      target: persistentFilesTable.filename,
+      set: { content }
+    }).catch((err) => {
+      console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
+    });
+    trackPromise(dbPromise);
+
+    // Also write atomically to disk in background
     const tmpPath = `${localPath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
     fs.promises.writeFile(tmpPath, content, "utf-8").then(() => {
       return fs.promises.rename(tmpPath, localPath);
-    }).then(() => {
-      // Save to Postgres asynchronously in the background
-      const dbPromise = db.insert(persistentFilesTable).values({
-        filename,
-        content
-      }).onConflictDoUpdate({
-        target: persistentFilesTable.filename,
-        set: { content }
-      }).then(() => {
-        // success
-      }).catch((err) => {
-        console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
-      });
-      trackPromise(dbPromise);
     }).catch(err => {
       console.error(`[Persistent Files] Local write failed for ${filename}:`, err);
       fs.promises.unlink(tmpPath).catch(() => {});

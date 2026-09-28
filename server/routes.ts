@@ -29,6 +29,10 @@ import { loadDB, saveDB, syncState,
   deleteDutyFromPostgres,
   deleteMarketFromPostgres,
   deleteDepositFromPostgres,
+  deleteHoldingFromPostgres,
+  deleteBillFromPostgres,
+  checkAndSyncDbCacheIfNeeded,
+  parseCoveredDates,
   getDefaultMessRules,
   getCleanMessData,
   deduplicateMembers,
@@ -45,7 +49,24 @@ import {
 } from "./backupCron.js";
 import { loadPlatformControls, savePlatformControls } from "./founder.js";
 import { db as drizzleDb, pool } from "../src/db/index.js";
-import { foodKnowledgeBase, foodAliases, foodReviewQueue, advertisementSettings, advertisementViews, achievements, memberAchievements, rewardAuditLogs, members, rewardHistory, premiumUnlocks, tenantSettings, meals as mealsTable } from "../src/db/schema.js";
+import { 
+  foodKnowledgeBase, 
+  foodAliases, 
+  foodReviewQueue, 
+  advertisementSettings, 
+  advertisementViews, 
+  achievements, 
+  memberAchievements, 
+  rewardAuditLogs, 
+  members, 
+  rewardHistory, 
+  premiumUnlocks, 
+  tenantSettings, 
+  meals as mealsTable,
+  managerHoldings as managerHoldingsTable,
+  marketEntries as marketEntriesTable,
+  deposits as depositsTable
+} from "../src/db/schema.js";
 import { eq, sql, and, or } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
@@ -478,6 +499,7 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
   // 3. Execute request inside tenant context
   messContext.run({ messId: targetMessId }, async () => {
     try {
+      await checkAndSyncDbCacheIfNeeded(targetMessId);
       const db = loadDB(targetMessId);
       let member = db.members.find(m => 
         m.id === userId || 
@@ -2671,6 +2693,42 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
     await upsertMealsTx(tx, monthId, meals, mealTypes, currentMessId);
   });
 
+  // Keep in-memory cache and persistent backup synchronized across all running instances
+  try {
+    const dbConfig = loadDB(currentMessId);
+    if (!dbConfig.meals) dbConfig.meals = [];
+    for (const m of meals) {
+      const existingIdx = dbConfig.meals.findIndex(
+        x => x.monthId === monthId && x.memberId === m.memberId && x.date === m.date
+      );
+      const lunch = Number(m.lunch) || 0;
+      const dinner = Number(m.dinner) || 0;
+      const breakfast = Number(m.breakfast) || 0;
+      if (existingIdx !== -1) {
+        dbConfig.meals[existingIdx] = {
+          ...dbConfig.meals[existingIdx],
+          lunch,
+          dinner,
+          breakfast
+        };
+      } else {
+        dbConfig.meals.push({
+          id: generateUUID(),
+          messId: currentMessId,
+          monthId,
+          memberId: m.memberId,
+          date: m.date,
+          lunch,
+          dinner,
+          breakfast
+        });
+      }
+    }
+    saveDB(currentMessId);
+  } catch (syncErr) {
+    console.warn("Failed to synchronize meal cache:", syncErr);
+  }
+
   logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_BULK", "Multiple", "Updated", `Logged meals for current cycle`);
   res.json({ 
     success: true, 
@@ -3255,7 +3313,7 @@ function areDatesConsecutive(dates: string[]): boolean {
   return true;
 }
 
-router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id, monthId, memberId, date, amount, receiptUrl, description, isExtra, quantity, coveredDates } = req.body;
   if (!monthId || !memberId || !date || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, Date, and Amount are required" });
@@ -3346,6 +3404,27 @@ router.post("/markets", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   saveDB();
+  try {
+    const mapped = {
+      id: newEntry.id,
+      monthId: newEntry.monthId,
+      memberId: newEntry.memberId,
+      date: newEntry.date,
+      amount: newEntry.amount,
+      receiptUrl: newEntry.receiptUrl,
+      description: newEntry.description,
+      isExtra: newEntry.isExtra,
+      quantity: newEntry.quantity,
+      coveredDates: JSON.stringify(newEntry.coveredDates)
+    };
+    await drizzleDb.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({
+      target: marketEntriesTable.id,
+      set: mapped
+    });
+  } catch (err) {
+    console.warn("Direct PostgreSQL market entry upsert error:", err);
+  }
+
   logAudit(
     req.user!.id,
     req.user!.nickname,
@@ -3411,7 +3490,7 @@ router.get("/deposits/:monthId", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ deposits });
 });
 
-router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, memberId, amount, date } = req.body;
   if (!monthId || !memberId || amount === undefined) {
     res.status(400).json({ error: "Month ID, Member ID, and Amount are required" });
@@ -3464,6 +3543,22 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
   db.deposits.push(newDeposit);
   db.deposits = deduplicateDeposits(db.deposits);
   saveDB();
+  try {
+    const mapped = {
+      id: newDeposit.id,
+      monthId: newDeposit.monthId,
+      memberId: newDeposit.memberId,
+      amount: newDeposit.amount,
+      date: newDeposit.date,
+      enteredBy: newDeposit.enteredBy
+    };
+    await drizzleDb.insert(depositsTable).values(mapped).onConflictDoUpdate({
+      target: depositsTable.id,
+      set: mapped
+    });
+  } catch (err) {
+    console.warn("Direct PostgreSQL deposit upsert error:", err);
+  }
 
   logAudit(req.user!.id, req.user!.nickname, "ENTER_DEPOSIT", "None", JSON.stringify(newDeposit), `Recorded deposit of Taka ${amount} for member ID ${memberId}`);
   res.json({ success: true, deposit: newDeposit });
@@ -3618,6 +3713,7 @@ router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserR
   const original = db.bills[index];
   db.bills.splice(index, 1);
   saveDB();
+  deleteBillFromPostgres(id).catch(() => {});
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_BILL", JSON.stringify(original), "Deleted", `Deleted bill ${original.name}`);
   res.json({ success: true });
@@ -3870,7 +3966,7 @@ router.get("/holdings/:monthId", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ holdings });
 });
 
-router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/holdings", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
   const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN].includes(req.user!.role);
   if (!isUltimateAdmin && !isManagerOrAdmin) {
@@ -3917,6 +4013,23 @@ router.post("/holdings", authMiddleware, (req: AuthenticatedRequest, res: Respon
   }
 
   saveDB();
+  try {
+    const mapped = {
+      id: newHolding.id,
+      monthId: newHolding.monthId,
+      memberId: newHolding.memberId,
+      amount: newHolding.amount,
+      marketSpent: newHolding.marketSpent,
+      description: newHolding.description
+    };
+    await drizzleDb.insert(managerHoldingsTable).values(mapped).onConflictDoUpdate({
+      target: managerHoldingsTable.id,
+      set: mapped
+    });
+  } catch (err) {
+    console.warn("Direct PostgreSQL manager holding upsert error:", err);
+  }
+
   logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING", "None", JSON.stringify(newHolding), `Recorded manager holding/market spent of Taka ${currentAmount} / ${currentMarketSpent}`);
   res.json({ success: true, holding: newHolding });
 });
@@ -3939,6 +4052,7 @@ router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: 
 
   const deleted = db.managerHoldings.splice(existingIndex, 1)[0];
   saveDB();
+  deleteHoldingFromPostgres(id).catch(() => {});
   logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING_DELETE", "None", JSON.stringify(deleted), "Deleted manager market spent/holding entry");
   res.json({ success: true });
 });
@@ -4589,13 +4703,43 @@ router.post("/auditlogs/log-export", authMiddleware, (req: AuthenticatedRequest,
 // ---------------------------------------------------------
 router.get("/reports/summary/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
 
-  const monthDeposits = db.deposits.filter(d => d.monthId === monthId);
-  const monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
-  const monthMeals = await getMealsForCurrentCycle(monthId);
-  const monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
+  // Revalidate cache if database version changed across instances (Render vs AI Studio)
+  await checkAndSyncDbCacheIfNeeded(currentMessId);
+  const db = loadDB(currentMessId);
+
+  let monthDeposits = db.deposits.filter(d => d.monthId === monthId);
+  let monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
+  const monthMeals = await getMealsForCurrentCycle(monthId, currentMessId);
+  let monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
   const monthBills = db.bills.filter(b => b.monthId === monthId);
+
+  // Directly query live holdings, markets, and deposits from PostgreSQL for default mess
+  // to ensure 100% real-time accuracy across Render and AI Studio without restarting servers
+  if (currentMessId === "default") {
+    try {
+      const [liveHoldings, liveMarkets, liveDeposits] = await Promise.all([
+        drizzleDb.select().from(managerHoldingsTable).where(eq(managerHoldingsTable.monthId, monthId)).catch(() => []),
+        drizzleDb.select().from(marketEntriesTable).where(eq(marketEntriesTable.monthId, monthId)).catch(() => []),
+        drizzleDb.select().from(depositsTable).where(eq(depositsTable.monthId, monthId)).catch(() => [])
+      ]);
+      if (liveHoldings && liveHoldings.length > 0) {
+        monthHoldings = liveHoldings as any[];
+      }
+      if (liveMarkets && liveMarkets.length > 0) {
+        monthMarkets = liveMarkets.map(item => ({
+          ...item,
+          coveredDates: parseCoveredDates((item as any).coveredDates)
+        })) as any[];
+      }
+      if (liveDeposits && liveDeposits.length > 0) {
+        monthDeposits = liveDeposits as any[];
+      }
+    } catch (dbErr) {
+      // Fallback safely to in-memory db.*
+    }
+  }
 
   // Month cycle date range
   const monthObj = db.months?.find((m: any) => m.id === monthId);

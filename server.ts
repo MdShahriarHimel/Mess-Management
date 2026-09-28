@@ -10,7 +10,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { router as apiRouter } from "./server/routes.js";
 import { founderRouter, maintenanceMiddleware } from "./server/founder.js";
-import { initializeDbCache, pendingSyncPromises } from "./server/db.js";
+import { initializeDbCache, pendingSyncPromises, checkAndSyncDbCacheIfNeeded, getActiveMessId } from "./server/db.js";
 import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
 import { startDailyBackupCron } from "./server/backupCron.js";
@@ -134,6 +134,17 @@ app.use("/api", (req, res, next) => {
 // Apply server protection middleware for maintenance modes and feature flags
 app.use("/api", maintenanceMiddleware);
 
+// Ensure multi-instance cache is automatically synchronized from PostgreSQL across Render & AI Studio
+app.use("/api", async (req, res, next) => {
+  try {
+    const reqMessId = (req.headers["x-mess-id"] as string) || "default";
+    await checkAndSyncDbCacheIfNeeded(reqMessId);
+  } catch (err) {
+    // Non-blocking
+  }
+  next();
+});
+
 // Mount API router
 app.use("/api", apiRouter);
 
@@ -187,6 +198,18 @@ const initPromise = (async () => {
   ensureDbInitialized()
     .then(() => {
       startDailyBackupCron();
+      // Start background auto-sync interval to keep in-memory cache synchronized with PostgreSQL across Render & AI Studio
+      setInterval(async () => {
+        try {
+          await checkAndSyncDbCacheIfNeeded("default");
+          const active = getActiveMessId();
+          if (active && active !== "default") {
+            await checkAndSyncDbCacheIfNeeded(active);
+          }
+        } catch {
+          // Non-blocking
+        }
+      }, 2500);
     })
     .catch(err => {
       console.error("Eager database initialization failed:", err);
