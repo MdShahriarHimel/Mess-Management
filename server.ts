@@ -198,18 +198,6 @@ const initPromise = (async () => {
   ensureDbInitialized()
     .then(() => {
       startDailyBackupCron();
-      // Start background auto-sync interval to keep in-memory cache synchronized with PostgreSQL across Render & AI Studio
-      setInterval(async () => {
-        try {
-          await checkAndSyncDbCacheIfNeeded("default");
-          const active = getActiveMessId();
-          if (active && active !== "default") {
-            await checkAndSyncDbCacheIfNeeded(active);
-          }
-        } catch {
-          // Non-blocking
-        }
-      }, 2500);
     })
     .catch(err => {
       console.error("Eager database initialization failed:", err);
