@@ -2787,103 +2787,137 @@ export default function App() {
 
   // Setup global fetch interceptor to inject active mess scope and refresh token on 401
   useEffect(() => {
-    const originalFetch = window.fetch;
-    window.fetch = async function (input, init) {
-      let modInit = init;
-      const storedMessId = localStorage.getItem("active_mess_id");
-      if (storedMessId && typeof input === "string" && input.startsWith("/api/")) {
-        const headers = new Headers(init?.headers || {});
-        if (!headers.has("x-mess-id")) {
-          headers.set("x-mess-id", storedMessId);
-        }
-        modInit = { ...init, headers };
-      }
-
-      let response: Response;
-      const isGetOrHead = !modInit?.method || modInit.method.toUpperCase() === "GET" || modInit.method.toUpperCase() === "HEAD";
-
-      // Resilient execution with retry for transient server restarts / network drops
-      const executeRequest = async (attempt = 0): Promise<Response> => {
-        try {
-          return await originalFetch(input, modInit);
-        } catch (fetchErr: any) {
-          if (isGetOrHead && attempt < 2) {
-            await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
-            return executeRequest(attempt + 1);
+    let didOverride = false;
+    let originalFetch: typeof window.fetch;
+    try {
+      originalFetch = window.fetch;
+      const customFetch = async function (input: any, init: any) {
+        let modInit = init;
+        const storedMessId = localStorage.getItem("active_mess_id");
+        if (storedMessId && typeof input === "string" && input.startsWith("/api/")) {
+          const headers = new Headers(init?.headers || {});
+          if (!headers.has("x-mess-id")) {
+            headers.set("x-mess-id", storedMessId);
           }
-          throw fetchErr;
+          modInit = { ...init, headers };
         }
+
+        let response: Response;
+        const isGetOrHead = !modInit?.method || modInit.method.toUpperCase() === "GET" || modInit.method.toUpperCase() === "HEAD";
+
+        // Resilient execution with retry for transient server restarts / network drops
+        const executeRequest = async (attempt = 0): Promise<Response> => {
+          try {
+            return await originalFetch(input, modInit);
+          } catch (fetchErr: any) {
+            if (isGetOrHead && attempt < 2) {
+              await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+              return executeRequest(attempt + 1);
+            }
+            throw fetchErr;
+          }
+        };
+
+        response = await executeRequest();
+
+        // Track mess scope returned from server header safely
+        const resMessId = response.headers.get("x-mess-id");
+        const currentStored = localStorage.getItem("active_mess_id");
+        const isAuthBootstrap = typeof input === "string" && (input.startsWith("/api/auth/me") || input.startsWith("/api/auth/login"));
+        if (resMessId && (!currentStored || isAuthBootstrap)) {
+          if (resMessId !== currentStored) {
+            localStorage.setItem("active_mess_id", resMessId);
+            setActiveMessId(resMessId);
+          }
+        }
+
+        // If we receive a 401 Unauthorized specifically due to expired Firebase ID token
+        if (response.status === 401 && auth.currentUser) {
+          try {
+            const cloneRes = response.clone();
+            const errData = await cloneRes.json().catch(() => ({}));
+            const isExpired = errData.code === "auth/id-token-expired" || 
+                              errData.error?.includes("auth/id-token-expired") ||
+                              errData.error?.includes("Invalid Firebase session") ||
+                              errData.error?.includes("Firebase ID token expired");
+            
+            if (isExpired) {
+              console.warn("Detected expired Firebase ID token during API call. Auto-refreshing...");
+              // Get a fresh token (non-force first)
+              let freshToken = await auth.currentUser.getIdToken(false);
+              
+              // If the cached token didn't change or was already expired, force refresh
+              const oldToken = localStorage.getItem("mess_token");
+              if (freshToken === oldToken) {
+                freshToken = await auth.currentUser.getIdToken(true);
+              }
+              
+              const wasUpdated = setStoredTokenSafely(freshToken);
+              if (wasUpdated) {
+                window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken } as any));
+              }
+
+              // Reconstruct options with new Authorization header
+              const newInit = { ...init } as any;
+              if (newInit.headers) {
+                if (typeof newInit.headers.set === "function") {
+                  newInit.headers.set("Authorization", `Bearer ${freshToken}`);
+                } else if (Array.isArray(newInit.headers)) {
+                  newInit.headers = newInit.headers.map(([k, v]: any) => 
+                    k.toLowerCase() === "authorization" ? [k, `Bearer ${freshToken}`] : [k, v]
+                  );
+                } else {
+                  const keys = Object.keys(newInit.headers);
+                  const authKey = keys.find(k => k.toLowerCase() === "authorization") || "Authorization";
+                  newInit.headers[authKey] = `Bearer ${freshToken}`;
+                }
+              } else {
+                newInit.headers = { "Authorization": `Bearer ${freshToken}` };
+              }
+
+              console.log("Retrying API request with fresh token:", input);
+              response = await originalFetch(input, newInit);
+            }
+          } catch (err) {
+            console.error("Failed to auto-recover/refresh token in fetch interceptor:", err);
+          }
+        }
+        return response;
       };
 
-      response = await executeRequest();
-
-      // Track mess scope returned from server header safely
-      const resMessId = response.headers.get("x-mess-id");
-      const currentStored = localStorage.getItem("active_mess_id");
-      const isAuthBootstrap = typeof input === "string" && (input.startsWith("/api/auth/me") || input.startsWith("/api/auth/login"));
-      if (resMessId && (!currentStored || isAuthBootstrap)) {
-        if (resMessId !== currentStored) {
-          localStorage.setItem("active_mess_id", resMessId);
-          setActiveMessId(resMessId);
-        }
-      }
-
-      // If we receive a 401 Unauthorized specifically due to expired Firebase ID token
-      if (response.status === 401 && auth.currentUser) {
+      try {
+        Object.defineProperty(window, "fetch", {
+          value: customFetch,
+          writable: true,
+          configurable: true
+        });
+        didOverride = true;
+      } catch {
         try {
-          const cloneRes = response.clone();
-          const errData = await cloneRes.json().catch(() => ({}));
-          const isExpired = errData.code === "auth/id-token-expired" || 
-                            errData.error?.includes("auth/id-token-expired") ||
-                            errData.error?.includes("Invalid Firebase session") ||
-                            errData.error?.includes("Firebase ID token expired");
-          
-          if (isExpired) {
-            console.warn("Detected expired Firebase ID token during API call. Auto-refreshing...");
-            // Get a fresh token (non-force first)
-            let freshToken = await auth.currentUser.getIdToken(false);
-            
-            // If the cached token didn't change or was already expired, force refresh
-            const oldToken = localStorage.getItem("mess_token");
-            if (freshToken === oldToken) {
-              freshToken = await auth.currentUser.getIdToken(true);
-            }
-            
-            const wasUpdated = setStoredTokenSafely(freshToken);
-            if (wasUpdated) {
-              window.dispatchEvent(new CustomEvent("firebase-token-refreshed", { detail: freshToken } as any));
-            }
-
-            // Reconstruct options with new Authorization header
-            const newInit = { ...init } as any;
-            if (newInit.headers) {
-              if (typeof newInit.headers.set === "function") {
-                newInit.headers.set("Authorization", `Bearer ${freshToken}`);
-              } else if (Array.isArray(newInit.headers)) {
-                newInit.headers = newInit.headers.map(([k, v]: any) => 
-                  k.toLowerCase() === "authorization" ? [k, `Bearer ${freshToken}`] : [k, v]
-                );
-              } else {
-                const keys = Object.keys(newInit.headers);
-                const authKey = keys.find(k => k.toLowerCase() === "authorization") || "Authorization";
-                newInit.headers[authKey] = `Bearer ${freshToken}`;
-              }
-            } else {
-              newInit.headers = { "Authorization": `Bearer ${freshToken}` };
-            }
-
-            console.log("Retrying API request with fresh token:", input);
-            response = await originalFetch(input, newInit);
-          }
-        } catch (err) {
-          console.error("Failed to auto-recover/refresh token in fetch interceptor:", err);
+          (window as any).fetch = customFetch;
+          didOverride = true;
+        } catch {
+          // Cannot override window.fetch on this platform; safe fallback
         }
       }
-      return response;
-    };
+    } catch (err) {
+      console.warn("Global fetch interceptor skipped:", err);
+    }
 
     return () => {
-      window.fetch = originalFetch;
+      if (didOverride && originalFetch) {
+        try {
+          Object.defineProperty(window, "fetch", {
+            value: originalFetch,
+            writable: true,
+            configurable: true
+          });
+        } catch {
+          try {
+            (window as any).fetch = originalFetch;
+          } catch {}
+        }
+      }
     };
   }, []);
 
