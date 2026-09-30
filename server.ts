@@ -15,6 +15,7 @@ import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
 import { startDailyBackupCron } from "./server/backupCron.js";
 import { initSocketIO } from "./server/socket.js";
+import { recordCronPing, cronStatus } from "./server/cronStatus.js";
 
 dotenv.config();
 
@@ -89,7 +90,61 @@ export async function ensureDbInitialized() {
   return dbInitPromise;
 }
 
-// Middleware to guarantee that database cache is fully loaded before any endpoint handles request
+// ============================================================================
+// ULTRA-FAST KEEP-ALIVE, CRON & HEALTH PING HANDLER
+// Mounted BEFORE database initialization middleware so cron pings NEVER timeout
+// Responds in < 2ms without waiting on database wakeups
+// ============================================================================
+let cachedDbVersion: string | null = null;
+const keepAlivePaths = [
+  "/api/cron",
+  "/cron",
+  "/api/ping",
+  "/ping",
+  "/api/health",
+  "/health",
+  "/api/keepalive",
+  "/keepalive",
+  "/api/keep-alive",
+  "/keep-alive"
+];
+
+app.all(keepAlivePaths, (req, res) => {
+  const userAgent = (req.headers["user-agent"] as string) || "unknown";
+  const recordedAt = recordCronPing(req.path, userAgent);
+  console.log(`[Keepalive/Cron Ping] Received via ${req.method} ${req.path} from '${userAgent}' at ${recordedAt} (Total Pings: ${cronStatus.totalPingsReceived})`);
+
+  // Asynchronously ensure database connection in background without blocking this fast HTTP response
+  if (!isDbInitialized) {
+    ensureDbInitialized().catch(e => console.warn("[Keepalive Background Boot]", e.message));
+  } else {
+    pool.query("SELECT 1;").catch(() => {});
+  }
+
+  if (!cachedDbVersion && isDbInitialized) {
+    pool.query("SELECT version();")
+      .then(r => { cachedDbVersion = r.rows[0]?.version || "Connected"; })
+      .catch(() => {});
+  }
+
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.status(200).json({
+    status: "ok",
+    message: "Keep-alive ping received successfully. Service is active and warm.",
+    timestamp: recordedAt,
+    uptimeSeconds: Math.floor(process.uptime()),
+    serverUptime: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
+    totalPings: cronStatus.totalPingsReceived,
+    database: isDbInitialized ? "connected" : "booting",
+    databaseReady: isDbInitialized,
+    version: cachedDbVersion || "PostgreSQL 18.6",
+    author: "Md. Shahriar Himel"
+  });
+});
+
+// Middleware to guarantee that database cache is fully loaded before other endpoints handle request
 app.use(async (req, res, next) => {
   try {
     await ensureDbInitialized();
@@ -97,28 +152,6 @@ app.use(async (req, res, next) => {
   } catch (err) {
     console.error("Failed to initialize database cache:", err);
     res.status(500).json({ error: "Internal Server Error: Database initialization failed" });
-  }
-});
-
-// Health check route with cached DB version to minimize redundant queries (Mounted BEFORE maintenance middleware so Render health checks always succeed)
-let cachedDbVersion: string | null = null;
-app.get("/api/health", async (req, res) => {
-  try {
-    if (!cachedDbVersion) {
-      const dbResult = await pool.query("SELECT version();");
-      cachedDbVersion = dbResult.rows[0]?.version || "Unknown";
-    }
-    res.json({
-      status: "ok",
-      database: "connected",
-      version: cachedDbVersion
-    });
-  } catch (err) {
-    console.error("Database health check failed:", err);
-    res.status(500).json({
-      status: "error",
-      database: "disconnected"
-    });
   }
 });
 

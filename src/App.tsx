@@ -4464,9 +4464,24 @@ export default function App() {
     colors.headerBg = colors.headerBg || (isDark ? "#0f172a" : "#ffffff");
     colors.cardBg = colors.cardBg || (isDark ? "#1e293b" : "#ffffff");
 
+    // Reconcile background luminance with active mode (dark vs light) so cards/sidebars NEVER invert contrast
+    const cardLum = getLuminanceVal(colors.cardBg);
+    const sidebarLum = getLuminanceVal(colors.sidebarBg);
+    const headerLum = getLuminanceVal(colors.headerBg);
+
+    if (isDark) {
+      if (cardLum > 130) colors.cardBg = "rgba(28, 22, 38, 0.85)";
+      if (sidebarLum > 130) colors.sidebarBg = "rgba(20, 15, 28, 0.95)";
+      if (headerLum > 130) colors.headerBg = "rgba(20, 15, 28, 0.95)";
+    } else {
+      if (cardLum < 130) colors.cardBg = "rgba(255, 255, 255, 0.95)";
+      if (sidebarLum < 130) colors.sidebarBg = "rgba(255, 247, 237, 0.88)";
+      if (headerLum < 130) colors.headerBg = "rgba(255, 247, 237, 0.88)";
+    }
+
     // Dynamic contrast validation outputs based on actual theme backgrounds
     colors.sidebarText = getContrastColor(colors.sidebarBg, "#f8fafc", "#0f172a");
-    colors.sidebarSecondaryText = getContrastColor(colors.sidebarBg, "#94a3b8", "#64748b");
+    colors.sidebarSecondaryText = getContrastColor(colors.sidebarBg, "#94a3b8", "#475569");
     colors.headerText = getContrastColor(colors.headerBg, "#f8fafc", "#0f172a");
     colors.cardText = getContrastColor(colors.cardBg, "#f8fafc", "#0f172a");
     colors.cardSecondaryText = getContrastColor(colors.cardBg, "#94a3b8", "#64748b");
@@ -4489,7 +4504,7 @@ export default function App() {
 
   const currentTemplateId = previewTemplateId || messAnimations?.themeTemplate || "default-erp";
   const currentTemplate = THEME_TEMPLATES.find(t => t.id === currentTemplateId) || THEME_TEMPLATES[0];
-  const activeIsDarkMode = previewTemplateId ? currentTemplate.isDarkMode : isDarkMode;
+  const activeIsDarkMode = isDarkMode;
   const rawCustomColors = previewTemplateId ? currentTemplate.customColors : (customColors || THEME_TEMPLATES[0].customColors);
   const activeCustomColors = getReconciledThemeColors(currentTemplateId, rawCustomColors, activeIsDarkMode);
   const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
@@ -4509,7 +4524,7 @@ export default function App() {
         style={getThemeBgStyle()}
         className={`min-h-screen transition-all duration-300 flex flex-col md:flex-row theme-${currentTemplateId} ${
           activeIsDarkMode
-            ? "dark text-white font-sans " + (theme === "default" || !theme ? "bg-slate-950" : "")
+            ? "dark text-white font-sans dark-mode-root " + (theme === "default" || !theme ? "bg-slate-950" : "")
             : "light text-slate-900 font-sans light-mode-root " + (theme === "default" || !theme ? "bg-slate-50" : "")
         }`}
       >
@@ -4615,8 +4630,22 @@ export default function App() {
         aside button.bg-cyan-500\\/10 *, aside button.bg-cyan-100 *, .sidebar-link.active * {
           color: var(--custom-accent-contrast-text) !important;
         }
-        aside button:hover:not(.bg-cyan-500\\/10):not(.bg-cyan-100) {
-          background-color: rgba(128, 128, 128, 0.1) !important;
+        /* All non-active sidebar navigation buttons & icons must strictly match sidebar contrast */
+        aside nav button:not(.bg-cyan-500\\/10):not(.bg-cyan-100):not(.active) {
+          color: var(--custom-sidebar-text) !important;
+        }
+        aside nav button:not(.bg-cyan-500\\/10):not(.bg-cyan-100):not(.active) * {
+          color: var(--custom-sidebar-text) !important;
+        }
+        aside nav button:not(.bg-cyan-500\\/10):not(.bg-cyan-100):not(.active) svg {
+          color: var(--custom-sidebar-text) !important;
+          opacity: 0.85;
+        }
+        aside nav button:hover:not(.bg-cyan-500\\/10):not(.bg-cyan-100) {
+          background-color: rgba(128, 128, 128, 0.12) !important;
+        }
+        aside .border-t p, aside .border-t span:not(.animate-ping) {
+          color: var(--custom-sidebar-text) !important;
         }
 
         /* ------------------------------------------------------------------
@@ -4806,9 +4835,52 @@ export default function App() {
         .light-mode-root th.sticky {
           background-color: var(--custom-card-bg) !important;
           border-color: var(--custom-input-border) !important;
-        }
-        .light-mode-root td.sticky {
+          color: var(--custom-card-text) !important;
           box-shadow: 2px 0 5px rgba(0, 0, 0, 0.04) !important;
+        }
+        .light-mode-root td.sticky *,
+        .light-mode-root th.sticky * {
+          color: var(--custom-card-text) !important;
+        }
+        .dark-mode-root td.sticky,
+        .dark-mode-root th.sticky {
+          background-color: var(--custom-card-bg) !important;
+          border-color: var(--custom-input-border) !important;
+          color: var(--custom-card-text) !important;
+        }
+        .dark-mode-root td.sticky * {
+          color: var(--custom-card-text) !important;
+        }
+
+        /* In light mode, override light text classes to dark contrast text unless inside dark buttons/badges */
+        .light-mode-root td,
+        .light-mode-root th {
+          color: var(--custom-card-text) !important;
+        }
+        .light-mode-root :not(button):not(.badge):not(.btn):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-indigo-6"]):not([class*="bg-purple-6"]):not([class*="bg-orange-6"]) > .text-slate-100,
+        .light-mode-root :not(button):not(.badge):not(.btn):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-indigo-6"]):not([class*="bg-purple-6"]):not([class*="bg-orange-6"]) > .text-slate-200,
+        .light-mode-root :not(button):not(.badge):not(.btn):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-indigo-6"]):not([class*="bg-purple-6"]):not([class*="bg-orange-6"]) > .text-slate-300,
+        .light-mode-root span.text-slate-100,
+        .light-mode-root span.text-slate-200,
+        .light-mode-root span.text-slate-300,
+        .light-mode-root p.text-slate-100,
+        .light-mode-root p.text-slate-200,
+        .light-mode-root p.text-slate-300,
+        .light-mode-root div.text-slate-100,
+        .light-mode-root div.text-slate-200,
+        .light-mode-root div.text-slate-300,
+        .light-mode-root .text-cyan-100,
+        .light-mode-root .text-cyan-200 {
+          color: var(--custom-card-text) !important;
+        }
+        .light-mode-root p.text-slate-400,
+        .light-mode-root span.text-slate-400,
+        .light-mode-root div.text-slate-400 {
+          color: var(--custom-card-secondary-text) !important;
+        }
+        .light-mode-root input.bg-transparent {
+          color: var(--custom-card-text) !important;
+          font-weight: 800 !important;
         }
 
         /* Status colors & soft light pills */
@@ -4846,21 +4918,6 @@ export default function App() {
         .light-mode-root .text-emerald-400,
         .light-mode-root .text-emerald-500 {
           color: #15803d;
-        }
-        .light-mode-root .bg-emerald-500\\/10 {
-          background-color: rgba(34, 197, 94, 0.1) !important;
-          color: #15803d !important;
-        }
-        .light-mode-root .bg-rose-500\\/20,
-        .light-mode-root .bg-red-500\\/20 {
-          background-color: rgba(239, 68, 68, 0.1) !important;
-          color: #b91c1c !important;
-        }
-          color: #7e22ce !important;
-        }
-        .light-mode-root .text-emerald-400,
-        .light-mode-root .text-emerald-500 {
-          color: #15803d !important;
         }
         .light-mode-root .bg-emerald-500\\/10 {
           background-color: rgba(34, 197, 94, 0.1) !important;

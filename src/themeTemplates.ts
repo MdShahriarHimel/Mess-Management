@@ -158,18 +158,22 @@ export const THEME_TEMPLATES: ThemeTemplate[] = [
       layoutScaleColorRgb: "#f43f5e"
     },
     customStyles: `
-      .theme-macos-sonoma .glass-panel,
-      .theme-macos-sonoma .rounded-2xl {
-        background: rgba(255, 255, 255, 0.85) !important;
+      .light-mode-root.theme-macos-sonoma .glass-panel,
+      .light-mode-root.theme-macos-sonoma .rounded-2xl {
+        background: rgba(255, 255, 255, 0.94) !important;
         backdrop-filter: blur(30px) !important;
         border-radius: 20px !important;
-        border: 1px solid rgba(0, 0, 0, 0.06) !important;
+        border: 1px solid rgba(0, 0, 0, 0.08) !important;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.06) !important;
       }
       .dark-mode-root.theme-macos-sonoma .glass-panel,
-      .dark-mode-root.theme-macos-sonoma .rounded-2xl {
-        background: rgba(30, 20, 40, 0.55) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      .dark-mode-root.theme-macos-sonoma .rounded-2xl,
+      .dark.theme-macos-sonoma .glass-panel,
+      .dark.theme-macos-sonoma .rounded-2xl {
+        background: rgba(28, 20, 36, 0.85) !important;
+        backdrop-filter: blur(30px) !important;
+        border-radius: 20px !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
       }
       .theme-macos-sonoma button {

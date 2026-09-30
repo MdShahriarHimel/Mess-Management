@@ -31,6 +31,7 @@ import {
 } from "../src/db/schema.js";
 import { Member, UserRole } from "../src/types.js";
 import { getIO } from "./socket.js";
+import { cronStatus } from "./cronStatus.js";
 
 const router = Router();
 
@@ -592,6 +593,13 @@ router.get("/db-status", platformOwnerMiddleware, async (req: AuthenticatedReque
         uptime: uptimeStr,
         memoryUsage: memoryStr,
         apiResponseTime
+      },
+      cronDetails: {
+        status: cronStatus.lastPingTime ? "Active" : "Idle / No Pings Yet",
+        lastPingTime: cronStatus.lastPingTime,
+        totalPingsReceived: cronStatus.totalPingsReceived,
+        lastPingPath: cronStatus.lastPingPath,
+        lastPingUserAgent: cronStatus.lastPingUserAgent
       }
     });
   } catch (err: any) {

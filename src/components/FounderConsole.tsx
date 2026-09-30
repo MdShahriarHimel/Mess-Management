@@ -2036,6 +2036,20 @@ export default function FounderConsole({
                     <p className="text-[10px] text-slate-600 dark:text-slate-300 font-bold truncate">
                       {dbStatus.serverDetails?.memoryUsage || "N/A"}
                     </p>
+
+                    <div className="flex justify-between items-center border-t pt-2 border-slate-800/10 dark:border-slate-800/60">
+                      <span className="opacity-70">Keep-Alive Cron:</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        dbStatus.cronDetails?.lastPingTime ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                      }`}>
+                        {dbStatus.cronDetails?.lastPingTime ? "Active" : "No pings yet"}
+                      </span>
+                    </div>
+                    {dbStatus.cronDetails?.lastPingTime && (
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                        Last: {new Date(dbStatus.cronDetails.lastPingTime).toLocaleTimeString()} ({dbStatus.cronDetails.totalPingsReceived} pings)
+                      </p>
+                    )}
                   </div>
                 </div>
 

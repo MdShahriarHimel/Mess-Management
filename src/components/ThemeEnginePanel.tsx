@@ -377,6 +377,7 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       setSiteColor(targetTheme.siteColor);
       setFontStyle(targetTheme.fontStyle);
       setCustomColors(targetTheme.customColors);
+      setIsDarkMode(targetTheme.isDarkMode);
       setMessAnimations((prev: any) => ({
         ...prev,
         backgroundTheme: targetTheme.backgroundTheme,

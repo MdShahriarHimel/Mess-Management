@@ -2197,6 +2197,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             setSiteColor(theme.siteColor);
                             setFontStyle(theme.fontStyle);
                             setCustomColors(theme.customColors);
+                            setIsDarkMode(theme.isDarkMode);
                             setMessAnimations(prev => ({
                               ...prev,
                               backgroundTheme: theme.backgroundTheme,
