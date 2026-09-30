@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus,
-  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight, Printer, Download, Search, CheckCircle2
+  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight, Printer, Download, Search, CheckCircle2, Shield
 } from "lucide-react";
 import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings, Meal, MemberStatus } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
@@ -16,6 +16,7 @@ import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { sortMembersAlphabetically, deduplicateMembersList } from "../utils/memberUtils.ts";
 import { getCycleEffectiveEndDate, getCycleEffectiveStartDate, getDhakaDateString } from "../utils/cycleUtils.ts";
+import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -34,6 +35,7 @@ interface MarketLogsProps {
     allowPreviousMealPlanner?: boolean;
   };
   safeMode?: boolean;
+  onToggleSafeMode?: () => void;
   subTab?: "standard" | "managerial";
   onSetSubTab?: (tab: "standard" | "managerial") => void;
   marketForcedFlowStep?: string | null;
@@ -53,6 +55,7 @@ export default function MarketLogs({
   onRefresh,
   dateRestrictions,
   safeMode = false,
+  onToggleSafeMode,
   subTab = "standard",
   onSetSubTab,
   marketForcedFlowStep,
@@ -81,17 +84,26 @@ export default function MarketLogs({
     }
   }, [currentMonthId, months]);
   
-  // Market expense form states
-  const [memberId, setMemberId] = useState(currentUser.id);
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
-  const [isExtra, setIsExtra] = useState(false);
-  const [coveredDates, setCoveredDates] = useState<string[]>([]);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  // Load initial draft from sessionStorage if present
+  const initialVoucherDraft = useMemo(() => {
+    return getFormDraft("market_expense_voucher", currentMonthId, currentUser.id);
+  }, [currentMonthId, currentUser.id]);
+
+  const [hasRestoredVoucherDraft, setHasRestoredVoucherDraft] = useState(() => {
+    return hasMeaningfulDraft(initialVoucherDraft);
+  });
+
+  // Market expense form states initialized from draft if available
+  const [memberId, setMemberId] = useState(() => initialVoucherDraft?.memberId || currentUser.id);
+  const [date, setDate] = useState(() => initialVoucherDraft?.date || new Date().toISOString().split("T")[0]);
+  const [amount, setAmount] = useState(() => initialVoucherDraft?.amount !== undefined ? String(initialVoucherDraft.amount) : "");
+  const [description, setDescription] = useState(() => initialVoucherDraft?.description || "");
+  const [quantity, setQuantity] = useState(() => initialVoucherDraft?.quantity || "");
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(() => initialVoucherDraft?.receiptUrl || null);
+  const [isExtra, setIsExtra] = useState(() => initialVoucherDraft?.isExtra ?? false);
+  const [coveredDates, setCoveredDates] = useState<string[]>(() => initialVoucherDraft?.coveredDates || []);
+  const [startDate, setStartDate] = useState(() => initialVoucherDraft?.startDate || new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState(() => initialVoucherDraft?.endDate || new Date().toISOString().split("T")[0]);
 
   // Helper to extract assigned market dates for the selected member
   const memberDuties = duties.filter(d => 
@@ -276,25 +288,68 @@ export default function MarketLogs({
     lunchMain: string;
     dinnerVegetable: string;
     dinnerMain: string;
-  }>>({});
+  }>>(() => initialVoucherDraft?.mealsPlanning || {});
   
-  // Duty Schedule form states
-  const [scheduleMemberId, setScheduleMemberId] = useState("");
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [scheduleTask, setScheduleTask] = useState("বাজারের দায়িত্ব (Market Schedule)");
+  // Auto-save Voucher draft to sessionStorage whenever fields change
+  useEffect(() => {
+    const currentData = {
+      memberId,
+      date,
+      amount,
+      description,
+      quantity,
+      receiptUrl,
+      isExtra,
+      coveredDates,
+      startDate,
+      endDate,
+      mealsPlanning
+    };
+    if (hasMeaningfulDraft(currentData)) {
+      saveFormDraft("market_expense_voucher", currentMonthId, currentUser.id, currentData);
+      setHasRestoredVoucherDraft(true);
+    }
+  }, [memberId, date, amount, description, quantity, receiptUrl, isExtra, coveredDates, startDate, endDate, mealsPlanning, currentMonthId, currentUser.id]);
+
+  // Duty Schedule form states with draft support
+  const initialScheduleDraft = useMemo(() => {
+    return getFormDraft("market_duty_schedule", currentMonthId, currentUser.id);
+  }, [currentMonthId, currentUser.id]);
+
+  const [scheduleMemberId, setScheduleMemberId] = useState(() => initialScheduleDraft?.memberId || "");
+  const [scheduleDate, setScheduleDate] = useState(() => initialScheduleDraft?.date || "");
+  const [scheduleTask, setScheduleTask] = useState(() => initialScheduleDraft?.task || "বাজারের দায়িত্ব (Market Schedule)");
+
+  useEffect(() => {
+    const data = { memberId: scheduleMemberId, date: scheduleDate, task: scheduleTask };
+    if (hasMeaningfulDraft(data)) {
+      saveFormDraft("market_duty_schedule", currentMonthId, currentUser.id, data);
+    }
+  }, [scheduleMemberId, scheduleDate, scheduleTask, currentMonthId, currentUser.id]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<string | null>(null);
 
-  // Managerial cost states
+  // Managerial cost states with draft support
+  const initialManagerialDraft = useMemo(() => {
+    return getFormDraft("market_managerial_cost", currentMonthId, currentUser.id);
+  }, [currentMonthId, currentUser.id]);
+
   const [depositsList, setDepositsList] = useState<any[]>([]);
   const [holdingsList, setHoldingsList] = useState<any[]>([]);
   const [showAddManagerialModal, setShowAddManagerialModal] = useState(false);
-  const [managerialDate, setManagerialDate] = useState(new Date().toISOString().split("T")[0]);
-  const [managerialAmount, setManagerialAmount] = useState("");
-  const [managerialDesc, setManagerialDesc] = useState("");
+  const [managerialDate, setManagerialDate] = useState(() => initialManagerialDraft?.date || new Date().toISOString().split("T")[0]);
+  const [managerialAmount, setManagerialAmount] = useState(() => initialManagerialDraft?.amount || "");
+  const [managerialDesc, setManagerialDesc] = useState(() => initialManagerialDraft?.desc || "");
+
+  useEffect(() => {
+    const data = { date: managerialDate, amount: managerialAmount, desc: managerialDesc };
+    if (hasMeaningfulDraft(data)) {
+      saveFormDraft("market_managerial_cost", currentMonthId, currentUser.id, data);
+    }
+  }, [managerialDate, managerialAmount, managerialDesc, currentMonthId, currentUser.id]);
 
   const activeMembers = members.filter(m => m.status === "ACTIVE" || m.status === "AWAY");
 
@@ -379,7 +434,6 @@ export default function MarketLogs({
 
   useEffect(() => {
     if (marketForcedFlowStep === "submit_voucher") {
-      resetForm();
       setShowAddModal(true);
       if (onSetMarketForcedFlowStep) {
         onSetMarketForcedFlowStep(null);
@@ -467,6 +521,12 @@ export default function MarketLogs({
     setCoveredDates([]);
     setStartDate(new Date().toISOString().split("T")[0]);
     setEndDate(new Date().toISOString().split("T")[0]);
+  };
+
+  const handleDiscardDraft = () => {
+    clearFormDraft("market_expense_voucher", currentMonthId, currentUser.id);
+    setHasRestoredVoucherDraft(false);
+    resetForm();
   };
 
   // Submit expense log
@@ -587,6 +647,8 @@ export default function MarketLogs({
       }
 
       setShowAddModal(false);
+      clearFormDraft("market_expense_voucher", currentMonthId, currentUser.id);
+      setHasRestoredVoucherDraft(false);
       resetForm();
       fetchMarketsAndSchedules();
       onRefresh();
@@ -646,6 +708,7 @@ export default function MarketLogs({
 
       if (response.ok) {
         setShowScheduleModal(false);
+        clearFormDraft("market_duty_schedule", currentMonthId, currentUser.id);
         setScheduleMemberId("");
         setScheduleDate("");
         fetchMarketsAndSchedules(targetMonthId);
@@ -756,6 +819,7 @@ export default function MarketLogs({
 
       if (response.ok) {
         setShowAddManagerialModal(false);
+        clearFormDraft("market_managerial_cost", currentMonthId, currentUser.id);
         setManagerialAmount("");
         setManagerialDesc("");
         setManagerialDate(new Date().toISOString().split("T")[0]);
@@ -1378,7 +1442,7 @@ export default function MarketLogs({
               )}
 
               <button
-                onClick={() => { resetForm(); setShowAddModal(true); }}
+                onClick={() => { setShowAddModal(true); }}
                 className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
               >
                 <Plus size={15} />
@@ -2154,6 +2218,41 @@ export default function MarketLogs({
               </div>
             )}
 
+            {safeMode && (
+              <div className="mb-3 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 text-xs text-amber-300">
+                  <Shield size={16} className="text-amber-400 shrink-0" />
+                  <span>🛡️ <strong>সেফ মোড অন:</strong> আপনি যা লিখছেন তা ব্রাউজার ড্রাফটে নিরাপদ।</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleSafeMode) onToggleSafeMode();
+                    else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer active:scale-95 transition-all shrink-0"
+                >
+                  সেফ মোড অফ করুন
+                </button>
+              </div>
+            )}
+
+            {hasRestoredVoucherDraft && (
+              <div className="mb-3 p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-between gap-2 text-xs text-cyan-300 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-cyan-400 shrink-0" />
+                  <span>💾 আগের টাইপ করা ড্রাফট লোড রয়েছে</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDiscardDraft}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-200 underline font-semibold cursor-pointer shrink-0"
+                >
+                  নতুন করে লিখুন
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleAddExpense} className="flex-1 flex flex-col min-h-0 space-y-4">
               <div className="flex-1 overflow-y-auto pr-1.5 space-y-4 min-h-0">
               
@@ -2494,6 +2593,25 @@ export default function MarketLogs({
               </button>
             </div>
 
+            {safeMode && (
+              <div className="mb-3 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <div className="flex items-center gap-1.5">
+                  <Shield size={15} className="text-amber-400 shrink-0" />
+                  <span>🛡️ সেফ মোড চালু আছে</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleSafeMode) onToggleSafeMode();
+                    else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
+                >
+                  সেফ মোড বন্ধ
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleAddSchedule} className="space-y-4">
               {/* Planning cycle indicator */}
               <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
@@ -2621,6 +2739,25 @@ export default function MarketLogs({
                 <X size={18} />
               </button>
             </div>
+
+            {safeMode && (
+              <div className="mb-3 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <div className="flex items-center gap-1.5">
+                  <Shield size={15} className="text-amber-400 shrink-0" />
+                  <span>🛡️ সেফ মোড চালু আছে</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleSafeMode) onToggleSafeMode();
+                    else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer"
+                >
+                  সেফ মোড বন্ধ
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleAddManagerialExpense} className="space-y-4">
               

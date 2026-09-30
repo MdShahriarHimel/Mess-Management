@@ -1679,6 +1679,17 @@ export default function App() {
     }
   };
 
+  // Global event listener to toggle safe mode directly from any modal/component
+  useEffect(() => {
+    const handleSafeModeToggleEvent = () => {
+      handleToggleSafeMode();
+    };
+    window.addEventListener("mess:toggle-safemode", handleSafeModeToggleEvent);
+    return () => {
+      window.removeEventListener("mess:toggle-safemode", handleSafeModeToggleEvent);
+    };
+  }, [safeMode]);
+
   // Forcefully override window.fetch when safeMode is on to block all POST/PUT/DELETE requests across the app
   // and inject X-Acting-Role header for ultimate admin
   useEffect(() => {
@@ -1698,8 +1709,13 @@ export default function App() {
                         urlString.includes("/activate");
                         
         if (!isExempt) {
-          alert("🛡️ SAFE MODE IS ACTIVE\n\nAll changes/modifications are currently locked to prevent accidental updates.\n\nTo make any edits, please turn OFF 'Safe Mode' using the toggle button in the header.");
-          return new Response(JSON.stringify({ error: "Safe Mode Active: All modifications are blocked." }), {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("mess:safe-mode-blocked", {
+              detail: { message: "Safe Mode is active. Your typed inputs have been safely saved as a draft in this browser session." }
+            }));
+          }
+          alert("🛡️ SAFE MODE IS ACTIVE\n\nসব পরিবর্তন লক রয়েছে যাতে অসাবধানতাবশত কোনো ডাটাবেস পরিবর্তন না হয়।\n\nচিন্তার কিছু নেই! আপনি যা লিখেছেন তা ব্রাউজারে ড্রাফট হিসেবে সম্পূর্ণ নিরাপদ রয়েছে। সাবমিট করতে সেফ মোড অফ করুন।");
+          return new Response(JSON.stringify({ error: "Safe Mode Active: All modifications are blocked. Inputs retained in browser draft." }), {
             status: 403,
             headers: { "Content-Type": "application/json" }
           });
@@ -5662,6 +5678,7 @@ export default function App() {
               currentMonthId={currentMonthId}
               dropdownOptions={dropdownOptions}
               safeMode={safeMode}
+              onToggleSafeMode={handleToggleSafeMode}
               mealTypes={mealTypes}
               respectSenioritySettings={respectSenioritySettings}
               months={months}
@@ -5678,6 +5695,8 @@ export default function App() {
               dateRestrictions={dateRestrictions}
               mealTypes={mealTypes}
               respectSenioritySettings={respectSenioritySettings}
+              safeMode={safeMode}
+              onToggleSafeMode={handleToggleSafeMode}
             />
           )}
 
@@ -5691,6 +5710,8 @@ export default function App() {
               onSetMarketForcedFlowStep={setMarketForcedFlowStep}
               forcedMarketDate={forcedMarketDate}
               onNavigateToTab={(tab) => { setActiveTab(tab); }}
+              safeMode={safeMode}
+              onToggleSafeMode={handleToggleSafeMode}
             />
           )}
 
@@ -5703,6 +5724,7 @@ export default function App() {
               onRefresh={handleRefreshAll}
               dateRestrictions={dateRestrictions}
               safeMode={safeMode}
+              onToggleSafeMode={handleToggleSafeMode}
               subTab={marketSubTab}
               onSetSubTab={setMarketSubTab}
               marketForcedFlowStep={marketForcedFlowStep}
@@ -5726,6 +5748,8 @@ export default function App() {
               currencySymbol={currencySymbol}
               customColors={customColors}
               dateRestrictions={dateRestrictions}
+              safeMode={safeMode}
+              onToggleSafeMode={handleToggleSafeMode}
             />
           )}
 

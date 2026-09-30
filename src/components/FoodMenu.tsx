@@ -5,10 +5,11 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  FileText, Calendar, Edit, Check, AlertCircle, Sparkles, PieChart, Info, ArrowRight
+  FileText, Calendar, Edit, Check, AlertCircle, Sparkles, PieChart, Info, ArrowRight, Shield
 } from "lucide-react";
 import { Member, FoodMenu as MenuType, UserRole } from "../types.js";
 import { getAuthToken } from "../lib/authHeader.ts";
+import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
 
 interface FoodMenuProps {
   currentUser: Member;
@@ -28,6 +29,8 @@ interface FoodMenuProps {
   onSetMarketForcedFlowStep?: (step: string | null) => void;
   forcedMarketDate?: string;
   onNavigateToTab?: (tabId: string) => void;
+  safeMode?: boolean;
+  onToggleSafeMode?: () => void;
 }
 
 export default function FoodMenu({ 
@@ -38,7 +41,9 @@ export default function FoodMenu({
   marketForcedFlowStep,
   onSetMarketForcedFlowStep,
   forcedMarketDate,
-  onNavigateToTab
+  onNavigateToTab,
+  safeMode = false,
+  onToggleSafeMode
 }: FoodMenuProps) {
   const authToken = getAuthToken(currentUser);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
@@ -49,6 +54,7 @@ export default function FoodMenu({
   const [allMenus, setAllMenus] = useState<MenuType[]>([]);
   const [stats, setStats] = useState<any>(null);
   
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,23 +73,58 @@ export default function FoodMenu({
         const sortedMenus = [...rawMenus].sort((a, b) => b.date.localeCompare(a.date));
         setAllMenus(sortedMenus);
         
-        // Find for current date
         const todayMenu = sortedMenus.find((m: MenuType) => m.date === selectedDate);
-        if (todayMenu) {
+
+        // Check if an unsaved draft exists in sessionStorage for this date
+        const draft = getFormDraft("food_menu_plan", currentMonthId, currentUser.id, selectedDate);
+        if (draft && hasMeaningfulDraft(draft)) {
+          setLunchVegetable(draft.lunchVegetable || "");
+          setLunchMain(draft.lunchMain || "");
+          setDinnerVegetable(draft.dinnerVegetable || "");
+          setDinnerMain(draft.dinnerMain || "");
+          setHasRestoredDraft(true);
+        } else if (todayMenu) {
           setLunchVegetable(todayMenu.lunchVegetable);
           setLunchMain(todayMenu.lunchMain);
           setDinnerVegetable(todayMenu.dinnerVegetable);
           setDinnerMain(todayMenu.dinnerMain);
+          setHasRestoredDraft(false);
         } else {
           // Clear
           setLunchVegetable("");
           setLunchMain("");
           setDinnerVegetable("");
           setDinnerMain("");
+          setHasRestoredDraft(false);
         }
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Auto-save form draft whenever food menu inputs change
+  useEffect(() => {
+    const data = { lunchVegetable, lunchMain, dinnerVegetable, dinnerMain };
+    if (hasMeaningfulDraft(data)) {
+      saveFormDraft("food_menu_plan", currentMonthId, currentUser.id, data, selectedDate);
+    }
+  }, [lunchVegetable, lunchMain, dinnerVegetable, dinnerMain, selectedDate, currentMonthId, currentUser.id]);
+
+  const handleDiscardDraft = () => {
+    clearFormDraft("food_menu_plan", currentMonthId, currentUser.id, selectedDate);
+    setHasRestoredDraft(false);
+    const todayMenu = allMenus.find((m: MenuType) => m.date === selectedDate);
+    if (todayMenu) {
+      setLunchVegetable(todayMenu.lunchVegetable);
+      setLunchMain(todayMenu.lunchMain);
+      setDinnerVegetable(todayMenu.dinnerVegetable);
+      setDinnerMain(todayMenu.dinnerMain);
+    } else {
+      setLunchVegetable("");
+      setLunchMain("");
+      setDinnerVegetable("");
+      setDinnerMain("");
     }
   };
 
@@ -162,6 +203,8 @@ export default function FoodMenu({
         throw new Error(data.error || "Failed to save food menu");
       }
 
+      clearFormDraft("food_menu_plan", currentMonthId, currentUser.id, selectedDate);
+      setHasRestoredDraft(false);
       setSuccess("Food menu draft published successfully!");
       setEditMode(false);
       fetchMenuData();
@@ -396,6 +439,41 @@ export default function FoodMenu({
                      <option key={i} value={dish} />
                    ))}
                  </datalist>
+
+                 {safeMode && (
+                   <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-300">
+                     <div className="flex items-center gap-1.5">
+                       <Shield size={16} className="text-amber-400 shrink-0" />
+                       <span>🛡️ <strong>সেফ মোড অন:</strong> আপনি যা লিখছেন তা ড্রাফট হিসেবে ব্রাউজারে নিরাপদ।</span>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={() => {
+                         if (onToggleSafeMode) onToggleSafeMode();
+                         else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+                       }}
+                       className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer active:scale-95 transition-all shrink-0"
+                     >
+                       সেফ মোড অফ করুন
+                     </button>
+                   </div>
+                 )}
+
+                 {hasRestoredDraft && (
+                   <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-between gap-2 text-xs text-cyan-300">
+                     <div className="flex items-center gap-1.5">
+                       <Sparkles size={14} className="text-cyan-400 shrink-0" />
+                       <span>💾 পূর্বের অসংরক্ষিত ড্রাফট লোড রয়েছে</span>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={handleDiscardDraft}
+                       className="text-[11px] text-cyan-400 hover:text-cyan-200 underline font-semibold cursor-pointer shrink-0"
+                     >
+                       নতুন করে লিখুন
+                     </button>
+                   </div>
+                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {/* Lunch Form inputs */}

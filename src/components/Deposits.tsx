@@ -4,12 +4,13 @@
  */
 
 import React, { useState, useEffect, useMemo } from "react";
-import { DollarSign, Plus, X, Trash2 } from "lucide-react";
+import { DollarSign, Plus, X, Trash2, Shield, Sparkles } from "lucide-react";
 import { Member, Deposit, UserRole, MessMonth } from "../types.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { sortMembersAlphabetically } from "../utils/memberUtils.ts";
+import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
 
 interface DepositsProps {
   currentUser: Member;
@@ -39,6 +40,8 @@ interface DepositsProps {
     allowFutureMealPlanner?: boolean;
     allowPreviousMealPlanner?: boolean;
   };
+  safeMode?: boolean;
+  onToggleSafeMode?: () => void;
 }
 
 export default function Deposits({ 
@@ -50,15 +53,39 @@ export default function Deposits({
   onRefresh,
   currencySymbol = "৳",
   customColors,
-  dateRestrictions
+  dateRestrictions,
+  safeMode = false,
+  onToggleSafeMode
 }: DepositsProps) {
   const authToken = getAuthToken(currentUser);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [memberId, setMemberId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+
+  const initialDepositDraft = useMemo(() => {
+    return getFormDraft("deposit_voucher", currentMonthId, currentUser.id);
+  }, [currentMonthId, currentUser.id]);
+
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(() => hasMeaningfulDraft(initialDepositDraft));
+  const [memberId, setMemberId] = useState(() => initialDepositDraft?.memberId || "");
+  const [amount, setAmount] = useState(() => initialDepositDraft?.amount || "");
+  const [date, setDate] = useState(() => initialDepositDraft?.date || new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const data = { memberId, amount, date };
+    if (hasMeaningfulDraft(data)) {
+      saveFormDraft("deposit_voucher", currentMonthId, currentUser.id, data);
+      setHasRestoredDraft(true);
+    }
+  }, [memberId, amount, date, currentMonthId, currentUser.id]);
+
+  const handleDiscardDraft = () => {
+    clearFormDraft("deposit_voucher", currentMonthId, currentUser.id);
+    setHasRestoredDraft(false);
+    setMemberId("");
+    setAmount("");
+    setDate(new Date().toISOString().split("T")[0]);
+  };
 
   // Active members sorted alphabetically for deposit registration
   const activeMembers = useMemo(() => {
@@ -178,6 +205,8 @@ export default function Deposits({
 
       if (response.ok) {
         setShowAddModal(false);
+        clearFormDraft("deposit_voucher", currentMonthId, currentUser.id);
+        setHasRestoredDraft(false);
         setMemberId("");
         setAmount("");
         fetchDeposits();
@@ -370,6 +399,41 @@ export default function Deposits({
                 <X size={18} />
               </button>
             </div>
+
+            {safeMode && (
+              <div className="mb-3 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <div className="flex items-center gap-1.5">
+                  <Shield size={16} className="text-amber-400 shrink-0" />
+                  <span>🛡️ <strong>সেফ মোড অন:</strong> আপনি যা লিখছেন তা ড্রাফট হিসেবে নিরাপদ।</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleSafeMode) onToggleSafeMode();
+                    else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer active:scale-95 transition-all shrink-0"
+                >
+                  সেফ মোড অফ করুন
+                </button>
+              </div>
+            )}
+
+            {hasRestoredDraft && (
+              <div className="mb-3 p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-between gap-2 text-xs text-cyan-300">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-cyan-400 shrink-0" />
+                  <span>💾 আগের টাইপ করা ড্রাফট লোড রয়েছে</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDiscardDraft}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-200 underline font-semibold cursor-pointer shrink-0"
+                >
+                  নতুন করে লিখুন
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleAddDeposit} className="space-y-4">
               

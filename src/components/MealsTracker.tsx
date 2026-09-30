@@ -5,13 +5,14 @@
 
 import { useState, useEffect } from "react";
 import { 
-  Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle 
+  Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle, Shield, Sparkles
 } from "lucide-react";
 import { Member, Meal, UserRole, RespectSenioritySettings, MemberStatus } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getDhakaDateString } from "../utils/cycleUtils.ts";
+import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
 
 interface MealsTrackerProps {
   currentUser: Member;
@@ -31,6 +32,8 @@ interface MealsTrackerProps {
   };
   mealTypes?: any[];
   respectSenioritySettings?: RespectSenioritySettings;
+  safeMode?: boolean;
+  onToggleSafeMode?: () => void;
 }
 
 let fetchCounter = 0;
@@ -43,11 +46,14 @@ export default function MealsTracker({
   onRefresh,
   dateRestrictions,
   mealTypes,
-  respectSenioritySettings
+  respectSenioritySettings,
+  safeMode = false,
+  onToggleSafeMode
 }: MealsTrackerProps) {
   const authToken = sessionStorage.getItem("mess_token") || localStorage.getItem("mess_token") || currentUser.id;
   const [selectedDate, setSelectedDate] = useState(() => getDhakaDateString());
   const [mealsData, setMealsData] = useState<Record<string, Record<string, number | string>>>({});
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +172,21 @@ export default function MealsTracker({
           return;
         }
 
-        setMealsData(map);
+        // Check if an unsaved draft exists for this date in sessionStorage
+        const draft = getFormDraft<Record<string, Record<string, number | string>>>("meals_tracker_daily", currentMonthId, currentUser.id, selectedDate);
+        if (draft && typeof draft === "object" && Object.keys(draft).length > 0) {
+          const mergedMap = { ...map };
+          Object.entries(draft).forEach(([mId, mealRecord]) => {
+            if (mergedMap[mId]) {
+              mergedMap[mId] = { ...(mergedMap[mId] || {}), ...mealRecord };
+            }
+          });
+          setMealsData(mergedMap);
+          setHasRestoredDraft(true);
+        } else {
+          setMealsData(map);
+          setHasRestoredDraft(false);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -220,18 +240,24 @@ export default function MealsTracker({
   // Handle meal count selection
   const updateMealCell = (memberId: string, type: string, val: number | string) => {
     if (isLocked) return;
-    console.log(
-      "[SETMEALSDATA]",
-      new Error().stack,
-      { memberId, type, val }
-    );
-    setMealsData(prev => ({
-      ...prev,
-      [memberId]: {
-        ...(prev[memberId] || {}),
-        [type]: val
-      }
-    }));
+    setMealsData(prev => {
+      const updated = {
+        ...prev,
+        [memberId]: {
+          ...(prev[memberId] || {}),
+          [type]: val
+        }
+      };
+      saveFormDraft("meals_tracker_daily", currentMonthId, currentUser.id, updated, selectedDate);
+      setHasRestoredDraft(true);
+      return updated;
+    });
+  };
+
+  const handleDiscardDraft = () => {
+    clearFormDraft("meals_tracker_daily", currentMonthId, currentUser.id, selectedDate);
+    setHasRestoredDraft(false);
+    fetchMealsForDate();
   };
 
   // Save changes
@@ -254,15 +280,7 @@ export default function MealsTracker({
       return entry;
     });
 
-    console.log("[DEBUG 1] Before POST /api/meals - mealsToSave payload:", {
-      monthId: currentMonthId,
-      selectedDate,
-      mealsToSave
-    });
-
     try {
-      console.log("Current mealsData =", mealsData);
-      console.log("Payload =", mealsToSave);
       const response = await fetch("/api/meals", {
         method: "POST",
         headers: {
@@ -279,6 +297,9 @@ export default function MealsTracker({
       if (!response.ok) {
         throw new Error(data.error || "Failed to save meals");
       }
+
+      clearFormDraft("meals_tracker_daily", currentMonthId, currentUser.id, selectedDate);
+      setHasRestoredDraft(false);
 
       if (data.pendingApproval) {
         setSuccess(data.message || "Meals update requested! Your changes have been submitted to the Manager for confirmation.");
@@ -375,6 +396,41 @@ export default function MealsTracker({
   return (
     <div className="space-y-6" id="meals-tracker-wrapper">
       
+      {safeMode && (
+        <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300">
+          <div className="flex items-center gap-2">
+            <Shield size={18} className="text-amber-400 shrink-0" />
+            <span>🛡️ <strong>সেফ মোড অন:</strong> আপনি যে মিল সংখ্যা এন্ট্রি করছেন তা ড্রাফট হিসেবে ব্রাউজারে নিরাপদ রয়েছে। মিল সেভ করতে সেফ মোড বন্ধ করুন।</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (onToggleSafeMode) onToggleSafeMode();
+              else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+            }}
+            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer active:scale-95 transition-all shrink-0"
+          >
+            সেফ মোড অফ করুন
+          </button>
+        </div>
+      )}
+
+      {hasRestoredDraft && (
+        <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-between gap-2 text-xs text-cyan-300">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-cyan-400 shrink-0" />
+            <span>💾 এই তারিখের জন্য আপনার পূর্বের অসংরক্ষিত মিল ড্রাফট লোড করা হয়েছে</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            className="text-xs text-cyan-400 hover:text-cyan-200 underline font-semibold cursor-pointer shrink-0"
+          >
+            ড্রাফট বাতিল করুন
+          </button>
+        </div>
+      )}
+
       {isRestrictedByDate && (
         <div className="p-3.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs flex items-center gap-2">
           <AlertTriangle size={16} className="shrink-0" />

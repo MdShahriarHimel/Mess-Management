@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   Users, UserPlus, Search, Edit2, Archive, Trash2, Shield, ShieldCheck,
   RotateCcw, Check, X, Phone, UserCheck, Heart, Briefcase, Mail,
-  ChevronDown, ChevronUp, GraduationCap, Award, Home, DoorOpen, FlaskConical
+  ChevronDown, ChevronUp, GraduationCap, Award, Home, DoorOpen, FlaskConical, Sparkles
 } from "lucide-react";
 import { Member, UserRole, MemberStatus, RespectSenioritySettings, RoomLabel } from "../types.js";
 import { ColorPalettePicker } from "../App.tsx";
@@ -16,6 +16,7 @@ import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { deduplicateMembersList, sortMembersAlphabetically } from "../utils/memberUtils.ts";
+import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
 
 
 const COLOR_PALETTES = [
@@ -103,6 +104,7 @@ interface MembersProps {
   currentMonthId: string;
   dropdownOptions?: string[];
   safeMode?: boolean;
+  onToggleSafeMode?: () => void;
   mealTypes?: any[];
   respectSenioritySettings?: RespectSenioritySettings;
   months?: any[];
@@ -116,6 +118,7 @@ export default function Members({
   currentMonthId, 
   dropdownOptions = [], 
   safeMode = false, 
+  onToggleSafeMode,
   mealTypes, 
   respectSenioritySettings,
   months = []
@@ -244,20 +247,39 @@ export default function Members({
     return `text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl border transition-all ${animationClass} ${glowClass} ${textColor}`;
   };
   
-  // Invite form states
-  const [name, setName] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [bloodGroup, setBloodGroup] = useState("O+");
-  const [occupation, setOccupation] = useState("");
-  const [role, setRole] = useState<UserRole>(UserRole.MEMBER);
-  const [notes, setNotes] = useState("");
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [assignedTaskState, setAssignedTaskState] = useState("");
+  // Invite form states with draft preservation
+  const initialInviteDraft = useMemo(() => {
+    return getFormDraft("add_member_invite", currentMonthId, currentUser.id);
+  }, [currentMonthId, currentUser.id]);
+
+  const [hasRestoredInviteDraft, setHasRestoredInviteDraft] = useState(() => hasMeaningfulDraft(initialInviteDraft));
+  const [name, setName] = useState(() => initialInviteDraft?.name || "");
+  const [nickname, setNickname] = useState(() => initialInviteDraft?.nickname || "");
+  const [email, setEmail] = useState(() => initialInviteDraft?.email || "");
+  const [phone, setPhone] = useState(() => initialInviteDraft?.phone || "");
+  const [whatsapp, setWhatsapp] = useState(() => initialInviteDraft?.whatsapp || "");
+  const [bloodGroup, setBloodGroup] = useState(() => initialInviteDraft?.bloodGroup || "O+");
+  const [occupation, setOccupation] = useState(() => initialInviteDraft?.occupation || "");
+  const [role, setRole] = useState<UserRole>(() => initialInviteDraft?.role || UserRole.MEMBER);
+  const [notes, setNotes] = useState(() => initialInviteDraft?.notes || "");
+  const [photo, setPhoto] = useState<string | null>(() => initialInviteDraft?.photo || null);
+  const [assignedTaskState, setAssignedTaskState] = useState(() => initialInviteDraft?.assignedTaskState || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const data = { name, nickname, email, phone, whatsapp, bloodGroup, occupation, role, notes, photo, assignedTaskState };
+    if (hasMeaningfulDraft(data)) {
+      saveFormDraft("add_member_invite", currentMonthId, currentUser.id, data);
+      setHasRestoredInviteDraft(true);
+    }
+  }, [name, nickname, email, phone, whatsapp, bloodGroup, occupation, role, notes, photo, assignedTaskState, currentMonthId, currentUser.id]);
+
+  const handleDiscardInviteDraft = () => {
+    clearFormDraft("add_member_invite", currentMonthId, currentUser.id);
+    setHasRestoredInviteDraft(false);
+    resetInviteForm();
+  };
 
   // States for viewing individual meal history, deposits and market spends
   const [selectedMemberForMeals, setSelectedMemberForMeals] = useState<Member | null>(null);
@@ -378,6 +400,8 @@ export default function Members({
         throw new Error(data.error || "Failed to invite member");
       }
 
+      clearFormDraft("add_member_invite", currentMonthId, currentUser.id);
+      setHasRestoredInviteDraft(false);
       setShowInviteModal(false);
       resetInviteForm();
       onRefresh();
@@ -922,7 +946,7 @@ export default function Members({
           {isAuthorizedToEdit && (
             <button
               id="invite-member-btn"
-              onClick={() => { resetInviteForm(); setShowInviteModal(true); }}
+              onClick={() => { setShowInviteModal(true); }}
               className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-md"
             >
               <UserPlus size={15} />
@@ -1348,6 +1372,41 @@ export default function Members({
             {error && (
               <div className="mb-4 p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">
                 {error}
+              </div>
+            )}
+
+            {safeMode && (
+              <div className="mb-4 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <div className="flex items-center gap-1.5">
+                  <Shield size={16} className="text-amber-400 shrink-0" />
+                  <span>🛡️ <strong>সেফ মোড অন:</strong> আপনি যা লিখছেন তা ড্রাফট হিসেবে নিরাপদ।</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onToggleSafeMode) onToggleSafeMode();
+                    else window.dispatchEvent(new CustomEvent("mess:toggle-safemode"));
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer active:scale-95 transition-all shrink-0"
+                >
+                  সেফ মোড অফ করুন
+                </button>
+              </div>
+            )}
+
+            {hasRestoredInviteDraft && (
+              <div className="mb-4 p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-between gap-2 text-xs text-cyan-300">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-cyan-400 shrink-0" />
+                  <span>💾 আগের টাইপ করা ড্রাফট লোড রয়েছে</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDiscardInviteDraft}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-200 underline font-semibold cursor-pointer shrink-0"
+                >
+                  নতুন করে লিখুন
+                </button>
               </div>
             )}
 
