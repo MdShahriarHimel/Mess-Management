@@ -73,6 +73,14 @@ import {
   CycleProposal,
   MessRule
 } from "../src/types.js";
+import {
+  parseDhakaDate,
+  getCycleEffectiveEndDate,
+  getCycleEffectiveStartDate,
+  isCycleActiveAtDate,
+  isCalendarMonthMatch,
+  findCurrentActiveCycle
+} from "../src/utils/cycleUtils.js";
 
 export const DB_DIR = process.env.VERCEL ? "/tmp/data" : path.join(process.cwd(), "data");
 const CREDENTIALS_FILE = path.join(DB_DIR, "credentials.json");
@@ -1414,16 +1422,6 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     dbCache = target;
   }
 
-  // Helper to parse dates in Asia/Dhaka (+06:00) timezone
-  const parseDhakaDate = (dateStr: string): Date => {
-    if (!dateStr) return new Date();
-    if (dateStr.includes("Z") || dateStr.includes("+") || (dateStr.includes("-") && dateStr.length > 19)) {
-      return new Date(dateStr);
-    }
-    const cleanStr = dateStr.length === 16 ? `${dateStr}:00` : dateStr;
-    return new Date(`${cleanStr}+06:00`);
-  };
-
   // Automatic Month Transition & Deduplication Check
   if (target && target.months && target.months.length > 0) {
     const now = new Date();
@@ -1469,16 +1467,32 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
       wasMonthModified = true;
     }
 
-    // 2. Check for active (unlocked) months whose endDate has passed (excluding manually unlocked cycles)
+    // 2. Safeguard: Prevent premature locking of ongoing cycles.
+    // By default, a monthly cycle MUST continue through the end of the 1st of the next month,
+    // and only auto-closes at the start of the 2nd day of the next month (00:00:00 Dhaka time).
+    // If a cycle was mistakenly marked locked before its effective closure boundary, unlock it.
+    for (const m of target.months) {
+      if (m.isLocked && !m.manuallyUnlocked) {
+        const effectiveEnd = getCycleEffectiveEndDate(m);
+        if (now < effectiveEnd) {
+          console.log(`[Cycle-Safeguard] Restoring premature lock for active month '${m.name}' in mess '${messId}'.`);
+          m.isLocked = false;
+          wasMonthModified = true;
+        }
+      }
+    }
+
+    // 3. Check for active (unlocked) months whose effective closure boundary has arrived.
+    // Excluding manually unlocked cycles or cycles explicitly extended by admin.
     const activeMonthsToClose = target.months.filter(m => {
       if (m.isLocked) return false;
       if (m.manuallyUnlocked) return false;
-      const endDate = parseDhakaDate(m.endDate);
-      return !isNaN(endDate.getTime()) && now >= endDate;
+      const effectiveEndDate = getCycleEffectiveEndDate(m);
+      return !isNaN(effectiveEndDate.getTime()) && now >= effectiveEndDate;
     });
 
     for (const endedMonth of activeMonthsToClose) {
-      console.log(`[Auto-Transition] Mess '${messId}' Month '${endedMonth.name}' cycle ended at ${endedMonth.endDate}. Closing cycle...`);
+      console.log(`[Auto-Transition] Mess '${messId}' Month '${endedMonth.name}' cycle ended. Closing cycle...`);
       endedMonth.isLocked = true;
       wasMonthModified = true;
 
@@ -1493,13 +1507,13 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
       );
 
       // Check if a next month or current month covering now already exists
-      const endedEndEpoch = parseDhakaDate(endedMonth.endDate).getTime();
+      const endedEndEpoch = getCycleEffectiveEndDate(endedMonth).getTime();
       let nextMonth = target.months.find(m => {
         if (m.id === endedMonth.id) return false;
-        const mStartEpoch = parseDhakaDate(m.startDate).getTime();
-        const mEndEpoch = parseDhakaDate(m.endDate).getTime();
+        const mStartEpoch = getCycleEffectiveStartDate(m).getTime();
+        const mEndEpoch = getCycleEffectiveEndDate(m).getTime();
         // covers now or starts on/after endedMonth end
-        return (now.getTime() >= mStartEpoch && now.getTime() <= mEndEpoch) || mStartEpoch >= endedEndEpoch;
+        return (now.getTime() >= mStartEpoch && now.getTime() < mEndEpoch) || mStartEpoch >= endedEndEpoch;
       });
 
       if (nextMonth) {
@@ -1515,9 +1529,9 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
           { module: "CYCLE", actionType: "AUTOMATIC_MONTH_TRANSITION", description: `System automatically transitioned to ${nextMonth.name}.`, messId }
         );
       } else {
-        // Calculate next month name based on endedMonth end date
+        // Calculate next month name based on endedMonth effective end date
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        const nextStartObj = parseDhakaDate(endedMonth.endDate);
+        const nextStartObj = getCycleEffectiveEndDate(endedMonth);
         const nextMonthName = `${monthNames[nextStartObj.getMonth()]} ${nextStartObj.getFullYear()}`;
 
         // Double check if a month with nextMonthName already exists in target.months
@@ -1537,7 +1551,7 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
           const newMonth: MessMonth = {
             id: generateUUID(),
             name: nextMonthName,
-            startDate: endedMonth.endDate,
+            startDate: formatISO(nextStartObj),
             endDate: formatISO(nextEndObj),
             isLocked: false,
             gracePeriodEnabled: true

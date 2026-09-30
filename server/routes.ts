@@ -5372,88 +5372,135 @@ function mapRowToSettings(row: any) {
   };
 }
 
+const inFlightSettingsSyncs = new Map<string, Promise<void>>();
+
 async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings: any) {
-  try {
-    const rows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
-    
-    let combinedSettings: any = {};
-    const isBrandNew = (rows.length === 0 && (!localJsonSettings || Object.keys(localJsonSettings).length === 0));
+  if (inFlightSettingsSyncs.has(messId)) {
+    return inFlightSettingsSyncs.get(messId);
+  }
 
-    if (rows.length > 0) {
-      combinedSettings = {
-        ...localJsonSettings,
-        ...mapRowToSettings(rows[0])
-      };
-    } else {
-      combinedSettings = { ...localJsonSettings };
-    }
+  const p = (async () => {
+    try {
+      const rows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
+      
+      let combinedSettings: any = {};
+      const isBrandNew = (rows.length === 0 && (!localJsonSettings || Object.keys(localJsonSettings).length === 0));
 
-    // Run schema migration pipeline
-    const validatedSettings = await runMigrationPipeline(messId, combinedSettings, isBrandNew);
-    const filename = messId === "default" ? "settings.json" : `settings_${messId}.json`;
+      if (rows.length > 0) {
+        combinedSettings = {
+          ...localJsonSettings,
+          ...mapRowToSettings(rows[0])
+        };
+      } else {
+        combinedSettings = { ...localJsonSettings };
+      }
 
-    if (rows.length > 0) {
+      // Run schema migration pipeline
+      const validatedSettings = await runMigrationPipeline(messId, combinedSettings, isBrandNew);
+      const filename = messId === "default" ? "settings.json" : `settings_${messId}.json`;
+
+      if (rows.length > 0) {
+        if (validatedSettings._hasMigrated) {
+          delete validatedSettings._hasMigrated;
+          writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
+          await saveSettingsToPostgres(messId, validatedSettings);
+          console.log(`[Settings] Successfully migrated and persisted settings for mess: ${messId}`);
+        }
+        settingsCache[messId] = validatedSettings;
+        console.log(`[Settings] Successfully loaded settings from PostgreSQL for mess: ${messId}`);
+        return;
+      }
+
+      console.log(`[Settings] No settings found in PostgreSQL for mess ${messId}. Initiating migration...`);
+      const rowToInsert = mapSettingsToRow(messId, validatedSettings);
+      await drizzleDb
+        .insert(tenantSettings)
+        .values(rowToInsert)
+        .onConflictDoUpdate({
+          target: tenantSettings.messId,
+          set: {
+            messName: rowToInsert.messName,
+            siteColor: rowToInsert.siteColor,
+            fontSize: rowToInsert.fontSize,
+            fontStyle: rowToInsert.fontStyle,
+            logoText: rowToInsert.logoText,
+            dropdownOptions: rowToInsert.dropdownOptions,
+            translations: rowToInsert.translations,
+            superUserCanEditMeals: rowToInsert.superUserCanEditMeals,
+            superUserCanInviteMembers: rowToInsert.superUserCanInviteMembers,
+            superUserCanArchiveMembers: rowToInsert.superUserCanArchiveMembers,
+            superUserCanEditBills: rowToInsert.superUserCanEditBills,
+            currencySymbol: rowToInsert.currencySymbol,
+            enableManagerRating: rowToInsert.enableManagerRating,
+            auditRetentionDays: rowToInsert.auditRetentionDays,
+            mealTypes: rowToInsert.mealTypes,
+            balanceSheetGlow: rowToInsert.balanceSheetGlow,
+            customColors: rowToInsert.customColors,
+            messAnimations: rowToInsert.messAnimations,
+            dashboardVisibility: rowToInsert.dashboardVisibility,
+            roleAnimations: rowToInsert.roleAnimations,
+            dateRestrictions: rowToInsert.dateRestrictions,
+            loginCustomization: rowToInsert.loginCustomization,
+            homeCustomization: rowToInsert.homeCustomization,
+            adminVisibility: rowToInsert.adminVisibility,
+            creditConfig: rowToInsert.creditConfig,
+            appearancePermissions: rowToInsert.appearancePermissions,
+            respectSenioritySettings: rowToInsert.respectSenioritySettings,
+          }
+        });
+
+      const verifyRows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
+      if (verifyRows.length === 0) {
+        throw new Error("Verification failed: Inserted row could not be retrieved.");
+      }
+
+      const pgSettingsLoaded = mapRowToSettings(verifyRows[0]);
+      const validationKeys = Object.keys(validatedSettings).filter(k => 
+        k !== 'erpName' && 
+        k !== 'schemaVersion' && 
+        k !== 'createdAt' && 
+        k !== 'updatedAt' && 
+        k !== 'lastMigratedAt' && 
+        k !== '_hasMigrated'
+      );
+      
+      let isMatch = true;
+      for (const key of validationKeys) {
+        const jsonVal = validatedSettings[key];
+        const pgVal = pgSettingsLoaded[key as keyof typeof pgSettingsLoaded];
+        if (!deepEqual(jsonVal, pgVal)) {
+          console.warn(`[Settings] Validation mismatch on key "${key}". JSON:`, jsonVal, `PG:`, pgVal);
+          isMatch = false;
+          break;
+        }
+      }
+
       if (validatedSettings._hasMigrated) {
         delete validatedSettings._hasMigrated;
-        writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
-        await saveSettingsToPostgres(messId, validatedSettings);
-        console.log(`[Settings] Successfully migrated and persisted settings for mess: ${messId}`);
       }
-      settingsCache[messId] = validatedSettings;
-      console.log(`[Settings] Successfully loaded settings from PostgreSQL for mess: ${messId}`);
-      return;
-    }
 
-    console.log(`[Settings] No settings found in PostgreSQL for mess ${messId}. Initiating migration...`);
-    const rowToInsert = mapSettingsToRow(messId, validatedSettings);
-    await drizzleDb.insert(tenantSettings).values(rowToInsert);
+      writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
 
-    const verifyRows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
-    if (verifyRows.length === 0) {
-      throw new Error("Verification failed: Inserted row could not be retrieved.");
-    }
-
-    const pgSettingsLoaded = mapRowToSettings(verifyRows[0]);
-    const validationKeys = Object.keys(validatedSettings).filter(k => 
-      k !== 'erpName' && 
-      k !== 'schemaVersion' && 
-      k !== 'createdAt' && 
-      k !== 'updatedAt' && 
-      k !== 'lastMigratedAt' && 
-      k !== '_hasMigrated'
-    );
-    
-    let isMatch = true;
-    for (const key of validationKeys) {
-      const jsonVal = validatedSettings[key];
-      const pgVal = pgSettingsLoaded[key as keyof typeof pgSettingsLoaded];
-      if (!deepEqual(jsonVal, pgVal)) {
-        console.warn(`[Settings] Validation mismatch on key "${key}". JSON:`, jsonVal, `PG:`, pgVal);
-        isMatch = false;
-        break;
+      if (isMatch) {
+        settingsCache[messId] = {
+          ...validatedSettings,
+          ...pgSettingsLoaded
+        };
+        console.log(`[Settings] Migration verified and completed successfully for mess: ${messId}`);
+      } else {
+        console.error(`[Settings] Migration validation mismatch for mess ${messId}. Aborting migration and falling back to JSON.`);
+        settingsCache[messId] = validatedSettings;
       }
+    } catch (error) {
+      console.error(`[Settings] Error migrating settings for mess ${messId}:`, error);
+      settingsCache[messId] = localJsonSettings;
+    } finally {
+      inFlightSettingsSyncs.delete(messId);
     }
+  })();
 
-    if (validatedSettings._hasMigrated) {
-      delete validatedSettings._hasMigrated;
-    }
-
-    writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
-
-    if (isMatch) {
-      settingsCache[messId] = {
-        ...validatedSettings,
-        ...pgSettingsLoaded
-      };
-      console.log(`[Settings] Migration verified and completed successfully for mess: ${messId}`);
-    } else {
-      console.error(`[Settings] Migration validation mismatch for mess ${messId}. Aborting migration and falling back to JSON.`);
-      settingsCache[messId] = validatedSettings;
-    }
-  } catch (error) {
-    console.error(`[Settings] Error migrating settings for mess ${messId}:`, error);
-    settingsCache[messId] = localJsonSettings;
-  }
+  inFlightSettingsSyncs.set(messId, p);
+  return p;
 }
 
 export async function preloadSettings(messId: string) {
@@ -7381,11 +7428,13 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
     setActiveMessId("default");
   }
 
-  // Delete associated files
+  // Delete associated files and database records
   try {
     deletePersistentFile(`database_backup_${id}.json`);
     deletePersistentFile(`settings_${id}.json`);
     deletePersistentFile(`elections_${id}.json`);
+    drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, id)).catch(() => {});
+    delete settingsCache[id];
   } catch (e) {
     console.error("Failed to delete mess-specific data files:", e);
   }

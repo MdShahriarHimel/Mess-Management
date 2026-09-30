@@ -47,6 +47,13 @@ import { getAuthToken } from "./lib/authHeader.ts";
 // Types
 import { Member, MessMonth, UserRole, MemberStatus, CycleProposal, RespectSenioritySettings } from "./types.js";
 import { getRespectDisplayName } from "./utils/respectHelper.js";
+import {
+  findCurrentActiveCycle,
+  isCyclePrevious,
+  isCalendarMonthMatch,
+  isCycleActiveAtDate,
+  getCycleEffectiveEndDate
+} from "./utils/cycleUtils.ts";
 
 const COLOR_PALETTES = [
   { name: "Sunset Orange", hex: "#ea580c" },
@@ -2642,16 +2649,17 @@ export default function App() {
         setNewMonthEnd(defaults.endVal);
 
         if (loadedMonths.length > 0) {
-          // Find month corresponding to current system time
-          const now = new Date();
-          const activeMonth = loadedMonths.find((m: MessMonth) => {
-            const start = new Date(m.startDate);
-            const end = new Date(m.endDate);
-            return now >= start && now <= end && !m.isLocked;
-          }) || loadedMonths.find((m: MessMonth) => !m.isLocked) || loadedMonths[0];
+          // Find month corresponding to current system time using unified cycle timing rules
+          const activeMonth = findCurrentActiveCycle(loadedMonths, new Date());
 
           if (!currentMonthId || !loadedMonths.some((m: MessMonth) => m.id === currentMonthId)) {
             if (activeMonth) setCurrentMonthId(activeMonth.id);
+          } else {
+            // If the currently selected month is locked or invalid, switch to the active cycle
+            const selectedMonth = loadedMonths.find(m => m.id === currentMonthId);
+            if (!selectedMonth || selectedMonth.isLocked) {
+              if (activeMonth) setCurrentMonthId(activeMonth.id);
+            }
           }
         }
       }
@@ -3083,22 +3091,7 @@ export default function App() {
 
   const getIsPreviousMonth = () => {
     if (!currentMonthId || months.length === 0) return false;
-    const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-    
-    const now = new Date();
-    let currentIdx = sorted.findIndex(m => {
-      const start = new Date(m.startDate);
-      const end = new Date(m.endDate);
-      return now >= start && now <= end;
-    });
-    if (currentIdx === -1) {
-      currentIdx = sorted.length - 1;
-    }
-
-    const selectedIdx = sorted.findIndex(m => m.id === currentMonthId);
-    if (selectedIdx === -1) return false;
-
-    return selectedIdx < currentIdx;
+    return isCyclePrevious(currentMonthId, months, new Date());
   };
 
   const getSelectableMonths = () => {
@@ -3148,11 +3141,7 @@ export default function App() {
     if (memberHistoryWindowMonths && memberHistoryWindowMonths > 0 && filtered.length > 0) {
       const sortedAsc = [...filtered].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       const now = new Date();
-      let currentIdx = sortedAsc.findIndex(m => {
-        const start = new Date(m.startDate);
-        const end = new Date(m.endDate);
-        return now >= start && now <= end;
-      });
+      let currentIdx = sortedAsc.findIndex(m => isCalendarMonthMatch(m, now) || isCycleActiveAtDate(m, now));
       if (currentIdx === -1) {
         currentIdx = sortedAsc.findIndex(m => m.id === currentMonthId);
         if (currentIdx === -1) {
@@ -3200,21 +3189,10 @@ export default function App() {
     const selectable = getSelectableMonths();
     const isAllowed = selectable.some(m => m.id === currentMonthId);
     if (!isAllowed && selectable.length > 0) {
-      const sorted = [...months].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-      const now = new Date();
-      let currentIdx = sorted.findIndex(m => {
-        const start = new Date(m.startDate);
-        const end = new Date(m.endDate);
-        return now >= start && now <= end;
-      });
-      if (currentIdx === -1) {
-        currentIdx = sorted.length - 1;
-      }
-      const currentActive = sorted[currentIdx];
-      if (currentActive && selectable.some(m => m.id === currentActive.id)) {
-        setCurrentMonthId(currentActive.id);
+      const active = findCurrentActiveCycle(selectable, new Date());
+      if (active) {
+        setCurrentMonthId(active.id);
       } else {
-        // Pick the most recent allowed cycle (first element of descending array)
         setCurrentMonthId(selectable[0].id);
       }
     }
@@ -4324,6 +4302,29 @@ export default function App() {
     return (yiq >= 128) ? darkColor : lightColor;
   };
 
+  const getLuminanceVal = (colorStr: string) => {
+    if (!colorStr) return 128;
+    let r = 255, g = 255, b = 255;
+    const str = colorStr.trim();
+    if (str.startsWith("rgb")) {
+      const match = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if (match) {
+        r = parseInt(match[1], 10);
+        g = parseInt(match[2], 10);
+        b = parseInt(match[3], 10);
+      }
+    } else {
+      let hex = str.replace("#", "");
+      if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+      if (hex.length >= 6) {
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      }
+    }
+    return ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  };
+
   const getFontFamilyStack = (family: string) => {
     switch (family) {
       case "Poppins": return '"Poppins", "Outfit", sans-serif';
@@ -4338,15 +4339,26 @@ export default function App() {
   };
 
   const getActiveTypographySettings = (isDark: boolean, rcColors?: any) => {
+    const cardBg = rcColors?.cardBg || (isDark ? "#1e293b" : "#ffffff");
+    const cardIsDark = getContrastColor(cardBg, "#ffffff", "#000000") === "#ffffff";
+
+    // Heading color must have >= 80 luminance contrast difference with the card background
+    let headingColor = rcColors?.accentColor || (cardIsDark ? "#22d3ee" : "#0f172a");
+    const cardLum = getLuminanceVal(cardBg);
+    const headingLum = getLuminanceVal(headingColor);
+    if (Math.abs(cardLum - headingLum) < 80) {
+      headingColor = cardIsDark ? "#f8fafc" : "#0f172a";
+    }
+
     const defaults = {
-      primaryFontColor: rcColors?.cardText || (isDark ? "#f8fafc" : "#0f172a"),
-      secondaryFontColor: rcColors?.cardSecondaryText || (isDark ? "#94a3b8" : "#475569"),
-      headingColor: rcColors?.accentColor || (isDark ? "#22d3ee" : "#0f172a"),
-      menuTextColor: rcColors?.cardText || (isDark ? "#cbd5e1" : "#1e293b"),
+      primaryFontColor: rcColors?.cardText || (cardIsDark ? "#f8fafc" : "#0f172a"),
+      secondaryFontColor: rcColors?.cardSecondaryText || (cardIsDark ? "#94a3b8" : "#64748b"),
+      headingColor: headingColor,
+      menuTextColor: rcColors?.sidebarText || (isDark ? "#cbd5e1" : "#1e293b"),
       sidebarTextColor: rcColors?.sidebarText || (isDark ? "#94a3b8" : "#0f172a"),
       navbarTextColor: rcColors?.headerText || (isDark ? "#cbd5e1" : "#0f172a"),
-      cardTextColor: rcColors?.cardText || (isDark ? "#cbd5e1" : "#1e293b"),
-      tableTextColor: rcColors?.cardText || (isDark ? "#cbd5e1" : "#1e293b"),
+      cardTextColor: rcColors?.cardText || (cardIsDark ? "#f8fafc" : "#0f172a"),
+      tableTextColor: rcColors?.cardText || (cardIsDark ? "#f8fafc" : "#0f172a"),
       buttonTextColor: rcColors?.accentContrastText || (isDark ? "#ffffff" : "#0f172a"),
       linkColor: rcColors?.accentColor || (isDark ? "#38bdf8" : "#0284c7"),
       successTextColor: isDark ? "#4ade80" : "#16a34a",
@@ -4442,41 +4454,29 @@ export default function App() {
   };
 
   const getReconciledThemeColors = (templateId: string, rawColors: any, isDark: boolean) => {
-    const colors = rawColors ? { ...rawColors } : { ...THEME_TEMPLATES[0].customColors };
+    const template = THEME_TEMPLATES.find(t => t.id === templateId);
+    const templateColors = template?.customColors || THEME_TEMPLATES[0].customColors;
+    const colors = rawColors ? { ...templateColors, ...rawColors } : { ...templateColors };
 
     // Fallbacks
     colors.accentColor = colors.accentColor || "#22d3ee";
-    colors.sidebarBg = colors.sidebarBg || (isDark ? "#0f172a" : "#f1f5f9");
+    colors.sidebarBg = colors.sidebarBg || (isDark ? "#0f172a" : "#f8fafc");
     colors.headerBg = colors.headerBg || (isDark ? "#0f172a" : "#ffffff");
     colors.cardBg = colors.cardBg || (isDark ? "#1e293b" : "#ffffff");
 
-    // Reconcile and adapt if there is a mismatch between mode and background luminance
-    const sidebarIsLight = getContrastColor(colors.sidebarBg, "#ffffff", "#000000") === "#000000";
-    const headerIsLight = getContrastColor(colors.headerBg, "#ffffff", "#000000") === "#000000";
-    const cardIsLight = getContrastColor(colors.cardBg, "#ffffff", "#000000") === "#000000";
-
-    if (isDark) {
-      if (sidebarIsLight) colors.sidebarBg = "#0b0f19";
-      if (headerIsLight) colors.headerBg = "#0f172a";
-      if (cardIsLight) colors.cardBg = "#1e293b";
-    } else {
-      if (!sidebarIsLight) colors.sidebarBg = "#f8fafc";
-      if (!headerIsLight) colors.headerBg = "#ffffff";
-      if (!cardIsLight) colors.cardBg = "#ffffff";
-    }
-
-    // Force inputs base colors
-    colors.inputBg = isDark ? "#0f172a" : "#f8fafc";
-    colors.inputBorderColor = isDark ? "#334155" : "#e2e8f0";
-    colors.inputTextColor = isDark ? "#f8fafc" : "#0f172a";
-
-    // Dynamic contrast validation outputs
+    // Dynamic contrast validation outputs based on actual theme backgrounds
     colors.sidebarText = getContrastColor(colors.sidebarBg, "#f8fafc", "#0f172a");
-    colors.sidebarSecondaryText = getContrastColor(colors.sidebarBg, "#cbd5e1", "#475569");
+    colors.sidebarSecondaryText = getContrastColor(colors.sidebarBg, "#94a3b8", "#64748b");
     colors.headerText = getContrastColor(colors.headerBg, "#f8fafc", "#0f172a");
     colors.cardText = getContrastColor(colors.cardBg, "#f8fafc", "#0f172a");
-    colors.cardSecondaryText = getContrastColor(colors.cardBg, "#cbd5e1", "#475569");
+    colors.cardSecondaryText = getContrastColor(colors.cardBg, "#94a3b8", "#64748b");
     colors.accentContrastText = getContrastColor(colors.accentColor, "#ffffff", "#020617");
+
+    // Dynamic inputs background & borders matching the card context
+    const cardIsDark = getContrastColor(colors.cardBg, "#ffffff", "#000000") === "#ffffff";
+    colors.inputBg = cardIsDark ? "rgba(15, 23, 42, 0.75)" : "#f8fafc";
+    colors.inputBorderColor = cardIsDark ? "rgba(71, 85, 105, 0.5)" : "#cbd5e1";
+    colors.inputTextColor = cardIsDark ? "#f8fafc" : "#0f172a";
 
     // Dynamic finance components highlight
     colors.cashDepositBg = isDark ? "rgba(249, 115, 22, 0.15)" : "rgba(249, 115, 22, 0.1)";
@@ -4576,122 +4576,94 @@ export default function App() {
         }
 
         /* ------------------------------------------------------------------
-           GLOBAL THEME STYLES - 100% UNIFIED COLOR ENGINE
+           GLOBAL THEME STYLES - 100% UNIFIED & LEGIBLE COLOR ENGINE
            ------------------------------------------------------------------ */
-        body, html, #root, .min-h-screen {
-          font-family: var(--typo-font-family), system-ui, sans-serif !important;
-          font-size: var(--typo-global-size) !important;
-          background-color: var(--custom-header-bg) !important;
-          color: var(--custom-card-text) !important;
+        body, html, #root {
+          font-family: var(--typo-font-family), system-ui, sans-serif;
+          font-size: var(--typo-global-size);
+          color: var(--custom-card-text);
         }
 
-        /* Text Element Overrides */
-        p, span, div, label {
-          font-family: var(--typo-font-family), system-ui, sans-serif !important;
+        /* Default Headings styling with high contrast */
+        h1:not([class*="text-"]), 
+        h2:not([class*="text-"]), 
+        h3:not([class*="text-"]), 
+        h4:not([class*="text-"]), 
+        h5:not([class*="text-"]), 
+        h6:not([class*="text-"]) {
+          color: var(--typo-heading-color);
+          font-family: var(--typo-font-family), system-ui, sans-serif;
         }
-
-        /* Headings typography & color override */
-        h1, h2, h3, h4, h5, h6, .font-display {
-          color: var(--typo-heading-color) !important;
-          font-family: var(--typo-font-family), system-ui, sans-serif !important;
-        }
-
-        /* Adjust heading scale precisely */
-        h1, .text-xl, .text-2xl, .text-3xl { font-size: var(--typo-heading-size) !important; }
-        h2, .text-lg { font-size: calc(var(--typo-heading-size) - 2px) !important; }
-        h3, h4, .text-base { font-size: calc(var(--typo-heading-size) - 4px) !important; }
 
         /* ------------------------------------------------------------------
            SIDEBAR STYLING - AUTOMATIC HIGH-CONTRAST READABILITY
            ------------------------------------------------------------------ */
-        aside, .sidebar-container, [id^="sidebar"] {
+        aside, .sidebar-container {
           background-color: var(--custom-sidebar-bg) !important;
           border-color: var(--custom-input-border) !important;
-          font-size: var(--typo-sidebar-size) !important;
+          font-size: var(--typo-sidebar-size);
         }
-        aside span, aside a, aside button, .sidebar-link, .sidebar-text {
+        aside .sidebar-title, aside .mess-name {
           color: var(--custom-sidebar-text) !important;
-          font-size: var(--typo-sidebar-size) !important;
-        }
-        aside .text-slate-400, aside .text-slate-500, aside .text-slate-300, aside .text-cyan-900\\/50 {
-          color: var(--custom-sidebar-secondary-text) !important;
         }
         /* Active Sidebar items should glow with accent color */
         aside button.bg-cyan-500\\/10, aside button.bg-cyan-100, .sidebar-link.active {
           background-color: var(--custom-accent-color) !important;
           color: var(--custom-accent-contrast-text) !important;
-          border-left: 4px solid var(--custom-accent-color) !important;
+          border-left: 3px solid var(--custom-accent-color) !important;
         }
-        aside button.bg-cyan-500\\/10 *, aside button.bg-cyan-100 * {
+        aside button.bg-cyan-500\\/10 *, aside button.bg-cyan-100 *, .sidebar-link.active * {
           color: var(--custom-accent-contrast-text) !important;
         }
-        aside button:hover:not(.bg-cyan-500\/10):not(.bg-cyan-100) {
+        aside button:hover:not(.bg-cyan-500\\/10):not(.bg-cyan-100) {
           background-color: rgba(128, 128, 128, 0.1) !important;
         }
 
         /* ------------------------------------------------------------------
            NAVBAR / HEADER STYLING
            ------------------------------------------------------------------ */
-        header, .top-header, nav {
+        header, .top-header {
           background-color: var(--custom-header-bg) !important;
           border-color: var(--custom-input-border) !important;
-          color: var(--custom-header-text) !important;
-        }
-        header *, nav * {
-          color: var(--custom-header-text) !important;
         }
         nav a, nav button, header a, header button, .nav-item {
-          font-size: var(--typo-navigation-size) !important;
+          font-size: var(--typo-navigation-size);
         }
 
         /* ------------------------------------------------------------------
-           CARDS & PANEL STYLING
+           CARDS & PANEL STYLING - CRISP BORDERS & READABILITY
            ------------------------------------------------------------------ */
-        .glass-panel, .glass-panel-light, .card-container, .bg-slate-900\\/50, .bg-slate-950\\/40, .bg-slate-900\\/40, .bg-slate-900\\/60, .bg-slate-950\\/20, .bg-slate-950, .bg-slate-900, .bg-slate-850, .bg-slate-800, .bg-white {
+        .glass-panel, .glass-panel-light, .card-container {
           background-color: var(--custom-card-bg) !important;
           border-color: var(--custom-input-border) !important;
-          color: var(--custom-card-text) !important;
-        }
-        .glass-panel p:not([class*="text-"]), 
-        .card-container p:not([class*="text-"]), 
-        .card p:not([class*="text-"]),
-        .glass-panel span:not([class*="text-"]):not([class*="bg-"]), 
-        .card-container span:not([class*="text-"]):not([class*="bg-"]), 
-        .card span:not([class*="text-"]):not([class*="bg-"]) {
           color: var(--custom-card-text);
         }
-        .glass-panel p, .glass-panel span, .card-container p, .card-container span {
-          font-size: var(--typo-card-body-size) !important;
-        }
-        .glass-panel h3, .glass-panel h4, .card-container h3, .card-container h4, .card-title {
-          font-size: var(--typo-card-title-size) !important;
+        .glass-panel h3:not([class*="text-"]), 
+        .glass-panel h4:not([class*="text-"]), 
+        .card-container h3:not([class*="text-"]), 
+        .card-container h4:not([class*="text-"]), 
+        .card-title:not([class*="text-"]) {
           color: var(--typo-heading-color) !important;
-        }
-        /* Secondary details */
-        .glass-panel .text-slate-400, .glass-panel .text-slate-500, .glass-panel .text-slate-300,
-        .rounded-2xl .text-slate-400, .rounded-2xl .text-slate-500, .rounded-2xl .text-slate-300,
-        .text-slate-400, .text-slate-500, .text-slate-300 {
-          color: var(--custom-card-secondary-text) !important;
         }
 
         /* ------------------------------------------------------------------
-           FORM CONTROLS & INPUT STYLING
+           FORM CONTROLS & INPUT STYLING - NEVER WASHED OUT
            ------------------------------------------------------------------ */
         input:not([type="checkbox"]):not([type="radio"]), select, textarea {
           background-color: var(--custom-input-bg) !important;
           border: 1.25px solid var(--custom-input-border) !important;
           color: var(--custom-input-text) !important;
           font-size: var(--typo-input-size) !important;
-          font-weight: 500 !important;
+          font-weight: 500;
         }
         input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
           border-color: var(--custom-accent-color) !important;
           outline: none !important;
-          box-shadow: 0 0 0 1.5px var(--custom-accent-color) !important;
+          box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25) !important;
         }
         input::placeholder, textarea::placeholder {
           color: var(--custom-card-secondary-text) !important;
-          opacity: 0.65 !important;
+          opacity: 0.65;
         }
         select option {
           background-color: var(--custom-card-bg) !important;
@@ -4702,20 +4674,20 @@ export default function App() {
            BUTTON STYLING - MAXIMUM READABILITY
            ------------------------------------------------------------------ */
         button:not(.nav-item), .btn {
-          font-size: var(--typo-button-size) !important;
-          transition: all 0.2s ease-in-out !important;
+          font-size: var(--typo-button-size);
+          transition: all 0.2s ease-in-out;
         }
         /* Force accent background and contrast text on solid primary buttons */
-        button.bg-cyan-600, button.bg-cyan-500, button.bg-indigo-600, button.bg-blue-600, button.bg-gradient-to-r, .bg-gradient-to-r {
+        button.bg-cyan-600, button.bg-cyan-500, button.bg-indigo-600, button.bg-blue-600 {
           background: var(--custom-accent-color) !important;
           color: var(--custom-accent-contrast-text) !important;
-          border: none !important;
+          border: none;
         }
-        button.bg-cyan-600 *, button.bg-cyan-500 *, button.bg-indigo-600 *, button.bg-blue-600 *, button.bg-gradient-to-r * {
+        button.bg-cyan-600 *, button.bg-cyan-500 *, button.bg-indigo-600 *, button.bg-blue-600 * {
           color: var(--custom-accent-contrast-text) !important;
         }
         button.bg-cyan-600:hover, button.bg-cyan-500:hover, button.bg-indigo-600:hover, button.bg-blue-600:hover {
-          opacity: 0.9 !important;
+          opacity: 0.9;
           transform: translateY(-0.5px);
         }
 
@@ -4729,32 +4701,31 @@ export default function App() {
           background-color: var(--custom-input-bg) !important;
           color: var(--custom-input-text) !important;
           border-color: var(--custom-input-border) !important;
-          font-weight: 700 !important;
-          font-size: var(--typo-table-size) !important;
+          font-weight: 700;
+          font-size: var(--typo-table-size);
         }
         td {
-          color: var(--custom-card-text) !important;
           border-color: var(--custom-input-border) !important;
-          font-size: var(--typo-table-size) !important;
+          font-size: var(--typo-table-size);
         }
         tr:nth-child(even) td {
-          background-color: rgba(128, 128, 128, 0.03) !important;
+          background-color: rgba(128, 128, 128, 0.03);
         }
         tr:hover td {
-          background-color: rgba(128, 128, 128, 0.08) !important;
+          background-color: rgba(128, 128, 128, 0.08);
         }
 
         /* ------------------------------------------------------------------
            SPECIAL STATUS / ALERTS & BADGES STYLING
            ------------------------------------------------------------------ */
         .text-emerald-400, .text-emerald-500, .text-green-400, .text-green-500, .text-success {
-          color: var(--typo-success-color) !important;
+          color: var(--typo-success-color);
         }
         .text-yellow-400, .text-yellow-500, .text-amber-500, .text-orange-500, .text-warning {
-          color: var(--typo-warning-color) !important;
+          color: var(--typo-warning-color);
         }
         .text-red-400, .text-red-500, .text-rose-500, .text-rose-400, .text-error {
-          color: var(--typo-error-color) !important;
+          color: var(--typo-error-color);
         }
 
         /* ------------------------------------------------------------------
@@ -4773,58 +4744,52 @@ export default function App() {
            LIGHT MODE REFINEMENTS & CONTRAST ENGINE
            ------------------------------------------------------------------ */
         .light-mode-root {
-          background-color: var(--custom-header-bg) !important;
-          color: var(--custom-card-text) !important;
+          color: var(--custom-card-text);
         }
 
         /* High specificity overrides for dark background helper utility classes in Light Mode */
         .light-mode-root .bg-slate-950,
         .light-mode-root .bg-slate-900,
         .light-mode-root .bg-slate-850,
-        .light-mode-root .bg-slate-800,
-        .light-mode-root .bg-slate-750,
-        .light-mode-root .bg-gray-950,
-        .light-mode-root .bg-gray-900,
-        .light-mode-root .bg-gray-800,
-        .light-mode-root .bg-zinc-950,
-        .light-mode-root .bg-zinc-900,
-        .light-mode-root .bg-zinc-800,
-        .light-mode-root .bg-neutral-950,
-        .light-mode-root .bg-neutral-900,
-        .light-mode-root .bg-neutral-800,
-        .light-mode-root .bg-black {
+        .light-mode-root .bg-slate-800 {
           background-color: var(--custom-card-bg) !important;
-          color: var(--custom-card-text) !important;
           border-color: var(--custom-input-border) !important;
         }
 
-        /* Transparent overlays and opacity tints rewritten for clean, bright contrast */
-        .light-mode-root .bg-slate-950\\/40,
-        .light-mode-root .bg-slate-900\\/40,
-        .light-mode-root .bg-slate-950\\/60,
-        .light-mode-root .bg-slate-900\\/60,
-        .light-mode-root .bg-slate-950\\/20,
-        .light-mode-root .bg-slate-950\\/15,
-        .light-mode-root .bg-slate-950\\/10,
-        .light-mode-root .bg-slate-950\\/30,
-        .light-mode-root .bg-slate-950\\/80,
-        .light-mode-root .bg-slate-900\\/20,
-        .light-mode-root .bg-slate-900\\/10,
-        .light-mode-root .bg-slate-950\\/50 {
-          background-color: var(--custom-card-bg) !important;
-          color: var(--custom-card-text) !important;
-          border-color: var(--custom-input-border) !important;
+        /* Crucial: Button text-white must ALWAYS remain white on buttons, badges, and alerts */
+        .light-mode-root button.text-white,
+        .light-mode-root button[class*="text-white"],
+        .light-mode-root [class*="bg-red-"] .text-white,
+        .light-mode-root [class*="bg-rose-"] .text-white,
+        .light-mode-root [class*="bg-emerald-"] .text-white,
+        .light-mode-root [class*="bg-green-"] .text-white,
+        .light-mode-root [class*="bg-cyan-"] .text-white,
+        .light-mode-root [class*="bg-blue-"] .text-white,
+        .light-mode-root [class*="bg-amber-"] .text-white,
+        .light-mode-root [class*="bg-orange-"] .text-white,
+        .light-mode-root [class*="bg-purple-"] .text-white,
+        .light-mode-root [class*="bg-indigo-"] .text-white,
+        .light-mode-root [class*="from-"] .text-white,
+        .light-mode-root .btn-primary,
+        .light-mode-root .badge {
+          color: #ffffff !important;
+        }
+        .light-mode-root button[class*="from-"] *,
+        .light-mode-root button[class*="bg-rose"] *,
+        .light-mode-root button[class*="bg-red"] *,
+        .light-mode-root button[class*="bg-cyan"] *,
+        .light-mode-root button[class*="bg-emerald"] *,
+        .light-mode-root button[class*="bg-indigo"] * {
+          color: #ffffff !important;
         }
 
         .light-mode-root aside {
           background-color: var(--custom-sidebar-bg) !important;
-          color: var(--custom-sidebar-text) !important;
           border-color: var(--custom-input-border) !important;
         }
 
         .light-mode-root header {
           background-color: var(--custom-header-bg) !important;
-          color: var(--custom-header-text) !important;
           border-color: var(--custom-input-border) !important;
         }
 
@@ -4832,70 +4797,18 @@ export default function App() {
         .light-mode-root .border-slate-800,
         .light-mode-root .border-slate-850,
         .light-mode-root .border-slate-900,
-        .light-mode-root .border-slate-850\\/50,
-        .light-mode-root [class*="border-cyan-500/10"],
-        .light-mode-root [class*="border-cyan-500/20"] {
+        .light-mode-root .border-slate-850\\/50 {
           border-color: var(--custom-input-border) !important;
-        }
-
-        /* Light Mode High-Contrast Typography mapping for dark utility classes */
-        .light-mode-root .text-white,
-        .light-mode-root .text-slate-50,
-        .light-mode-root .text-slate-100,
-        .light-mode-root .text-slate-200,
-        .light-mode-root .text-slate-300,
-        .light-mode-root .text-gray-100,
-        .light-mode-root .text-gray-200,
-        .light-mode-root .text-gray-300,
-        .light-mode-root .text-zinc-100,
-        .light-mode-root .text-zinc-200,
-        .light-mode-root .text-zinc-300,
-        .light-mode-root .text-neutral-100,
-        .light-mode-root .text-neutral-200,
-        .light-mode-root .text-neutral-300 {
-          color: var(--custom-card-text) !important;
-        }
-
-        .light-mode-root .text-slate-400,
-        .light-mode-root .text-slate-500,
-        .light-mode-root .text-gray-400,
-        .light-mode-root .text-gray-500,
-        .light-mode-root .text-zinc-400,
-        .light-mode-root .text-zinc-500,
-        .light-mode-root .text-neutral-400,
-        .light-mode-root .text-neutral-500 {
-          color: #334155 !important;
         }
 
         /* Sticky spreadsheet tables elements */
         .light-mode-root td.sticky,
         .light-mode-root th.sticky {
           background-color: var(--custom-card-bg) !important;
-          color: var(--custom-card-text) !important;
           border-color: var(--custom-input-border) !important;
         }
         .light-mode-root td.sticky {
           box-shadow: 2px 0 5px rgba(0, 0, 0, 0.04) !important;
-        }
-
-        /* Secondary actions/refresh buttons map to clean light border/outline controls */
-        .light-mode-root button.bg-slate-900,
-        .light-mode-root button.bg-slate-800,
-        .light-mode-root button.bg-slate-950 {
-          background-color: var(--custom-input-bg) !important;
-          color: var(--custom-input-text) !important;
-          border: 1px solid var(--custom-input-border) !important;
-        }
-        .light-mode-root button.bg-slate-900 *,
-        .light-mode-root button.bg-slate-800 *,
-        .light-mode-root button.bg-slate-950 * {
-          color: var(--custom-input-text) !important;
-        }
-        .light-mode-root button.bg-slate-900:hover,
-        .light-mode-root button.bg-slate-800:hover,
-        .light-mode-root button.bg-slate-950:hover {
-          background-color: rgba(0, 0, 0, 0.05) !important;
-          color: var(--custom-card-text) !important;
         }
 
         /* Status colors & soft light pills */
@@ -4918,16 +4831,31 @@ export default function App() {
         }
         .light-mode-root .text-cyan-400,
         .light-mode-root .text-cyan-300 {
-          color: #0891b2 !important;
+          color: #0891b2;
         }
         .light-mode-root .text-amber-400,
         .light-mode-root .text-amber-300 {
-          color: #b45309 !important;
+          color: #b45309;
         }
         .light-mode-root .text-purple-400,
         .light-mode-root .text-purple-300,
         .light-mode-root .text-violet-400,
         .light-mode-root .text-violet-300 {
+          color: #7e22ce;
+        }
+        .light-mode-root .text-emerald-400,
+        .light-mode-root .text-emerald-500 {
+          color: #15803d;
+        }
+        .light-mode-root .bg-emerald-500\\/10 {
+          background-color: rgba(34, 197, 94, 0.1) !important;
+          color: #15803d !important;
+        }
+        .light-mode-root .bg-rose-500\\/20,
+        .light-mode-root .bg-red-500\\/20 {
+          background-color: rgba(239, 68, 68, 0.1) !important;
+          color: #b91c1c !important;
+        }
           color: #7e22ce !important;
         }
         .light-mode-root .text-emerald-400,

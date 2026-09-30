@@ -100,6 +100,13 @@ export async function deleteTestMess(messId: string): Promise<void> {
     if (fs.existsSync(settingsFile)) {
       fs.unlinkSync(settingsFile);
     }
+
+    try {
+      const { db } = await import("../../src/db/index.js");
+      const { tenantSettings } = await import("../../src/db/schema.js");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(tenantSettings).where(eq(tenantSettings.messId, messId));
+    } catch {}
   } catch (err) {
     console.warn(`[Cleanup] Warning deleting test mess ${messId}:`, err);
   }

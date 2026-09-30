@@ -11,6 +11,7 @@ import { Member, Meal, UserRole, RespectSenioritySettings, MemberStatus } from "
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
+import { getDhakaDateString } from "../utils/cycleUtils.ts";
 
 interface MealsTrackerProps {
   currentUser: Member;
@@ -45,7 +46,7 @@ export default function MealsTracker({
   respectSenioritySettings
 }: MealsTrackerProps) {
   const authToken = sessionStorage.getItem("mess_token") || localStorage.getItem("mess_token") || currentUser.id;
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(() => getDhakaDateString());
   const [mealsData, setMealsData] = useState<Record<string, Record<string, number | string>>>({});
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -360,7 +361,7 @@ export default function MealsTracker({
     }
   };
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = getDhakaDateString();
   const isFutureDate = selectedDate > todayStr;
   const isPastDate = selectedDate < todayStr;
 

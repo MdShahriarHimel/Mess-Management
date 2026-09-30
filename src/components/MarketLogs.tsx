@@ -15,6 +15,7 @@ import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { sortMembersAlphabetically, deduplicateMembersList } from "../utils/memberUtils.ts";
+import { getCycleEffectiveEndDate, getCycleEffectiveStartDate, getDhakaDateString } from "../utils/cycleUtils.ts";
 
 interface MarketLogsProps {
   currentUser: Member;
@@ -127,28 +128,9 @@ export default function MarketLogs({
       const rawStart = activeMonth.startDate.split("T")[0];
       const rawEnd = activeMonth.endDate.split("T")[0];
 
-      const startDateObj = new Date(rawStart);
-      const endDateObj = new Date(rawEnd);
-
-      let effectiveEndStr = rawEnd;
-
-      // If endDate is the 1st of the next month (due to grace period or 24-hour overlap),
-      // Day 1 of next month belongs exclusively to next month, not the previous month.
-      // Normalize effectiveEndStr to the last day of the cycle's calendar month.
-      if (endDateObj.getDate() === 1 && 
-          (endDateObj.getFullYear() > startDateObj.getFullYear() || endDateObj.getMonth() > startDateObj.getMonth())) {
-        const lastDayOfCycle = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), 0);
-        if (lastDayOfCycle >= startDateObj) {
-          const y = lastDayOfCycle.getFullYear();
-          const m = String(lastDayOfCycle.getMonth() + 1).padStart(2, "0");
-          const d = String(lastDayOfCycle.getDate()).padStart(2, "0");
-          effectiveEndStr = `${y}-${m}-${d}`;
-        }
-      }
-
       return {
         startDate: rawStart,
-        endDate: effectiveEndStr,
+        endDate: rawEnd,
         name: activeMonth.name,
         id: activeMonth.id,
         isLocked: activeMonth.isLocked
