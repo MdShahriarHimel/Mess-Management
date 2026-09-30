@@ -1727,7 +1727,8 @@ export default function MarketLogs({
                     }
                     for (let d = 1; d <= daysInMonth; d++) {
                       const dateStr = `${cal.year}-${String(cal.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-                      const inCycle = dateStr >= startStr && dateStr <= endStr;
+                      const hasDayDutyOrMarket = duties.some(dut => dut.name && dut.name.includes(dateStr)) || markets.some(m => m.date === dateStr);
+                      const inCycle = (dateStr >= startStr && dateStr <= endStr) || hasDayDutyOrMarket;
                       cells.push({ key: `day-${d}`, isBlank: false, dayNum: d, dateStr, inCycle });
                     }
 
