@@ -11,6 +11,7 @@ import { sql, eq } from "drizzle-orm";
 import { 
   loadDB, 
   writeAndPersistFile, 
+  writeAndPersistFileAsync,
   ensurePersistentFile,
   DB_DIR, 
   generateUUID,
@@ -128,6 +129,11 @@ export function loadPlatformControls() {
   writeAndPersistFile("platform_controls.json", JSON.stringify(defaultControls, null, 2));
   cachedPlatformControls = defaultControls;
   return defaultControls;
+}
+
+export async function savePlatformControlsAsync(controls: any): Promise<void> {
+  cachedPlatformControls = controls;
+  await writeAndPersistFileAsync("platform_controls.json", JSON.stringify(controls, null, 2));
 }
 
 export function savePlatformControls(controls: any) {
@@ -376,7 +382,7 @@ router.get("/controls", platformOwnerMiddleware, (req: AuthenticatedRequest, res
 });
 
 // 2. Save complete platform controls
-router.post("/controls", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/controls", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const currentControls = loadPlatformControls();
   const updated = {
     ...currentControls,
@@ -386,7 +392,7 @@ router.post("/controls", platformOwnerMiddleware, (req: AuthenticatedRequest, re
     geminiStats: currentControls.geminiStats
   };
 
-  savePlatformControls(updated);
+  await savePlatformControlsAsync(updated);
 
   try {
     const io = getIO();
@@ -422,7 +428,7 @@ router.post("/controls", platformOwnerMiddleware, (req: AuthenticatedRequest, re
 });
 
 // 3. Platform Owners Architecture Management (Add / Transfer / Edit Owners)
-router.post("/transfer-ownership", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/transfer-ownership", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { owners, password, passcode } = req.body;
   if (!owners || !Array.isArray(owners) || owners.length === 0) {
     res.status(400).json({ error: "Invalid platform owners payload. Must provide at least one Platform Owner." });
@@ -456,7 +462,7 @@ router.post("/transfer-ownership", platformOwnerMiddleware, (req: AuthenticatedR
 
   const previousOwners = JSON.stringify(currentControls.owners);
   currentControls.owners = owners;
-  savePlatformControls(currentControls);
+  await savePlatformControlsAsync(currentControls);
 
   logFounderAction(
     req.user!.id,

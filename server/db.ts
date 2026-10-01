@@ -2578,6 +2578,31 @@ export async function ensurePersistentFile(filename: string): Promise<boolean> {
 }
 
 // Helper to write file both locally and save it persistently in PostgreSQL
+export async function writeAndPersistFileAsync(filename: string, content: string): Promise<void> {
+  try {
+    ensureDBDir();
+    const localPath = path.join(DB_DIR, filename);
+    const dir = path.dirname(localPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    // Write to local disk immediately so disk reads never see stale data
+    fs.writeFileSync(localPath, content, "utf-8");
+    
+    // Save to Postgres directly and await confirmation
+    await db.insert(persistentFilesTable).values({
+      filename,
+      content
+    }).onConflictDoUpdate({
+      target: persistentFilesTable.filename,
+      set: { content }
+    });
+  } catch (e) {
+    console.error(`[Persistent Files] Error writing local and persistent file ${filename}:`, e);
+    throw e;
+  }
+}
+
 export function writeAndPersistFile(filename: string, content: string) {
   try {
     ensureDBDir();
@@ -2587,7 +2612,10 @@ export function writeAndPersistFile(filename: string, content: string) {
       fs.mkdirSync(dir, { recursive: true });
     }
     
-    // Save to Postgres immediately without waiting for disk I/O
+    // Write to disk synchronously right away
+    fs.writeFileSync(localPath, content, "utf-8");
+
+    // Save to Postgres immediately without blocking non-async callers
     const dbPromise = db.insert(persistentFilesTable).values({
       filename,
       content
@@ -2598,16 +2626,7 @@ export function writeAndPersistFile(filename: string, content: string) {
       console.error(`[Persistent Files] Async backup of ${filename} to PostgreSQL failed:`, err);
     });
     trackPromise(dbPromise);
-
-    // Also write atomically to disk in background
-    const tmpPath = `${localPath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
-    fs.promises.writeFile(tmpPath, content, "utf-8").then(() => {
-      return fs.promises.rename(tmpPath, localPath);
-    }).catch(err => {
-      console.error(`[Persistent Files] Local write failed for ${filename}:`, err);
-      fs.promises.unlink(tmpPath).catch(() => {});
-    });
-
+    return dbPromise;
   } catch (e) {
     console.error(`[Persistent Files] Error writing local and persistent file ${filename}:`, e);
   }
