@@ -38,6 +38,7 @@ import { UnifiedSettingsDashboard } from "./components/UnifiedSettingsDashboard.
 import { BackgroundAudioPlayer } from "./components/BackgroundAudioPlayer.tsx";
 import FounderConsole from "./components/FounderConsole.tsx";
 import { TenantAdminOnboarding } from "./components/TenantAdminOnboarding.tsx";
+import { CycleTransitionShowcase } from "./components/CycleTransitionShowcase.tsx";
 import { AutoRefreshProvider } from "./utils/AutoRefreshContext.tsx";
 import { AUTHOR_WATERMARK } from "./utils/watermark.ts";
 import { deduplicateMembersList, findMemberByUniqueKey, sortMembersAlphabetically } from "./utils/memberUtils.ts";
@@ -1509,6 +1510,11 @@ export default function App() {
   const [months, setMonths] = useState<MessMonth[]>([]);
   const [currentMonthId, setCurrentMonthId] = useState("");
   const [cycleProposals, setCycleProposals] = useState<CycleProposal[]>([]);
+  // Monthly Cycle Rollover Transition Showcase states
+  const [showCycleTransition, setShowCycleTransition] = useState(false);
+  const [cycleTransitionPreview, setCycleTransitionPreview] = useState(false);
+  const [rolloverPrevMonth, setRolloverPrevMonth] = useState<MessMonth | null>(null);
+  const [rolloverCurrMonth, setRolloverCurrMonth] = useState<MessMonth | null>(null);
   const [reportSummary, setReportSummary] = useState<any>(null);
   const [membersList, setMembersList] = useState<Member[]>([]);
   const [currencySymbol, setCurrencySymbol] = useState("৳");
@@ -2693,6 +2699,26 @@ export default function App() {
               if (activeMonth) setCurrentMonthId(activeMonth.id);
             }
           }
+
+          // Check for monthly cycle transition rollover showcase (e.g. September ended -> October active)
+          if (activeMonth && loadedMonths.length > 1) {
+            const activeIdx = loadedMonths.findIndex(m => m.id === activeMonth.id);
+            const prevMonthCandidate = activeIdx >= 0 && activeIdx + 1 < loadedMonths.length 
+              ? loadedMonths[activeIdx + 1] 
+              : loadedMonths.find(m => m.id !== activeMonth.id);
+
+            if (prevMonthCandidate) {
+              const currentMess = localStorage.getItem("active_mess_id") || "default";
+              const seenKey = `cycle_rollover_viewed_${currentMess}_${prevMonthCandidate.id}_${activeMonth.id}`;
+              const alreadyViewed = localStorage.getItem(seenKey);
+              if (!alreadyViewed) {
+                setRolloverPrevMonth(prevMonthCandidate);
+                setRolloverCurrMonth(activeMonth);
+                setCycleTransitionPreview(false);
+                setShowCycleTransition(true);
+              }
+            }
+          }
         }
       }
 
@@ -3232,6 +3258,42 @@ export default function App() {
       }
     }
   }, [currentUser, currentMonthId, months]);
+
+  // Monthly Cycle Rollover Transition Handlers
+  const handleSelectRolloverPreviousMonth = (monthId: string) => {
+    setCurrentMonthId(monthId);
+    const currentMess = localStorage.getItem("active_mess_id") || "default";
+    if (rolloverPrevMonth && rolloverCurrMonth) {
+      localStorage.setItem(`cycle_rollover_viewed_${currentMess}_${rolloverPrevMonth.id}_${rolloverCurrMonth.id}`, "true");
+    }
+    setShowCycleTransition(false);
+  };
+
+  const handleStayInRolloverCurrentMonth = () => {
+    if (rolloverCurrMonth) {
+      setCurrentMonthId(rolloverCurrMonth.id);
+    }
+    const currentMess = localStorage.getItem("active_mess_id") || "default";
+    if (rolloverPrevMonth && rolloverCurrMonth) {
+      localStorage.setItem(`cycle_rollover_viewed_${currentMess}_${rolloverPrevMonth.id}_${rolloverCurrMonth.id}`, "true");
+    }
+    setShowCycleTransition(false);
+  };
+
+  const handleTriggerPreviewCycleTransition = () => {
+    const active = months.find(m => m.id === currentMonthId) || months[0] || null;
+    const prev = months.find(m => m.id !== active?.id) || (months.length > 1 ? months[1] : active);
+    setRolloverPrevMonth(prev);
+    setRolloverCurrMonth(active);
+    setCycleTransitionPreview(true);
+    setShowCycleTransition(true);
+  };
+
+  useEffect(() => {
+    const onPreviewReq = () => handleTriggerPreviewCycleTransition();
+    window.addEventListener("preview-cycle-transition", onPreviewReq);
+    return () => window.removeEventListener("preview-cycle-transition", onPreviewReq);
+  }, [months, currentMonthId]);
 
   const handleLoginSuccess = async (token: string, user: Member, rememberMe?: boolean) => {
     try {
@@ -5505,6 +5567,7 @@ export default function App() {
           <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
             {currentUser && (
               <select
+                id="active-month-cycle-selector"
                 value={currentMonthId}
                 onChange={(e) => setCurrentMonthId(e.target.value)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg border focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full sm:w-auto ${
@@ -6168,6 +6231,18 @@ export default function App() {
           </button>
         </div>
       )}
+
+      <CycleTransitionShowcase
+        isOpen={showCycleTransition}
+        onClose={() => setShowCycleTransition(false)}
+        currentUser={currentUser}
+        previousMonth={rolloverPrevMonth}
+        currentMonth={rolloverCurrMonth}
+        onSelectPreviousMonth={handleSelectRolloverPreviousMonth}
+        onStayInCurrentMonth={handleStayInRolloverCurrentMonth}
+        isDarkMode={activeIsDarkMode}
+        isPreview={cycleTransitionPreview}
+      />
 
       <BackgroundAudioPlayer
         activeAudioSettings={activeAudioSettings}

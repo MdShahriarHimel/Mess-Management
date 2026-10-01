@@ -3025,6 +3025,38 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   )
                 )}
 
+                {/* Free Fire Style Season / Cycle Rollover Showcase Card */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-cyan-500/10 border border-amber-500/25 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                        <LucideIcons.Sparkles size={18} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider">
+                          Cycle Rollover Showcase Animation (নতুন মাস ট্রানজিশন)
+                        </h4>
+                        <p className="text-[10px] text-slate-400 leading-snug">
+                          পূর্বের মাসের সাইকেল শেষ হয়ে নতুন মাস শুরু হলে ইউজারদের সামনে ফ্রি-ফায়ার র‍্যাংক রিবুটের মতো ক্লাউড ট্রানজিশন ও শুটিং স্টার প্রদর্শিত হবে।
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-1 flex items-center justify-between gap-2 border-t border-amber-500/15">
+                    <span className="text-[10px] text-slate-400">
+                      অ্যাডমিন টেস্ট ও প্রিভিউ মোড:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent("preview-cycle-transition"))}
+                      className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-[11px] uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <LucideIcons.Play size={12} />
+                      <span>🎬 Preview Animation (টেস্ট করুন)</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* List Active/Inactive Cycles */}
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-300 uppercase">Available Active Cycles</h4>
