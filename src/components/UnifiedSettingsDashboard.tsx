@@ -199,7 +199,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   setMealTypes
 }) => {
   const respectSenioritySettings = propRespectSenioritySettings;
-  const isUltimateAdmin = isPlatformOwner || currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(isPlatformOwner || currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);

@@ -84,6 +84,8 @@ export interface Member {
   roomLabelId?: string;
   roomLabel?: string;
   roomRent?: number;
+  isPlatformOwner?: boolean;
+  isUltimateAdmin?: boolean;
 }
 
 export interface RoomLabel {

@@ -746,7 +746,7 @@ export default function FinanceSettlement({
   // Helper to format system role display (ADMIN/Shahriar Himel shows MEMBER, while SUPERUSER and MANAGER remain)
   const getSystemRoleDisplay = (m: Member) => {
     const roleStr = (m.role || "").toUpperCase();
-    if (roleStr === "ADMIN" || m.email?.toLowerCase() === "mdshahriarhimel@gmail.com" || m.hideAdminRole) {
+    if (roleStr === "ADMIN" || m.isPlatformOwner || m.isUltimateAdmin || m.hideAdminRole) {
       return "MEMBER";
     }
     if (roleStr === "SUPERUSER") {
@@ -1356,7 +1356,7 @@ export default function FinanceSettlement({
 
   // Find selected month object
   const selectedMonth = months?.find(m => m.id === currentMonthId);
-  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   const isMonthLockedForDeposits = selectedMonth?.isLocked && !selectedMonth?.manuallyUnlocked && !isUltimateAdmin;
 
   // Permission check for editing the spreadsheet
@@ -2967,7 +2967,7 @@ export default function FinanceSettlement({
               })()}
 
               {/* Manager Special Edit Section */}
-              {(currentUser?.role === UserRole.MANAGER || currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
+              {(currentUser?.role === UserRole.MANAGER || currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner) && (
                 <div className="mt-4 pt-4 border-t border-cyan-500/10 space-y-3">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 block">Manager Special Panel</span>
                   {isEditingManagerHoldings ? (
@@ -3435,7 +3435,7 @@ export default function FinanceSettlement({
                       <span className="text-[10px] font-mono font-bold text-slate-500">MANAGER LOG ENTRY</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black font-mono text-cyan-400">৳ {h.marketSpent || 0}</span>
-                        {(currentUser?.role === UserRole.MANAGER || currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com") && (
+                        {(currentUser?.role === UserRole.MANAGER || currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner) && (
                           <button
                             onClick={() => handleDeleteManagerMarketLog(h.id)}
                             className="p-1 hover:bg-rose-500/10 rounded text-rose-500/50 hover:text-rose-500 transition-all cursor-pointer"

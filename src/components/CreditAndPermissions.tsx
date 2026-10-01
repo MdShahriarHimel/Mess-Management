@@ -62,7 +62,7 @@ export const CreditAndPermissions: React.FC<CreditAndPermissionsProps> = ({
   isDarkMode,
   handleUpdateSettings
 }) => {
-  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   
   // Local active states for Credit Panel
   const defaultCredit: CreditConfig = {
@@ -593,7 +593,7 @@ export const CreditAndPermissions: React.FC<CreditAndPermissionsProps> = ({
             ) : (
               <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/40 text-center text-xs text-slate-500">
                 <LucideIcons.Lock size={20} className="mx-auto mb-2 text-slate-600" />
-                These permissions are configured exclusively by the <strong className="text-cyan-400">Ultimate Admin (mdshahriarhimel@gmail.com)</strong>.
+                These permissions are configured exclusively by the <strong className="text-cyan-400">Platform Owner (Ultimate Admin)</strong>.
               </div>
             )}
           </div>

@@ -28,6 +28,8 @@ interface MessSwitcherProps {
     nickname: string;
     role: UserRole;
     email: string;
+    isUltimateAdmin?: boolean;
+    isPlatformOwner?: boolean;
   };
   sessionToken: string;
   isDarkMode: boolean;
@@ -54,7 +56,7 @@ export function MessSwitcher({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
-  const isUltimateAdmin = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   const isStandaloneTenant = !!(currentUser as any)?.isStandaloneTenantAdmin;
   const canCreateNewMess = isUltimateAdmin || isStandaloneTenant;
   const maxQuota = (currentUser as any)?.maxAllowedMesses || 1;

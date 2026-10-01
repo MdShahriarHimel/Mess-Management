@@ -775,7 +775,7 @@ export default function MarketLogs({
   };
 
   const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
-  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   const isManager = currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.PARTIAL_MANAGER;
   const canEditMarketDuty = isUltimateAdmin || isManager || [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.ADMIN].includes(currentUser.role);
 

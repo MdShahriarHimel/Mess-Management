@@ -180,7 +180,7 @@ export default function Rules({ currentUser, isDarkMode, members, isPlatformOwne
   const [formActive, setFormActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const isUltimateAdmin = currentUser?.email && currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(isPlatformOwner || currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   // STRICT RULE: Normal members and managers CANNOT edit or delete rules or manual.
   // ONLY Super User, Assistant Super User, Admin, and Platform Owner can add, edit, or delete.
   const canManage = currentUser.role === UserRole.SUPERUSER || 

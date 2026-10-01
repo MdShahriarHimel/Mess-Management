@@ -120,7 +120,7 @@ export default function Deposits({
     });
   }, [deposits]);
 
-  const isUltimateAdmin = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   const activeMonthObj = months?.find(m => m.id === currentMonthId);
   const isMonthLocked = activeMonthObj?.isLocked && !activeMonthObj?.manuallyUnlocked && !isUltimateAdmin;
 

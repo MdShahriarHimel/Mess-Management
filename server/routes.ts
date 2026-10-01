@@ -47,7 +47,7 @@ import {
   saveDailyBackupToDatabase, 
   generateDailyBackupPayload 
 } from "./backupCron.js";
-import { loadPlatformControls, savePlatformControls } from "./founder.js";
+import { loadPlatformControls, savePlatformControls, isPlatformOwner } from "./founder.js";
 import { db as drizzleDb, pool } from "../src/db/index.js";
 import { 
   foodKnowledgeBase, 
@@ -284,7 +284,7 @@ export function findMemberAcrossAllMesses(query: { email?: string; id?: string; 
 
   // Prioritize candidates:
   // 0. If ultimate admin, prefer candidate from 'default' mess or one with real name/nickname
-  if (normEmail === "mdshahriarhimel@gmail.com") {
+  if (isPlatformOwner(normEmail)) {
     const defaultCand = candidates.find(c => c.messId === "default" && c.member.name !== "Mess Administrator");
     if (defaultCand) return defaultCand;
   }
@@ -422,9 +422,9 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
 
   const userId = tokenUid || memberRef?.id || "";
   const userEmail = (tokenEmail || memberRef?.email || "").toLowerCase();
-  const isUltimateAdmin = userEmail === "mdshahriarhimel@gmail.com";
-  const userName = isUltimateAdmin ? "Md. Shahriar" : (memberRef?.name || tokenName || "Admin");
-  const userNickname = isUltimateAdmin ? "Himel" : (memberRef?.nickname || (userName.split(" ")[0] || "Admin"));
+  const isUltimateAdmin = isPlatformOwner(userEmail);
+  const userName = isUltimateAdmin ? (memberRef?.name || "Md. Shahriar") : (memberRef?.name || tokenName || "Admin");
+  const userNickname = isUltimateAdmin ? (memberRef?.nickname || "Himel") : (memberRef?.nickname || (userName.split(" ")[0] || "Admin"));
 
   if (!userId && !userEmail) {
     res.status(401).json({ error: "Unauthorized: Invalid session credentials" });
@@ -677,6 +677,9 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       setUserActiveMessId(member.id, member.email, targetMessId);
       res.setHeader("x-mess-id", targetMessId);
 
+      (member as any).isPlatformOwner = Boolean(isUltimateAdmin);
+      (member as any).isUltimateAdmin = Boolean(isUltimateAdmin);
+
       req.user = member;
       next();
     } catch (err) {
@@ -813,7 +816,7 @@ router.post("/auth/google-native", async (req: Request, res: Response): Promise<
   let member = db.members.find(m => m.email && m.email.toLowerCase() === normalizedEmail);
 
   if (!member) {
-    if (db.members.length === 0 || normalizedEmail === "mdshahriarhimel@gmail.com") {
+    if (db.members.length === 0 || isPlatformOwner(normalizedEmail)) {
       const newMember: Member = {
         id: verifiedUid || generateUUID(),
         name: verifiedName || "Founder Admin",
@@ -1570,8 +1573,8 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
   }
 
   const original = db.members[index];
-  const isActorUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isTargetUltimateAdmin = original.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isActorUltimateAdmin = isPlatformOwner(req.user!.email);
+  const isTargetUltimateAdmin = isPlatformOwner(original.email);
   const isSelf = req.user!.id === id;
   const isMessAdmin = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
   const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
@@ -1761,7 +1764,7 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
             otherMem.photo = updatedMember.photo;
             otherMem.occupation = updatedMember.occupation;
             otherMem.bloodGroup = updatedMember.bloodGroup;
-            if (isActorUltimateAdmin && otherMem.email.toLowerCase() === "mdshahriarhimel@gmail.com") {
+            if (isActorUltimateAdmin && isPlatformOwner(otherMem.email)) {
               otherMem.status = MemberStatus.ACTIVE;
               otherMem.hideAdminRole = updatedMember.hideAdminRole;
             }
@@ -2184,7 +2187,7 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
   }
 
   const original = db.months[index];
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
   const isSuperUser = req.user!.role === UserRole.SUPERUSER;
   const settings = loadSettings();
   const allowSuperUserUnlock = settings.allowSuperUserUnlock === true;
@@ -2312,7 +2315,7 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
   }
 
   const targetMonth = db.months[index];
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
   if (targetMonth.isLocked) {
     const auditMsg = `Attempt by ${req.user!.nickname} (${req.user!.role}) to delete locked cycle "${targetMonth.name}" was rejected. Cycle must be unlocked first.`;
@@ -2725,7 +2728,7 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
     UserRole.ADMIN,
     UserRole.MANAGER,
     UserRole.PARTIAL_MANAGER
-  ].includes(req.user!.role) || (req.user!.email && req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com")) && hasManageMealsPermission;
+  ].includes(req.user!.role) || isPlatformOwner(req.user!.email)) && hasManageMealsPermission;
 
   if (!isDirectEdit) {
     if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
@@ -3569,7 +3572,7 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
 
   const db = loadDB();
   const targetMonth = db.months.find(m => m.id === monthId);
-  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
   if (targetMonth?.isLocked && !targetMonth.manuallyUnlocked && !isUltimateAdmin) {
     logAudit(
@@ -3647,7 +3650,7 @@ router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Us
 
   const original = db.deposits[index];
   const targetMonth = db.months.find(m => m.id === original.monthId);
-  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
   if (targetMonth?.isLocked && !targetMonth.manuallyUnlocked && !isUltimateAdmin) {
     logAudit(
@@ -3807,7 +3810,7 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
   }
 
   if (name.toLowerCase().includes("market") || (task && task.toLowerCase().includes("market"))) {
-    const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+    const isUltimateAdmin = isPlatformOwner(req.user!.email);
     const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
     const isPrivileged = isUltimateAdmin || isManager || [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.ADMIN].includes(req.user!.role);
     if (!isPrivileged) {
@@ -4009,7 +4012,7 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
 
   const original = db.duties[index];
   if (original.name.toLowerCase().includes("market") || (original.task && original.task.toLowerCase().includes("market"))) {
-    const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+    const isUltimateAdmin = isPlatformOwner(req.user!.email);
     const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
     const isPrivileged = isUltimateAdmin || isManager || [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.ADMIN].includes(req.user!.role);
     if (!isPrivileged) {
@@ -4037,7 +4040,7 @@ router.get("/holdings/:monthId", authMiddleware, (req: AuthenticatedRequest, res
 });
 
 router.post("/holdings", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
   const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN].includes(req.user!.role);
   if (!isUltimateAdmin && !isManagerOrAdmin) {
     res.status(403).json({ error: "Access denied. Only managers and the ultimate Admin can edit holdings." });
@@ -4105,7 +4108,7 @@ router.post("/holdings", authMiddleware, async (req: AuthenticatedRequest, res: 
 });
 
 router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
-  const isUltimateAdmin = req.user!.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
   const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN].includes(req.user!.role);
   if (!isUltimateAdmin && !isManagerOrAdmin) {
     res.status(403).json({ error: "Access denied. Only managers and the ultimate Admin can delete holdings." });
@@ -4221,7 +4224,7 @@ router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER;
 
@@ -4269,7 +4272,7 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
 
   const original = db.notices[index];
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER;
   const isAuthor = original.authorId === user.id;
@@ -4308,7 +4311,7 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
 
 router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.PARTIAL_MANAGER;
 
@@ -4363,7 +4366,7 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
 
   const notice = db.notices[index];
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
   const isAuthor = notice.authorId === user.id;
 
@@ -4406,7 +4409,7 @@ router.get("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response) 
 
 router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canManage) {
@@ -4457,7 +4460,7 @@ router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response)
 
 router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canManage) {
@@ -4503,7 +4506,7 @@ router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
 
 router.delete("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const canDelete = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canDelete) {
@@ -4555,7 +4558,7 @@ router.post("/rules/:id/agree", authMiddleware, (req: AuthenticatedRequest, res:
 
 router.post("/rules/seed-defaults", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
 
   if (!canManage) {
@@ -4629,7 +4632,7 @@ router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const role = user.role;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   
   const isAdmin = role === UserRole.ADMIN || isUltimateAdmin;
   const isSuperUser = role === UserRole.SUPERUSER || role === UserRole.ASSISTANT_SUPERUSER;
@@ -5923,7 +5926,7 @@ router.get("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res
 
 // PUT branding (Level 1) - ONLY Ultimate Admin
 router.put("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
   if (!isUltimateAdmin) {
     res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify central ERP Branding identity" });
     return;
@@ -5967,7 +5970,7 @@ router.get("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
 router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const messId = getActiveMessId();
   const branding = loadErpBranding();
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
   // Check if locked
   const isLocked = branding.locks && branding.locks[messId] === true;
@@ -6104,7 +6107,7 @@ router.put("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, 
 
 // POST lock/unlock mess appearance (Ultimate Admin exclusive)
 router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
   if (!isUltimateAdmin) {
     res.status(403).json({ error: "Only the Ultimate Admin can lock or unlock appearance features" });
     return;
@@ -6239,7 +6242,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     return;
   }
 
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
   const currentSettings = loadSettings();
 
   // Allow Super User Unlock setting restriction - STRICTLY Ultimate Admin only
@@ -6660,7 +6663,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 
 router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  const isUltimateAdmin = user.email && user.email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = isPlatformOwner(user.email);
   const isAuthority = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER].includes(user.role) || isUltimateAdmin;
   
   if (!isAuthority) {
@@ -7076,7 +7079,7 @@ export function saveAdminControls(data: any) {
 
 function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boolean {
   if (!req.user) return false;
-  if (req.user.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user.role === UserRole.ADMIN) return true; // ultimate admin has full control
+  if (isPlatformOwner(req.user.email) && req.user.role === UserRole.ADMIN) return true; // ultimate admin has full control
   if (req.user.role !== UserRole.ADMIN) return true; // other roles don't use these admin permission restrictions
 
   const controls = loadAdminControls().controls;
@@ -7111,7 +7114,7 @@ function getAllAdminsAcrossAllMesses(): Member[] {
             const parsed = JSON.parse(dataStr);
             if (parsed && Array.isArray(parsed.members)) {
               for (const member of parsed.members) {
-                if (member.role === UserRole.ADMIN && member.email && member.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+                if (member.role === UserRole.ADMIN && member.email && !isPlatformOwner(member.email)) {
                   const emailKey = member.email.toLowerCase();
                   adminsMap.set(emailKey, member);
                 }
@@ -7132,7 +7135,7 @@ function getAllAdminsAcrossAllMesses(): Member[] {
     const currentDB = loadDB();
     if (currentDB && Array.isArray(currentDB.members)) {
       for (const member of currentDB.members) {
-        if (member.role === UserRole.ADMIN && member.email && member.email.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+        if (member.role === UserRole.ADMIN && member.email && !isPlatformOwner(member.email)) {
           const emailKey = member.email.toLowerCase();
           adminsMap.set(emailKey, member);
         }
@@ -7146,7 +7149,7 @@ function getAllAdminsAcrossAllMesses(): Member[] {
 }
 
 router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com" || req.user!.role !== UserRole.ADMIN) {
+  if (!isPlatformOwner(req.user!.email) || req.user!.role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the ultimate Admin can access admin controlling panel." });
     return;
   }
@@ -7158,7 +7161,7 @@ router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: R
 });
 
 router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.email.toLowerCase() !== "mdshahriarhimel@gmail.com" || req.user!.role !== UserRole.ADMIN) {
+  if (!isPlatformOwner(req.user!.email) || req.user!.role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the ultimate Admin can modify admin controlling panel." });
     return;
   }
@@ -7209,7 +7212,7 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
   }
   
   let messes = loadMesses().messes;
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
@@ -7273,7 +7276,7 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
 });
 
 router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
   const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
   const adminControlsData = loadAdminControls();
   const userControls = (emailKey && adminControlsData.controls[emailKey]) || adminControlsData.controls[req.user!.id];
@@ -7370,7 +7373,7 @@ router.put("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res:
     return;
   }
 
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
@@ -7420,7 +7423,7 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   const { messId } = req.body;
   
   // Verify access for limited standard admins
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
   if (!isUltimateAdmin) {
     const adminControls = loadAdminControls().controls;
     const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
@@ -7457,7 +7460,7 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
     return;
   }
 
-  const isUltimateAdmin = req.user!.email.toLowerCase() === "mdshahriarhimel@gmail.com" && req.user!.role === UserRole.ADMIN;
+  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
   const canDelete = isUltimateAdmin || checkAdminPermission(req, "canManageMessBranches");
   if (!canDelete) {
     res.status(403).json({ error: "Only the Platform Owner or authorized Admins with branch management permission can delete messes." });
@@ -8320,18 +8323,7 @@ import {
 
 // Helper checks
 function isPlatformOwnerEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  try {
-    const filePath = path.join(DB_DIR, "platform_controls.json");
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, "utf-8");
-      const controls = JSON.parse(data);
-      return controls.owners.some((o: any) => o && o.email && o.email.toLowerCase() === email.toLowerCase());
-    }
-  } catch (e) {
-    console.error("Error reading platform controls in routes.ts:", e);
-  }
-  return email.toLowerCase() === "mdshahriarhimel@gmail.com";
+  return isPlatformOwner(email);
 }
 
 function checkIsFounder(req: AuthenticatedRequest): boolean {

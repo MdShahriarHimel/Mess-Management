@@ -16,8 +16,8 @@ interface MonetizationHubProps {
 }
 
 export function MonetizationHub({ currentUser, isDarkMode, showStatus, activeSettingsSubTab, sessionToken }: MonetizationHubProps) {
-  const isUltimateAdmin = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && currentUser?.role === "ADMIN";
-  const isFounder = currentUser?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdmin = Boolean(currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
+  const isFounder = Boolean(currentUser?.isPlatformOwner || currentUser?.isUltimateAdmin);
 
   // Auth Header Helper
   const getAuthHeaders = (): Record<string, string> => {

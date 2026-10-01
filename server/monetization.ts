@@ -28,6 +28,7 @@ import { eq, and, sql } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 import { DB_DIR, writeAndPersistFile } from "./db.ts";
+import { isPlatformOwner } from "./founder.js";
 
 const MONETIZATION_BACKUP_FILE = path.join(DB_DIR, "monetization_backup.json");
 
@@ -976,7 +977,7 @@ export async function unlockPremiumItem(memberId: string, itemType: string, item
   if (unlockMethod === "Founder Only") {
     const membersList = await db.select().from(members).where(eq(members.id, memberId));
     const member = membersList[0];
-    if (member?.email?.toLowerCase() !== "mdshahriarhimel@gmail.com") {
+    if (!isPlatformOwner(member?.email)) {
       throw new Error("This exclusive cosmetic is reserved for the platform Founder only.");
     }
   } else if (unlockMethod === "Enterprise Only") {

@@ -1584,9 +1584,11 @@ export default function App() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [platformOwners, setPlatformOwners] = useState<{ email: string; role: string }[]>([]);
   const isPlatformOwner = Boolean(
-    currentUser && platformOwners.some(
+    currentUser?.isPlatformOwner ||
+    currentUser?.isUltimateAdmin ||
+    (currentUser && platformOwners.some(
       o => o.email?.toLowerCase() === currentUser.email?.toLowerCase()
-    )
+    ))
   );
   const [showFounderLogin, setShowFounderLogin] = useState(false);
   const [dismissedGlobalAnnouncement, setDismissedGlobalAnnouncement] = useState(() => {
@@ -1651,7 +1653,7 @@ export default function App() {
 
   // Synchronise acting role for ultimate admin
   useEffect(() => {
-    if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com") {
+    if (currentUser && (currentUser.isUltimateAdmin || isPlatformOwner)) {
       const storedActingRole = localStorage.getItem("acting_role");
       if (storedActingRole && storedActingRole !== currentUser.role) {
         setCurrentUser(prev => prev ? { ...prev, role: storedActingRole as UserRole } : null);
@@ -1734,7 +1736,7 @@ export default function App() {
         }
       }
       const actingRole = localStorage.getItem("acting_role");
-      if (currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && actingRole) {
+      if (currentUser && (currentUser.isUltimateAdmin || isPlatformOwner) && actingRole) {
         headers.set("X-Acting-Role", actingRole);
       }
       if (currentUser && currentUser.email) {
@@ -5530,7 +5532,7 @@ export default function App() {
               </button>
             )}
 
-            {currentUser && currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+            {currentUser && (currentUser.isUltimateAdmin || isPlatformOwner) && (
               <div className="flex items-center gap-1.5" id="ultimate-admin-role-selector">
                 <span className="text-[10px] text-slate-400 font-bold uppercase whitespace-nowrap">Act As:</span>
                 <select
@@ -5945,7 +5947,7 @@ export default function App() {
                 setMealTypes={setMealTypes}
               />
 
-              {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+              {(currentUser.isUltimateAdmin || isPlatformOwner) && (
                 <AdminControlsPanel
                   messes={messes}
                   sessionToken={sessionToken || ""}

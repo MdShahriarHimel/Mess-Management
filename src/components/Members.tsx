@@ -194,8 +194,8 @@ export default function Members({
   };
 
   const isEditingSelf = editingMember?.id === currentUser.id;
-  const isUltimateAdminActor = currentUser.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
-  const isTargetUltimateAdmin = editingMember?.email?.toLowerCase() === "mdshahriarhimel@gmail.com";
+  const isUltimateAdminActor = Boolean(currentUser.isUltimateAdmin || currentUser.isPlatformOwner);
+  const isTargetUltimateAdmin = Boolean(editingMember?.isUltimateAdmin || editingMember?.isPlatformOwner);
   const canEditAcademicAndRespect = isEditingSelf || isUltimateAdminActor || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER;
   const disableRoleSelect = originalRole === UserRole.ADMIN && (isEditingSelf || isTargetUltimateAdmin || !isUltimateAdminActor);
   const disableStatusSelect = originalRole === UserRole.ADMIN && !isEditingSelf && !isUltimateAdminActor;
@@ -2295,16 +2295,16 @@ export default function Members({
                     />
                   </div>
 
-                  {/* Ultimate Admin (mdshahriarhimel@gmail.com) exclusive overrides or self ADMIN/SUPERUSER hide himself */}
-                  {(currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" || 
+                  {/* Ultimate Admin exclusive overrides or self ADMIN/SUPERUSER hide himself */}
+                  {(isUltimateAdminActor || 
                     (editingMember.id === currentUser.id && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER))) && (
                     <div className="space-y-3 bg-cyan-950/20 p-3 rounded-xl border border-cyan-500/20">
                       <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1">
-                        🌟 {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" ? "Ultimate Admin Overrides" : "Profile Visibility (Self-Hide)"}
+                        🌟 {isUltimateAdminActor ? "Ultimate Admin Overrides" : "Profile Visibility (Self-Hide)"}
                       </p>
                       
                       {/* Hide Contact Info Toggle */}
-                      {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                      {isUltimateAdminActor && (
                         <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
                           <div className="space-y-0.5">
                             <label className="text-xs font-bold text-slate-200 block">Hide Contact Info</label>
@@ -2334,7 +2334,7 @@ export default function Members({
                       </div>
 
                       {/* Enable/Disable Glowing Effect Toggle */}
-                      {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                      {isUltimateAdminActor && (
                         <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
                           <div className="space-y-0.5">
                             <label className="text-xs font-bold text-slate-200 block">Enable Profile Glowing</label>
@@ -2350,7 +2350,7 @@ export default function Members({
                       )}
 
                       {/* Hide Admin Role Toggle for Ultimate Admin */}
-                      {currentUser.email.toLowerCase() === "mdshahriarhimel@gmail.com" && (
+                      {isUltimateAdminActor && (
                         <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/50">
                           <div className="space-y-0.5">
                             <label className="text-xs font-bold text-slate-200 block">Show Self as Member (Hide Admin Role)</label>

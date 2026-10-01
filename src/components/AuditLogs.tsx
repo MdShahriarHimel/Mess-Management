@@ -849,8 +849,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
                   </tr>
                 ) : (
                   filteredLogs.map((l) => {
-                    const isUltimateAdminLog = l.userName.toLowerCase() === "mdshahriarhimel" || 
-                                               l.userName.toLowerCase() === "mdshahriarhimel@gmail.com";
+                    const isUltimateAdminLog = l.userRole === "ADMIN" && (l.userName.toLowerCase() === "himel" || l.userName.toLowerCase() === "founder admin" || l.userName.toLowerCase() === "administrator");
                     
                     const logTime = new Date(l.timestamp).getTime();
                     const isRecent = (Date.now() - logTime) < 24 * 60 * 60 * 1000;
