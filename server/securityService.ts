@@ -15,6 +15,19 @@ import { sendEmailWithFallback } from "./emailService.js";
 // TYPES
 // ============================================================================
 
+export interface ActiveSession {
+  sessionId: string;
+  userId: string;
+  sessionVersion: string;
+  messId?: string;
+  ip: string;
+  userAgent: string;
+  createdAt: number;
+  lastActivity: number;
+  expiresAt: number;
+  isValid: boolean;
+}
+
 export interface SecurityEvent {
   id: string;
   timestamp: string;
@@ -270,6 +283,32 @@ export function addPasswordToHistory(memberId: string, password: string): void {
 // SESSION MANAGEMENT & INVALIDATION
 // ============================================================================
 
+const ACTIVE_SESSIONS_FILE = "active_sessions.json";
+let activeSessionsCache: Record<string, ActiveSession> | null = null;
+
+function loadActiveSessions(): Record<string, ActiveSession> {
+  if (activeSessionsCache) return activeSessionsCache;
+
+  const filePath = path.join(DB_DIR, ACTIVE_SESSIONS_FILE);
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = fs.readFileSync(filePath, "utf-8");
+      activeSessionsCache = JSON.parse(data);
+      return activeSessionsCache!;
+    } catch (e) {
+      console.error("Failed to parse active_sessions.json:", e);
+    }
+  }
+
+  activeSessionsCache = {};
+  return activeSessionsCache;
+}
+
+function saveActiveSessions(): void {
+  if (!activeSessionsCache) return;
+  writeAndPersistFile(ACTIVE_SESSIONS_FILE, JSON.stringify(activeSessionsCache, null, 2));
+}
+
 export function getSessionVersion(memberId: string): string {
   if (!sessionVersionsMap.has(memberId)) {
     sessionVersionsMap.set(memberId, "v1");
@@ -283,45 +322,184 @@ export function invalidateMemberSessions(memberId: string, previousIds?: string[
   for (const id of allIds) {
     sessionVersionsMap.set(id, newVer);
   }
+
+  // Invalidate any persisted active sessions for this member
+  const sessions = loadActiveSessions();
+  let changed = false;
+  for (const sid of Object.keys(sessions)) {
+    if (allIds.includes(sessions[sid].userId)) {
+      sessions[sid].isValid = false;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveActiveSessions();
+  }
+
   return newVer;
 }
 
-export function generateSessionToken(memberId: string): string {
+export function createActiveSession(
+  memberId: string,
+  meta?: { ip?: string; userAgent?: string; messId?: string }
+): { sessionId: string; token: string; session: ActiveSession } {
   const ver = getSessionVersion(memberId);
-  return `${memberId}:${ver}`;
+  const sessionId = "sess_" + generateUUID().replace(/-/g, "").substring(0, 16) + "_" + Date.now();
+  const sessions = loadActiveSessions();
+
+  const now = Date.now();
+  const session: ActiveSession = {
+    sessionId,
+    userId: memberId,
+    sessionVersion: ver,
+    messId: meta?.messId || "default",
+    ip: meta?.ip || "Unknown",
+    userAgent: meta?.userAgent || "Unknown",
+    createdAt: now,
+    lastActivity: now,
+    expiresAt: now + 10 * 24 * 60 * 60 * 1000, // 10 days
+    isValid: true
+  };
+
+  sessions[sessionId] = session;
+  saveActiveSessions();
+
+  const token = `${memberId}:${sessionId}:${ver}`;
+  return { sessionId, token, session };
+}
+
+export function generateSessionToken(
+  memberId: string,
+  meta?: { ip?: string; userAgent?: string; messId?: string }
+): string {
+  const { token } = createActiveSession(memberId, meta);
+  return token;
+}
+
+export function validateActiveSession(
+  token: string,
+  requestedUserId?: string,
+  previousIds?: string[]
+): { valid: boolean; session?: ActiveSession; reason?: string } {
+  if (!token) return { valid: false, reason: "Missing token" };
+
+  const allIds = [requestedUserId, ...(previousIds || [])].filter(Boolean) as string[];
+  const parts = token.split(":");
+
+  // Case 1: Standard 3-part active session token: `${userId}:${sessionId}:${version}`
+  if (parts.length === 3) {
+    const [userId, sessionId, ver] = parts;
+
+    if (allIds.length > 0 && !allIds.includes(userId)) {
+      return { valid: false, reason: "User ID mismatch in session token" };
+    }
+
+    const sessions = loadActiveSessions();
+    const session = sessions[sessionId];
+
+    if (!session) {
+      return { valid: false, reason: "Active session not found or terminated" };
+    }
+
+    if (!session.isValid) {
+      return { valid: false, reason: "Session has been invalidated" };
+    }
+
+    if (Date.now() > session.expiresAt) {
+      session.isValid = false;
+      saveActiveSessions();
+      return { valid: false, reason: "Session has expired" };
+    }
+
+    if (session.userId !== userId && (allIds.length > 0 && !allIds.includes(session.userId))) {
+      return { valid: false, reason: "Session ownership validation failed" };
+    }
+
+    const currentVer = getSessionVersion(session.userId);
+    if (ver !== currentVer || session.sessionVersion !== currentVer) {
+      session.isValid = false;
+      saveActiveSessions();
+      return { valid: false, reason: "Session version outdated" };
+    }
+
+    // Touch lastActivity
+    session.lastActivity = Date.now();
+    return { valid: true, session };
+  }
+
+  // Case 2: Legacy 2-part token: `${userId}:${version}`
+  if (parts.length === 2) {
+    const [userId, ver] = parts;
+    if (allIds.length > 0 && !allIds.includes(userId)) {
+      return { valid: false, reason: "User ID mismatch" };
+    }
+    const currentVer = getSessionVersion(userId);
+    if (ver !== currentVer) {
+      return { valid: false, reason: "Session version outdated" };
+    }
+    return { valid: true };
+  }
+
+  return { valid: false, reason: "Malformed session token" };
+}
+
+export function terminateSession(sessionId: string): void {
+  const sessions = loadActiveSessions();
+  if (sessions[sessionId]) {
+    sessions[sessionId].isValid = false;
+    saveActiveSessions();
+  }
+}
+
+export function terminateSessionByToken(token: string): void {
+  if (!token) return;
+  const parts = token.split(":");
+  if (parts.length === 3) {
+    terminateSession(parts[1]);
+  }
 }
 
 export function isValidMemberSessionToken(token: string, memberId: string, previousIds?: string[]): boolean {
-  if (!token) return false;
-  const allIds = [memberId, ...(previousIds || [])].filter(Boolean);
+  const validation = validateActiveSession(token, memberId, previousIds);
+  return validation.valid;
+}
 
-  // If session versions tracker hasn't explicitly invalidated sessions for any of this member's IDs, accept token
-  const hasInvalidation = allIds.some(id => sessionVersionsMap.has(id));
-  if (!hasInvalidation) {
-    const parts = token.split(":");
-    return allIds.includes(parts[0]);
+// ============================================================================
+// COOKIE CONFIGURATION & HELPERS
+// ============================================================================
+
+export const SESSION_COOKIE_NAME = "mess_session";
+
+export function getSessionCookieOptions(req?: any) {
+  const isHttps = req ? (req.secure || req.headers["x-forwarded-proto"] === "https") : false;
+  return {
+    httpOnly: true,
+    secure: isHttps || process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    maxAge: 10 * 24 * 60 * 60 * 1000, // 10 days
+    path: "/"
+  };
+}
+
+export function setSessionCookie(res: any, token: string, req?: any): void {
+  try {
+    res.cookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions(req));
+  } catch (err) {
+    console.error("[Session] Error setting session cookie:", err);
   }
+}
 
-  // Find the active version across user IDs
-  let activeVer = "v1";
-  for (const id of allIds) {
-    if (sessionVersionsMap.has(id)) {
-      activeVer = sessionVersionsMap.get(id)!;
-      break;
-    }
+export function clearSessionCookie(res: any, req?: any): void {
+  try {
+    res.clearCookie(SESSION_COOKIE_NAME, {
+      httpOnly: true,
+      secure: req ? (req.secure || req.headers["x-forwarded-proto"] === "https") : false,
+      sameSite: "strict" as const,
+      path: "/"
+    });
+  } catch (err) {
+    console.error("[Session] Error clearing session cookie:", err);
   }
-
-  if (allIds.includes(token)) {
-    // If sessions were invalidated, legacy token without matching version must be rejected
-    return activeVer === "v1";
-  }
-
-  const parts = token.split(":");
-  if (parts.length === 2 && allIds.includes(parts[0])) {
-    return parts[1] === activeVer;
-  }
-
-  return false;
 }
 
 // ============================================================================

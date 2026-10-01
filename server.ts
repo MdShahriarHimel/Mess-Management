@@ -6,6 +6,7 @@
 import express from "express";
 import http from "http";
 import path from "path";
+import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { router as apiRouter } from "./server/routes.js";
@@ -27,6 +28,7 @@ const PORT = 3000;
 // Increase payload size limit to allow base64 images for member profiles and receipts
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(cookieParser());
 
 // Embedded Author Provenance & Security Watermark Headers
 app.use((req, res, next) => {

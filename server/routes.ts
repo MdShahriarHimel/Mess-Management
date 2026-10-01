@@ -84,6 +84,11 @@ import {
   invalidateMemberSessions,
   generateSessionToken,
   isValidMemberSessionToken,
+  validateActiveSession,
+  terminateSessionByToken,
+  setSessionCookie,
+  clearSessionCookie,
+  SESSION_COOKIE_NAME,
   recordSecurityEvent
 } from "./securityService.js";
 import { 
@@ -343,13 +348,22 @@ export function isMemberActiveInAnotherMess(email: string, currentMessId: string
 // AUTH MIDDLEWARE
 // ---------------------------------------------------------
 export async function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized: Missing token" });
+  // Extract token: Prioritize HttpOnly Secure cookie, then fallback to Authorization header
+  let token = (req.cookies && (req.cookies[SESSION_COOKIE_NAME] || req.cookies.mess_session)) || "";
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+  }
+
+  if (!token || token.trim().length === 0) {
+    res.status(401).json({ error: "Unauthorized: Missing session credentials" });
     return;
   }
 
-  const token = authHeader.split(" ")[1];
+  token = token.trim();
+  (req as any).token = token;
   let tokenUid = "";
   let tokenEmail = "";
   let tokenName = "";
@@ -378,8 +392,19 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
       return;
     }
   } else {
-    // Session token
+    // Session token: extract user ID and perform server-side active session validation
     tokenUid = token.split(":")[0];
+    const sessionCheck = validateActiveSession(token, tokenUid);
+    if (!sessionCheck.valid) {
+      res.status(401).json({
+        error: `Unauthorized: ${sessionCheck.reason || "Invalid or expired session"}`,
+        code: "auth/session-invalid"
+      });
+      return;
+    }
+    if (sessionCheck.session) {
+      (req as any).activeSession = sessionCheck.session;
+    }
   }
 
   // Look up user reference across all messes in the system
@@ -717,7 +742,20 @@ function checkRole(roles: UserRole[]) {
 // Check invite / Me endpoint
 router.get("/auth/me", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const activeMessId = (req.user as any)?.messId || getActiveMessId() || "default";
-  res.json({ user: req.user, activeMessId });
+  const token = (req as any).token || (req.cookies && (req.cookies[SESSION_COOKIE_NAME] || req.cookies.mess_session)) || "";
+  res.json({ user: req.user, activeMessId, token });
+});
+
+// Logout endpoint - invalidates session and clears HttpOnly, Secure, SameSite=Strict cookie
+router.post("/auth/logout", (req: Request, res: Response): void => {
+  const token = (req.cookies && (req.cookies[SESSION_COOKIE_NAME] || req.cookies.mess_session)) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.split(" ")[1] : null);
+
+  if (token) {
+    terminateSessionByToken(token);
+  }
+  clearSessionCookie(res, req);
+  res.json({ success: true, message: "Logged out successfully" });
 });
 
 // Check if user has a password set in the server database
@@ -740,24 +778,46 @@ router.get("/auth/has-password", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ hasPassword });
 });
 
-// Native Google Sign-In endpoint for Android app
-router.post("/auth/google-native", (req: Request, res: Response): void => {
-  const { email, name, photo } = req.body;
-  if (!email) {
-    res.status(400).json({ error: "Email is required" });
+// Native Google Sign-In endpoint for Android app (requires cryptographic idToken verification)
+router.post("/auth/google-native", async (req: Request, res: Response): Promise<void> => {
+  const { idToken, email, name, photo } = req.body;
+  if (!idToken) {
+    res.status(401).json({ error: "Unauthorized: Missing Google ID verification token" });
+    return;
+  }
+
+  let verifiedEmail = "";
+  let verifiedName = name || "";
+  let verifiedPhoto = photo || null;
+  let verifiedUid = "";
+
+  try {
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    verifiedEmail = (decoded.email || "").trim().toLowerCase();
+    verifiedName = decoded.name || name || "";
+    verifiedPhoto = decoded.picture || photo || null;
+    verifiedUid = decoded.uid;
+  } catch (err: any) {
+    console.error("[Google Native Auth] Token verification failed:", err?.message || err);
+    res.status(401).json({ error: "Unauthorized: Invalid or expired Google ID token" });
+    return;
+  }
+
+  if (!verifiedEmail) {
+    res.status(400).json({ error: "Verified email could not be extracted from token" });
     return;
   }
 
   const db = loadDB();
-  const normalizedEmail = String(email).trim().toLowerCase();
-  let member = db.members.find(m => m.email.toLowerCase() === normalizedEmail);
+  const normalizedEmail = verifiedEmail;
+  let member = db.members.find(m => m.email && m.email.toLowerCase() === normalizedEmail);
 
   if (!member) {
     if (db.members.length === 0 || normalizedEmail === "mdshahriarhimel@gmail.com") {
       const newMember: Member = {
-        id: generateUUID(),
-        name: name || "Founder Admin",
-        nickname: (name || "Admin").split(" ")[0],
+        id: verifiedUid || generateUUID(),
+        name: verifiedName || "Founder Admin",
+        nickname: (verifiedName || "Admin").split(" ")[0],
         email: normalizedEmail,
         phone: "",
         whatsapp: "",
@@ -767,8 +827,8 @@ router.post("/auth/google-native", (req: Request, res: Response): void => {
         leavingDate: null,
         role: UserRole.ADMIN,
         status: MemberStatus.ACTIVE,
-        notes: "Native Android Google Login",
-        photo: photo || null,
+        notes: "Verified Google Login",
+        photo: verifiedPhoto || null,
       };
       db.members.push(newMember);
       saveDB();
@@ -786,12 +846,15 @@ router.post("/auth/google-native", (req: Request, res: Response): void => {
 
   if (member.status === MemberStatus.PENDING) {
     member.status = MemberStatus.ACTIVE;
-    if (name && !member.name) member.name = name;
-    if (photo && !member.photo) member.photo = photo;
+    if (verifiedName && !member.name) member.name = verifiedName;
+    if (verifiedPhoto && !member.photo) member.photo = verifiedPhoto;
     saveDB();
   }
 
-  const token = generateSessionToken(member.id);
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+  const userAgent = (req.headers["user-agent"] as string) || "Unknown";
+  const token = generateSessionToken(member.id, { ip: clientIp, userAgent });
+  setSessionCookie(res, token, req);
   res.json({ token, user: member });
 });
 
@@ -862,7 +925,8 @@ router.post("/auth/login", (req: Request, res: Response): void => {
         if (activeMess) {
           setUserActiveMessId(tenantAdmin.id, normalizedEmail, activeMess);
         }
-        const token = generateSessionToken(tenantAdmin.id);
+        const token = generateSessionToken(tenantAdmin.id, { ip: clientIp, userAgent, messId: activeMess || undefined });
+        setSessionCookie(res, token, req);
         res.json({ token, user: adminMember, activeMessId: activeMess });
         return;
       }
@@ -923,7 +987,8 @@ router.post("/auth/login", (req: Request, res: Response): void => {
       (member as any).maxAllowedMesses = matchedTenantAdmin.maxMesses || 1;
     }
 
-    const token = generateSessionToken(member.id);
+    const token = generateSessionToken(member.id, { ip: clientIp, userAgent, messId });
+    setSessionCookie(res, token, req);
     res.json({ token, user: member, activeMessId: messId });
   } else {
     recordFailedLogin(email, clientIp, userAgent);
@@ -999,7 +1064,8 @@ router.post("/auth/register", (req: Request, res: Response): void => {
   // Invalidate old sessions and create fresh session token
   const memberPrevIds = (member as any).previousIds && Array.isArray((member as any).previousIds) ? (member as any).previousIds : [];
   invalidateMemberSessions(member.id, memberPrevIds);
-  const token = generateSessionToken(member.id);
+  const token = generateSessionToken(member.id, { ip: clientIp, userAgent, messId });
+  setSessionCookie(res, token, req);
 
   logAudit(member.id, member.nickname, "ACTIVATE_ACCOUNT", "PENDING", "ACTIVE", "User completed account activation.", { messId });
 
@@ -1327,6 +1393,10 @@ router.post("/auth/reset-password", authMiddleware, (req: AuthenticatedRequest, 
     ip: clientIp,
     userAgent
   });
+
+  if (isSelf) {
+    setSessionCookie(res, newToken, req);
+  }
 
   res.json({ success: true, message: "Password updated successfully.", token: isSelf ? newToken : undefined });
 });

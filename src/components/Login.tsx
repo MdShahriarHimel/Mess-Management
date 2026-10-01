@@ -105,7 +105,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         const res = await fetch("/api/auth/google-native", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, name: displayName, photo: photoUrl })
+          body: JSON.stringify({ email, name: displayName, photo: photoUrl, idToken })
         });
 
         if (!res.ok) {
@@ -263,6 +263,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password })
       });
 
@@ -342,25 +343,11 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         errCode === "auth/unauthorized-domain";
 
       if (isPopupRestricted) {
-        // In sandboxed preview iframe, attempt native/direct Google auth fallback
-        const cleanEmail = (email.trim() || localStorage.getItem("last_google_email") || "mdshahriarhimel@gmail.com").toLowerCase();
-        try {
-          const fallbackRes = await fetch("/api/auth/google-native", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: cleanEmail })
-          });
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            localStorage.setItem("last_google_email", cleanEmail);
-            onLoginSuccess(fallbackData.token, fallbackData.user, rememberMe);
-            return;
-          }
-        } catch (fErr) {
-          console.warn("[Auth] Direct Google fallback attempt failed:", fErr);
+        if (errCode === "auth/popup-blocked" || errMessage.includes("popup-blocked")) {
+          setError("Google Sign-In popup was blocked by your browser. Please allow popups for this site, or enter your email and password above.");
+        } else {
+          setError("Unable to complete Google Sign-In at this moment. Please sign in using your email and password.");
         }
-
-        setError("Google popups are restricted in this preview sandbox. Please enter your email and password above to sign in.");
         return;
       }
 

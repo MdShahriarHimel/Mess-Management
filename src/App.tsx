@@ -2527,6 +2527,14 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include"
+      });
+    } catch (e) {
+      console.warn("Logout request failed:", e);
+    }
     handleLogoutLocal();
     try {
       const { signOut } = await import("firebase/auth");
@@ -2537,15 +2545,21 @@ export default function App() {
   };
 
   // Fetch session data
-  const validateSession = async (token: string) => {
+  const validateSession = async (token?: string | null) => {
     try {
+      const headers: Record<string, string> = {};
+      if (token && token !== "cookie-session") {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const response = await fetch("/api/auth/me", {
-        headers: { "Authorization": `Bearer ${token}` }
+        headers,
+        credentials: "include"
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
         setCurrentUser(data.user);
-        setSessionToken(token);
+        const effectiveTok = data.token || (token && token !== "cookie-session" ? token : "cookie-session");
+        setSessionToken(effectiveTok);
         if (data.activeMessId) {
           setActiveMessId(data.activeMessId);
           localStorage.setItem("active_mess_id", data.activeMessId);
@@ -2816,14 +2830,14 @@ export default function App() {
     try {
       originalFetch = window.fetch;
       const customFetch = async function (input: any, init: any) {
-        let modInit = init;
+        let modInit = { ...init, credentials: init?.credentials || "include" };
         const storedMessId = localStorage.getItem("active_mess_id");
         if (storedMessId && typeof input === "string" && input.startsWith("/api/")) {
           const headers = new Headers(init?.headers || {});
           if (!headers.has("x-mess-id")) {
             headers.set("x-mess-id", storedMessId);
           }
-          modInit = { ...init, headers };
+          modInit = { ...modInit, headers };
         }
 
         let response: Response;
@@ -3051,13 +3065,16 @@ export default function App() {
         if (localToken) {
           // Keep existing session alive and let validateSession verify with backend
           if (isMounted) {
-            validateSession(localToken);
-            setFirebaseAuthChecked(true);
+            validateSession(localToken).finally(() => {
+              if (isMounted) setFirebaseAuthChecked(true);
+            });
           }
         } else {
+          // Check if an active HttpOnly session cookie exists on the client
           if (isMounted) {
-            handleLogoutLocal();
-            setFirebaseAuthChecked(true);
+            validateSession("cookie-session").finally(() => {
+              if (isMounted) setFirebaseAuthChecked(true);
+            });
           }
         }
       }
