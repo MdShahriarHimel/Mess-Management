@@ -307,6 +307,9 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           if (res.ok) {
             const data = await res.json().catch(() => ({}));
             onLoginSuccess(data.token || idToken, data.user, true);
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            setError(errData.error || "Failed to log in with Google account.");
           }
         }
       } catch (err: any) {
@@ -373,9 +376,17 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           return;
         }
 
-        // If popup was blocked by browser (Edge, Chrome, Safari, mobile), seamlessly redirect!
-        if (errCode === "auth/popup-blocked" || errMessage.includes("popup-blocked")) {
-          console.log("[Auth] Popup blocked by browser, falling back to seamless redirect...");
+        // If popup was blocked, or failed due to network / 3rd-party cookie restriction in browser:
+        // Automatically and seamlessly fall back to full Google redirect sign-in!
+        if (
+          errCode === "auth/popup-blocked" ||
+          errCode === "auth/network-request-failed" ||
+          errCode === "auth/internal-error" ||
+          errMessage.includes("popup-blocked") ||
+          errMessage.includes("network-request-failed")
+        ) {
+          console.log("[Auth] Popup restricted or network/cookie issue in browser, seamlessly falling back to Google redirect...");
+          setSuccess("Redirecting to Google Account Chooser...");
           await signInWithRedirect(auth, googleAuthProvider);
           return;
         }
