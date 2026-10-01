@@ -76,6 +76,16 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     };
     fetchPublicSettings();
 
+    // Ensure Google Identity Services script is preloaded for instant popup
+    if (!(window as any).google?.accounts?.oauth2 && !document.getElementById("google-gsi-client")) {
+      const script = document.createElement("script");
+      script.id = "google-gsi-client";
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
     // Register Native Android Google Sign-In Callbacks
     (window as any).onNativeGoogleLoginSuccess = async (email: string, displayName: string, photoUrl: string, idToken: string) => {
       setLoading(true);
@@ -288,6 +298,72 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     }
   };
 
+  const executeGoogleSignInWithGIS = async (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const clientId = "1055947161976-mmnn1kukkl6h9u4c7njvs987ea19a5ig.apps.googleusercontent.com";
+      const g = (window as any).google;
+      if (!g || !g.accounts || !g.accounts.oauth2) {
+        return resolve(false);
+      }
+
+      try {
+        const client = g.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: "email profile openid",
+          prompt: "select_account",
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse.error) {
+              if (tokenResponse.error === "popup_closed_by_user" || tokenResponse.error === "access_denied") {
+                setLoading(false);
+                return resolve(true);
+              }
+              console.warn("[Google GIS Auth] Notice:", tokenResponse.error);
+              return resolve(false);
+            }
+
+            if (!tokenResponse.access_token) {
+              return resolve(false);
+            }
+
+            try {
+              setLoading(true);
+              const res = await fetch("/api/auth/google-native", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ accessToken: tokenResponse.access_token })
+              });
+
+              if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                setError(errData.error || "Failed to authenticate Google account with server.");
+                setLoading(false);
+                return resolve(true);
+              }
+
+              const data = await res.json().catch(() => ({}));
+              onLoginSuccess(data.token, data.user, rememberMe);
+              resolve(true);
+            } catch (authErr: any) {
+              console.error("[Google GIS Auth] Token exchange failed:", authErr);
+              resolve(false);
+            } finally {
+              setLoading(false);
+            }
+          },
+          error_callback: (err: any) => {
+            console.warn("[Google GIS Auth] Client error:", err);
+            resolve(false);
+          }
+        });
+
+        client.requestAccessToken({ prompt: "select_account" });
+      } catch (initErr) {
+        console.warn("[Google GIS Auth] Init error:", initErr);
+        resolve(false);
+      }
+    });
+  };
+
   const handleGoogleLogin = async (forceWeb = false) => {
     setError(null);
     setSuccess(null);
@@ -300,6 +376,18 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     }
 
     setLoading(true);
+
+    // 1. Try Google Identity Services (GIS) Account Chooser first
+    try {
+      const gisHandled = await executeGoogleSignInWithGIS();
+      if (gisHandled) {
+        return;
+      }
+    } catch (gisErr) {
+      console.warn("[Auth] GIS attempt failed, falling back to Firebase popup:", gisErr);
+    }
+
+    // 2. Fallback to Firebase Auth signInWithPopup
     try {
       const { signInWithPopup } = await import("firebase/auth");
       const { auth, googleAuthProvider } = await import("../lib/firebase.ts");
@@ -307,8 +395,10 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       const user = result.user;
       const idToken = await user.getIdToken();
 
-      const response = await fetch("/api/auth/me", {
-        headers: { "Authorization": `Bearer ${idToken}` }
+      const response = await fetch("/api/auth/google-native", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken })
       });
 
       if (!response.ok) {
@@ -317,7 +407,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       }
 
       const data = await response.json().catch(() => ({}));
-      onLoginSuccess(idToken, data.user, rememberMe);
+      onLoginSuccess(data.token || idToken, data.user, rememberMe);
     } catch (err: any) {
       console.warn("[Auth] Google Sign-In notice:", err?.message || err);
       const errCode = err?.code || "";
@@ -334,20 +424,13 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         return;
       }
 
-      const isPopupRestricted = 
-        errCode === "auth/popup-blocked" || 
-        errMessage.includes("popup-blocked") ||
-        errCode === "auth/network-request-failed" || 
-        errMessage.includes("network-request-failed") ||
-        errCode === "auth/internal-error" ||
-        errCode === "auth/unauthorized-domain";
+      if (errCode === "auth/popup-blocked" || errMessage.includes("popup-blocked")) {
+        setError("Google Sign-In popup was blocked by your browser. Please allow popups for this site, or enter your email and password above.");
+        return;
+      }
 
-      if (isPopupRestricted) {
-        if (errCode === "auth/popup-blocked" || errMessage.includes("popup-blocked")) {
-          setError("Google Sign-In popup was blocked by your browser. Please allow popups for this site, or enter your email and password above.");
-        } else {
-          setError("Unable to complete Google Sign-In at this moment. Please sign in using your email and password.");
-        }
+      if (errCode === "auth/unauthorized-domain") {
+        setError("Google Sign-In domain authorization: 'mymessmanagement.onrender.com' is not yet added in Firebase Console > Authentication > Settings > Authorized Domains.");
         return;
       }
 

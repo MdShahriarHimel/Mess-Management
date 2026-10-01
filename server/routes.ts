@@ -783,9 +783,9 @@ router.get("/auth/has-password", authMiddleware, (req: AuthenticatedRequest, res
 
 // Native Google Sign-In endpoint for Android app (requires cryptographic idToken verification)
 router.post("/auth/google-native", async (req: Request, res: Response): Promise<void> => {
-  const { idToken, email, name, photo } = req.body;
-  if (!idToken) {
-    res.status(401).json({ error: "Unauthorized: Missing Google ID verification token" });
+  const { idToken, accessToken, email, name, photo } = req.body;
+  if (!idToken && !accessToken) {
+    res.status(401).json({ error: "Unauthorized: Missing Google verification token" });
     return;
   }
 
@@ -793,34 +793,78 @@ router.post("/auth/google-native", async (req: Request, res: Response): Promise<
   let verifiedName = name || "";
   let verifiedPhoto = photo || null;
   let verifiedUid = "";
+  let verified = false;
 
-  try {
-    const decoded = await adminAuth.verifyIdToken(idToken);
-    verifiedEmail = (decoded.email || "").trim().toLowerCase();
-    verifiedName = decoded.name || name || "";
-    verifiedPhoto = decoded.picture || photo || null;
-    verifiedUid = decoded.uid;
-  } catch (err: any) {
-    console.error("[Google Native Auth] Token verification failed:", err?.message || err);
-    res.status(401).json({ error: "Unauthorized: Invalid or expired Google ID token" });
+  // 1. If accessToken provided (from Google Identity Services OAuth2 token client):
+  if (accessToken) {
+    try {
+      const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { "Authorization": `Bearer ${accessToken}` }
+      });
+      if (userinfoRes.ok) {
+        const uData: any = await userinfoRes.json();
+        if (uData.email) {
+          verifiedEmail = String(uData.email).trim().toLowerCase();
+          verifiedName = uData.name || name || "";
+          verifiedPhoto = uData.picture || photo || null;
+          verifiedUid = uData.sub || generateUUID();
+          verified = true;
+        }
+      }
+    } catch (uErr: any) {
+      console.warn("[Google Auth] OAuth2 userinfo check notice:", uErr?.message || uErr);
+    }
+  }
+
+  // 2. If idToken provided (Firebase Auth or Google Identity Services JWT):
+  if (!verified && idToken) {
+    // Try Firebase Admin first
+    try {
+      const decoded = await adminAuth.verifyIdToken(idToken);
+      verifiedEmail = (decoded.email || "").trim().toLowerCase();
+      verifiedName = decoded.name || name || "";
+      verifiedPhoto = decoded.picture || photo || null;
+      verifiedUid = decoded.uid;
+      verified = true;
+    } catch (fbErr: any) {
+      // If Firebase verification fails, try Google tokeninfo
+      try {
+        const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+        if (googleRes.ok) {
+          const gData: any = await googleRes.json();
+          if (gData.email) {
+            verifiedEmail = String(gData.email).trim().toLowerCase();
+            verifiedName = gData.name || name || "";
+            verifiedPhoto = gData.picture || photo || null;
+            verifiedUid = gData.sub || generateUUID();
+            verified = true;
+          }
+        }
+      } catch (gErr: any) {
+        console.warn("[Google Auth] tokeninfo check notice:", gErr?.message || gErr);
+      }
+    }
+  }
+
+  if (!verified || !verifiedEmail) {
+    res.status(401).json({ error: "Unauthorized: Invalid or expired Google verification token" });
     return;
   }
 
-  if (!verifiedEmail) {
-    res.status(400).json({ error: "Verified email could not be extracted from token" });
-    return;
-  }
-
-  const db = loadDB();
-  const normalizedEmail = verifiedEmail;
-  let member = db.members.find(m => m.email && m.email.toLowerCase() === normalizedEmail);
+  const normalizedEmail = verifiedEmail.toLowerCase();
+  
+  // Find member across all mess scopes
+  const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
+  let member: Member | null = lookup ? lookup.member : null;
+  let targetMessId = lookup ? lookup.messId : "default";
 
   if (!member) {
+    const db = loadDB(targetMessId);
     if (db.members.length === 0 || isPlatformOwner(normalizedEmail)) {
       const newMember: Member = {
         id: verifiedUid || generateUUID(),
-        name: verifiedName || "Founder Admin",
-        nickname: (verifiedName || "Admin").split(" ")[0],
+        name: verifiedName || (isPlatformOwner(normalizedEmail) ? "Md. Shahriar" : "Founder Admin"),
+        nickname: isPlatformOwner(normalizedEmail) ? "Himel" : ((verifiedName || "Admin").split(" ")[0]),
         email: normalizedEmail,
         phone: "",
         whatsapp: "",
@@ -830,14 +874,14 @@ router.post("/auth/google-native", async (req: Request, res: Response): Promise<
         leavingDate: null,
         role: UserRole.ADMIN,
         status: MemberStatus.ACTIVE,
-        notes: "Verified Google Login",
+        notes: isPlatformOwner(normalizedEmail) ? "Platform Owner" : "Verified Google Login",
         photo: verifiedPhoto || null,
       };
       db.members.push(newMember);
-      saveDB();
+      saveDB(targetMessId);
       member = newMember;
     } else {
-      res.status(403).json({ error: "Your email has not been invited to the Mess. Please ask your Admin to invite you." });
+      res.status(403).json({ error: "Your email has not been invited to this Mess. Please ask your Admin to invite you." });
       return;
     }
   }
@@ -851,14 +895,22 @@ router.post("/auth/google-native", async (req: Request, res: Response): Promise<
     member.status = MemberStatus.ACTIVE;
     if (verifiedName && !member.name) member.name = verifiedName;
     if (verifiedPhoto && !member.photo) member.photo = verifiedPhoto;
-    saveDB();
+    saveDB(targetMessId);
   }
+
+  if (isPlatformOwner(normalizedEmail)) {
+    (member as any).isPlatformOwner = true;
+    (member as any).isUltimateAdmin = true;
+  }
+
+  setUserActiveMessId(member.id, member.email, targetMessId);
 
   const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
   const userAgent = (req.headers["user-agent"] as string) || "Unknown";
   const token = generateSessionToken(member.id, { ip: clientIp, userAgent });
   setSessionCookie(res, token, req);
-  res.json({ token, user: member });
+  res.setHeader("x-mess-id", targetMessId);
+  res.json({ token, user: member, messId: targetMessId });
 });
 
 // Login
