@@ -781,46 +781,6 @@ router.get("/auth/has-password", authMiddleware, (req: AuthenticatedRequest, res
   res.json({ hasPassword });
 });
 
-// Get Google Auth URI fallback endpoint
-router.post("/auth/google-auth-uri", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const apiKey = "AIzaSyC7SnylyJvxPhFfqpivcTGICZ_qdCsHCHQ";
-    
-    // Request Auth URI from Google Identity Toolkit
-    const resp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        providerId: "google.com",
-        continueUri: "https://mess-managing.firebaseapp.com/__/auth/handler"
-      })
-    });
-    
-    if (resp.ok) {
-      const data: any = await resp.json();
-      if (data.authUri) {
-        try {
-          const authUrl = new URL(data.authUri);
-          authUrl.searchParams.set("prompt", "select_account");
-          res.json({ authUri: authUrl.toString() });
-          return;
-        } catch (uE) {
-          res.json({ authUri: data.authUri });
-          return;
-        }
-      }
-    }
-    
-    // Direct Google OAuth2 fallback URL with prompt=select_account
-    const clientId = "1055947161976-mmnn1kukkl6h9u4c7njvs987ea19a5ig.apps.googleusercontent.com";
-    const fallbackUri = `https://accounts.google.com/o/oauth2/auth?response_type=token&client_id=${clientId}&redirect_uri=https://mess-managing.firebaseapp.com/__/auth/handler&scope=openid+email+profile&prompt=select_account`;
-    res.json({ authUri: fallbackUri });
-  } catch (err: any) {
-    console.error("[GoogleAuth] createAuthUri error:", err);
-    res.status(500).json({ error: "Failed to create Google authentication URI" });
-  }
-});
-
 // Native Google Sign-In endpoint for Android app (requires cryptographic idToken verification)
 router.post("/auth/google-native", async (req: Request, res: Response): Promise<void> => {
   const { idToken, accessToken, email, name, photo } = req.body;

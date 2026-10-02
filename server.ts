@@ -5,7 +5,6 @@
 
 import express from "express";
 import http from "http";
-import https from "https";
 import path from "path";
 import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
@@ -25,34 +24,6 @@ const app = express();
 const httpServer = http.createServer(app);
 initSocketIO(httpServer);
 const PORT = 3000;
-
-// Reverse proxy for Firebase Auth to eliminate cross-origin and 3rd-party cookie restrictions across custom domains (Render, Edge, etc.)
-app.use("/__/auth", (req, res) => {
-  const targetHost = "mess-managing.firebaseapp.com";
-  
-  const headers: Record<string, any> = { ...req.headers };
-  headers.host = targetHost;
-  delete headers["accept-encoding"]; // avoid gzip decompression mismatch
-  delete headers["connection"];
-
-  const proxyReq = https.request({
-    hostname: targetHost,
-    port: 443,
-    path: req.originalUrl,
-    method: req.method,
-    headers: headers
-  }, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
-    proxyRes.pipe(res);
-  });
-
-  proxyReq.on("error", (err) => {
-    console.error("[FirebaseAuthProxy] Error:", err.message);
-    if (!res.headersSent) res.status(502).send("Firebase Auth Proxy Error");
-  });
-
-  req.pipe(proxyReq);
-});
 
 // Increase payload size limit to allow base64 images for member profiles and receipts
 app.use(express.json({ limit: "50mb" }));

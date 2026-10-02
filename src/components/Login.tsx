@@ -376,90 +376,47 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     setLoading(true);
 
     try {
-      const { signInWithPopup, browserPopupRedirectResolver } = await import("firebase/auth");
+      const { signInWithPopup } = await import("firebase/auth");
       const { auth, googleAuthProvider } = await import("../lib/firebase.ts");
 
+      // Always force prompt to select account so all device Google accounts are listed!
       googleAuthProvider.setCustomParameters({
         prompt: "select_account"
       });
 
-      try {
-        const result = await signInWithPopup(auth, googleAuthProvider, browserPopupRedirectResolver);
-        const user = result.user;
-        const idToken = await user.getIdToken();
+      const result = await signInWithPopup(auth, googleAuthProvider);
+      const user = result.user;
+      const idToken = await user.getIdToken();
 
-        const response = await fetch("/api/auth/google-native", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken })
-        });
+      const response = await fetch("/api/auth/google-native", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken })
+      });
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || "Failed to authenticate with server. Make sure you are an invited member.");
-        }
-
-        const data = await response.json().catch(() => ({}));
-        setError(null);
-        setSuccess(null);
-        onLoginSuccess(data.token || idToken, data.user, rememberMe);
-      } catch (popupErr: any) {
-        const errCode = popupErr?.code || "";
-        const errMessage = popupErr?.message || "";
-
-        // User cancelled or closed the popup intentionally
-        if (
-          errCode === "auth/popup-closed-by-user" ||
-          errCode === "auth/cancelled-popup-request" ||
-          errMessage.includes("popup-closed-by-user") ||
-          errMessage.includes("cancelled-popup-request")
-        ) {
-          setLoading(false);
-          setError(null);
-          setSuccess(null);
-          return;
-        }
-
-        const isInIframe = typeof window !== "undefined" && window.self !== window.top;
-
-        // If popup was blocked or 3rd-party cookie restriction happened in browser:
-        if (
-          errCode === "auth/popup-blocked" ||
-          errCode === "auth/network-request-failed" ||
-          errCode === "auth/internal-error" ||
-          errMessage.includes("popup-blocked") ||
-          errMessage.includes("network-request-failed")
-        ) {
-          // If we are NOT in an iframe (e.g., standard browser tab on Render), seamlessly use signInWithRedirect!
-          if (!isInIframe) {
-            console.log("[Auth] Popup restricted, seamlessly initiating Google Sign-In redirect...");
-            setError(null);
-            setSuccess("Redirecting to Google Account Chooser...");
-            try {
-              const { signInWithRedirect } = await import("firebase/auth");
-              await signInWithRedirect(auth, googleAuthProvider);
-              return;
-            } catch (redirErr: any) {
-              console.warn("[Auth] Redirect failed:", redirErr);
-            }
-          } else {
-            // Inside iframe (AI Studio preview): Google prohibits framing OAuth consent (gives 403 robot).
-            // Do not navigate window.location inside iframe!
-            setSuccess(null);
-            setError("Google sign-in popup was blocked by browser or preview iframe. Please allow popups or test directly on your deployed site.");
-            setLoading(false);
-            return;
-          }
-        }
-
-        throw popupErr;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to authenticate with server. Make sure you are an invited member.");
       }
+
+      const data = await response.json().catch(() => ({}));
+      setError(null);
+      setSuccess(null);
+      onLoginSuccess(data.token || idToken, data.user, rememberMe);
     } catch (err: any) {
       console.warn("[Auth] Google Sign-In notice:", err?.message || err);
       const errCode = err?.code || "";
       const errMessage = err?.message || "";
 
-      setSuccess(null);
+      // User closed popup intentionally
+      if (
+        errCode === "auth/popup-closed-by-user" ||
+        errCode === "auth/cancelled-popup-request" ||
+        errMessage.includes("popup-closed-by-user") ||
+        errMessage.includes("cancelled-popup-request")
+      ) {
+        return;
+      }
 
       if (errCode === "auth/unauthorized-domain") {
         setError(`Domain authorization notice: Please add '${window.location.hostname}' to Firebase Console > Authentication > Settings > Authorized Domains.`);
@@ -468,11 +425,6 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
 
       if (errCode === "auth/account-exists-with-different-credential") {
         setError("An account already exists with the same email address using a different sign-in method.");
-        return;
-      }
-
-      if (errCode === "auth/network-request-failed" || errMessage.includes("network-request-failed")) {
-        setError("ব্রাউজারের কুকি বা নেটওয়ার্ক রেস্ট্রিকশনের কারণে পপআপ সংযোগ বিচ্ছিন্ন হয়েছে। অনুগ্রহ করে ব্রাউজারে পপআপ অ্যালাউ করুন অথবা পেজটি রিফ্রেশ দিন।");
         return;
       }
 

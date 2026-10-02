@@ -1496,7 +1496,29 @@ export default function App() {
       return null;
     }
   });
-  const [currentUser, setCurrentUser] = useState<Member | null>(null);
+  const [currentUser, setCurrentUser] = useState<Member | null>(() => {
+    try {
+      const localToken = localStorage.getItem("mess_token");
+      const expiryStr = localStorage.getItem("mess_token_expiry");
+      if (localToken) {
+        if (expiryStr) {
+          const expiry = parseInt(expiryStr, 10);
+          if (Date.now() <= expiry) {
+            const savedUser = localStorage.getItem("mess_user");
+            if (savedUser) return JSON.parse(savedUser);
+          }
+        } else {
+          const savedUser = localStorage.getItem("mess_user");
+          if (savedUser) return JSON.parse(savedUser);
+        }
+      }
+      const sessionUser = sessionStorage.getItem("mess_user");
+      if (sessionUser) return JSON.parse(sessionUser);
+    } catch (e) {
+      console.error("Failed to read user from storage", e);
+    }
+    return null;
+  });
   const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
@@ -2566,6 +2588,15 @@ export default function App() {
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
         setCurrentUser(data.user);
+        try {
+          if (localStorage.getItem("mess_token")) {
+            localStorage.setItem("mess_user", JSON.stringify(data.user));
+          } else if (sessionStorage.getItem("mess_token")) {
+            sessionStorage.setItem("mess_user", JSON.stringify(data.user));
+          }
+        } catch (storageErr) {
+          console.warn("Notice: Failed to update cached user:", storageErr);
+        }
         const effectiveTok = data.token || (token && token !== "cookie-session" ? token : "cookie-session");
         setSessionToken(effectiveTok);
         if (data.activeMessId) {
@@ -3067,6 +3098,13 @@ export default function App() {
             const data = await response.json().catch(() => ({}));
             if (isMounted) {
               setCurrentUser(data.user);
+              try {
+                if (localStorage.getItem("mess_token")) {
+                  localStorage.setItem("mess_user", JSON.stringify(data.user));
+                }
+              } catch (storageErr) {
+                console.warn("Notice: Failed to update cached user:", storageErr);
+              }
             }
           } else {
             console.error("Firebase authenticated but backend user check failed.");
@@ -3300,10 +3338,13 @@ export default function App() {
       if (rememberMe) {
         setStoredTokenSafely(token);
         localStorage.setItem("mess_token_expiry", String(Date.now() + 10 * 24 * 60 * 60 * 1000)); // 10 days
+        localStorage.setItem("mess_user", JSON.stringify(user));
         sessionStorage.removeItem("mess_token");
+        sessionStorage.removeItem("mess_user");
       } else {
         clearStoredTokenSafely();
         sessionStorage.setItem("mess_token", token);
+        sessionStorage.setItem("mess_user", JSON.stringify(user));
       }
       if ((user as any)?.messId) {
         setActiveMessId((user as any).messId);
@@ -3989,6 +4030,18 @@ export default function App() {
           <p className="text-[10px] font-mono text-slate-500 leading-normal">
             Thank you for your patience. Real-time synchronisation will automatically resume once maintenance completes.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // If we have an existing session token in memory or storage, but initial session verification is still running
+  if (!firebaseAuthChecked && !currentUser && (sessionToken || (typeof localStorage !== "undefined" && localStorage.getItem("mess_token")))) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-xs font-mono text-slate-400 tracking-wider">Verifying session...</span>
         </div>
       </div>
     );

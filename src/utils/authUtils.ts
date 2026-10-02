@@ -97,8 +97,10 @@ export function clearStoredTokenSafely(): void {
   try {
     localStorage.removeItem(LOCAL_TOKEN_KEY);
     localStorage.removeItem("mess_token_expiry");
+    localStorage.removeItem("mess_user");
     sessionStorage.removeItem(LOCAL_TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_HASH_KEY);
+    sessionStorage.removeItem("mess_user");
   } catch (e) {
     console.error("[TokenIntegrity] Failed to clear token storage:", e);
   }
