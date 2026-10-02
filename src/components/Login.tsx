@@ -6,6 +6,8 @@
 import React, { useState, useEffect } from "react";
 import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy, RefreshCw, X } from "lucide-react";
 import { Member } from "../types.js";
+import { signInWithPopup } from "firebase/auth";
+import { auth, googleAuthProvider } from "../lib/firebase.ts";
 
 interface LoginProps {
   onLoginSuccess: (token: string, user: Member, rememberMe?: boolean) => void;
@@ -291,6 +293,44 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
   // Check if returning from a Google Sign-In redirect
   useEffect(() => {
     let isMounted = true;
+
+    // 1. Check for URL Hash / Query parameters (from Google OAuth redirect)
+    try {
+      const hashStr = window.location.hash.replace(/^#/, "");
+      const hashParams = new URLSearchParams(hashStr.includes("?") ? hashStr.split("?")[1] : hashStr);
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlIdToken = hashParams.get("id_token") || searchParams.get("id_token");
+      const urlAccessToken = hashParams.get("access_token") || searchParams.get("access_token");
+
+      if (urlIdToken || urlAccessToken) {
+        setLoading(true);
+        fetch("/api/auth/google-native", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken: urlIdToken, accessToken: urlAccessToken })
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.token && data.user && isMounted) {
+              window.history.replaceState(null, "", window.location.pathname);
+              onLoginSuccess(data.token, data.user, true);
+            } else if (isMounted) {
+              setError(data.error || "Failed to log in with selected Google account.");
+            }
+          })
+          .catch(err => {
+            if (isMounted) setError(err.message || "Failed to authenticate Google account.");
+          })
+          .finally(() => {
+            if (isMounted) setLoading(false);
+          });
+        return;
+      }
+    } catch (urlErr) {
+      console.warn("[Auth] URL token check notice:", urlErr);
+    }
+
+    // 2. Check for Firebase SDK redirect result
     const checkRedirectAuth = async () => {
       try {
         const { getRedirectResult } = await import("firebase/auth");
@@ -334,17 +374,17 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
     }
 
     setLoading(true);
+
     try {
-      const { signInWithPopup, signInWithRedirect } = await import("firebase/auth");
+      const { signInWithPopup, browserPopupRedirectResolver } = await import("firebase/auth");
       const { auth, googleAuthProvider } = await import("../lib/firebase.ts");
 
-      // STRICT: Always force prompt to select account so all device Google accounts are listed!
       googleAuthProvider.setCustomParameters({
         prompt: "select_account"
       });
 
       try {
-        const result = await signInWithPopup(auth, googleAuthProvider);
+        const result = await signInWithPopup(auth, googleAuthProvider, browserPopupRedirectResolver);
         const user = result.user;
         const idToken = await user.getIdToken();
 
@@ -360,12 +400,14 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         }
 
         const data = await response.json().catch(() => ({}));
+        setError(null);
+        setSuccess(null);
         onLoginSuccess(data.token || idToken, data.user, rememberMe);
       } catch (popupErr: any) {
         const errCode = popupErr?.code || "";
         const errMessage = popupErr?.message || "";
 
-        // User intentionally closed/cancelled popup
+        // User cancelled or closed the popup intentionally
         if (
           errCode === "auth/popup-closed-by-user" ||
           errCode === "auth/cancelled-popup-request" ||
@@ -373,11 +415,14 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           errMessage.includes("cancelled-popup-request")
         ) {
           setLoading(false);
+          setError(null);
+          setSuccess(null);
           return;
         }
 
-        // If popup was blocked, or failed due to network / 3rd-party cookie restriction in browser:
-        // Automatically and seamlessly fall back to full Google redirect sign-in!
+        const isInIframe = typeof window !== "undefined" && window.self !== window.top;
+
+        // If popup was blocked or 3rd-party cookie restriction happened in browser:
         if (
           errCode === "auth/popup-blocked" ||
           errCode === "auth/network-request-failed" ||
@@ -385,10 +430,26 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
           errMessage.includes("popup-blocked") ||
           errMessage.includes("network-request-failed")
         ) {
-          console.log("[Auth] Popup restricted or network/cookie issue in browser, seamlessly falling back to Google redirect...");
-          setSuccess("Redirecting to Google Account Chooser...");
-          await signInWithRedirect(auth, googleAuthProvider);
-          return;
+          // If we are NOT in an iframe (e.g., standard browser tab on Render), seamlessly use signInWithRedirect!
+          if (!isInIframe) {
+            console.log("[Auth] Popup restricted, seamlessly initiating Google Sign-In redirect...");
+            setError(null);
+            setSuccess("Redirecting to Google Account Chooser...");
+            try {
+              const { signInWithRedirect } = await import("firebase/auth");
+              await signInWithRedirect(auth, googleAuthProvider);
+              return;
+            } catch (redirErr: any) {
+              console.warn("[Auth] Redirect failed:", redirErr);
+            }
+          } else {
+            // Inside iframe (AI Studio preview): Google prohibits framing OAuth consent (gives 403 robot).
+            // Do not navigate window.location inside iframe!
+            setSuccess(null);
+            setError("Google sign-in popup was blocked by browser or preview iframe. Please allow popups or test directly on your deployed site.");
+            setLoading(false);
+            return;
+          }
         }
 
         throw popupErr;
@@ -398,13 +459,20 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       const errCode = err?.code || "";
       const errMessage = err?.message || "";
 
+      setSuccess(null);
+
       if (errCode === "auth/unauthorized-domain") {
-        setError("Domain authorization notice: Please add 'mymessmanagement.onrender.com' to Firebase Console > Authentication > Settings > Authorized Domains.");
+        setError(`Domain authorization notice: Please add '${window.location.hostname}' to Firebase Console > Authentication > Settings > Authorized Domains.`);
         return;
       }
 
       if (errCode === "auth/account-exists-with-different-credential") {
         setError("An account already exists with the same email address using a different sign-in method.");
+        return;
+      }
+
+      if (errCode === "auth/network-request-failed" || errMessage.includes("network-request-failed")) {
+        setError("ব্রাউজারের কুকি বা নেটওয়ার্ক রেস্ট্রিকশনের কারণে পপআপ সংযোগ বিচ্ছিন্ন হয়েছে। অনুগ্রহ করে ব্রাউজারে পপআপ অ্যালাউ করুন অথবা পেজটি রিফ্রেশ দিন।");
         return;
       }
 
@@ -955,7 +1023,7 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
             <button
               id="google-signin-btn"
               type="button"
-              onClick={handleGoogleLogin}
+              onClick={() => handleGoogleLogin(false)}
               disabled={loading}
               className={`w-full py-2.5 rounded-xl border text-sm transition-all font-bold flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 ${
                 isDarkMode 
