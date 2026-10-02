@@ -166,19 +166,30 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// Reverse proxy for Firebase Auth helper (/ __/auth/*) to resolve cross-origin third-party cookie restrictions
+app.all("/__/auth/*", async (req, res) => {
+  try {
+    const targetUrl = `https://mess-managing.firebaseapp.com${req.originalUrl}`;
+    const proxyRes = await fetch(targetUrl, {
+      method: req.method,
+      headers: {
+        "User-Agent": (req.headers["user-agent"] as string) || "Mozilla/5.0",
+        "Accept": (req.headers["accept"] as string) || "*/*"
+      }
+    });
+    res.status(proxyRes.status);
+    const contentType = proxyRes.headers.get("content-type");
+    if (contentType) res.setHeader("Content-Type", contentType);
+    const body = Buffer.from(await proxyRes.arrayBuffer());
+    res.send(body);
+  } catch (err: any) {
+    console.warn("[Auth Proxy] Notice:", err.message);
+    res.status(502).send("Auth Proxy Error");
+  }
+});
+
 // Apply server protection middleware for maintenance modes and feature flags
 app.use("/api", maintenanceMiddleware);
-
-// Ensure multi-instance cache is automatically synchronized from PostgreSQL across Render & AI Studio
-app.use("/api", async (req, res, next) => {
-  try {
-    const reqMessId = (req.headers["x-mess-id"] as string) || "default";
-    await checkAndSyncDbCacheIfNeeded(reqMessId);
-  } catch (err) {
-    // Non-blocking
-  }
-  next();
-});
 
 // Mount API router
 app.use("/api", apiRouter);

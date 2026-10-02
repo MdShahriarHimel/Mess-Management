@@ -57,7 +57,7 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ className = "", co
     };
   }, []);
 
-  // Poll server sync status periodically (every 2.5s)
+  // Check server sync status once on mount without continuous network polling
   useEffect(() => {
     let mounted = true;
     const fetchStatus = async () => {
@@ -73,10 +73,8 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ className = "", co
     };
 
     fetchStatus();
-    const interval = setInterval(fetchStatus, 2500);
     return () => {
       mounted = false;
-      clearInterval(interval);
     };
   }, []);
 

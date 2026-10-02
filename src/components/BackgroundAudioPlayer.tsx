@@ -32,36 +32,6 @@ export const BackgroundAudioPlayer: React.FC<BackgroundAudioPlayerProps> = ({
     }
   }, [activeAudioSettings]);
 
-  // Real-time 3-second polling to instantly sync audio URL/toggle across all other logged-in accounts
-  useEffect(() => {
-    let isMounted = true;
-    const pollAudioSettings = async () => {
-      try {
-        const res = await fetch("/api/settings/public");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.activeAudioSettings && isMounted) {
-            setLiveAudioSettings(prev => {
-              if (!prev || prev.url !== data.activeAudioSettings.url || prev.enabled !== data.activeAudioSettings.enabled) {
-                return data.activeAudioSettings;
-              }
-              return prev;
-            });
-          }
-        }
-      } catch (e) {
-        // silent fetch error handling
-      }
-    };
-
-    pollAudioSettings();
-    const interval = setInterval(pollAudioSettings, 3000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, []);
-
   const rawUrl = liveAudioSettings?.url || "";
   const isEnabled = liveAudioSettings?.enabled === true && !!rawUrl.trim();
 

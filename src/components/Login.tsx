@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy, RefreshCw, X } from "lucide-react";
 import { Member } from "../types.js";
-import { signInWithPopup } from "firebase/auth";
+import { signInWithPopup, signInWithRedirect } from "firebase/auth";
 import { auth, googleAuthProvider } from "../lib/firebase.ts";
 
 interface LoginProps {
@@ -375,18 +375,103 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
 
     setLoading(true);
 
-    try {
-      const { signInWithPopup } = await import("firebase/auth");
-      const { auth, googleAuthProvider } = await import("../lib/firebase.ts");
+    // 1. First attempt: Modern Google Identity Services (GIS) Token Client
+    // This connects directly to Google, completely avoiding third-party cookie restrictions
+    if (typeof window !== "undefined" && (window as any).google?.accounts?.oauth2) {
+      try {
+        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: "1055947161976-mmnn1kukkl6h9u4c7njvs987ea19a5ig.apps.googleusercontent.com",
+          scope: "email profile openid",
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              console.warn("[Google Identity] Token response notice:", tokenResponse.error);
+              setLoading(false);
+              return;
+            }
+            if (tokenResponse?.access_token) {
+              try {
+                const response = await fetch("/api/auth/google-native", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ accessToken: tokenResponse.access_token })
+                });
 
-      // Always force prompt to select account so all device Google accounts are listed!
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({}));
+                  throw new Error(errorData.error || "Failed to authenticate with server. Make sure you are an invited member.");
+                }
+
+                const data = await response.json().catch(() => ({}));
+                setError(null);
+                setSuccess(null);
+                onLoginSuccess(data.token, data.user, rememberMe);
+              } catch (resErr: any) {
+                setError(resErr.message || "Failed to authenticate with server.");
+              } finally {
+                setLoading(false);
+              }
+            }
+          },
+          error_callback: (err: any) => {
+            console.warn("[Google Identity] Popup notice:", err);
+            setLoading(false);
+          }
+        });
+        tokenClient.requestAccessToken({ prompt: "select_account" });
+        return;
+      } catch (gisErr) {
+        console.warn("[Google Identity] Fallback to Firebase popup:", gisErr);
+      }
+    }
+
+    // 2. Second attempt: Firebase Auth signInWithPopup
+    try {
+      // Always force prompt to select account so all device Google accounts are listed
       googleAuthProvider.setCustomParameters({
         prompt: "select_account"
       });
 
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      const user = result.user;
-      const idToken = await user.getIdToken();
+      let idToken: string | null = null;
+
+      try {
+        const result = await signInWithPopup(auth, googleAuthProvider);
+        const user = result.user;
+        idToken = await user.getIdToken();
+      } catch (popupErr: any) {
+        const popupCode = popupErr?.code || "";
+        const popupMsg = popupErr?.message || "";
+        console.warn("[Auth] Popup attempt notice:", popupCode, popupMsg);
+
+        // If user intentionally closed or cancelled popup, do not error
+        if (
+          popupCode === "auth/popup-closed-by-user" ||
+          popupCode === "auth/cancelled-popup-request" ||
+          popupMsg.includes("popup-closed-by-user") ||
+          popupMsg.includes("cancelled-popup-request")
+        ) {
+          setLoading(false);
+          return;
+        }
+
+        if (popupCode === "auth/popup-blocked" || popupMsg.includes("popup-blocked")) {
+          setLoading(false);
+          setError("Google sign-in popup was blocked by your browser. Please allow popups for this site and try again.");
+          return;
+        }
+
+        if (popupCode === "auth/network-request-failed" || popupMsg.includes("network-request-failed")) {
+          setLoading(false);
+          setError("Cross-origin or network restriction detected. Please sign in with your email & password, or allow cookies in browser settings.");
+          return;
+        }
+
+        throw popupErr;
+      }
+
+      if (!idToken) {
+        setLoading(false);
+        return;
+      }
 
       const response = await fetch("/api/auth/google-native", {
         method: "POST",
@@ -408,7 +493,6 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       const errCode = err?.code || "";
       const errMessage = err?.message || "";
 
-      // User closed popup intentionally
       if (
         errCode === "auth/popup-closed-by-user" ||
         errCode === "auth/cancelled-popup-request" ||

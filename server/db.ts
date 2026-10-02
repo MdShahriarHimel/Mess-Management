@@ -660,8 +660,8 @@ export async function refreshDbCache(targetMessId: string = "default") {
 export async function checkAndSyncDbCacheIfNeeded(targetMessId: string = "default", force: boolean = false) {
   const now = Date.now();
   const lastCheck = lastVersionCheckTimestamps.get(targetMessId) || 0;
-  // Throttle version check to at most once per 1000ms unless forced
-  if (!force && (now - lastCheck) < 1000) {
+  // Throttle version check to at most once per 5000ms unless forced
+  if (!force && (now - lastCheck) < 5000) {
     return;
   }
   lastVersionCheckTimestamps.set(targetMessId, now);
@@ -697,7 +697,7 @@ export async function initializeDbCache() {
   // Restore ONLY immediate startup configuration files from PostgreSQL to local disk
   try {
     const immediateFiles = await db.select().from(persistentFilesTable).where(
-      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'database_backup_%'`
+      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%'`
     );
     console.log(`[Persistent Files Startup] Restoring ${immediateFiles.length} immediate startup config files...`);
     for (const file of immediateFiles) {
@@ -1649,9 +1649,11 @@ export function saveDB(explicitMessId?: string) {
       : `database_backup_${messId}.json`;
       
     const content = JSON.stringify(target);
-    writeAndPersistFile(backupFilename, content);
+    // Write to local disk immediately (100% free, 0 network bandwidth egress)
+    ensureDBDir();
+    fs.writeFileSync(path.join(DB_DIR, backupFilename), content, "utf8");
 
-    // Bump version in PostgreSQL so all running instances (Render, AI Studio, dev) immediately detect update
+    // Bump lightweight 40-byte version in PostgreSQL so instances detect update (microscopic bandwidth)
     writeAndPersistFile(`db_version_${messId}.json`, JSON.stringify({ v: newVersion, at: new Date().toISOString() }));
   } catch (e) {
     console.error("Error writing dynamic backup file for mess " + messId, e);
