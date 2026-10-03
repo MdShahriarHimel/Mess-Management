@@ -123,6 +123,21 @@ export default function Dashboard({
     setShowDoMarketPopup(false);
   };
 
+  // Markets list to check if market duty is already fulfilled
+  const [marketsList, setMarketsList] = useState<any[]>([]);
+
+  // Dismiss banner for today
+  const [dismissedDutyBanner, setDismissedDutyBanner] = useState(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return localStorage.getItem(`dismissedMarketDutyBanner_${currentUser.id}`) === today;
+  });
+
+  const handleDismissDutyBanner = () => {
+    const today = new Date().toISOString().split("T")[0];
+    localStorage.setItem(`dismissedMarketDutyBanner_${currentUser.id}`, today);
+    setDismissedDutyBanner(true);
+  };
+
   // Subtle 'flicker-on-update' animation state for finance overview balance
   const [isBalanceFlickering, setIsBalanceFlickering] = useState(false);
   const prevFinanceValuesRef = useRef<{ deposits: number; market: number; remaining: number } | null>(null);
@@ -154,13 +169,14 @@ export default function Dashboard({
       const timer = setTimeout(() => {
         setIsBalanceFlickering(false);
       }, 850);
+      fetchMarkets();
       return () => clearTimeout(timer);
     };
     window.addEventListener("mess:finance-updated", handleFinanceEvent);
     return () => {
       window.removeEventListener("mess:finance-updated", handleFinanceEvent);
     };
-  }, []);
+  }, [currentMonthId, authToken]);
 
   useEffect(() => {
     if (currentUser) {
@@ -330,11 +346,32 @@ export default function Dashboard({
     }
   };
 
+  // Fetch markets for today's market duty completion check
+  const fetchMarkets = async () => {
+    if (!currentMonthId) return;
+    try {
+      const response = await fetch(`/api/markets/${currentMonthId}?_t=${Date.now()}`, {
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMarketsList(data.markets || []);
+      }
+    } catch (e) {
+      console.error("Error fetching markets for duty check:", e);
+    }
+  };
+
   useEffect(() => {
     fetchNotices();
     fetchRatings();
     fetchMyMeals();
     fetchMembers();
+    fetchMarkets();
   }, [currentMonthId, currentUser, refreshTriggers.dashboard]);
 
   useEffect(() => {
@@ -343,6 +380,7 @@ export default function Dashboard({
       fetchRatings();
       fetchMyMeals();
       fetchMembers();
+      fetchMarkets();
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
@@ -396,13 +434,42 @@ export default function Dashboard({
 
   // Check if today is the user's market duty date
   const todayStr = new Date().toISOString().split("T")[0];
-  const hasMarketDutyToday = (duties || []).some(d => {
+
+  // 1. Check if user is assigned market duty for today
+  const hasAssignedDutyToday = (duties || []).some(d => {
     const isUser = d.memberId === currentUser.id;
-    const nameLower = d.name.toLowerCase();
+    const nameLower = (d.name || "").toLowerCase();
     const isMarket = nameLower.includes("market") || nameLower.includes("bazar");
-    const isToday = d.name.includes(todayStr);
+    const isToday = (d.name || "").includes(todayStr);
     return isUser && isMarket && isToday;
   });
+
+  // 2. Check if the ASSIGNED member has ALREADY inputted/submitted their market expenditure for today
+  // Crucial: Only counts if submitted by the assigned user (currentUser.id) and covers todayStr
+  const isMarketDoneForToday = marketsList.some(mkt => {
+    // Must be submitted by the assigned member whose duty it is (not another member buying extra salt/groceries)
+    if (String(mkt.memberId || "").trim() !== String(currentUser.id || "").trim()) {
+      return false;
+    }
+
+    // Check direct date
+    if (mkt.date === todayStr) return true;
+    // Check coveredDates array
+    if (mkt.coveredDates && Array.isArray(mkt.coveredDates) && mkt.coveredDates.includes(todayStr)) {
+      return true;
+    }
+    // Check coveredDates if stored as JSON string
+    if (typeof mkt.coveredDates === "string") {
+      try {
+        const parsed = JSON.parse(mkt.coveredDates);
+        if (Array.isArray(parsed) && parsed.includes(todayStr)) return true;
+      } catch {}
+    }
+    return false;
+  });
+
+  // Only show warning notice if market duty is assigned AND market expenditure has NOT yet been inputted for today
+  const hasMarketDutyToday = hasAssignedDutyToday && !isMarketDoneForToday;
 
   const canManageDuties = currentUser && [
     UserRole.ADMIN,
@@ -622,7 +689,7 @@ export default function Dashboard({
       )}
 
       {/* Today's Market Duty Warning Banner */}
-      {hasMarketDutyToday && (
+      {hasMarketDutyToday && !dismissedDutyBanner && (
         <div className={`p-6 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in relative overflow-hidden ${
           isDarkMode 
             ? "bg-amber-500/10 border-amber-500/30 text-white" 
@@ -631,7 +698,7 @@ export default function Dashboard({
           {/* Animated background glow */}
           <div className="absolute -right-12 -top-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl animate-pulse"></div>
           
-          <div className="flex items-start gap-3.5 relative z-10">
+          <div className="flex items-start gap-3.5 relative z-10 flex-1">
             <div className="p-3 rounded-xl bg-amber-500/20 text-amber-500 shrink-0 animate-bounce">
               <ShieldAlert size={22} />
             </div>
@@ -648,7 +715,7 @@ export default function Dashboard({
             </div>
           </div>
 
-          <div className="relative z-10 shrink-0 w-full md:w-auto">
+          <div className="relative z-10 shrink-0 w-full md:w-auto flex items-center gap-2">
             <button
               onClick={() => {
                 if (onSetMarketForcedFlowStep) {
@@ -663,6 +730,13 @@ export default function Dashboard({
             >
               Select Market Done & Plan Meals
               <ArrowRight size={14} />
+            </button>
+            <button
+              onClick={handleDismissDutyBanner}
+              title="Dismiss warning notice"
+              className="p-2.5 rounded-xl border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 transition-all cursor-pointer"
+            >
+              <X size={16} />
             </button>
           </div>
         </div>
