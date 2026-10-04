@@ -1150,9 +1150,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     { id: "dashboard-overview", label: "Dashboard Overview", role: "admin", icon: "LayoutDashboard" },
     { id: "branding", label: isUltimateAdmin ? "ERP & Mess Identity" : "Mess Identity & Branding", role: "admin", icon: "Building" },
     { id: "credit", label: "Credit Panel", role: "ultimate-admin", icon: "Heart" },
-    { id: "theme-library", label: "Theme Library", role: "admin", icon: "Palette" },
     { id: "login-customizer", label: "Login Engine", role: "ultimate-admin", icon: "LayoutTemplate" },
-    { id: "mess-appearance", label: "Mess Appearance", role: "any", icon: "Sliders" },
+    { id: "mess-appearance", label: "Mess Appearance & Themes", role: "any", icon: "Palette" },
     { id: "user-appearance", label: "Personal Preferences", role: "any", icon: "User" },
     { id: "permissions", label: "Permission Matrix", role: "admin", icon: "Shield" },
     { id: "cycles", label: "Cycle & System Rules", role: "admin", icon: "Calendar" },
@@ -1177,8 +1176,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       const allowedAdminTabs = [
         "dashboard-overview", // Dashboard Overview Editor
         "branding", // ERP Identity
-        "theme-library", // Theme Library
-        "mess-appearance", // Mess Appearance
+        "mess-appearance", // Mess Appearance & Themes
         "user-appearance", // Personal Preferences
         "permissions", // Permission Matrix
         "cycles", // Cycle & System Rules
@@ -1196,8 +1194,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       const allowedAdminTabs = [
         "dashboard-overview", // Dashboard Overview Editor
         "branding", // ERP Identity
-        "theme-library", // Theme Library
-        "mess-appearance", // Mess Appearance
+        "mess-appearance", // Mess Appearance & Themes
         "user-appearance", // Personal Preferences
         "permissions", // Permission Matrix
         "cycles", // Cycle & System Rules
@@ -2316,154 +2313,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             />
           )}
 
-          {/* 3. THEME LIBRARY / PRESETS */}
-          {activeSubTab === "theme-library" && 
-           filteredTabs.some(t => t.id === "theme-library") && (
-            <div className={`p-6 rounded-2xl border ${
-              isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"
-            } space-y-6 text-left`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-bold font-display text-cyan-600 dark:text-cyan-300 flex items-center gap-2">
-                    <LucideIcons.Palette size={18} className="text-cyan-400" />
-                    Central Theme Library & Templates
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Select any UI theme below to preview live or click <strong>Save & Apply</strong> to set it as the default appearance for all 13 mess members.
-                  </p>
-                </div>
-              </div>
-
-              {/* Active Preview Banner */}
-              {activePreviewId && (
-                <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/70 to-slate-900 border border-cyan-500/40 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
-                  <div className="flex items-center gap-3">
-                    <LucideIcons.Eye className="text-cyan-400 shrink-0" size={18} />
-                    <div className="text-left">
-                      <div className="text-xs font-bold text-cyan-300">
-                        Live Previewing: {THEME_TEMPLATES.find(t => t.id === activePreviewId)?.name}
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        Navigate through any tab to experience this layout. Click "Save & Apply" to make it permanent for everyone.
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActivePreviewId(null);
-                        showStatus("info", "Preview cancelled.");
-                      }}
-                      className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
-                    >
-                      Cancel Preview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const t = THEME_TEMPLATES.find(th => th.id === activePreviewId);
-                        if (t) await handleApplyThemeGlobally(t);
-                      }}
-                      className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-md flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <LucideIcons.Check size={13} />
-                      Save & Apply for Everyone
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {THEME_TEMPLATES.map(theme => {
-                  const isCurrentSaved = (messAnimations?.themeTemplate === theme.id);
-                  const isPreviewing = (activePreviewId === theme.id);
-
-                  return (
-                    <div 
-                      key={theme.id}
-                      className={`p-4 rounded-xl border transition-all space-y-3 relative overflow-hidden flex flex-col justify-between ${
-                        isPreviewing
-                          ? "border-cyan-400 bg-cyan-950/20 ring-2 ring-cyan-500/30"
-                          : isCurrentSaved && !activePreviewId
-                          ? "border-emerald-500/40 bg-emerald-950/10"
-                          : isDarkMode
-                          ? "border-slate-800 bg-slate-950/40 hover:border-slate-700"
-                          : "border-slate-200 bg-slate-50 hover:border-slate-300 shadow-sm"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: theme.customColors.accentColor }} />
-                            <span className={`text-xs font-bold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
-                              {theme.name}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {isCurrentSaved && !activePreviewId && (
-                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                Active Mess Default
-                              </span>
-                            )}
-                            {isPreviewing && (
-                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                                Previewing
-                              </span>
-                            )}
-                            <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
-                              {theme.isDarkMode ? "Dark" : "Light"}
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-slate-500 leading-normal">{theme.desc}</p>
-                      </div>
-
-                      {/* Action Buttons: Preview & Save and Apply */}
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-800/40">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActivePreviewId(theme.id);
-                            setSiteColor(theme.siteColor);
-                            setFontStyle(theme.fontStyle);
-                            setCustomColors(theme.customColors);
-                            setIsDarkMode(theme.isDarkMode);
-                            setMessAnimations(prev => ({
-                              ...prev,
-                              backgroundTheme: theme.backgroundTheme,
-                              themeTemplate: theme.id
-                            }));
-                            showStatus("info", `Previewing "${theme.name}"`);
-                          }}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border transition-all cursor-pointer ${
-                            isPreviewing
-                              ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                              : "bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300"
-                          }`}
-                        >
-                          <LucideIcons.Eye size={12} />
-                          {isPreviewing ? "Previewing" : "Preview"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleApplyThemeGlobally(theme)}
-                          className="flex-1 py-1.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-500/40 shadow-sm transition-all cursor-pointer"
-                          title="Save & Apply this UI theme for all members of the mess"
-                        >
-                          <LucideIcons.Check size={12} />
-                          Save & Apply
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 5. MESS APPEARANCE (Level 2) */}
+          {/* 3. MESS APPEARANCE & THEMES (Level 2) */}
           {activeSubTab === "mess-appearance" && filteredTabs.some(t => t.id === "mess-appearance") && (
             <div className={`p-6 rounded-2xl border ${
               isDarkMode ? "bg-slate-900/40 border-cyan-500/10" : "bg-white border-slate-200 shadow-sm"

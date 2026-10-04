@@ -7331,16 +7331,36 @@ export function checkMessActiveCycleProtection(messId: string): MessCycleStatus 
     if (tenantAdminEntry && (tenantAdminEntry.status === "SUSPENDED" || tenantAdminEntry.status === "HOLD")) {
       isOnHold = true;
     }
+    const adminControls = loadAdminControls().controls;
+    Object.keys(adminControls || {}).forEach((key) => {
+      const ctrl = adminControls[key];
+      if (ctrl && ctrl.allowedMesses && ctrl.allowedMesses.includes(messId)) {
+        if (ctrl.status === "SUSPENDED" || ctrl.status === "HOLD" || ctrl.subscriptionStatus === "EXPIRED" || ctrl.subscriptionStatus === "HOLD") {
+          isOnHold = true;
+        }
+      }
+    });
 
     // Protection rule:
-    // If there are real active members (activeMembers > 1) AND active ongoing transactions (markets, meals, or deposits > 0)
-    // OR total active entries > 0 in an unlocked active cycle
-    const isProtected = (activeMembers.length > 1 && totalEntries > 0) || (totalEntries >= 2 && activeMonth && !activeMonth.isLocked);
+    // 1. If there are real active members (activeMembers > 1) AND active ongoing transactions (markets, meals, or deposits > 0)
+    //    OR total active entries > 0 in an unlocked active cycle: CANNOT DELETE MID-MONTH.
+    // 2. If the admin's subscription ended or is on HOLD/SUSPENDED, but the mess has active members or running cycle:
+    //    It continues running until the active cycle finishes to safeguard members' data, and cannot be deleted mid-cycle.
+    // 3. If a mess only has 1 or 0 members and 0 active transactions in current month: NOT protected, can be deleted immediately.
+    const hasRunningCycle = !!(activeMonth && !activeMonth.isLocked);
+    const hasActiveMembersWithData = (activeMembers.length > 1 && totalEntries > 0) || (totalEntries >= 2 && hasRunningCycle);
+    const isHoldCycleProtected = isOnHold && hasRunningCycle && (totalEntries > 0 || activeMembers.length > 1);
+
+    const isProtected = hasActiveMembersWithData || isHoldCycleProtected;
 
     let reason = "";
     if (isProtected) {
       const cycleName = activeMonth?.name || "চলতি মাস";
-      reason = `এই মেসে ${cycleName}-এ সক্রিয় ${activeMembers.length} জন মেম্বার এবং ${totalEntries} টি চলমান হিসাব লেনদেন (বাজার: ${currentMarkets.length}, মিল: ${currentMeals.length}, জমা: ${currentDeposits.length}) রয়েছে। মেম্বারদের চলতি মাসের হিসাব ও ডেটা সুরক্ষার স্বার্থে এই মাস/সাইকেল সমাপ্ত হওয়ার পূর্বে মেসটি ডিলিট করা যাবে না। মাস/সাইকেল শেষ বা সম্পন্ন হওয়ার পর অ্যাডমিন এটি ডিলিট করতে পারবেন।`;
+      if (isHoldCycleProtected) {
+        reason = `অ্যাডমিন সাবস্ক্রিপশন মেয়াদোত্তীর্ণ বা অ্যাকাউন্ট হোল্ডে থাকলেও ${cycleName}-এ সক্রিয় মেম্বারদের ডেটা ও হিসাব সুরক্ষার স্বার্থে এই সাইকেল সমাপ্ত হওয়া পর্যন্ত মেসটি সচল থাকবে এবং ডিলিট করা যাবে না। চলতি মাস শেষে নতুন সাইকেল চলবে না এবং তখন এটি ডিলিট বা আর্কাইভ করা যাবে।`;
+      } else {
+        reason = `এই মেসে ${cycleName}-এ সক্রিয় ${activeMembers.length} জন মেম্বার এবং ${totalEntries} টি চলমান হিসাব লেনদেন (বাজার: ${currentMarkets.length}, মিল: ${currentMeals.length}, জমা: ${currentDeposits.length}) রয়েছে। মেম্বারদের চলতি মাসের হিসাব ও ডেটা সুরক্ষার স্বার্থে এই মাস/সাইকেল সমাপ্ত হওয়ার পূর্বে মেসটি ডিলিট করা যাবে না। মাস/সাইকেল শেষ বা সম্পন্ন হওয়ার পর অ্যাডমিন এটি ডিলিট করতে পারবেন।`;
+      }
     }
 
     return {

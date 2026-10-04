@@ -3988,37 +3988,52 @@ export default function App() {
 
   const lightenDarkenColor = (hex: string, percent: number) => {
     let usePound = false;
+    if (!hex) return "#22d3ee";
     if (hex[0] === "#") {
       hex = hex.slice(1);
       usePound = true;
     }
+    if (hex.length === 3) {
+      hex = hex.split("").map(c => c + c).join("");
+    }
+    if (hex.length > 6) {
+      hex = hex.slice(0, 6);
+    }
     try {
       const num = parseInt(hex, 16);
-      let r = (num >> 16) + percent;
-      if (r > 255) r = 255;
-      else if (r < 0) r = 0;
-      let b = ((num >> 8) & 0x00FF) + percent;
-      if (b > 255) b = 255;
-      else if (b < 0) b = 0;
-      let g = (num & 0x0000FF) + percent;
-      if (g > 255) g = 255;
-      else if (g < 0) g = 0;
-      return (usePound ? "#" : "") + (g | (b << 8) | (r << 16)).toString(16).padStart(6, "0");
+      if (isNaN(num)) return (usePound ? "#" : "") + hex;
+      let r = Math.min(255, Math.max(0, (num >> 16) + percent));
+      let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00ff) + percent));
+      let b = Math.min(255, Math.max(0, (num & 0x0000ff) + percent));
+      return (usePound ? "#" : "") + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
     } catch (e) {
       return (usePound ? "#" : "") + hex;
     }
   };
 
-  const getCustomColorMap = () => {
-    const hex = customColors?.siteAccentColorRgb || "#22d3ee";
-    const rgb = hexToRgb(hex);
+  const getThemeColorPalette = (hex: string) => {
+    const safeHex = hex || "#22d3ee";
+    const rgb = hexToRgb(safeHex);
     return {
       rgb,
-      c300: lightenDarkenColor(hex, 40),
-      c400: hex,
-      c500: lightenDarkenColor(hex, -20),
-      c600: lightenDarkenColor(hex, -40)
+      c50: lightenDarkenColor(safeHex, 85),
+      c100: lightenDarkenColor(safeHex, 70),
+      c200: lightenDarkenColor(safeHex, 50),
+      c300: lightenDarkenColor(safeHex, 25),
+      c400: lightenDarkenColor(safeHex, 10),
+      c500: safeHex,
+      c600: lightenDarkenColor(safeHex, -15),
+      c700: lightenDarkenColor(safeHex, -30),
+      c800: lightenDarkenColor(safeHex, -45),
+      c900: lightenDarkenColor(safeHex, -60),
+      c950: lightenDarkenColor(safeHex, -75),
     };
+  };
+
+  const getCustomColorMap = () => {
+    const hex = customColors?.siteAccentColorRgb || customColors?.accentColor || "#22d3ee";
+    const palette = getThemeColorPalette(hex);
+    return palette;
   };
 
   const colors = siteColor === "custom" ? getCustomColorMap() : (colorMap[siteColor] || colorMap.cyan);
@@ -4708,11 +4723,11 @@ export default function App() {
     colors.cardSecondaryText = getContrastColor(colors.cardBg, "#94a3b8", "#64748b");
     colors.accentContrastText = getContrastColor(colors.accentColor, "#ffffff", "#020617");
 
-    // Dynamic inputs background & borders matching the card context
-    const cardIsDark = getContrastColor(colors.cardBg, "#ffffff", "#000000") === "#ffffff";
-    colors.inputBg = cardIsDark ? "rgba(15, 23, 42, 0.75)" : "#f8fafc";
-    colors.inputBorderColor = cardIsDark ? "rgba(71, 85, 105, 0.5)" : "#cbd5e1";
-    colors.inputTextColor = cardIsDark ? "#f8fafc" : "#0f172a";
+    // Dynamic inputs background & borders matching active mode and card context
+    colors.inputBg = isDark ? "rgba(15, 23, 42, 0.85)" : "#ffffff";
+    colors.inputBorderColor = isDark ? "rgba(71, 85, 105, 0.5)" : "#cbd5e1";
+    colors.inputTextColor = isDark ? "#f8fafc" : "#0f172a";
+    colors.inputPlaceholder = isDark ? "#94a3b8" : "#64748b";
 
     // Dynamic finance components highlight
     colors.cashDepositBg = isDark ? "rgba(249, 115, 22, 0.15)" : "rgba(249, 115, 22, 0.1)";
@@ -4731,6 +4746,10 @@ export default function App() {
   const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
 
   const activeTypography = getActiveTypographySettings(activeIsDarkMode, activeCustomColors);
+
+  // Dynamically compute active theme's accent color and full shade palette
+  const activeAccentHex = activeCustomColors?.accentColor || activeCustomColors?.siteAccentColorRgb || currentTemplate?.customColors?.accentColor || "#22d3ee";
+  const themeShades = getThemeColorPalette(activeAccentHex);
 
   const getScaleFactor = () => {
     const prefSize = userPreferencesState?.fontSize || fontSize || "normal";
@@ -4751,10 +4770,35 @@ export default function App() {
       >
       <style>{`
         :root {
-          --color-cyan-300: ${colors.c300} !important;
-          --color-cyan-400: ${colors.c400} !important;
-          --color-cyan-500: ${colors.c500} !important;
-          --color-cyan-600: ${colors.c600} !important;
+          --color-cyan-50: ${themeShades.c50} !important;
+          --color-cyan-100: ${themeShades.c100} !important;
+          --color-cyan-200: ${themeShades.c200} !important;
+          --color-cyan-300: ${themeShades.c300} !important;
+          --color-cyan-400: ${themeShades.c400} !important;
+          --color-cyan-500: ${themeShades.c500} !important;
+          --color-cyan-600: ${themeShades.c600} !important;
+          --color-cyan-700: ${themeShades.c700} !important;
+          --color-cyan-800: ${themeShades.c800} !important;
+          --color-cyan-900: ${themeShades.c900} !important;
+          --color-cyan-950: ${themeShades.c950} !important;
+
+          --color-indigo-50: ${themeShades.c50} !important;
+          --color-indigo-100: ${themeShades.c100} !important;
+          --color-indigo-200: ${themeShades.c200} !important;
+          --color-indigo-300: ${themeShades.c300} !important;
+          --color-indigo-400: ${themeShades.c400} !important;
+          --color-indigo-500: ${themeShades.c500} !important;
+          --color-indigo-600: ${themeShades.c600} !important;
+          --color-indigo-700: ${themeShades.c700} !important;
+          --color-indigo-800: ${themeShades.c800} !important;
+          --color-indigo-900: ${themeShades.c900} !important;
+          --color-indigo-950: ${themeShades.c950} !important;
+
+          --color-blue-500: ${themeShades.c500} !important;
+          --color-blue-600: ${themeShades.c600} !important;
+          --color-sky-500: ${themeShades.c500} !important;
+          --color-sky-600: ${themeShades.c600} !important;
+
           --font-sans: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.sans} !important;
           --font-display: ${currentUser?.personalFont === 'space-grotesk' ? '"Space Grotesk", sans-serif' : currentUser?.personalFont === 'jetbrains-mono' ? '"JetBrains Mono", monospace' : fonts.display} !important;
           
@@ -4769,17 +4813,29 @@ export default function App() {
           --custom-card-text: ${activeCustomColors.cardText};
           --custom-card-secondary-text: ${activeCustomColors.cardSecondaryText};
           
-          --custom-accent-color: ${activeCustomColors.accentColor};
+          --custom-accent-color: ${activeAccentHex};
           --custom-accent-contrast-text: ${activeCustomColors.accentContrastText};
           
           --custom-input-bg: ${activeCustomColors.inputBg};
           --custom-input-border: ${activeCustomColors.inputBorderColor};
           --custom-input-text: ${activeCustomColors.inputTextColor};
+          --custom-input-placeholder: ${activeCustomColors.inputPlaceholder};
 
           --custom-cash-deposit-bg: ${activeCustomColors.cashDepositBg};
           --custom-cash-deposit-border: ${activeCustomColors.cashDepositBorder};
           --custom-settlement-bg: ${activeCustomColors.settlementBg};
           --custom-settlement-border: ${activeCustomColors.settlementBorder};
+
+          /* Semantic Theme Global Variables */
+          --theme-accent: ${activeAccentHex};
+          --theme-accent-contrast: ${activeCustomColors.accentContrastText};
+          --theme-sidebar-bg: ${activeCustomColors.sidebarBg};
+          --theme-sidebar-text: ${activeCustomColors.sidebarText};
+          --theme-header-bg: ${activeCustomColors.headerBg};
+          --theme-header-text: ${activeCustomColors.headerText};
+          --theme-card-bg: ${activeCustomColors.cardBg};
+          --theme-card-text: ${activeCustomColors.cardText};
+          --theme-heading: ${activeTypography.headingColor};
 
           /* Typography Custom Colors */
           --typo-primary-color: ${activeTypography.primaryFontColor};
@@ -4881,64 +4937,125 @@ export default function App() {
         }
 
         /* ------------------------------------------------------------------
-           CARDS & PANEL STYLING - CRISP BORDERS & READABILITY
+           CARDS & PANEL STYLING - FULL THEME COLOR REFLECTION
            ------------------------------------------------------------------ */
-        .glass-panel, .glass-panel-light, .card-container {
+        .glass-panel, 
+        .glass-panel-light, 
+        .card-container,
+        #dashboard-kpis > div,
+        div[class*="rounded-2xl"].border:not([class*="bg-rose-"]):not([class*="bg-amber-"]):not([class*="bg-red-"]):not([class*="bg-emerald-"]):not([class*="bg-gradient-"]):not([class*="border-dashed"]):not([class*="border-cyan-500"]),
+        div[class*="rounded-xl"].border:not([class*="bg-rose-"]):not([class*="bg-amber-"]):not([class*="bg-red-"]):not([class*="bg-emerald-"]):not([class*="bg-gradient-"]):not([class*="border-dashed"]):not([class*="border-cyan-500"]) {
           background-color: var(--custom-card-bg) !important;
           border-color: var(--custom-input-border) !important;
-          color: var(--custom-card-text);
+          color: var(--custom-card-text) !important;
         }
-        .glass-panel h3:not([class*="text-"]), 
-        .glass-panel h4:not([class*="text-"]), 
-        .card-container h3:not([class*="text-"]), 
-        .card-container h4:not([class*="text-"]), 
-        .card-title:not([class*="text-"]) {
+        .glass-panel h3:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
+        .glass-panel h4:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
+        .card-container h3:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
+        .card-container h4:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
+        .card-title:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]),
+        div[class*="rounded-2xl"] h3:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]),
+        div[class*="rounded-2xl"] h4:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]) {
           color: var(--typo-heading-color) !important;
         }
 
         /* ------------------------------------------------------------------
-           FORM CONTROLS & INPUT STYLING - NEVER WASHED OUT
+           FORM CONTROLS & INPUT STYLING - NEVER WASHED OUT OR ASH-COLORED
            ------------------------------------------------------------------ */
         input:not([type="checkbox"]):not([type="radio"]), select, textarea {
           background-color: var(--custom-input-bg) !important;
-          border: 1.25px solid var(--custom-input-border) !important;
+          border: 1.5px solid var(--custom-input-border) !important;
           color: var(--custom-input-text) !important;
           font-size: var(--typo-input-size) !important;
-          font-weight: 500;
+          font-weight: 500 !important;
         }
         input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
           border-color: var(--custom-accent-color) !important;
           outline: none !important;
-          box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25) !important;
+          box-shadow: 0 0 0 3px rgba(${themeShades.rgb}, 0.22) !important;
         }
         input::placeholder, textarea::placeholder {
-          color: var(--custom-card-secondary-text) !important;
-          opacity: 0.65;
+          color: var(--custom-input-placeholder) !important;
+          opacity: 0.9 !important;
         }
         select option {
           background-color: var(--custom-card-bg) !important;
           color: var(--custom-card-text) !important;
         }
 
+        /* Explicit Light Mode Input High-Contrast Enforcement */
+        .light-mode-root input:not([type="checkbox"]):not([type="radio"]),
+        .light-mode-root select,
+        .light-mode-root textarea {
+          background-color: #ffffff !important;
+          border-color: #cbd5e1 !important;
+          color: #0f172a !important;
+          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
+        }
+        .light-mode-root input:focus,
+        .light-mode-root select:focus,
+        .light-mode-root textarea:focus {
+          background-color: #ffffff !important;
+          border-color: var(--custom-accent-color) !important;
+          color: #0f172a !important;
+        }
+        .light-mode-root input::placeholder,
+        .light-mode-root textarea::placeholder {
+          color: #64748b !important;
+          opacity: 1 !important;
+        }
+
         /* ------------------------------------------------------------------
-           BUTTON STYLING - MAXIMUM READABILITY
+           BUTTON STYLING - FULL THEME ACCENT REFLECTION
            ------------------------------------------------------------------ */
         button:not(.nav-item), .btn {
           font-size: var(--typo-button-size);
           transition: all 0.2s ease-in-out;
         }
-        /* Force accent background and contrast text on solid primary buttons */
-        button.bg-cyan-600, button.bg-cyan-500, button.bg-indigo-600, button.bg-blue-600 {
+        /* Force accent background and contrast text on solid primary buttons & gradient buttons */
+        button.bg-cyan-600, 
+        button.bg-cyan-500, 
+        button.bg-indigo-600, 
+        button.bg-blue-600,
+        button.btn-theme-primary,
+        button[class*="bg-gradient-to-r"][class*="from-cyan-"],
+        button[class*="bg-gradient-to-r"][class*="from-emerald-600 to-teal-600"]:not(.special-action-btn) {
           background: var(--custom-accent-color) !important;
+          background-image: none !important;
           color: var(--custom-accent-contrast-text) !important;
           border: none;
         }
-        button.bg-cyan-600 *, button.bg-cyan-500 *, button.bg-indigo-600 *, button.bg-blue-600 * {
+        button.bg-cyan-600 *, 
+        button.bg-cyan-500 *, 
+        button.bg-indigo-600 *, 
+        button.bg-blue-600 *,
+        button[class*="bg-gradient-to-r"][class*="from-cyan-"] *,
+        button[class*="bg-gradient-to-r"][class*="from-emerald-600 to-teal-600"]:not(.special-action-btn) * {
           color: var(--custom-accent-contrast-text) !important;
         }
-        button.bg-cyan-600:hover, button.bg-cyan-500:hover, button.bg-indigo-600:hover, button.bg-blue-600:hover {
-          opacity: 0.9;
+        button.bg-cyan-600:hover, 
+        button.bg-cyan-500:hover, 
+        button.bg-indigo-600:hover, 
+        button.bg-blue-600:hover,
+        button[class*="bg-gradient-to-r"][class*="from-cyan-"]:hover,
+        button[class*="bg-gradient-to-r"][class*="from-emerald-600 to-teal-600"]:not(.special-action-btn):hover {
+          opacity: 0.92;
           transform: translateY(-0.5px);
+        }
+
+        /* Soft accent buttons matching theme palette */
+        button[class*="bg-cyan-600\\/20"],
+        button[class*="bg-cyan-500\\/20"],
+        button[class*="bg-cyan-500\\/10"] {
+          background-color: rgba(${themeShades.rgb}, 0.14) !important;
+          border-color: rgba(${themeShades.rgb}, 0.35) !important;
+          color: ${activeIsDarkMode ? themeShades.c400 : themeShades.c700} !important;
+        }
+        button[class*="bg-cyan-600\\/20"]:hover,
+        button[class*="bg-cyan-500\\/20"]:hover,
+        button[class*="bg-cyan-500\\/10"]:hover {
+          background-color: var(--custom-accent-color) !important;
+          color: var(--custom-accent-contrast-text) !important;
         }
 
         /* ------------------------------------------------------------------
@@ -5073,58 +5190,70 @@ export default function App() {
           color: var(--custom-card-text) !important;
         }
 
-        /* In light mode, override light text classes to dark contrast text unless inside dark buttons/badges */
+        /* ------------------------------------------------------------------
+           LIGHT MODE DYNAMIC TEXT INVERSION & CONTRAST (NEVER INVISIBLE)
+           ------------------------------------------------------------------ */
         .light-mode-root td,
         .light-mode-root th {
-          color: var(--custom-card-text) !important;
+          color: #0f172a !important;
         }
-        .light-mode-root :not(button):not(.badge):not(.btn):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-indigo-6"]):not([class*="bg-purple-6"]):not([class*="bg-orange-6"]) > .text-slate-100,
-        .light-mode-root :not(button):not(.badge):not(.btn):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-indigo-6"]):not([class*="bg-purple-6"]):not([class*="bg-orange-6"]) > .text-slate-200,
-        .light-mode-root :not(button):not(.badge):not(.btn):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-indigo-6"]):not([class*="bg-purple-6"]):not([class*="bg-orange-6"]) > .text-slate-300,
-        .light-mode-root span.text-slate-100,
-        .light-mode-root span.text-slate-200,
-        .light-mode-root span.text-slate-300,
-        .light-mode-root p.text-slate-100,
-        .light-mode-root p.text-slate-200,
-        .light-mode-root p.text-slate-300,
-        .light-mode-root div.text-slate-100,
-        .light-mode-root div.text-slate-200,
-        .light-mode-root div.text-slate-300,
-        .light-mode-root .text-cyan-100,
-        .light-mode-root .text-cyan-200 {
-          color: var(--custom-card-text) !important;
+
+        /* Invert hardcoded light/white texts to high-contrast dark tones in light mode */
+        .light-mode-root .text-slate-100:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *):not([class*="bg-cyan-6"] *):not([class*="bg-indigo-6"] *):not([class*="bg-blue-6"] *),
+        .light-mode-root .text-slate-200:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *):not([class*="bg-cyan-6"] *):not([class*="bg-indigo-6"] *):not([class*="bg-blue-6"] *),
+        .light-mode-root .text-slate-300:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *):not([class*="bg-cyan-6"] *):not([class*="bg-indigo-6"] *):not([class*="bg-blue-6"] *),
+        .light-mode-root .text-gray-100:not(button *),
+        .light-mode-root .text-gray-200:not(button *),
+        .light-mode-root .text-gray-300:not(button *),
+        .light-mode-root .text-zinc-100:not(button *),
+        .light-mode-root .text-zinc-200:not(button *),
+        .light-mode-root .text-zinc-300:not(button *) {
+          color: #0f172a !important;
         }
-        .light-mode-root p.text-slate-400,
-        .light-mode-root span.text-slate-400,
-        .light-mode-root div.text-slate-400 {
-          color: var(--custom-card-secondary-text) !important;
+
+        .light-mode-root .text-slate-400:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *),
+        .light-mode-root .text-slate-500:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *),
+        .light-mode-root .text-gray-400:not(button *),
+        .light-mode-root .text-gray-500:not(button *),
+        .light-mode-root .text-zinc-400:not(button *),
+        .light-mode-root .text-zinc-500:not(button *) {
+          color: #475569 !important;
         }
+
+        /* Invert hardcoded text-white inside light containers */
+        .light-mode-root div[class*="border"]:not([class*="bg-rose-6"]):not([class*="bg-emerald-6"]):not([class*="bg-cyan-6"]):not([class*="bg-indigo-6"]):not([class*="bg-blue-6"]):not([class*="bg-gradient-"]) .text-white:not(button *):not(.special-action-btn *):not([class*="bg-rose-"] *):not([class*="bg-emerald-"] *) {
+          color: #0f172a !important;
+        }
+
         .light-mode-root input.bg-transparent {
-          color: var(--custom-card-text) !important;
+          color: #0f172a !important;
           font-weight: 800 !important;
         }
 
         /* Status colors & soft light pills */
         .light-mode-root .bg-cyan-950,
         .light-mode-root .bg-cyan-950\\/20 {
-          background-color: rgba(6, 182, 212, 0.1) !important;
-          color: #0c4a6e !important;
+          background-color: rgba(${themeShades.rgb}, 0.12) !important;
+          color: ${themeShades.c800 || "#0c4a6e"} !important;
         }
         .light-mode-root .bg-amber-950,
         .light-mode-root .bg-amber-950\\/50 {
-          background-color: rgba(245, 158, 11, 0.1) !important;
+          background-color: rgba(245, 158, 11, 0.12) !important;
           color: #713f12 !important;
         }
         .light-mode-root .bg-purple-950,
         .light-mode-root .bg-purple-950\\/20,
         .light-mode-root .bg-violet-950,
         .light-mode-root .bg-violet-950\\/20 {
-          background-color: rgba(147, 51, 234, 0.1) !important;
+          background-color: rgba(147, 51, 234, 0.12) !important;
           color: #581c87 !important;
         }
         .light-mode-root .text-cyan-400,
         .light-mode-root .text-cyan-300 {
-          color: #0891b2;
+          color: ${themeShades.c700 || "#0891b2"} !important;
+        }
+        .light-mode-root .text-cyan-500 {
+          color: ${themeShades.c600 || "#0891b2"} !important;
         }
         .light-mode-root .text-amber-400,
         .light-mode-root .text-amber-300 {
@@ -5141,12 +5270,12 @@ export default function App() {
           color: #15803d;
         }
         .light-mode-root .bg-emerald-500\\/10 {
-          background-color: rgba(34, 197, 94, 0.1) !important;
+          background-color: rgba(34, 197, 94, 0.12) !important;
           color: #15803d !important;
         }
         .light-mode-root .bg-rose-500\\/20,
         .light-mode-root .bg-red-500\\/20 {
-          background-color: rgba(239, 68, 68, 0.1) !important;
+          background-color: rgba(239, 68, 68, 0.12) !important;
           color: #b91c1c !important;
         }
 
@@ -5164,8 +5293,14 @@ export default function App() {
           ${sizeStyle}
         }
         .glass-panel {
-          border-color: rgba(${colors.rgb}, 0.15) !important;
-          background-color: ${activeIsDarkMode && activeCustomColors?.cardBg ? activeCustomColors.cardBg : "rgba(30, 41, 59, 0.4)"} !important;
+          border-color: ${activeIsDarkMode ? `rgba(${themeShades.rgb}, 0.2)` : "#e2e8f0"} !important;
+          background-color: ${activeIsDarkMode ? (activeCustomColors?.cardBg || "rgba(15, 23, 42, 0.65)") : "#ffffff"} !important;
+          color: ${activeIsDarkMode ? "#f8fafc" : "#0f172a"} !important;
+        }
+        .light-mode-root .glass-panel {
+          background-color: #ffffff !important;
+          border-color: #e2e8f0 !important;
+          color: #0f172a !important;
         }
         .glass-panel-light {
           border-color: rgba(${colors.rgb}, 0.2) !important;

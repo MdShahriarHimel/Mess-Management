@@ -307,7 +307,7 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       ...prev,
       primaryFontColor: targetTheme.isDarkMode ? "#f8fafc" : "#0f172a",
       secondaryFontColor: targetTheme.isDarkMode ? "#94a3b8" : "#475569",
-      headingColor: targetTheme.isDarkMode ? "#22d3ee" : "#0f172a",
+      headingColor: targetTheme.isDarkMode ? (targetTheme.customColors?.accentColor || "#22d3ee") : "#0f172a",
       sidebarTextColor: targetTheme.isDarkMode ? "#94a3b8" : "#0f172a"
     }));
     
@@ -404,7 +404,7 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           ...typographySettings,
           primaryFontColor: themeToApply.isDarkMode ? "#f8fafc" : "#0f172a",
           secondaryFontColor: themeToApply.isDarkMode ? "#94a3b8" : "#475569",
-          headingColor: themeToApply.isDarkMode ? "#22d3ee" : "#0f172a",
+          headingColor: themeToApply.isDarkMode ? (themeToApply.customColors?.accentColor || "#22d3ee") : "#0f172a",
           sidebarTextColor: themeToApply.isDarkMode ? "#94a3b8" : "#0f172a"
         }
       };
