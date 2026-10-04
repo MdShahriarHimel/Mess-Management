@@ -275,7 +275,7 @@ input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
   background-color: var(--theme-input-bg, #ffffff);
-  border-color: var(--theme-input-border, #cbd5e1);
+  border-color: var(--theme-input-border, #64748b);
   color: var(--theme-input-text, #0f172a);
 }
 

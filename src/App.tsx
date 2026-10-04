@@ -4574,10 +4574,81 @@ export default function App() {
     return ((r * 299) + (g * 587) + (b * 114)) / 1000;
   };
 
+  // Helper to parse any hex, rgb, or rgba color string to RGB channels
+  const parseColorRgbChannels = (colorStr: string): { r: number; g: number; b: number } => {
+    if (!colorStr) return { r: 255, g: 255, b: 255 };
+    const str = colorStr.trim();
+    if (str.startsWith("rgb")) {
+      const match = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if (match) {
+        return {
+          r: Math.min(255, Math.max(0, parseInt(match[1], 10))),
+          g: Math.min(255, Math.max(0, parseInt(match[2], 10))),
+          b: Math.min(255, Math.max(0, parseInt(match[3], 10)))
+        };
+      }
+    }
+    let hex = str.replace("#", "");
+    if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+    if (hex.length >= 6) {
+      return {
+        r: parseInt(hex.substring(0, 2), 16) || 0,
+        g: parseInt(hex.substring(2, 4), 16) || 0,
+        b: parseInt(hex.substring(4, 6), 16) || 0
+      };
+    }
+    return { r: 255, g: 255, b: 255 };
+  };
+
+  // Standard WCAG 2.1 relative luminance calculation (sRGB linear conversion)
+  const getWcagRelativeLuminance = (r: number, g: number, b: number): number => {
+    const [rs, gs, bs] = [r, g, b].map(val => {
+      const s = val / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+  };
+
+  // Standard WCAG 2.1 contrast ratio calculator: (L1 + 0.05) / (L2 + 0.05)
+  const calculateWcagContrastRatio = (
+    c1: { r: number; g: number; b: number },
+    c2: { r: number; g: number; b: number }
+  ): number => {
+    const lum1 = getWcagRelativeLuminance(c1.r, c1.g, c1.b);
+    const lum2 = getWcagRelativeLuminance(c2.r, c2.g, c2.b);
+    const lighter = Math.max(lum1, lum2);
+    const darker = Math.min(lum1, lum2);
+    return (lighter + 0.05) / (darker + 0.05);
+  };
+
+  // Calculate higher-contrast border-color for input fields to strictly satisfy WCAG 3:1 ratio against card background
+  const calculateWcagInputBorder = (cardBgStr: string, minRatio = 3.0): string => {
+    const cardRgb = parseColorRgbChannels(cardBgStr);
+    
+    // In light mode, border needs to be darker than card background to meet WCAG 3:1 ratio
+    // Start with a clean slate hue
+    let border = { r: 148, g: 163, b: 184 }; // slate-400 base
+    let ratio = calculateWcagContrastRatio(cardRgb, border);
+    let iterations = 0;
+
+    // Progressively darken border until contrast ratio is >= minRatio (WCAG 3:1)
+    while (ratio < minRatio && (border.r > 15 || border.g > 23 || border.b > 42) && iterations < 30) {
+      border = {
+        r: Math.max(0, Math.round(border.r * 0.93)),
+        g: Math.max(0, Math.round(border.g * 0.93)),
+        b: Math.max(0, Math.round(border.b * 0.93))
+      };
+      ratio = calculateWcagContrastRatio(cardRgb, border);
+      iterations++;
+    }
+
+    return "#" + [border.r, border.g, border.b].map(x => x.toString(16).padStart(2, "0")).join("");
+  };
+
   // Functional relationship calculator for text inputs and dropdowns:
   // Instead of hardcoding background/text colors, ties them to a functional relationship
-  // with the active theme background and active mode (e.g. In light themes, computes a slightly darker,
-  // high-contrast border and background for input boxes so they stand out clearly against light cards).
+  // with the active theme background and active mode. In light themes, explicitly calculates
+  // a higher-contrast border-color ensuring it remains at least WCAG 3:1 ratio against the card background.
   const getDynamicInputStyles = (cardBg: string, isDark: boolean, accentHex: string) => {
     const cardLum = getLuminanceVal(cardBg);
     const isLightBg = !isDark || cardLum >= 128;
@@ -4590,15 +4661,9 @@ export default function App() {
 
     if (isLightBg) {
       // In light themes: functionally tie input background & border to card background
-      // If cardBg is pure white or near white (cardLum > 235), use high-contrast #f8fafc with #cbd5e1 border
-      if (cardLum > 235) {
-        inputBg = "#f8fafc";
-        inputBorder = "#cbd5e1";
-      } else {
-        // Slightly darker and tonally unified with active light theme surface
-        inputBg = lightenDarkenColor(cardBg, -10);
-        inputBorder = lightenDarkenColor(cardBg, -42);
-      }
+      // Explicitly calculate high-contrast border ensuring at least WCAG 3:1 ratio against card background
+      inputBg = "#ffffff";
+      inputBorder = calculateWcagInputBorder(cardBg, 3.0);
       inputText = "#0f172a";
       inputPlaceholder = "#64748b";
       optionBg = "#ffffff";
@@ -4606,7 +4671,7 @@ export default function App() {
       // In dark themes: functionally tie input background & border to dark surface
       if (cardLum < 30) {
         inputBg = "rgba(15, 23, 42, 0.88)";
-        inputBorder = "rgba(71, 85, 105, 0.55)";
+        inputBorder = "rgba(100, 116, 139, 0.6)";
       } else {
         inputBg = lightenDarkenColor(cardBg, -10);
         inputBorder = lightenDarkenColor(cardBg, 24);
@@ -4645,25 +4710,53 @@ export default function App() {
 
   const getActiveTypographySettings = (isDark: boolean, rcColors?: any) => {
     const cardBg = rcColors?.cardBg || (isDark ? "#1e293b" : "#ffffff");
+    const sidebarBg = rcColors?.sidebarBg || (isDark ? "#0f172a" : "#f8fafc");
+    const headerBg = rcColors?.headerBg || (isDark ? "#0f172a" : "#ffffff");
     const cardIsDark = getContrastColor(cardBg, "#ffffff", "#000000") === "#ffffff";
 
-    // Heading color must have >= 80 luminance contrast difference with the card background
-    let headingColor = rcColors?.accentColor || (cardIsDark ? "#22d3ee" : "#0f172a");
-    const cardLum = getLuminanceVal(cardBg);
-    const headingLum = getLuminanceVal(headingColor);
-    if (Math.abs(cardLum - headingLum) < 80) {
-      headingColor = cardIsDark ? "#f8fafc" : "#0f172a";
+    // Dynamic adaptive font color resolver:
+    // Ensures that any user or preset color has minimum WCAG contrast against background.
+    // If a color fails contrast (e.g. dark text when switching to dark mode or light text when switching to light mode),
+    // it dynamically inverts to the appropriate high-contrast default.
+    const resolveAdaptiveFontColor = (
+      userColor: string | undefined,
+      defaultDarkColor: string,
+      defaultLightColor: string,
+      targetBg: string,
+      isDarkTarget: boolean,
+      minContrast = 3.5
+    ): string => {
+      const fallback = isDarkTarget ? defaultDarkColor : defaultLightColor;
+      if (!userColor || !userColor.trim()) return fallback;
+      
+      const ratio = calculateWcagContrastRatio(
+        parseColorRgbChannels(targetBg),
+        parseColorRgbChannels(userColor)
+      );
+      // If user's custom color provides sufficient contrast on the target background, keep it
+      if (ratio >= minContrast) {
+        return userColor;
+      }
+      // If user's custom color lacks contrast (e.g. dark on dark or light on light), invert to high contrast fallback
+      return fallback;
+    };
+
+    // Calculate heading fallbacks with guaranteed contrast against card background
+    let darkHeadingFallback = rcColors?.accentColor || "#22d3ee";
+    if (calculateWcagContrastRatio(parseColorRgbChannels(cardBg), parseColorRgbChannels(darkHeadingFallback)) < 3.5) {
+      darkHeadingFallback = cardIsDark ? "#38bdf8" : "#0f172a";
     }
+    const lightHeadingFallback = "#0f172a";
 
     const defaults = {
-      primaryFontColor: rcColors?.cardText || (cardIsDark ? "#f8fafc" : "#0f172a"),
-      secondaryFontColor: rcColors?.cardSecondaryText || (cardIsDark ? "#94a3b8" : "#64748b"),
-      headingColor: headingColor,
-      menuTextColor: rcColors?.sidebarText || (isDark ? "#cbd5e1" : "#1e293b"),
-      sidebarTextColor: rcColors?.sidebarText || (isDark ? "#94a3b8" : "#0f172a"),
-      navbarTextColor: rcColors?.headerText || (isDark ? "#cbd5e1" : "#0f172a"),
-      cardTextColor: rcColors?.cardText || (cardIsDark ? "#f8fafc" : "#0f172a"),
-      tableTextColor: rcColors?.cardText || (cardIsDark ? "#f8fafc" : "#0f172a"),
+      primaryFontColor: cardIsDark ? "#f8fafc" : "#0f172a",
+      secondaryFontColor: cardIsDark ? "#94a3b8" : "#64748b",
+      headingColor: cardIsDark ? darkHeadingFallback : lightHeadingFallback,
+      menuTextColor: isDark ? "#cbd5e1" : "#1e293b",
+      sidebarTextColor: isDark ? "#94a3b8" : "#0f172a",
+      navbarTextColor: isDark ? "#cbd5e1" : "#0f172a",
+      cardTextColor: cardIsDark ? "#f8fafc" : "#0f172a",
+      tableTextColor: cardIsDark ? "#f8fafc" : "#0f172a",
       buttonTextColor: rcColors?.accentContrastText || (isDark ? "#ffffff" : "#0f172a"),
       linkColor: rcColors?.accentColor || (isDark ? "#38bdf8" : "#0284c7"),
       successTextColor: isDark ? "#4ade80" : "#16a34a",
@@ -4729,14 +4822,14 @@ export default function App() {
     }
 
     return {
-      primaryFontColor: typographySettings?.primaryFontColor || defaults.primaryFontColor,
-      secondaryFontColor: typographySettings?.secondaryFontColor || defaults.secondaryFontColor,
-      headingColor: typographySettings?.headingColor || defaults.headingColor,
-      menuTextColor: typographySettings?.menuTextColor || defaults.menuTextColor,
-      sidebarTextColor: typographySettings?.sidebarTextColor || defaults.sidebarTextColor,
-      navbarTextColor: typographySettings?.navbarTextColor || defaults.navbarTextColor,
-      cardTextColor: typographySettings?.cardTextColor || defaults.cardTextColor,
-      tableTextColor: typographySettings?.tableTextColor || defaults.tableTextColor,
+      primaryFontColor: resolveAdaptiveFontColor(typographySettings?.primaryFontColor, defaults.primaryFontColor, "#0f172a", cardBg, isDark, 3.5),
+      secondaryFontColor: resolveAdaptiveFontColor(typographySettings?.secondaryFontColor, defaults.secondaryFontColor, "#475569", cardBg, isDark, 3.0),
+      headingColor: resolveAdaptiveFontColor(typographySettings?.headingColor, defaults.headingColor, "#0f172a", cardBg, isDark, 3.5),
+      menuTextColor: resolveAdaptiveFontColor(typographySettings?.menuTextColor, defaults.menuTextColor, "#0f172a", sidebarBg, isDark, 3.5),
+      sidebarTextColor: resolveAdaptiveFontColor(typographySettings?.sidebarTextColor, defaults.sidebarTextColor, "#0f172a", sidebarBg, isDark, 3.5),
+      navbarTextColor: resolveAdaptiveFontColor(typographySettings?.navbarTextColor, defaults.navbarTextColor, "#0f172a", headerBg, isDark, 3.5),
+      cardTextColor: resolveAdaptiveFontColor(typographySettings?.cardTextColor, defaults.cardTextColor, "#0f172a", cardBg, isDark, 3.5),
+      tableTextColor: resolveAdaptiveFontColor(typographySettings?.tableTextColor, defaults.tableTextColor, "#0f172a", cardBg, isDark, 3.5),
       buttonTextColor: typographySettings?.buttonTextColor || defaults.buttonTextColor,
       linkColor: typographySettings?.linkColor || defaults.linkColor,
       successTextColor: typographySettings?.successTextColor || defaults.successTextColor,
@@ -4794,7 +4887,7 @@ export default function App() {
 
     // Dynamic inputs background & borders matching active mode and card context
     colors.inputBg = isDark ? "rgba(15, 23, 42, 0.85)" : "#ffffff";
-    colors.inputBorderColor = isDark ? "rgba(71, 85, 105, 0.5)" : "#cbd5e1";
+    colors.inputBorderColor = isDark ? "rgba(100, 116, 139, 0.6)" : calculateWcagInputBorder(colors.cardBg, 3.0);
     colors.inputTextColor = isDark ? "#f8fafc" : "#0f172a";
     colors.inputPlaceholder = isDark ? "#94a3b8" : "#64748b";
 
@@ -5033,13 +5126,24 @@ export default function App() {
           border-color: var(--custom-input-border) !important;
           color: var(--custom-card-text) !important;
         }
-        .glass-panel h3:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
-        .glass-panel h4:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
-        .card-container h3:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
-        .card-container h4:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]), 
-        .card-title:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]),
-        div[class*="rounded-2xl"] h3:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]),
-        div[class*="rounded-2xl"] h4:not([class*="text-rose-"]):not([class*="text-amber-"]):not([class*="text-red-"]) {
+        /* Default headings inside cards that don't have explicit text color classes */
+        .glass-panel h1:not([class*="text-"]),
+        .glass-panel h2:not([class*="text-"]),
+        .glass-panel h3:not([class*="text-"]), 
+        .glass-panel h4:not([class*="text-"]), 
+        .card-container h1:not([class*="text-"]),
+        .card-container h2:not([class*="text-"]),
+        .card-container h3:not([class*="text-"]), 
+        .card-container h4:not([class*="text-"]), 
+        .card-title:not([class*="text-"]),
+        div[class*="rounded-2xl"] h1:not([class*="text-"]),
+        div[class*="rounded-2xl"] h2:not([class*="text-"]),
+        div[class*="rounded-2xl"] h3:not([class*="text-"]),
+        div[class*="rounded-2xl"] h4:not([class*="text-"]),
+        div[class*="rounded-xl"] h1:not([class*="text-"]),
+        div[class*="rounded-xl"] h2:not([class*="text-"]),
+        div[class*="rounded-xl"] h3:not([class*="text-"]),
+        div[class*="rounded-xl"] h4:not([class*="text-"]) {
           color: var(--typo-heading-color) !important;
         }
 
@@ -5176,6 +5280,76 @@ export default function App() {
         .settlement-sheet-card, [style*="settlementBg"] {
           background-color: var(--custom-settlement-bg) !important;
           border-color: var(--custom-settlement-border) !important;
+        }
+
+        /* ------------------------------------------------------------------
+           DARK MODE DYNAMIC TEXT & HEADING CONTRAST (NEVER INVISIBLE)
+           ------------------------------------------------------------------ */
+        .dark-mode-root {
+          color: var(--custom-card-text, #f8fafc);
+        }
+
+        .dark-mode-root h1:not([class*="text-"]),
+        .dark-mode-root h2:not([class*="text-"]),
+        .dark-mode-root h3:not([class*="text-"]),
+        .dark-mode-root h4:not([class*="text-"]),
+        .dark-mode-root h5:not([class*="text-"]),
+        .dark-mode-root h6:not([class*="text-"]) {
+          color: var(--typo-heading-color, #38bdf8) !important;
+        }
+
+        /* Invert accidental dark text utility classes in dark mode so text is never black-on-black */
+        .dark-mode-root .text-slate-950:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-slate-900:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-slate-850:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-slate-800:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-gray-900:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-gray-800:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-zinc-900:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-zinc-800:not(button.btn-light *):not(.bg-white *),
+        .dark-mode-root .text-black:not(button.btn-light *):not(.bg-white *) {
+          color: #f8fafc !important;
+        }
+
+        /* In Dark Mode, ensure vivid accent classes stay high contrast and brightly visible */
+        .dark-mode-root .text-cyan-400,
+        .dark-mode-root .text-cyan-300 {
+          color: #22d3ee !important;
+        }
+        .dark-mode-root .text-cyan-500 {
+          color: #06b6d4 !important;
+        }
+        .dark-mode-root .text-orange-500,
+        .dark-mode-root .text-orange-400 {
+          color: #fb923c !important;
+        }
+        .dark-mode-root .text-amber-400,
+        .dark-mode-root .text-amber-300 {
+          color: #facc15 !important;
+        }
+        .dark-mode-root .text-emerald-400,
+        .dark-mode-root .text-emerald-300 {
+          color: #4ade80 !important;
+        }
+        .dark-mode-root .text-purple-400,
+        .dark-mode-root .text-purple-300 {
+          color: #c084fc !important;
+        }
+        .dark-mode-root .text-blue-400,
+        .dark-mode-root .text-blue-300 {
+          color: #60a5fa !important;
+        }
+        .dark-mode-root .text-slate-200 {
+          color: #e2e8f0 !important;
+        }
+        .dark-mode-root .text-slate-300 {
+          color: #cbd5e1 !important;
+        }
+        .dark-mode-root .text-slate-400 {
+          color: #94a3b8 !important;
+        }
+        .dark-mode-root .text-white {
+          color: #ffffff !important;
         }
 
         /* ------------------------------------------------------------------
@@ -5467,8 +5641,8 @@ export default function App() {
           }
         ` : ""}
         ${fontStyle === "custom" ? `
-          h1, h2, h3, h4, .font-display, .text-cyan-300, .text-cyan-400 {
-            color: ${activeCustomColors?.typographyHighlightRgb || "#67e8f9"} !important;
+          h1:not([class*="text-"]), h2:not([class*="text-"]), h3:not([class*="text-"]), h4:not([class*="text-"]), .font-display:not([class*="text-"]) {
+            color: ${activeIsDarkMode ? (activeCustomColors?.typographyHighlightRgb || "#67e8f9") : "#0f172a"} !important;
           }
         ` : ""}
         .scale-indicator-dot {
