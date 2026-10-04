@@ -2210,6 +2210,77 @@ export default function App() {
     }
   };
 
+  const handleDeleteMess = async (messId: string) => {
+    if (!sessionToken || !messId) return;
+    try {
+      const res = await fetch(`/api/admin/messes/${messId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${sessionToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messes) {
+          setMesses(data.messes);
+        }
+        setMessNotification({
+          type: "success",
+          message: "মেস সফলভাবে মুছে ফেলা হয়েছে (Mess deleted successfully)"
+        });
+        const nextMessId = data.activeMessId || (data.messes && data.messes.length > 0 ? data.messes[0].id : "default");
+        if (nextMessId && nextMessId !== activeMessId) {
+          await handleSwitchMess(nextMessId);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMessNotification({
+          type: "error",
+          message: err.error || "মেস মুছতে ব্যর্থ হয়েছে (Failed to delete mess)"
+        });
+      }
+    } catch (e) {
+      console.error("Failed to delete mess:", e);
+      setMessNotification({
+        type: "error",
+        message: "সার্ভারে ত্রুটি হয়েছে (Server error deleting mess)"
+      });
+    }
+  };
+
+  const handleCleanTestMesses = async () => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch("/api/admin/messes/cleanup-tests", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${sessionToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messes) {
+          setMesses(data.messes);
+        }
+        setMessNotification({
+          type: "success",
+          message: `${data.count || 0} টি টেস্ট মেস সফলভাবে পরিষ্কার করা হয়েছে`
+        });
+        if (data.activeMessId && data.activeMessId !== activeMessId) {
+          await handleSwitchMess(data.activeMessId);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMessNotification({
+          type: "error",
+          message: err.error || "টেস্ট মেস পরিষ্কার করতে ব্যর্থ হয়েছে"
+        });
+      }
+    } catch (e) {
+      console.error("Failed to cleanup test messes:", e);
+    }
+  };
+
   const fetchElections = async (token: string) => {
     try {
       const response = await fetch("/api/elections", {
@@ -5258,6 +5329,8 @@ export default function App() {
               isDarkMode={activeIsDarkMode}
               onSwitchMess={handleSwitchMess}
               onCreateMess={handleCreateMess}
+              onDeleteMess={handleDeleteMess}
+              onCleanTestMesses={handleCleanTestMesses}
               compact={true}
             />
           )}
@@ -5327,6 +5400,8 @@ export default function App() {
                   isDarkMode={activeIsDarkMode}
                   onSwitchMess={handleSwitchMess}
                   onCreateMess={handleCreateMess}
+                  onDeleteMess={handleDeleteMess}
+                  onCleanTestMesses={handleCleanTestMesses}
                   onOpenAdminControls={() => { setMobileMenuOpen(false); setActiveTab("settings"); }}
                 />
               </div>
@@ -5458,6 +5533,8 @@ export default function App() {
                 isDarkMode={activeIsDarkMode}
                 onSwitchMess={handleSwitchMess}
                 onCreateMess={handleCreateMess}
+                onDeleteMess={handleDeleteMess}
+                onCleanTestMesses={handleCleanTestMesses}
                 onOpenAdminControls={() => setActiveTab("settings")}
               />
             </div>
@@ -6061,6 +6138,10 @@ export default function App() {
                 activeMessId={activeMessId}
                 mealTypes={mealTypes}
                 setMealTypes={setMealTypes}
+                onSwitchMess={handleSwitchMess}
+                onCreateMess={handleCreateMess}
+                onDeleteMess={handleDeleteMess}
+                onCleanTestMesses={handleCleanTestMesses}
               />
 
               {(currentUser.isUltimateAdmin || isPlatformOwner) && (

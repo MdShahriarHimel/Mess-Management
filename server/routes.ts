@@ -164,10 +164,7 @@ const MESSES_FILE = path.join(DB_DIR, "messes.json");
 export function loadMesses(): { messes: Array<{ id: string; name: string; messCode?: string }> } {
   const defaultMesses = {
     messes: [
-      { id: "default", name: "Ababil Mess (Main)", messCode: "ABAB1L" },
-      { id: "mess-a", name: "Mess A (Dhaka Branch)", messCode: "DHKA01" },
-      { id: "mess-b", name: "Mess B (Chittagong Branch)", messCode: "CHTG02" },
-      { id: "mess-c", name: "Mess C (Sylhet Branch)", messCode: "SYLT03" }
+      { id: "default", name: "Ababil Mess (Main)", messCode: "ABAB1L" }
     ]
   };
   try {
@@ -2203,6 +2200,22 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
     return;
   }
+
+  // If this mess belongs to a tenant admin on SUSPENDED or HOLD, block starting new month cycle
+  const currentMessId = getActiveMessId();
+  if (currentMessId && currentMessId !== "default") {
+    const platformControls = loadPlatformControls();
+    const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find((t: any) =>
+      t.allowedMesses && t.allowedMesses.includes(currentMessId)
+    );
+    if (tenantAdminEntry && (tenantAdminEntry.status === "SUSPENDED" || tenantAdminEntry.status === "HOLD")) {
+      res.status(403).json({
+        error: "এই মেসের অ্যাডমিন অ্যাকাউন্ট স্থগিত/হোল্ডে রয়েছে। মেম্বারদের চলমান মাস শেষ হওয়ার পর নতুন মাসের সাইকেল শুরু করা যাবে না। অনুগ্রহ করে প্ল্যাটফর্ম ওনারের সাথে যোগাযোগ করুন বা সাবস্ক্রিপশন নবায়ন করুন।"
+      });
+      return;
+    }
+  }
+
   const { name, startDate, endDate, gracePeriodEnabled } = req.body;
   if (!name || !startDate || !endDate) {
     res.status(400).json({ error: "Month Name, Start Date, and End Date are required" });
@@ -7257,6 +7270,106 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
 // ---------------------------------------------------------
 // MULTI-MESS MANAGEMENT ENDPOINTS (ADMIN ONLY)
 // ---------------------------------------------------------
+export interface MessCycleStatus {
+  isProtected: boolean;
+  reason?: string;
+  hasActiveCycle: boolean;
+  activeCycleName?: string;
+  memberCount: number;
+  activeEntriesCount: number;
+  marketsCount: number;
+  mealsCount: number;
+  depositsCount: number;
+  isOnHold: boolean;
+}
+
+export function checkMessActiveCycleProtection(messId: string): MessCycleStatus {
+  try {
+    const messDB = loadDB(messId);
+    const members = messDB.members || [];
+    const activeMembers = members.filter((m: any) => m.status === MemberStatus.ACTIVE);
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const currentMonthPrefix = nowIso.slice(0, 7); // e.g. "2026-10"
+
+    const months = messDB.months || [];
+    // Active month is an unlocked month where current date is within range, or the latest unlocked month
+    const activeMonth = months.find((m: any) => {
+      if (m.isLocked) return false;
+      if (m.startDate && m.endDate) {
+        return nowIso >= m.startDate && nowIso <= m.endDate;
+      }
+      return true;
+    }) || months.find((m: any) => !m.isLocked);
+
+    const activeMonthId = activeMonth?.id;
+
+    // Filter transactions in current active month or current calendar month
+    const currentMarkets = (messDB.marketEntries || []).filter((m: any) => {
+      if (activeMonthId && m.monthId === activeMonthId) return true;
+      return m.date && m.date.startsWith(currentMonthPrefix);
+    });
+
+    const currentMeals = (messDB.meals || []).filter((m: any) => {
+      if (activeMonthId && m.monthId === activeMonthId) return true;
+      return m.date && m.date.startsWith(currentMonthPrefix);
+    });
+
+    const currentDeposits = (messDB.deposits || []).filter((d: any) => {
+      if (activeMonthId && d.monthId === activeMonthId) return true;
+      return d.date && d.date.startsWith(currentMonthPrefix);
+    });
+
+    const totalEntries = currentMarkets.length + currentMeals.length + currentDeposits.length;
+
+    const platformControls = loadPlatformControls();
+    let isOnHold = false;
+    const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find((t: any) => 
+      t.allowedMesses && t.allowedMesses.includes(messId)
+    );
+    if (tenantAdminEntry && (tenantAdminEntry.status === "SUSPENDED" || tenantAdminEntry.status === "HOLD")) {
+      isOnHold = true;
+    }
+
+    // Protection rule:
+    // If there are real active members (activeMembers > 1) AND active ongoing transactions (markets, meals, or deposits > 0)
+    // OR total active entries > 0 in an unlocked active cycle
+    const isProtected = (activeMembers.length > 1 && totalEntries > 0) || (totalEntries >= 2 && activeMonth && !activeMonth.isLocked);
+
+    let reason = "";
+    if (isProtected) {
+      const cycleName = activeMonth?.name || "চলতি মাস";
+      reason = `এই মেসে ${cycleName}-এ সক্রিয় ${activeMembers.length} জন মেম্বার এবং ${totalEntries} টি চলমান হিসাব লেনদেন (বাজার: ${currentMarkets.length}, মিল: ${currentMeals.length}, জমা: ${currentDeposits.length}) রয়েছে। মেম্বারদের চলতি মাসের হিসাব ও ডেটা সুরক্ষার স্বার্থে এই মাস/সাইকেল সমাপ্ত হওয়ার পূর্বে মেসটি ডিলিট করা যাবে না। মাস/সাইকেল শেষ বা সম্পন্ন হওয়ার পর অ্যাডমিন এটি ডিলিট করতে পারবেন।`;
+    }
+
+    return {
+      isProtected,
+      reason,
+      hasActiveCycle: !!activeMonth,
+      activeCycleName: activeMonth?.name,
+      memberCount: activeMembers.length,
+      activeEntriesCount: totalEntries,
+      marketsCount: currentMarkets.length,
+      mealsCount: currentMeals.length,
+      depositsCount: currentDeposits.length,
+      isOnHold
+    };
+  } catch (e) {
+    console.error("Error in checkMessActiveCycleProtection:", e);
+    return {
+      isProtected: false,
+      hasActiveCycle: false,
+      memberCount: 0,
+      activeEntriesCount: 0,
+      marketsCount: 0,
+      mealsCount: 0,
+      depositsCount: 0,
+      isOnHold: false
+    };
+  }
+}
+
 router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
     res.status(403).json({ error: "Only an authorized Admin or Superuser can list messes." });
@@ -7302,11 +7415,25 @@ router.get("/admin/messes", authMiddleware, (req: AuthenticatedRequest, res: Res
       messSettings.auditModeExpiresAt &&
       new Date(messSettings.auditModeExpiresAt).getTime() > now
     );
+
+    const protection = checkMessActiveCycleProtection(m.id);
+
     return {
       ...m,
       name: messSettings.messName || m.name,
       auditMode: active,
-      auditModeExpiresAt: active ? messSettings.auditModeExpiresAt : null
+      auditModeExpiresAt: active ? messSettings.auditModeExpiresAt : null,
+      isProtected: protection.isProtected,
+      protectionReason: protection.reason,
+      hasActiveCycle: protection.hasActiveCycle,
+      activeCycleName: protection.activeCycleName,
+      memberCount: protection.memberCount,
+      activeEntriesCount: protection.activeEntriesCount,
+      marketsCount: protection.marketsCount,
+      mealsCount: protection.mealsCount,
+      depositsCount: protection.depositsCount,
+      isOnHold: protection.isOnHold,
+      canDelete: !protection.isProtected && m.id !== "default"
     };
   });
 
@@ -7507,43 +7634,68 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
 });
 
 router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  if (req.user!.role !== UserRole.ADMIN) {
+  if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
     res.status(403).json({ error: "Only an authorized Admin can delete messes." });
     return;
   }
 
-  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
-  const canDelete = isUltimateAdmin || checkAdminPermission(req, "canManageMessBranches");
-  if (!canDelete) {
-    res.status(403).json({ error: "Only the Platform Owner or authorized Admins with branch management permission can delete messes." });
-    return;
-  }
-
   const { id } = req.params;
-  if (id === "default") {
-    res.status(400).json({ error: "Cannot delete the default main mess." });
+  if (!id || id === "default") {
+    res.status(400).json({ error: "Cannot delete the default main mess / প্রধান ডিফল্ট মেস ডিলিট করা সম্ভব নয়।" });
     return;
   }
 
-  if (!isUltimateAdmin) {
-    const adminControls = loadAdminControls().controls;
-    const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
-    const userControls = (emailKey && adminControls[emailKey]) || adminControls[req.user!.id];
-    const allowed = (userControls && userControls.allowedMesses) ? userControls.allowedMesses : [];
-    if (!allowed.includes(id)) {
-      res.status(403).json({ error: "Access denied. You do not manage this mess branch." });
-      return;
-    }
-  }
+  const isUltimateAdmin = isPlatformOwner(req.user!.email) && req.user!.role === UserRole.ADMIN;
+  const emailKey = req.user!.email ? req.user!.email.toLowerCase() : "";
+  const adminControlsData = loadAdminControls();
+  const userControls = (emailKey && adminControlsData.controls[emailKey]) || adminControlsData.controls[req.user!.id];
+  const platformControls = loadPlatformControls();
+  const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find(
+    (t: any) => t.email.toLowerCase() === emailKey && t.status === "ACTIVE"
+  );
+  const isStandaloneTenant = !!userControls?.isStandaloneTenantAdmin || !!tenantAdminEntry;
 
   const data = loadMesses();
   const index = data.messes.findIndex((m: any) => m.id === id);
   if (index === -1) {
-    res.status(404).json({ error: "Mess not found." });
+    res.status(404).json({ error: "Mess not found / মেসটি খুঁজে পাওয়া যায়নি।" });
     return;
   }
 
   const deletedMess = data.messes[index];
+
+  // Check if this is an automated/test scratch mess
+  const isTestMess = /^(Isolation-Test|Boundary-Mess|Omega Premier|Delta Elite|Test-Mess|Test\s|gg$|r$|mess-[a-c]$)/i.test(deletedMess.name) ||
+                     /^(Isolation-Test|Boundary-Mess|Omega Premier|Delta Elite|Test-Mess|Test\s|gg$|r$|mess-[a-c]$)/i.test(deletedMess.id);
+
+  const allowed = (userControls && userControls.allowedMesses && userControls.allowedMesses.length > 0)
+    ? userControls.allowedMesses
+    : (tenantAdminEntry?.allowedMesses || [(req.user as any).messId || "default"]);
+
+  const hasAccessToMess = allowed.includes(id) || (req.user as any)?.messId === id;
+  const canDelete = isUltimateAdmin ||
+                    isStandaloneTenant ||
+                    checkAdminPermission(req, "canManageMessBranches") ||
+                    (req.user!.role === UserRole.ADMIN && (hasAccessToMess || isTestMess));
+
+  if (!canDelete) {
+    res.status(403).json({ error: "Access denied. You do not manage this mess branch." });
+    return;
+  }
+
+  // ACTIVE CYCLE DATA PROTECTION RULE:
+  // If this mess has active members and running cycle data (markets, meals, deposits in current running month),
+  // it cannot be deleted until the active month/cycle completes!
+  const protection = checkMessActiveCycleProtection(id);
+  if (protection.isProtected) {
+    res.status(400).json({ 
+      error: protection.reason,
+      code: "ACTIVE_CYCLE_DATA_PROTECTED",
+      protection
+    });
+    return;
+  }
+
   data.messes.splice(index, 1);
   saveMesses(data);
 
@@ -7552,20 +7704,109 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
   if (activeMessId === id) {
     setActiveMessId("default");
   }
+  const userActive = getUserActiveMessId(req.user!.id, req.user!.email);
+  if (userActive === id) {
+    setUserActiveMessId(req.user!.id, req.user!.email, "default");
+  }
 
   // Delete associated files and database records
   try {
     deletePersistentFile(`database_backup_${id}.json`);
     deletePersistentFile(`settings_${id}.json`);
     deletePersistentFile(`elections_${id}.json`);
+    deletePersistentFile(`market_planner_${id}.json`);
+    deletePersistentFile(`duties_${id}.json`);
+    deletePersistentFile(`audit_logs_${id}.json`);
+    deletePersistentFile(`notifications_${id}.json`);
     drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, id)).catch(() => {});
     delete settingsCache[id];
   } catch (e) {
     console.error("Failed to delete mess-specific data files:", e);
   }
 
-  logAudit(req.user!.id, req.user!.nickname, "DELETE_MESS", deletedMess.name, "None", `Deleted mess: ${deletedMess.name}`);
-  res.json({ success: true, messes: data.messes, activeMessId: getActiveMessId() });
+  // Clean from allowedMesses in adminControls
+  try {
+    let adminControlsModified = false;
+    Object.keys(adminControlsData.controls || {}).forEach((key) => {
+      const ctrl = adminControlsData.controls[key];
+      if (ctrl && Array.isArray(ctrl.allowedMesses) && ctrl.allowedMesses.includes(id)) {
+        ctrl.allowedMesses = ctrl.allowedMesses.filter((mId: string) => mId !== id);
+        adminControlsModified = true;
+      }
+    });
+    if (adminControlsModified) {
+      saveAdminControls(adminControlsData);
+    }
+  } catch (e) {
+    console.error("Failed to clean deleted mess from adminControls:", e);
+  }
+
+  // Clean from allowedMesses in platformControls
+  try {
+    let platformModified = false;
+    (platformControls.authorizedTenantAdmins || []).forEach((t: any) => {
+      if (t && Array.isArray(t.allowedMesses) && t.allowedMesses.includes(id)) {
+        t.allowedMesses = t.allowedMesses.filter((mId: string) => mId !== id);
+        platformModified = true;
+      }
+    });
+    if (platformModified) {
+      savePlatformControls(platformControls);
+    }
+  } catch (e) {
+    console.error("Failed to clean deleted mess from platformControls:", e);
+  }
+
+  logAudit(req.user!.id, req.user!.nickname, "DELETE_MESS", deletedMess.name, "None", `Deleted mess: ${deletedMess.name} (ID: ${id})`);
+  res.json({ success: true, messes: data.messes, activeMessId: getActiveMessId() || "default", deletedId: id });
+});
+
+router.post("/admin/messes/cleanup-tests", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
+    res.status(403).json({ error: "Only an authorized Admin can clean up test messes." });
+    return;
+  }
+
+  const data = loadMesses();
+  const testPatterns = /^(Isolation-Test|Boundary-Mess|Omega Premier|Delta Elite|Test-Mess|Test\s|gg$|r$)/i;
+  const toDelete = data.messes.filter((m: any) => m.id !== "default" && testPatterns.test(m.name));
+
+  if (toDelete.length === 0) {
+    res.json({ success: true, count: 0, messes: data.messes, message: "কোন অপ্রয়োজনীয় টেস্ট মেস পাওয়া যায়নি।" });
+    return;
+  }
+
+  const deletedIds: string[] = [];
+  toDelete.forEach((m: any) => {
+    deletedIds.push(m.id);
+    try {
+      deletePersistentFile(`database_backup_${m.id}.json`);
+      deletePersistentFile(`settings_${m.id}.json`);
+      deletePersistentFile(`elections_${m.id}.json`);
+      deletePersistentFile(`market_planner_${m.id}.json`);
+      deletePersistentFile(`duties_${m.id}.json`);
+      deletePersistentFile(`audit_logs_${m.id}.json`);
+      deletePersistentFile(`notifications_${m.id}.json`);
+      drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, m.id)).catch(() => {});
+      delete settingsCache[m.id];
+    } catch (e) {}
+  });
+
+  data.messes = data.messes.filter((m: any) => !deletedIds.includes(m.id));
+  saveMesses(data);
+
+  if (deletedIds.includes(getActiveMessId())) {
+    setActiveMessId("default");
+  }
+
+  logAudit(req.user!.id, req.user!.nickname, "CLEANUP_TEST_MESSES", "None", `${deletedIds.length} messes`, `Cleaned up ${deletedIds.length} automated test messes`);
+
+  res.json({
+    success: true,
+    count: deletedIds.length,
+    messes: data.messes,
+    activeMessId: getActiveMessId() || "default"
+  });
 });
 
 // ---------------------------------------------------------

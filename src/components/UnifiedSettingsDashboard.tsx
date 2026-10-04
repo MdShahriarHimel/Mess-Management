@@ -4,7 +4,7 @@ import { THEME_TEMPLATES, ThemeTemplate } from "../themeTemplates";
 import { ThemeEnginePanel } from "./ThemeEnginePanel";
 import { LoginEnginePanel } from "./LoginEnginePanel";
 import { MonetizationHub } from "./MonetizationHub";
-import { RespectSenioritySettings, RoomLabel } from "../types";
+import { RespectSenioritySettings, RoomLabel, UserRole } from "../types";
 import { getRespectDisplayName } from "../utils/respectHelper";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { MessBackupModal } from "./MessBackupModal";
@@ -117,6 +117,10 @@ interface UnifiedSettingsDashboardProps {
   activeMessId?: string;
   mealTypes?: any[];
   setMealTypes?: React.Dispatch<React.SetStateAction<any[]>>;
+  onSwitchMess?: (messId: string) => Promise<void>;
+  onCreateMess?: (name: string) => Promise<void>;
+  onDeleteMess?: (messId: string) => Promise<void>;
+  onCleanTestMesses?: () => Promise<void>;
 }
 
 export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> = ({
@@ -196,13 +200,21 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   setLogoText,
   activeMessId = "default",
   mealTypes = [],
-  setMealTypes
+  setMealTypes,
+  onSwitchMess,
+  onCreateMess,
+  onDeleteMess,
+  onCleanTestMesses
 }) => {
   const respectSenioritySettings = propRespectSenioritySettings;
   const isUltimateAdmin = Boolean(isPlatformOwner || currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner);
   const [activeSubTab, setActiveSubTab] = useState<string>("user-appearance");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
+  const [messToDelete, setMessToDelete] = useState<any>(null);
+  const [protectedMessToExplain, setProtectedMessToExplain] = useState<any>(null);
+  const [isDeletingMess, setIsDeletingMess] = useState(false);
+  const [isCleaningTests, setIsCleaningTests] = useState(false);
 
   // Dashboard Overview local state
   const [localVisibility, setLocalVisibility] = useState<any>({
@@ -1447,34 +1459,116 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                       Audit logs are disabled by default for every mess. Administrators can toggle 20-minute temporary Audit Mode access per mess.
                     </p>
                   </div>
-                  <button
-                    onClick={fetchMessAuditStatuses}
-                    className="p-1.5 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title="Refresh Mess Statuses"
-                  >
-                    <LucideIcons.RefreshCw size={14} className={loadingAuditMesses ? "animate-spin" : ""} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {onCleanTestMesses && messes?.some((m: any) => m.id !== "default" && /^(Isolation-Test|Boundary-Mess|Omega Premier|Delta Elite|Test-Mess|Test\s|gg$|r$)/i.test(m.name)) && (
+                      <button
+                        type="button"
+                        disabled={isCleaningTests}
+                        onClick={async () => {
+                          if (!confirm("আপনি কি সকল অপ্রয়োজনীয় টেস্ট মেস এক ক্লিকে পরিষ্কার করতে চান?")) return;
+                          setIsCleaningTests(true);
+                          try {
+                            await onCleanTestMesses();
+                          } finally {
+                            setIsCleaningTests(false);
+                          }
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        {isCleaningTests ? <LucideIcons.Loader2 size={13} className="animate-spin" /> : <LucideIcons.Sparkles size={13} />}
+                        <span>টেস্ট মেস পরিষ্কার করুন</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={fetchMessAuditStatuses}
+                      className="p-1.5 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+                      title="Refresh Mess Statuses"
+                    >
+                      <LucideIcons.RefreshCw size={14} className={loadingAuditMesses ? "animate-spin" : ""} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {(messes && messes.length > 0 ? messes : [{ id: "default", name: "Ababil Mess (Main)" }]).map((m: any) => {
                     const status = messAuditStatus[m.id] || { auditMode: false, auditModeExpiresAt: null };
                     const isActive = status.auditMode;
+                    const isCurrentActive = m.id === activeMessId;
+                    const canDelete = m.id !== "default" && !!onDeleteMess && (currentUser?.role === UserRole.ADMIN || isUltimateAdmin);
 
                     return (
-                      <div key={m.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-900 flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-bold text-slate-200 block">{m.name}</span>
-                          <span className="text-[10px] text-slate-500 font-mono block">ID: {m.id}</span>
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span className={`w-2 h-2 rounded-full ${isActive ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
-                            <span className={`text-[11px] font-semibold ${isActive ? "text-emerald-400" : "text-rose-400"}`}>
-                              Audit Mode: {isActive ? "ON (20-min active)" : "OFF (default)"}
+                      <div key={m.id} className={`p-4 rounded-xl border flex flex-col justify-between gap-3 ${
+                        isCurrentActive 
+                          ? "bg-slate-950 border-cyan-500/40 shadow-xs" 
+                          : "bg-slate-950 border-slate-900"
+                      }`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-slate-200 block truncate">{m.name}</span>
+                              {isCurrentActive && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 font-bold border border-cyan-500/30">
+                                  বর্তমান সক্রিয়
+                                </span>
+                              )}
+                              {m.isProtected && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-bold border border-amber-500/30 flex items-center gap-0.5" title="চলতি সাইকেল সুরক্ষিত">
+                                  <LucideIcons.Lock size={9} /> সাইকেল সুরক্ষিত
+                                </span>
+                              )}
+                              {m.isOnHold && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 font-bold border border-rose-500/30">
+                                  হোল্ড
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono block">
+                              ID: {m.id} {m.memberCount !== undefined && m.memberCount > 0 ? `• ${m.memberCount} সদস্য` : ""}
                             </span>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className={`w-2 h-2 rounded-full ${isActive ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
+                              <span className={`text-[11px] font-semibold ${isActive ? "text-emerald-400" : "text-rose-400"}`}>
+                                Audit Mode: {isActive ? "ON (20-min active)" : "OFF (default)"}
+                              </span>
+                            </div>
                           </div>
+
+                          {canDelete && (
+                            m.isProtected ? (
+                              <button
+                                type="button"
+                                onClick={() => setProtectedMessToExplain(m)}
+                                className="p-1.5 rounded-lg text-amber-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer shrink-0"
+                                title="চলতি সাইকেল সুরক্ষিত: মেম্বারদের বাজার ও মিল চলছে (ক্লিক করে বিস্তারিত জানুন)"
+                                aria-label={`Cycle Protected ${m.name}`}
+                              >
+                                <LucideIcons.Lock size={15} />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setMessToDelete(m)}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                                title="মেস স্থায়ীভাবে মুছে ফেলুন (Delete Mess)"
+                                aria-label={`Delete ${m.name}`}
+                              >
+                                <LucideIcons.Trash2 size={15} />
+                              </button>
+                            )
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
+                          {onSwitchMess && !isCurrentActive && (
+                            <button
+                              type="button"
+                              onClick={() => onSwitchMess(m.id)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <span>মেসে প্রবেশ করুন</span>
+                              <LucideIcons.ArrowRight size={12} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleToggleMessAuditMode(m.id, !isActive)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -1491,6 +1585,143 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   })}
                 </div>
               </div>
+
+              {/* Delete Mess Confirmation Modal in UnifiedSettingsDashboard */}
+              {messToDelete && (
+                <div 
+                  className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget && !isDeletingMess) {
+                      setMessToDelete(null);
+                    }
+                  }}
+                >
+                  <div 
+                    className={`w-full max-w-sm rounded-2xl p-5 border shadow-2xl space-y-4 animate-in zoom-in-95 duration-150 ${
+                      isDarkMode 
+                        ? "bg-slate-900 border-slate-700 text-white" 
+                        : "bg-white border-slate-200 text-slate-900"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-500 flex items-center justify-center shrink-0">
+                        <LucideIcons.Trash2 size={20} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-extrabold text-sm leading-tight text-rose-500 dark:text-rose-400">
+                          মেস মুছে ফেলতে চান?
+                        </h4>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                          ID: {messToDelete.id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className={`p-3 rounded-xl text-xs space-y-1.5 ${
+                      isDarkMode ? "bg-slate-950/60 border border-slate-800" : "bg-rose-50/60 border border-rose-100"
+                    }`}>
+                      <p className="leading-relaxed">
+                        আপনি কি নিশ্চিত যে <span className="font-bold text-rose-400">"{messToDelete.name}"</span> মেসটি চিরতরে ডিলিট করতে চান?
+                      </p>
+                      <p className="text-[11px] text-rose-400/90 font-medium">
+                        ⚠️ সতর্কতা: এই মেসের যাবতীয় বাজার, মিল, হিসাব ও ডাটা স্থায়ীভাবে মুছে যাবে এবং তা আর পুনরুদ্ধার করা সম্ভব নয়।
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/40">
+                      <button
+                        type="button"
+                        disabled={isDeletingMess}
+                        onClick={() => setMessToDelete(null)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                          isDarkMode 
+                            ? "bg-slate-800 hover:bg-slate-700 text-slate-300" 
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        বাতিল
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingMess}
+                        onClick={async () => {
+                          if (!onDeleteMess || isDeletingMess) return;
+                          setIsDeletingMess(true);
+                          try {
+                            await onDeleteMess(messToDelete.id);
+                            setMessToDelete(null);
+                          } finally {
+                            setIsDeletingMess(false);
+                          }
+                        }}
+                        className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors shadow-xs"
+                      >
+                        {isDeletingMess ? <LucideIcons.Loader2 size={13} className="animate-spin" /> : <LucideIcons.Trash2 size={13} />}
+                        <span>মেস মুছে ফেলুন</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Protected Mess Explanation Modal in UnifiedSettingsDashboard */}
+              {protectedMessToExplain && (
+                <div 
+                  className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setProtectedMessToExplain(null);
+                    }
+                  }}
+                >
+                  <div 
+                    className={`w-full max-w-sm rounded-2xl p-5 border shadow-2xl space-y-4 animate-in zoom-in-95 duration-150 ${
+                      isDarkMode 
+                        ? "bg-slate-900 border-slate-700 text-white" 
+                        : "bg-white border-slate-200 text-slate-900"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
+                        <LucideIcons.ShieldCheck size={22} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-extrabold text-sm leading-tight text-amber-400">
+                          চলতি সাইকেল ও মেম্বার ডেটা সুরক্ষা
+                        </h4>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                          ID: {protectedMessToExplain.id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className={`p-3.5 rounded-xl text-xs space-y-2 leading-relaxed ${
+                      isDarkMode ? "bg-slate-950/70 border border-slate-800" : "bg-amber-50/70 border border-amber-200/60"
+                    }`}>
+                      <p className="font-semibold text-slate-200 dark:text-slate-100">
+                        {protectedMessToExplain.protectionReason || `এই মেসে চলতি মাসে সক্রিয় সদস্য ও লেনদেনের হিসাব চলমান রয়েছে।`}
+                      </p>
+                      <div className="pt-2 border-t border-slate-800/40 text-[11px] text-slate-400 space-y-1">
+                        <p>• <strong>সদস্যদের সুরক্ষা:</strong> মেম্বারদের চলতি মাসের বাজার, মিল ও জমার হিসাব চলমান থাকা অবস্থায় মেস ডিলিট করা সম্পূর্ণ নিষিদ্ধ।</p>
+                        <p>• <strong>মাস সমাপ্তি:</strong> চলমান মাস বা সাইকেল শেষ হলে অ্যাডমিন স্বপ্রণোদিতভাবে মেসটি ডিলিট করতে পারবেন।</p>
+                        {protectedMessToExplain.isOnHold && (
+                          <p className="text-rose-400 font-bold">• <strong>হোল্ড স্ট্যাটাস:</strong> অ্যাডমিন একাউন্ট হোল্ড বা সাসপেন্ড থাকায় চলতি মাস চলবে, তবে পরবর্তী মাসে নতুন সাইকেল চলবে না।</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setProtectedMessToExplain(null)}
+                        className="w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        বুঝেছি / ঠিক আছে
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
             </div>
           )}
