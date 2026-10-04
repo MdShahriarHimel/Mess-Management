@@ -1521,6 +1521,19 @@ export default function App() {
   });
   const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      if (isDarkMode) {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      } else {
+        document.documentElement.classList.remove("dark");
+        document.documentElement.classList.add("light");
+      }
+    }
+  }, [isDarkMode]);
+
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace("#", "");
     return hash || "dashboard";
@@ -4561,6 +4574,62 @@ export default function App() {
     return ((r * 299) + (g * 587) + (b * 114)) / 1000;
   };
 
+  // Functional relationship calculator for text inputs and dropdowns:
+  // Instead of hardcoding background/text colors, ties them to a functional relationship
+  // with the active theme background and active mode (e.g. In light themes, computes a slightly darker,
+  // high-contrast border and background for input boxes so they stand out clearly against light cards).
+  const getDynamicInputStyles = (cardBg: string, isDark: boolean, accentHex: string) => {
+    const cardLum = getLuminanceVal(cardBg);
+    const isLightBg = !isDark || cardLum >= 128;
+
+    let inputBg: string;
+    let inputBorder: string;
+    let inputText: string;
+    let inputPlaceholder: string;
+    let optionBg: string;
+
+    if (isLightBg) {
+      // In light themes: functionally tie input background & border to card background
+      // If cardBg is pure white or near white (cardLum > 235), use high-contrast #f8fafc with #cbd5e1 border
+      if (cardLum > 235) {
+        inputBg = "#f8fafc";
+        inputBorder = "#cbd5e1";
+      } else {
+        // Slightly darker and tonally unified with active light theme surface
+        inputBg = lightenDarkenColor(cardBg, -10);
+        inputBorder = lightenDarkenColor(cardBg, -42);
+      }
+      inputText = "#0f172a";
+      inputPlaceholder = "#64748b";
+      optionBg = "#ffffff";
+    } else {
+      // In dark themes: functionally tie input background & border to dark surface
+      if (cardLum < 30) {
+        inputBg = "rgba(15, 23, 42, 0.88)";
+        inputBorder = "rgba(71, 85, 105, 0.55)";
+      } else {
+        inputBg = lightenDarkenColor(cardBg, -10);
+        inputBorder = lightenDarkenColor(cardBg, 24);
+      }
+      inputText = "#f8fafc";
+      inputPlaceholder = "#94a3b8";
+      optionBg = cardLum < 30 ? "#0f172a" : lightenDarkenColor(cardBg, 8);
+    }
+
+    const focusBorder = accentHex || "#22d3ee";
+    const focusRing = `rgba(${hexToRgb(focusBorder)}, ${isLightBg ? 0.22 : 0.35})`;
+
+    return {
+      inputBg,
+      inputBorder,
+      inputText,
+      inputPlaceholder,
+      optionBg,
+      focusBorder,
+      focusRing
+    };
+  };
+
   const getFontFamilyStack = (family: string) => {
     switch (family) {
       case "Poppins": return '"Poppins", "Outfit", sans-serif';
@@ -4751,6 +4820,10 @@ export default function App() {
   const activeAccentHex = activeCustomColors?.accentColor || activeCustomColors?.siteAccentColorRgb || currentTemplate?.customColors?.accentColor || "#22d3ee";
   const themeShades = getThemeColorPalette(activeAccentHex);
 
+  // Dynamic Input Styling: Functionally tie text inputs and dropdowns to active theme background luminance
+  // In light themes, computes a slightly darker, high-contrast border and background for input boxes.
+  const dynamicInput = getDynamicInputStyles(activeCustomColors.cardBg, activeIsDarkMode, activeAccentHex);
+
   const getScaleFactor = () => {
     const prefSize = userPreferencesState?.fontSize || fontSize || "normal";
     if (prefSize === "small") return 0.85;
@@ -4816,10 +4889,21 @@ export default function App() {
           --custom-accent-color: ${activeAccentHex};
           --custom-accent-contrast-text: ${activeCustomColors.accentContrastText};
           
-          --custom-input-bg: ${activeCustomColors.inputBg};
-          --custom-input-border: ${activeCustomColors.inputBorderColor};
-          --custom-input-text: ${activeCustomColors.inputTextColor};
-          --custom-input-placeholder: ${activeCustomColors.inputPlaceholder};
+          --custom-input-bg: ${dynamicInput.inputBg};
+          --custom-input-border: ${dynamicInput.inputBorder};
+          --custom-input-text: ${dynamicInput.inputText};
+          --custom-input-placeholder: ${dynamicInput.inputPlaceholder};
+
+          /* Dynamic Input & Dropdown Styling Variables */
+          --theme-input-bg: ${dynamicInput.inputBg} !important;
+          --theme-input-border: ${dynamicInput.inputBorder} !important;
+          --theme-input-border-focus: ${dynamicInput.focusBorder} !important;
+          --theme-input-focus-ring: ${dynamicInput.focusRing} !important;
+          --theme-input-text: ${dynamicInput.inputText} !important;
+          --theme-input-placeholder: ${dynamicInput.inputPlaceholder} !important;
+          --theme-select-bg: ${dynamicInput.inputBg} !important;
+          --theme-select-text: ${dynamicInput.inputText} !important;
+          --theme-select-option-bg: ${dynamicInput.optionBg} !important;
 
           --custom-cash-deposit-bg: ${activeCustomColors.cashDepositBg};
           --custom-cash-deposit-border: ${activeCustomColors.cashDepositBorder};
@@ -4960,49 +5044,36 @@ export default function App() {
         }
 
         /* ------------------------------------------------------------------
-           FORM CONTROLS & INPUT STYLING - NEVER WASHED OUT OR ASH-COLORED
+           DYNAMIC INPUT & DROPDOWN STYLING - FUNCTIONAL CONTRAST ENGINE
            ------------------------------------------------------------------ */
-        input:not([type="checkbox"]):not([type="radio"]), select, textarea {
-          background-color: var(--custom-input-bg) !important;
-          border: 1.5px solid var(--custom-input-border) !important;
-          color: var(--custom-input-text) !important;
+        input:not([type="checkbox"]):not([type="radio"]), 
+        select, 
+        textarea,
+        .dynamic-input {
+          background-color: var(--theme-input-bg) !important;
+          border: 1.5px solid var(--theme-input-border) !important;
+          color: var(--theme-input-text) !important;
           font-size: var(--typo-input-size) !important;
           font-weight: 500 !important;
+          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
         }
-        input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
-          border-color: var(--custom-accent-color) !important;
+        input:not([type="checkbox"]):not([type="radio"]):focus, 
+        select:focus, 
+        textarea:focus,
+        .dynamic-input:focus {
+          border-color: var(--theme-input-border-focus) !important;
           outline: none !important;
-          box-shadow: 0 0 0 3px rgba(${themeShades.rgb}, 0.22) !important;
+          box-shadow: 0 0 0 3px var(--theme-input-focus-ring) !important;
         }
-        input::placeholder, textarea::placeholder {
-          color: var(--custom-input-placeholder) !important;
-          opacity: 0.9 !important;
+        input::placeholder, 
+        textarea::placeholder {
+          color: var(--theme-input-placeholder) !important;
+          opacity: 1 !important;
         }
         select option {
-          background-color: var(--custom-card-bg) !important;
-          color: var(--custom-card-text) !important;
-        }
-
-        /* Explicit Light Mode Input High-Contrast Enforcement */
-        .light-mode-root input:not([type="checkbox"]):not([type="radio"]),
-        .light-mode-root select,
-        .light-mode-root textarea {
-          background-color: #ffffff !important;
-          border-color: #cbd5e1 !important;
-          color: #0f172a !important;
-          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
-        }
-        .light-mode-root input:focus,
-        .light-mode-root select:focus,
-        .light-mode-root textarea:focus {
-          background-color: #ffffff !important;
-          border-color: var(--custom-accent-color) !important;
-          color: #0f172a !important;
-        }
-        .light-mode-root input::placeholder,
-        .light-mode-root textarea::placeholder {
-          color: #64748b !important;
-          opacity: 1 !important;
+          background-color: var(--theme-select-option-bg) !important;
+          color: var(--theme-select-text) !important;
         }
 
         /* ------------------------------------------------------------------
@@ -5277,6 +5348,78 @@ export default function App() {
         .light-mode-root .bg-red-500\\/20 {
           background-color: rgba(239, 68, 68, 0.12) !important;
           color: #b91c1c !important;
+        }
+
+        /* ------------------------------------------------------------------
+           FINANCE MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT) HIGH CONTRAST
+           ------------------------------------------------------------------ */
+        .light-mode-root #finance-monthly-summary-card,
+        .light-mode-root #finance-monthly-summary-card table {
+          color: #0f172a !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table thead tr,
+        .light-mode-root #finance-monthly-summary-card table thead th {
+          background-color: #f1f5f9 !important;
+          color: #0f172a !important;
+          font-weight: 800 !important;
+          border-color: #cbd5e1 !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table td {
+          color: #0f172a !important;
+          border-color: #e2e8f0 !important;
+        }
+        /* Numerical values in table columns (utility, worker, wifi, rent) */
+        .light-mode-root #finance-monthly-summary-card table td span.font-black,
+        .light-mode-root #finance-monthly-summary-card table td span.font-mono {
+          color: #0f172a !important;
+          font-weight: 800 !important;
+        }
+        /* Override amounts inside input boxes */
+        .light-mode-root #finance-monthly-summary-card table input {
+          background-color: var(--theme-input-bg, #ffffff) !important;
+          border-color: var(--theme-input-border, #cbd5e1) !important;
+          color: #0f172a !important;
+          font-weight: 800 !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table input::placeholder {
+          color: #334155 !important;
+          font-weight: 800 !important;
+          opacity: 1 !important;
+        }
+        /* Unpaid status badges & buttons: high contrast deep crimson text on soft rose */
+        .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-x),
+        .light-mode-root #finance-monthly-summary-card table span[class*="bg-rose-"] {
+          background-color: #ffe4e6 !important;
+          border: 1px solid #f43f5e !important;
+          color: #9f1239 !important;
+          font-weight: 900 !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-x) * {
+          color: #9f1239 !important;
+        }
+        /* Paid status badges & buttons: high contrast deep green text on soft emerald */
+        .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-check),
+        .light-mode-root #finance-monthly-summary-card table span[class*="bg-emerald-"] {
+          background-color: #d1fae5 !important;
+          border: 1px solid #10b981 !important;
+          color: #065f46 !important;
+          font-weight: 900 !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-check) * {
+          color: #065f46 !important;
+        }
+        /* Meal and Total columns in Light Mode */
+        .light-mode-root #finance-monthly-summary-card table td span[class*="text-orange-"] {
+          color: #c2410c !important;
+          font-weight: 800 !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table td span[class*="text-amber-"] {
+          color: #b45309 !important;
+          font-weight: 800 !important;
+        }
+        .light-mode-root #finance-monthly-summary-card table td span[class*="text-emerald-"] {
+          color: #15803d !important;
+          font-weight: 800 !important;
         }
 
         /* ------------------------------------------------------------------

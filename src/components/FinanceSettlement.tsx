@@ -3154,10 +3154,14 @@ export default function FinanceSettlement({
                                         value={overrideVal ?? ""}
                                         placeholder={colStat.total.toFixed(0)}
                                         onChange={(e) => handleUpdateOverride(m.id, col.id, e.target.value)}
-                                        className="w-16 sm:w-20 px-1 py-0.5 text-center bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-cyan-500/50 rounded-lg font-mono text-xs font-black text-slate-950 dark:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder:text-slate-900 dark:placeholder:text-cyan-200 placeholder:font-black placeholder:opacity-100 shadow-sm"
+                                        className={`w-16 sm:w-20 px-1 py-0.5 text-center border-2 rounded-lg font-mono text-xs font-black focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder:font-black placeholder:opacity-100 shadow-sm ${
+                                          isDarkMode 
+                                            ? "bg-slate-900 border-cyan-500/50 text-cyan-200 placeholder:text-cyan-200" 
+                                            : "bg-slate-50 border-slate-300 text-slate-950 placeholder:text-slate-900"
+                                        }`}
                                       />
                                     ) : (
-                                      <span className="font-black text-slate-900 dark:text-slate-100 text-xs">
+                                      <span className={`font-black text-xs ${isDarkMode ? "text-slate-100" : "text-slate-950 font-extrabold"}`}>
                                         ৳{colStat.total.toFixed(0)}
                                       </span>
                                     )}
@@ -3168,8 +3172,8 @@ export default function FinanceSettlement({
                                         onClick={() => handleToggleMemberBillStatus(m.id, col.id, isColPaid ? "UNPAID" : "PAID")}
                                         className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border shadow-sm active:scale-95 flex items-center justify-center gap-1 ${
                                           isColPaid
-                                            ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 dark:bg-emerald-500/30 dark:text-emerald-200 dark:border-emerald-500/50"
-                                            : "bg-rose-600 hover:bg-rose-700 text-white border-rose-700 dark:bg-rose-500/30 dark:text-rose-200 dark:border-rose-500/50"
+                                            ? (isDarkMode ? "bg-emerald-500/30 text-emerald-200 border-emerald-500/50" : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700")
+                                            : (isDarkMode ? "bg-rose-500/30 text-rose-200 border-rose-500/50" : "bg-rose-600 hover:bg-rose-700 text-white border-rose-700")
                                         }`}
                                         title={`Click to mark ${isColPaid ? "Unpaid" : "Paid"}`}
                                       >
@@ -3189,8 +3193,8 @@ export default function FinanceSettlement({
                                       <span
                                         className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center justify-center gap-1 border ${
                                           isColPaid
-                                            ? "bg-emerald-100 text-emerald-950 border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-500/40"
-                                            : "bg-rose-100 text-rose-950 border-rose-400 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-500/40"
+                                            ? (isDarkMode ? "bg-emerald-500/20 text-emerald-200 border-emerald-500/40" : "bg-emerald-100 text-emerald-950 border-emerald-500 font-extrabold")
+                                            : (isDarkMode ? "bg-rose-500/20 text-rose-200 border-rose-500/40" : "bg-rose-100 text-rose-950 border-rose-500 font-extrabold")
                                         }`}
                                       >
                                         {isColPaid ? "Paid" : "Unpaid"}
@@ -3211,23 +3215,30 @@ export default function FinanceSettlement({
                                     value={customBillOverrides[currentMonthId]?.[m.id]?.Meals ?? ""}
                                     placeholder={defaultMealCost.toFixed(0)}
                                     onChange={(e) => handleUpdateOverride(m.id, "Meals", e.target.value)}
-                                    className="w-20 px-2 py-1 text-center bg-orange-50 dark:bg-slate-900 border-2 border-orange-300 dark:border-orange-500/50 rounded-lg font-mono text-xs font-black text-orange-950 dark:text-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder:text-orange-950 dark:placeholder:text-orange-300 placeholder:font-black placeholder:opacity-100 shadow-sm"
+                                    className={`w-20 px-2 py-1 text-center border-2 rounded-lg font-mono text-xs font-black focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder:font-black placeholder:opacity-100 shadow-sm ${
+                                      isDarkMode 
+                                        ? "bg-slate-900 border-orange-500/50 text-orange-300 placeholder:text-orange-300" 
+                                        : "bg-orange-50/80 border-orange-300 text-orange-950 placeholder:text-orange-950"
+                                    }`}
                                   />
-                                  <span className="text-[10px] text-slate-900 dark:text-slate-200 font-black uppercase tracking-wider">
+                                  <span className={`text-[10px] font-black uppercase tracking-wider ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
                                     {mealsCount} meals (৳{(reportSummary?.mealRate || 0).toFixed(1)})
                                   </span>
                                 </div>
                               ) : (
                                 <div className="flex flex-col items-center">
-                                  <span className="font-black text-orange-700 dark:text-orange-300 text-xs">৳{effectiveMealCost.toFixed(2)}</span>
-                                  <span className="text-[10px] text-slate-900 dark:text-slate-200 font-black uppercase tracking-wider">{mealsCount} meals</span>
+                                  <span className={`font-black text-xs ${isDarkMode ? "text-orange-300" : "text-orange-800 font-extrabold"}`}>৳{effectiveMealCost.toFixed(2)}</span>
+                                  <span className={`text-[10px] font-black uppercase tracking-wider ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>{mealsCount} meals</span>
                                 </div>
                               )}
                             </td>
 
                             {/* TOTAL */}
                             <td className="py-3.5 px-4 text-center font-mono text-xs">
-                              <span className={isFullyPaid ? "text-emerald-800 dark:text-emerald-300 font-black text-xs" : "text-amber-800 dark:text-amber-300 font-black text-xs"}>
+                              <span className={isFullyPaid 
+                                ? (isDarkMode ? "text-emerald-300 font-black text-xs" : "text-emerald-800 font-extrabold text-xs") 
+                                : (isDarkMode ? "text-amber-300 font-black text-xs" : "text-amber-900 font-extrabold text-xs")
+                              }>
                                 ৳{totalExpected.toFixed(2)}
                               </span>
                             </td>
@@ -3235,11 +3246,19 @@ export default function FinanceSettlement({
                             {/* STATUS */}
                             <td className="py-3.5 px-4 text-center">
                               {isFullyPaid ? (
-                                <span className="inline-flex px-3 py-1 rounded-full text-xs font-black tracking-wide bg-emerald-100 text-emerald-950 dark:bg-emerald-500/20 dark:text-emerald-200 border border-emerald-400 dark:border-emerald-500/40 shadow-sm">
+                                <span className={`inline-flex px-3 py-1 rounded-full text-xs font-black tracking-wide border shadow-sm ${
+                                  isDarkMode 
+                                    ? "bg-emerald-500/20 text-emerald-200 border-emerald-500/40" 
+                                    : "bg-emerald-100 text-emerald-950 border-emerald-500 font-extrabold"
+                                }`}>
                                   Paid
                                 </span>
                               ) : (
-                                <span className="inline-flex px-3 py-1 rounded-full text-xs font-black tracking-wide bg-rose-100 text-rose-950 dark:bg-rose-500/20 dark:text-rose-200 border border-rose-400 dark:border-rose-500/40 shadow-sm">
+                                <span className={`inline-flex px-3 py-1 rounded-full text-xs font-black tracking-wide border shadow-sm ${
+                                  isDarkMode 
+                                    ? "bg-rose-500/20 text-rose-200 border-rose-500/40" 
+                                    : "bg-rose-100 text-rose-950 border-rose-500 font-extrabold"
+                                }`}>
                                   Unpaid
                                 </span>
                               )}

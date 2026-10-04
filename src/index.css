@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Nunito:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&family=Open+Sans:wght@300;400;500;600;700&family=Lato:wght@300;400;700&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Outfit", system-ui, sans-serif;
   --font-display: "Space Grotesk", sans-serif;
@@ -263,6 +265,31 @@
 }
 .light-mode-root ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.5);
+}
+
+/* ==========================================
+   DYNAMIC INPUT & DROPDOWN STYLING FALLBACKS
+   ========================================== */
+.dynamic-input,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background-color: var(--theme-input-bg, #ffffff);
+  border-color: var(--theme-input-border, #cbd5e1);
+  color: var(--theme-input-text, #0f172a);
+}
+
+.dynamic-input:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--theme-input-border-focus, #06b6d4);
+  box-shadow: 0 0 0 3px var(--theme-input-focus-ring, rgba(6, 182, 212, 0.2));
+}
+
+select option {
+  background-color: var(--theme-select-option-bg, #ffffff);
+  color: var(--theme-select-text, #0f172a);
 }
 
 
