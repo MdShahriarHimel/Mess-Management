@@ -191,20 +191,24 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
 
   const handleSaveCustomizerChanges = async () => {
     try {
+      const targetMode = isDarkMode ? "dark" : "light";
       const payload = {
         customColors,
         typographySettings,
         messAnimations,
         siteColor,
         fontStyle,
-        isDarkMode
+        isDarkMode,
+        defaultMode: targetMode
       };
       await handleUpdateSettings(payload);
       if (handleUpdateAppearance) {
         await handleUpdateAppearance({
           accentColor: customColors?.accentColor,
           isDarkMode,
-          theme: messAnimations?.themeTemplate || "custom"
+          defaultMode: targetMode,
+          theme: messAnimations?.themeTemplate || "custom",
+          syncToAllMembers: true
         });
       }
       showStatus("success", "Appearance configuration successfully saved and applied for all members!");
@@ -224,7 +228,8 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       if (handleUpdateAppearance) {
         await handleUpdateAppearance({
           isDarkMode: isDark,
-          defaultMode: targetMode
+          defaultMode: targetMode,
+          syncToAllMembers: true
         });
       }
       showStatus("success", `Default UI mode set to ${isDark ? "Dark Mode" : "Light Mode"} for all members!`);
@@ -423,7 +428,8 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           theme: themeToApply.id,
           accentColor: themeToApply.customColors?.accentColor,
           isDarkMode: themeToApply.isDarkMode,
-          defaultMode: themeToApply.isDarkMode ? "dark" : "light"
+          defaultMode: themeToApply.isDarkMode ? "dark" : "light",
+          syncToAllMembers: true
         });
       }
       showStatus("success", `Successfully applied "${themeToApply.name}" for the entire mess! All members will see this layout.`);

@@ -91,6 +91,7 @@ import {
   SESSION_COOKIE_NAME,
   recordSecurityEvent
 } from "./securityService.js";
+import { getIO } from "./socket.js";
 import { 
   UserRole, 
   MemberStatus, 
@@ -5204,17 +5205,28 @@ export function saveMessAppearance(messId: string, appearance: any) {
 }
 
 export function loadUserPreferences(userId: string) {
+  const messId = getActiveMessId();
+  const messAppearance = loadMessAppearance(messId);
+  const messSettings = loadSettings();
+  
+  // Resolve mess default mode (Level 2)
+  const messDefaultIsDark = messAppearance.defaultMode !== undefined
+    ? messAppearance.defaultMode === "dark"
+    : (messAppearance.isDarkMode ?? (messSettings.defaultMode === "dark" ? true : (messSettings.isDarkMode ?? false)));
+
   const defaultPrefs = {
-    isDarkMode: true,
-    accentColor: "#22d3ee",
-    fontSize: "normal",
+    isDarkMode: messDefaultIsDark,
+    defaultMode: messDefaultIsDark ? "dark" : "light",
+    accentColor: messAppearance.accentColor || messSettings.customColors?.accentColor || "#22d3ee",
+    fontSize: messAppearance.fontSize || messSettings.fontSize || "normal",
     compactMode: false,
     animationOn: true,
     highContrast: false,
     notificationPreferences: {},
     language: "en",
     dashboardDensity: "normal",
-    sidebarCollapse: false
+    sidebarCollapse: false,
+    useMessDefault: true
   };
 
   try {
@@ -5223,7 +5235,17 @@ export function loadUserPreferences(userId: string) {
       if (data && data.trim()) {
         const allPrefs = JSON.parse(data);
         if (allPrefs && allPrefs[userId]) {
-          return { ...defaultPrefs, ...allPrefs[userId] };
+          const userPref = allPrefs[userId];
+          // If useMessDefault is true or not explicitly false, follow mess default
+          if (userPref.useMessDefault !== false) {
+            return { 
+              ...defaultPrefs, 
+              ...userPref, 
+              isDarkMode: messDefaultIsDark,
+              defaultMode: messDefaultIsDark ? "dark" : "light"
+            };
+          }
+          return { ...defaultPrefs, ...userPref };
         }
       }
     }
@@ -5231,6 +5253,41 @@ export function loadUserPreferences(userId: string) {
     console.error(`Error loading User Preferences for ${userId}:`, e);
   }
   return defaultPrefs;
+}
+
+export function syncAppearanceToAllMembers(messId: string, updates: any) {
+  try {
+    const isDark = updates.defaultMode !== undefined
+      ? updates.defaultMode === "dark"
+      : (updates.isDarkMode ?? false);
+
+    let allPrefs: Record<string, any> = {};
+    if (fs.existsSync(USER_PREFS_FILE)) {
+      try {
+        allPrefs = JSON.parse(fs.readFileSync(USER_PREFS_FILE, "utf-8"));
+      } catch (e) {}
+    }
+
+    const activeDb = loadDB(messId);
+    const memberList = Array.isArray(activeDb?.members) ? activeDb.members : [];
+
+    for (const m of memberList) {
+      const uId = m.id || (m as any).userId;
+      if (uId) {
+        allPrefs[uId] = {
+          ...(allPrefs[uId] || {}),
+          isDarkMode: isDark,
+          defaultMode: isDark ? "dark" : "light",
+          useMessDefault: true,
+          accentColor: updates.accentColor || allPrefs[uId]?.accentColor || "#22d3ee"
+        };
+      }
+    }
+
+    writeAndPersistFile("user_preferences.json", JSON.stringify(allPrefs, null, 2));
+  } catch (err) {
+    console.error(`Error syncing appearance to all members for mess ${messId}:`, err);
+  }
 }
 
 export function saveUserPreferences(userId: string, prefs: any) {
@@ -6098,6 +6155,16 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
 
   const oldAppearance = loadMessAppearance(messId);
   const newAppearance = { ...oldAppearance, ...req.body };
+
+  // Explicitly ensure isDarkMode and defaultMode stay strictly synchronized
+  if (req.body.defaultMode !== undefined) {
+    newAppearance.defaultMode = req.body.defaultMode;
+    newAppearance.isDarkMode = req.body.defaultMode === "dark";
+  } else if (req.body.isDarkMode !== undefined) {
+    newAppearance.isDarkMode = Boolean(req.body.isDarkMode);
+    newAppearance.defaultMode = req.body.isDarkMode ? "dark" : "light";
+  }
+
   saveMessAppearance(messId, newAppearance);
 
   // Sync to legacy settings color and fonts if appropriate
@@ -6111,13 +6178,34 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
   if (req.body.fontSize !== undefined) {
     currentSettings.fontSize = req.body.fontSize;
   }
-  if (req.body.isDarkMode !== undefined) {
-    currentSettings.isDarkMode = req.body.isDarkMode;
+  if (newAppearance.isDarkMode !== undefined) {
+    currentSettings.isDarkMode = newAppearance.isDarkMode;
   }
-  if (req.body.defaultMode !== undefined) {
-    currentSettings.defaultMode = req.body.defaultMode;
+  if (newAppearance.defaultMode !== undefined) {
+    currentSettings.defaultMode = newAppearance.defaultMode;
   }
   saveSettings(currentSettings);
+
+  // Always sync default appearance and UI mode to all members of this mess
+  syncAppearanceToAllMembers(messId, newAppearance);
+
+  // Real-time broadcast to all connected clients
+  try {
+    const io = getIO();
+    if (io) {
+      io.emit("appearance-updated", {
+        messId,
+        appearance: newAppearance,
+        isDarkMode: newAppearance.isDarkMode,
+        defaultMode: newAppearance.defaultMode,
+        siteColor: currentSettings.siteColor,
+        customColors: currentSettings.customColors,
+        typographySettings: currentSettings.typographySettings
+      });
+    }
+  } catch (ioErr) {
+    console.error("Failed to broadcast appearance update:", ioErr);
+  }
 
   logAudit(
     req.user!.id,
@@ -6706,13 +6794,44 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     }
   }
 
+  // Ensure isDarkMode and defaultMode stay strictly synchronized
+  if (req.body.defaultMode !== undefined) {
+    currentSettings.defaultMode = req.body.defaultMode;
+    currentSettings.isDarkMode = req.body.defaultMode === "dark";
+  } else if (req.body.isDarkMode !== undefined) {
+    currentSettings.isDarkMode = Boolean(req.body.isDarkMode);
+    currentSettings.defaultMode = req.body.isDarkMode ? "dark" : "light";
+  }
+
   saveSettings(currentSettings);
+
   if (req.body.isDarkMode !== undefined || req.body.defaultMode !== undefined) {
     const messId = getActiveMessId();
     const app = loadMessAppearance(messId);
-    if (req.body.isDarkMode !== undefined) app.isDarkMode = req.body.isDarkMode;
-    if (req.body.defaultMode !== undefined) app.defaultMode = req.body.defaultMode;
+    if (req.body.defaultMode !== undefined) {
+      app.defaultMode = req.body.defaultMode;
+      app.isDarkMode = req.body.defaultMode === "dark";
+    } else if (req.body.isDarkMode !== undefined) {
+      app.isDarkMode = Boolean(req.body.isDarkMode);
+      app.defaultMode = req.body.isDarkMode ? "dark" : "light";
+    }
     saveMessAppearance(messId, app);
+    syncAppearanceToAllMembers(messId, app);
+
+    try {
+      const io = getIO();
+      if (io) {
+        io.emit("appearance-updated", {
+          messId,
+          appearance: app,
+          isDarkMode: app.isDarkMode,
+          defaultMode: app.defaultMode,
+          siteColor: currentSettings.siteColor,
+          customColors: currentSettings.customColors,
+          typographySettings: currentSettings.typographySettings
+        });
+      }
+    } catch (e) {}
   }
   const savedSettings = loadSettings();
   const savedPc = loadPlatformControls();

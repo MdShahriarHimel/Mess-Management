@@ -215,6 +215,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const [protectedMessToExplain, setProtectedMessToExplain] = useState<any>(null);
   const [isDeletingMess, setIsDeletingMess] = useState(false);
   const [isCleaningTests, setIsCleaningTests] = useState(false);
+  const [isSavingAllAppearance, setIsSavingAllAppearance] = useState(false);
 
   // Dashboard Overview local state
   const [localVisibility, setLocalVisibility] = useState<any>({
@@ -2333,35 +2334,56 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={isSavingAllAppearance}
                     onClick={async () => {
-                      const payload = {
-                        customColors,
-                        typographySettings,
-                        messAnimations,
-                        siteColor,
-                        fontStyle,
-                        isDarkMode
-                      };
-                      const s1 = await handleUpdateSettings(payload);
-                      let s2 = true;
-                      if (handleUpdateAppearance) {
-                        s2 = await handleUpdateAppearance({
-                          accentColor: customColors?.accentColor,
+                      setIsSavingAllAppearance(true);
+                      try {
+                        const targetMode = isDarkMode ? "dark" : "light";
+                        const payload = {
+                          customColors,
+                          typographySettings,
+                          messAnimations,
+                          siteColor,
+                          fontStyle,
                           isDarkMode,
-                          theme: messAnimations?.themeTemplate || "custom"
-                        });
-                      }
-                      if (s1 && s2) {
-                        showStatus("success", "Saved all appearance customizations for all members!");
-                      } else {
+                          defaultMode: targetMode
+                        };
+                        const s1 = await handleUpdateSettings(payload);
+                        let s2 = true;
+                        if (handleUpdateAppearance) {
+                          s2 = await handleUpdateAppearance({
+                            accentColor: customColors?.accentColor,
+                            isDarkMode,
+                            defaultMode: targetMode,
+                            theme: messAnimations?.themeTemplate || "custom",
+                            syncToAllMembers: true
+                          });
+                        }
+                        if (s1 && s2) {
+                          showStatus("success", `Saved all appearance customizations (${targetMode === "dark" ? "Dark Mode" : "Light Mode"} default) for all members!`);
+                        } else {
+                          showStatus("error", "Failed to save appearance settings.");
+                        }
+                      } catch (err) {
                         showStatus("error", "Failed to save appearance settings.");
+                      } finally {
+                        setIsSavingAllAppearance(false);
                       }
                     }}
-                    className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
                     title="Save current appearance configuration to the server for everyone"
                   >
-                    <LucideIcons.Save size={13} />
-                    Save All Appearance for Everyone
+                    {isSavingAllAppearance ? (
+                      <>
+                        <LucideIcons.Loader2 size={13} className="animate-spin" />
+                        Saving for Everyone...
+                      </>
+                    ) : (
+                      <>
+                        <LucideIcons.Save size={13} />
+                        Save All Appearance for Everyone
+                      </>
+                    )}
                   </button>
 
                   {erpBrandingState?.locks?.[activeMonthId] === true ? (

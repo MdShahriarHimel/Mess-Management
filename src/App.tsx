@@ -1687,6 +1687,33 @@ export default function App() {
       }
     });
 
+    socket.on("appearance-updated", (data: any) => {
+      if (!data) return;
+      const currentMid = activeMessId || (typeof localStorage !== "undefined" ? localStorage.getItem("active_mess_id") : "") || "default";
+      if (!data.messId || data.messId === currentMid) {
+        if (data.appearance) {
+          setMessAppearanceState(data.appearance);
+          if (data.appearance.theme) {
+            setSiteColor(data.appearance.theme === "default-erp" ? "cyan" : data.appearance.theme);
+          }
+          if (data.appearance.accentColor) {
+            setCustomColors(prev => ({ ...prev, accentColor: data.appearance.accentColor }));
+          }
+          if (data.appearance.fontSize) {
+            setFontSize(data.appearance.fontSize);
+          }
+        }
+        if (data.siteColor) setSiteColor(data.siteColor);
+        if (data.customColors) setCustomColors(prev => ({ ...prev, ...data.customColors }));
+        if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
+        if (data.isDarkMode !== undefined) {
+          setIsDarkMode(data.isDarkMode);
+        } else if (data.defaultMode !== undefined) {
+          setIsDarkMode(data.defaultMode === "dark");
+        }
+      }
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -2372,8 +2399,12 @@ export default function App() {
       const resAppearance = await fetch("/api/settings/appearance", { headers });
       if (resAppearance.ok) {
         const data = await resAppearance.json().catch(() => ({}));
-        if (data && (data.theme !== undefined || data.accentColor !== undefined || data.cards !== undefined)) {
+        if (data) {
           setMessAppearanceState(data);
+          const messIsDark = data.defaultMode !== undefined ? data.defaultMode === "dark" : data.isDarkMode;
+          if (messIsDark !== undefined) {
+            setIsDarkMode(messIsDark);
+          }
         }
       }
 
@@ -2451,6 +2482,11 @@ export default function App() {
           }
           if (data.appearance.fontSize) {
             setFontSize(data.appearance.fontSize);
+          }
+          if (data.appearance.isDarkMode !== undefined) {
+            setIsDarkMode(data.appearance.isDarkMode);
+          } else if (data.appearance.defaultMode !== undefined) {
+            setIsDarkMode(data.appearance.defaultMode === "dark");
           }
         }
         return true;
@@ -2572,6 +2608,8 @@ export default function App() {
           if (s.systemBrandingName) setSystemBrandingName(s.systemBrandingName);
           if (s.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(s.allowSuperUserUnlock);
           if (s.memberHistoryWindowMonths !== undefined) setMemberHistoryWindowMonths(Number(s.memberHistoryWindowMonths) || 0);
+          if (s.isDarkMode !== undefined) setIsDarkMode(s.isDarkMode);
+          if (s.defaultMode !== undefined) setIsDarkMode(s.defaultMode === "dark");
         }
         return true;
       } else {
