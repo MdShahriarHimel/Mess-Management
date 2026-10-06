@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { 
-  Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle, Shield, Sparkles
+  Coffee, Calendar, Check, Save, UserCheck, ChevronLeft, ChevronRight, AlertTriangle, Shield, Sparkles, Camera
 } from "lucide-react";
 import { Member, Meal, UserRole, RespectSenioritySettings, MemberStatus } from "../types.js";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
@@ -13,6 +13,7 @@ import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getDhakaDateString } from "../utils/cycleUtils.ts";
 import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
+import AIMealScannerModal from "./AIMealScannerModal.tsx";
 
 interface MealsTrackerProps {
   currentUser: Member;
@@ -59,6 +60,7 @@ export default function MealsTracker({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [showAiScanModal, setShowAiScanModal] = useState(false);
 
   const activeMembers = members.filter(m => 
     m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY || m.status === MemberStatus.PENDING
@@ -318,6 +320,85 @@ export default function MealsTracker({
     }
   };
 
+  // Apply meals extracted by AI Vision from paper meal sheet
+  const handleApplyScannedMeals = async (
+    scannedMap: Record<string, Record<string, number>>,
+    autoSave: boolean = false
+  ) => {
+    // 1. Merge into local state so table updates immediately
+    setMealsData(prev => {
+      const updated = { ...prev };
+      Object.entries(scannedMap).forEach(([memberId, shifts]) => {
+        updated[memberId] = {
+          ...(updated[memberId] || {}),
+          ...shifts
+        };
+      });
+      saveFormDraft("meals_tracker_daily", currentMonthId, currentUser.id, updated, selectedDate);
+      setHasRestoredDraft(true);
+      return updated;
+    });
+
+    // 2. If immediate auto-save is selected, commit to the database
+    if (autoSave) {
+      setError(null);
+      setSuccess(null);
+      setLoading(true);
+
+      const mealsToSave = Object.entries(scannedMap).map(([memberId, shifts]) => {
+        const entry: any = {
+          memberId,
+          date: selectedDate
+        };
+        activeMealTypes.forEach((type) => {
+          const val = shifts[type.id];
+          entry[type.id] = val !== undefined ? Number(val) : 0;
+        });
+        return entry;
+      });
+
+      try {
+        const response = await fetch("/api/meals", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            monthId: currentMonthId,
+            meals: mealsToSave
+          })
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to save scanned meals");
+        }
+
+        clearFormDraft("meals_tracker_daily", currentMonthId, currentUser.id, selectedDate);
+        setHasRestoredDraft(false);
+
+        if (data.pendingApproval) {
+          setSuccess("AI স্ক্যান করা মিল ম্যানেজারের কনফার্মেশনের জন্য পাঠানো হয়েছে!");
+        } else {
+          setSuccess("AI স্ক্যান করা মিল সফলভাবে ডেটাবেসে সংরক্ষিত হয়েছে!");
+        }
+
+        await fetchMealsForDate();
+        onRefresh();
+        fetchPendingRequests();
+        setTimeout(() => setSuccess(null), 4000);
+      } catch (err: any) {
+        setError(err.message || "Failed to save AI meals");
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setSuccess("AI স্ক্যান করা মিল সফলভাবে টেবিলে বসানো হয়েছে! রিভিউ করে 'SAVE DAILY SERVINGS' চাপুন।");
+      setTimeout(() => setSuccess(null), 5000);
+    }
+  };
+
   // Approve a meal update request (Manager only)
   const handleApproveRequest = async (id: string) => {
     setError(null);
@@ -533,8 +614,22 @@ export default function MealsTracker({
           </p>
         </div>
 
-        {/* Date Selector & Refresh */}
-        <div className="flex items-center gap-2">
+        {/* Date Selector, Refresh & AI Scanner */}
+        <div className="flex flex-wrap items-center gap-2">
+          {canEditMeals && (
+            <button
+              type="button"
+              onClick={() => setShowAiScanModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:via-indigo-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer shrink-0"
+              title="খাতার মিল চার্ট বা হোয়াইটবোর্ডের ছবি থেকে AI দিয়ে অটো ইনপুট করুন"
+            >
+              <Camera size={14} className="text-cyan-200" />
+              <span className="hidden sm:inline">AI Photo Scanner</span>
+              <span className="sm:hidden">AI Scan</span>
+              <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded-full font-extrabold uppercase tracking-wider">Free</span>
+            </button>
+          )}
+
           <RefreshButton 
             module="statistics" 
             onRefresh={async () => {
@@ -775,6 +870,19 @@ export default function MealsTracker({
           </div>
         )}
       </div>
+
+      {/* AI Meal Sheet Scanner Modal */}
+      <AIMealScannerModal
+        isOpen={showAiScanModal}
+        onClose={() => setShowAiScanModal(false)}
+        selectedDate={selectedDate}
+        onApplyMeals={handleApplyScannedMeals}
+        members={activeMembers}
+        activeMealTypes={activeMealTypes}
+        isDarkMode={isDarkMode}
+        authToken={authToken}
+        currentMonthId={currentMonthId}
+      />
 
     </div>
   );

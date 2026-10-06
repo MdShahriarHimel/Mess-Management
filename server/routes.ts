@@ -40,6 +40,7 @@ import { loadDB, saveDB, syncState,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
+import { scanMealSheetWithAI } from "./aiMealScanner.js";
 import { 
   getTodayBackupForMess, 
   getDailyBackupHistory, 
@@ -2751,6 +2752,48 @@ router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, 
   const currentMessId = getActiveMessId() || "default";
   const meals = await getMealsForCurrentCycle(monthId, currentMessId);
   res.json({ meals });
+});
+
+// AI Meal Sheet Scanner (Gemini Multimodal Vision)
+router.post("/meals/ai-scan-sheet", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { image, mimeType, mealTypes } = req.body;
+
+    if (!image) {
+      res.status(400).json({ error: "Image data is required for AI meal scanning" });
+      return;
+    }
+
+    const messId = getActiveMessId() || "default";
+    const db = loadDB(messId);
+    const activeMembers = (Array.isArray(db?.members) ? db.members : [])
+      .filter((m: any) => m.status === MemberStatus.ACTIVE || m.status === MemberStatus.AWAY || m.status === MemberStatus.PENDING)
+      .map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        nickname: m.nickname || ""
+      }));
+
+    if (activeMembers.length === 0) {
+      res.status(400).json({ error: "No active mess members found to match against" });
+      return;
+    }
+
+    const scanResult = await scanMealSheetWithAI(
+      image,
+      mimeType || "image/jpeg",
+      activeMembers,
+      Array.isArray(mealTypes) && mealTypes.length > 0 ? mealTypes : [
+        { id: "lunch", name: "Lunch" },
+        { id: "dinner", name: "Dinner" }
+      ]
+    );
+
+    res.json(scanResult);
+  } catch (err: any) {
+    console.error("[AI Meal Scan Route Error]:", err);
+    res.status(500).json({ error: err.message || "Failed to scan meal sheet with AI" });
+  }
 });
 
 // Bulk Enter/Edit meals for a month (Only Manager, Partial Manager, Admin, Super User, Assistant Super User)
