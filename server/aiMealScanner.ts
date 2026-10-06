@@ -5,15 +5,28 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize Gemini client on the server side
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+function getGeminiClient(): { ai: GoogleGenAI; key: string } | null {
+  const key = 
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GOOGLE_GENAI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.GEMINI_KEY;
+
+  if (!key) return null;
+
+  return {
+    key,
+    ai: new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    }),
+  };
+}
 
 export interface ScannedMemberMeal {
   memberId: string;
@@ -55,8 +68,11 @@ export async function scanMealSheetWithAI(
   ]
 ): Promise<MealScanResult> {
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured on the server");
+    const geminiInstance = getGeminiClient();
+    if (!geminiInstance) {
+      throw new Error(
+        "GEMINI_API_KEY সার্ভারে কনফিগার করা নেই। অনুগ্রহ করে Render / সার্ভার ড্যাশবোর্ডে গিয়ে Environment Variables সেকশনে 'GEMINI_API_KEY' যোগ করুন (Google AI Studio থেকে সম্পূর্ণ ফ্রিতে পাওয়া যায়: aistudio.google.com)।"
+      );
     }
 
     // Clean base64 data if data URL prefix exists
@@ -84,14 +100,18 @@ Your job is to read and interpret handwritten or printed Meal Sheets / Charts (�
 ${memberRosterDescription}
 
 ### MEAL TYPES BEING TRACKED:
-${mealTypesList} (Primary columns in chart are usually Lunch/দুপুর followed by Dinner/রাত)
+${mealTypesList}
 
 ### RULES OF THE MESS MEAL CHART (VERY STRICT, FOLLOW EXACTLY):
-1. **CHART STRUCTURE**:
-   - The image shows a table or column layout.
-   - Column 1: Member Name (হাতের লেখা বা প্রিন্ট করা নাম - বাংলা বা ইংরেজিতে).
-   - Column 2: Lunch / দুপুর.
-   - Column 3: Dinner / রাত.
+1. **CHART STRUCTURE & COLUMN HEADERS (CRITICAL)**:
+   - The image shows a table or column layout with Member Name and meal shifts.
+   - CAREFULLY INSPECT THE COLUMN HEADERS AT THE TOP OF THE TABLE:
+     - Notice which column is for Lunch and which is for Dinner!
+     - In some charts: Column 1 is Name, Column 2 is Lunch (দুপুর / ☀️), Column 3 is Dinner (রাত / 🌙).
+     - In other charts (like 'নাম | রাত 🌙 | দুপুর ☀️'): Column 1 is Name, Column 2 is Dinner (রাত / 🌙), Column 3 is Lunch (দুপুর / ☀️)!
+     - MATCH VALUES BY THE ACTUAL COLUMN HEADER LABEL, NOT JUST THE COLUMN ORDER!
+     - For example, if header is 'রাত' in column 2 and 'দুপুর' in column 3, then Column 2 values go to 'dinner' and Column 3 values go to 'lunch'!
+   - Ignore scribbled out / crossed out rows (কাটা দেওয়া বা মোছা নাম). Ignore titles and dates.
 
 2. **CROSS = MEAL OFF (0 servings)**:
    - If someone's cell has a CROSS mark ('X', 'x', '✖', '❌', 'কাটা দাগ', 'ক্রস', '0', 'off', 'না', or horizontal strike), that member's meal is OFF for that shift!
@@ -182,13 +202,38 @@ Output strictly valid JSON with this schema:
       text: systemPrompt,
     };
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: { parts: [imagePart, textPart] },
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+    const candidateModels = [
+      "gemini-3.1-flash-lite",
+      "gemini-3.8-flash",
+      "gemini-flash-latest"
+    ];
+
+    let lastError: any = null;
+    let response: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`[AI Meal Scanner] Attempting vision scan with model: ${modelName}`);
+        response = await geminiInstance.ai.models.generateContent({
+          model: modelName,
+          contents: { parts: [imagePart, textPart] },
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+        if (response && response.text) {
+          console.log(`[AI Meal Scanner] Successfully scanned using model: ${modelName}`);
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[AI Meal Scanner] Model ${modelName} encountered error (${err?.message || err}). Trying next candidate...`);
+      }
+    }
+
+    if (!response || !response.text) {
+      throw lastError || new Error("All AI vision models are currently busy. Please try again in a few moments.");
+    }
 
     const outputText = response.text || "{}";
     const parsed = JSON.parse(outputText);
@@ -211,15 +256,19 @@ Output strictly valid JSON with this schema:
     };
   } catch (err: any) {
     console.error("[AI Meal Scanner Error]:", err);
+    let cleanError = err?.message || "Unknown error during AI scan";
+    if (cleanError.includes("503") || cleanError.toLowerCase().includes("high demand") || cleanError.toLowerCase().includes("unavailable")) {
+      cleanError = "AI সার্ভারে সাময়িক অতিরিক্ত চাপ (High Demand) চলছে। অনুগ্রহ করে কয়েক সেকেন্ড পর আবার স্ক্যান বাটনে চাপ দিন।";
+    }
     return {
       success: false,
       detectedMeals: [],
       unmatchedNames: [],
-      summary: "ছবি স্ক্যান করতে ব্যর্থ হয়েছে। অনুগ্রহ করে স্পষ্ট ছবি আপলোড করুন।",
+      summary: "ছবি স্ক্যান করতে ব্যর্থ হয়েছে। অনুগ্রহ করে স্পষ্ট ছবি দিয়ে পুনরায় চেষ্টা করুন।",
       totalMembersDetected: 0,
       totalLunchCount: 0,
       totalDinnerCount: 0,
-      error: err.message || "Unknown error during AI scan",
+      error: cleanError,
     };
   }
 }

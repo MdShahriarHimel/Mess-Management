@@ -138,7 +138,11 @@ export default function AIMealScannerModal({
 
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || "ছবি স্ক্যান করতে সমস্যা হয়েছে।");
+      let msg = err.message || "ছবি স্ক্যান করতে সমস্যা হয়েছে।";
+      if (msg.includes("503") || msg.toLowerCase().includes("high demand") || msg.toLowerCase().includes("unavailable")) {
+        msg = "AI মডেল সার্ভারে সাময়িক চাপ (High Demand) চলছে। অনুগ্রহ করে কয়েক সেকেন্ড পর আবার স্ক্যান বাটনে চাপ দিন।";
+      }
+      setErrorMessage(msg);
     } finally {
       setIsScanning(false);
     }
@@ -215,7 +219,7 @@ export default function AIMealScannerModal({
                   AI Meal Sheet Scanner
                 </h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  Gemini Vision 2.5
+                  Gemini Multimodal Vision
                 </span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   100% Free
