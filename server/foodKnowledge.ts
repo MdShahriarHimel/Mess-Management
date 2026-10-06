@@ -11,7 +11,12 @@ import { generateUUID } from "./db.js";
 
 // Initialize Gemini client on the server side
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+  apiKey:
+    process.env.GEMINI_API_KEY ||
+    process.env.GEMINI_API ||
+    process.env.GEMEINI_API_KEY ||
+    process.env.GEMEINI_API ||
+    process.env.GOOGLE_API_KEY,
   httpOptions: {
     headers: {
       "User-Agent": "aistudio-build",

@@ -8,6 +8,9 @@ import { GoogleGenAI } from "@google/genai";
 function getGeminiClient(): { ai: GoogleGenAI; key: string } | null {
   const key = 
     process.env.GEMINI_API_KEY ||
+    process.env.GEMINI_API ||
+    process.env.GEMEINI_API_KEY ||
+    process.env.GEMEINI_API ||
     process.env.GOOGLE_API_KEY ||
     process.env.GOOGLE_GENAI_API_KEY ||
     process.env.VITE_GEMINI_API_KEY ||
@@ -113,14 +116,17 @@ ${mealTypesList}
      - For example, if header is 'রাত' in column 2 and 'দুপুর' in column 3, then Column 2 values go to 'dinner' and Column 3 values go to 'lunch'!
    - Ignore scribbled out / crossed out rows (কাটা দেওয়া বা মোছা নাম). Ignore titles and dates.
 
-2. **CROSS = MEAL OFF (0 servings)**:
-   - If someone's cell has a CROSS mark ('X', 'x', '✖', '❌', 'কাটা দাগ', 'ক্রস', '0', 'off', 'না', or horizontal strike), that member's meal is OFF for that shift!
-   - Mark value for that meal MUST BE 0.
+2. **CROSS = MEAL OFF (0 servings) - BE PRECISE**:
+   - A cross MUST be an intentional, deliberate 'X', 'x', '✖', '❌', diagonal cross, or explicit '0' / 'off' drawn inside the cell!
+   - **CRITICAL WARNING**: DO NOT mistake table borders, cell dividers, notebook ruling lines (খাতার রুলটানা দাগ বা ছকের দাগ), or accidental smudges for a cross!
+   - If a cell has no clear, deliberate 'X', it is NOT a cross!
+   - Mark value for that meal MUST BE 0 ONLY when there is a real, intentional cross.
 
-3. **BLANK / TICK / DEFAULT = MEAL ON (1 serving)**:
-   - In bachelor messes, members usually do NOT write anything if their regular meal is active.
-   - Any BLANK / EMPTY cell (ফাঁকা ঘর, খালি জায়গা, কোনো দাগ নেই) means the meal is ACTIVE / ON! Default value = 1.
-   - Any TICK mark ('✓', '✔'), dot (.), or dash (-) ALSO means ACTIVE / ON! Default value = 1.
+3. **BLANK / TICK / CLEAN CELL = MEAL ON (1 serving)**:
+   - In bachelor messes, members normally leave their cells empty when their meal is running normally.
+   - Any BLANK / EMPTY cell (ফাঁকা ঘর, খালি জায়গা, কোনো ক্রস নেই) = 1 (ACTIVE / ON)!
+   - If a cell has only paper grid lines, a dot (.), dash (-), or tick (✓) = 1 (ACTIVE / ON)!
+   - When in doubt between blank vs cross, lean toward 1 (ON) unless an intentional 'X' cross is clearly visible.
 
 4. **NUMERIC COUNTS, WORDS, & GUEST MEALS (২, ৩, দুই, তিন, Two, Three, গেস্ট মিল)**:
    - Members often write numbers or words when having extra servings or guest meals (গেস্ট মিল).
@@ -151,14 +157,17 @@ ${mealTypesList}
         - If written simply as '২' or '3', assign that exact number (2 or 3).
      f) In "lunchReason" and "dinnerReason", describe the detection clearly in Bengali (e.g. 'দুই লেখা (২টি মিল)', '৩ লেখা (৩টি মিল)', 'ফাঁকা ঘর (১ মিল চালু)', 'ক্রস চিহ্ন (মিল অফ)').
 
-5. **BILINGUAL FUZZY MATCHING (Bengali <-> English)**:
-   - Names on the sheet may be written in Bengali (e.g., 'ইশতিয়াক আহমেদ', 'ফয়সাল', 'দিদার', 'সোহান', 'জিহাদ', 'সাকিব') or in English (e.g., 'Ishtiaque', 'Faisal', 'Didar', 'Sohan').
-   - You MUST match phonetic equivalents between Bengali and English against the Official Members Roster provided above.
-   - For example:
-     - 'ইশতিয়াক' or 'ইশতিয়াক আহমেদ' matches 'Ishtiaque Ahmed'
-     - 'দিদার' matches 'didar hosen' / 'didar'
-     - 'সোহান' matches 'mdshoaeeb' / 'Sohan'
-     - 'ফয়সাল' matches 'Faisal'
+5. **BILINGUAL FUZZY MATCHING (Bengali <-> English & 'ভাই' Suffix)**:
+   - In Bangladeshi messes, members' names on paper charts almost always end with 'ভাই' (e.g. 'মিন্টু ভাই', 'মমিনুল ভাই', 'রাফি ভাই', 'সুফল ভাই', 'কুরাইশ ভাই', 'মাহদী ভাই', 'মিজু ভাই', 'ফয়সাল ভাই', 'নাহিদ ভাই', 'ফাতিন ভাই', 'ইশতিয়াক ভাই', 'হিমেল ভাই').
+   - You MUST strip 'ভাই' (Bhai) or 'দা' (Da) when matching against the Official Members Roster!
+   - Match phonetic equivalents between Bengali and English:
+     - 'মিন্টু' / 'মিন্টু ভাই' matches 'Mintu' / 'Mintoo' / 'Md Mintu'
+     - 'ইশতিয়াক' / 'ইশতিয়াক ভাই' matches 'Ishtiaque Ahmed' / 'Ishtiaque'
+     - 'দিদার' / 'দিদার ভাই' matches 'didar hosen' / 'didar'
+     - 'সোহান' / 'সোহান ভাই' matches 'mdshoaeeb' / 'Sohan'
+     - 'ফয়সাল' / 'ফয়সাল ভাই' matches 'Faisal'
+     - 'রাফি' / 'রাফি ভাই' matches 'Rafi'
+     - 'হিমেল' / 'হিমেল ভাই' matches 'Himel' / 'Shahriar Himel'
    - Always assign the exact "memberId" from the provided roster for matched members.
 
 6. **UNKNOWN / UNMATCHED NAMES**:
