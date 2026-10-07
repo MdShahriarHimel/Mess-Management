@@ -64,6 +64,7 @@ import {
   premiumUnlocks, 
   tenantSettings, 
   meals as mealsTable,
+  foodMenus as foodMenusTable,
   managerHoldings as managerHoldingsTable,
   marketEntries as marketEntriesTable,
   deposits as depositsTable
@@ -3002,10 +3003,40 @@ router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MAN
 // ---------------------------------------------------------
 // FOOD MENU API
 // ---------------------------------------------------------
-router.get("/foodmenu/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/foodmenu/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
-  const menu = db.foodMenus.filter(m => m.monthId === monthId).sort((a, b) => b.date.localeCompare(a.date));
+  
+  // Merge in-memory and PostgreSQL database rows to ensure 100% persistence
+  let menu = (db.foodMenus || []).filter(m => m.monthId === monthId);
+  try {
+    const pgRows = await drizzleDb.select().from(foodMenusTable).where(eq(foodMenusTable.monthId, monthId));
+    if (pgRows && pgRows.length > 0) {
+      const map = new Map<string, any>();
+      menu.forEach(m => map.set(m.date, m));
+      pgRows.forEach((r: any) => {
+        if (!map.has(r.date)) {
+          const item = {
+            id: r.id,
+            monthId: r.monthId,
+            date: r.date,
+            lunchVegetable: r.lunchVegetable || "",
+            lunchMain: r.lunchMain || "",
+            dinnerVegetable: r.dinnerVegetable || "",
+            dinnerMain: r.dinnerMain || ""
+          };
+          map.set(r.date, item);
+          // Sync into memory cache as well
+          db.foodMenus.push(item);
+        }
+      });
+      menu = Array.from(map.values());
+    }
+  } catch (err) {
+    console.error("Failed to query foodMenus from Postgres:", err);
+  }
+
+  menu.sort((a, b) => b.date.localeCompare(a.date));
   res.json({ menu });
 });
 
@@ -3043,7 +3074,32 @@ router.post("/foodmenu", authMiddleware, async (req: AuthenticatedRequest, res: 
     db.foodMenus.push(newMenu);
   }
 
+  // Save to persistent file backup and memory
   saveDB();
+
+  // Commit immediately and synchronously to PostgreSQL Cloud SQL
+  try {
+    await drizzleDb.insert(foodMenusTable).values({
+      id: newMenu.id,
+      monthId: newMenu.monthId,
+      date: newMenu.date,
+      lunchVegetable: newMenu.lunchVegetable,
+      lunchMain: newMenu.lunchMain,
+      dinnerVegetable: newMenu.dinnerVegetable,
+      dinnerMain: newMenu.dinnerMain
+    }).onConflictDoUpdate({
+      target: foodMenusTable.id,
+      set: {
+        lunchVegetable: newMenu.lunchVegetable,
+        lunchMain: newMenu.lunchMain,
+        dinnerVegetable: newMenu.dinnerVegetable,
+        dinnerMain: newMenu.dinnerMain
+      }
+    });
+  } catch (pgErr) {
+    console.error("Direct Postgres insert for foodMenu failed:", pgErr);
+  }
+
   logAudit(req.user!.id, req.user!.nickname, "UPDATE_FOOD_MENU", "Menu Draft", JSON.stringify(newMenu), `Updated food menu for ${date}`);
 
   // Trigger Food Knowledge learning pipeline in background
