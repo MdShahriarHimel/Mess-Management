@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles, Coffee, Users, Trophy, RefreshCw, X } from "lucide-react";
 import { Member } from "../types.js";
-import { signInWithPopup, signInWithRedirect } from "firebase/auth";
+import { signInWithPopup, signInWithRedirect, setPersistence, browserLocalPersistence, browserSessionPersistence } from "firebase/auth";
 import { auth, googleAuthProvider } from "../lib/firebase.ts";
 
 interface LoginProps {
@@ -432,6 +432,12 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
       });
 
       let idToken: string | null = null;
+
+      try {
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      } catch (persistErr) {
+        console.warn("[Auth] Failed to set Firebase persistence:", persistErr);
+      }
 
       try {
         const result = await signInWithPopup(auth, googleAuthProvider);

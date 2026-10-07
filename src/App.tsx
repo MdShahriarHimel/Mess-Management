@@ -6,7 +6,7 @@
 import { SyncIndicator } from "./components/SyncIndicator";
 import React, { useState, useEffect, useMemo } from "react";
 import { io } from "socket.io-client";
-import { onAuthStateChanged, onIdTokenChanged } from "firebase/auth";
+import { onAuthStateChanged, onIdTokenChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
   Home, Users, Coffee, Sparkles, ShoppingCart, DollarSign, 
@@ -1534,6 +1534,17 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  // Ensure Firebase Auth persistence is locked to browserLocalPersistence across sessions
+  useEffect(() => {
+    try {
+      setPersistence(auth, browserLocalPersistence).catch(err => {
+        console.warn("[Auth Persistence] Startup notice:", err);
+      });
+    } catch (e) {
+      console.warn("[Auth Persistence] Notice:", e);
+    }
+  }, []);
+
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.replace("#", "");
     return hash || "dashboard";
@@ -2713,6 +2724,8 @@ export default function App() {
         try {
           if (localStorage.getItem("mess_token")) {
             localStorage.setItem("mess_user", JSON.stringify(data.user));
+            // Extend token expiry window by 30 days on active app usage
+            localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000));
           } else if (sessionStorage.getItem("mess_token")) {
             sessionStorage.setItem("mess_user", JSON.stringify(data.user));
           }
@@ -2725,20 +2738,17 @@ export default function App() {
           setActiveMessId(data.activeMessId);
           localStorage.setItem("active_mess_id", data.activeMessId);
         }
-      } else {
+      } else if (response.status === 401) {
+        // Genuine 401 Unauthorized: session terminated or invalidated
+        console.warn("Session expired or rejected by server (401).");
         handleLogoutLocal();
+      } else {
+        // Status 500, 502, 503, 504: Temporary server cold boot or network glitch.
+        // DO NOT log out the user! Keep the user logged in with cached credentials.
+        console.warn(`Server responded with temporary status ${response.status}. Preserving local session.`);
       }
     } catch (e: any) {
-      const isNetworkError = e?.message?.includes("Failed to fetch") || 
-                            e?.message?.includes("NetworkError") || 
-                            e?.message?.includes("network-request-failed") ||
-                            (typeof navigator !== "undefined" && !navigator.onLine);
-      if (isNetworkError) {
-        console.warn("Network error during session verification. Preserving local session.", e);
-      } else {
-        console.error("Session verification failed:", e);
-        handleLogoutLocal();
-      }
+      console.warn("Network notice during session verification. Preserving local session.", e);
     }
   };
 
@@ -3223,29 +3233,25 @@ export default function App() {
               try {
                 if (localStorage.getItem("mess_token")) {
                   localStorage.setItem("mess_user", JSON.stringify(data.user));
+                  localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000));
                 }
               } catch (storageErr) {
                 console.warn("Notice: Failed to update cached user:", storageErr);
               }
             }
-          } else {
-            console.error("Firebase authenticated but backend user check failed.");
+          } else if (response.status === 401) {
+            console.warn("Firebase authenticated but server returned 401 Unauthorized.");
             if (isMounted) {
               const { signOut } = await import("firebase/auth");
               await signOut(auth);
               handleLogoutLocal();
             }
+          } else {
+            console.warn(`Server returned status ${response.status} during token check. Preserving active session.`);
           }
         } catch (e: any) {
-          const isNetworkError = e?.message?.includes("network-request-failed") || e?.code?.includes("network-request-failed") || String(e).includes("network-request-failed");
-          if (isNetworkError) {
-            console.warn("Network request failed during Firebase token refresh. Preserving local session to support flaky network connectivity.", e);
-            // Mark firebaseAuthChecked as true so UI doesn't hang in loading state
-            if (isMounted) setFirebaseAuthChecked(true);
-          } else {
-            console.error("Error on Firebase auth state change:", e);
-            if (isMounted) handleLogoutLocal();
-          }
+          console.warn("Network notice during Firebase token refresh. Preserving local session:", e);
+          if (isMounted) setFirebaseAuthChecked(true);
         }
       } else {
         // No Firebase SDK user in active memory
@@ -3455,18 +3461,21 @@ export default function App() {
     return () => window.removeEventListener("preview-cycle-transition", onPreviewReq);
   }, [months, currentMonthId]);
 
-  const handleLoginSuccess = async (token: string, user: Member, rememberMe?: boolean) => {
+  const handleLoginSuccess = async (token: string, user: Member, rememberMe: boolean = true) => {
     try {
-      if (rememberMe) {
+      const shouldRemember = rememberMe !== false;
+      if (shouldRemember) {
         setStoredTokenSafely(token);
-        localStorage.setItem("mess_token_expiry", String(Date.now() + 10 * 24 * 60 * 60 * 1000)); // 10 days
+        localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000)); // 30 days persistent session
         localStorage.setItem("mess_user", JSON.stringify(user));
+        localStorage.setItem("mess_remember_me", "true");
         sessionStorage.removeItem("mess_token");
         sessionStorage.removeItem("mess_user");
       } else {
         clearStoredTokenSafely();
         sessionStorage.setItem("mess_token", token);
         sessionStorage.setItem("mess_user", JSON.stringify(user));
+        localStorage.removeItem("mess_remember_me");
       }
       if ((user as any)?.messId) {
         setActiveMessId((user as any).messId);

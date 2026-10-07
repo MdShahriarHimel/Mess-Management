@@ -348,64 +348,98 @@ export function isMemberActiveInAnotherMess(email: string, currentMessId: string
 // AUTH MIDDLEWARE
 // ---------------------------------------------------------
 export async function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
-  // Extract token: Prioritize HttpOnly Secure cookie, then fallback to Authorization header
-  let token = (req.cookies && (req.cookies[SESSION_COOKIE_NAME] || req.cookies.mess_session)) || "";
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    }
-  }
+  // Extract token: Collect candidate tokens from Authorization header and HttpOnly cookie
+  const authHeader = req.headers.authorization;
+  const headerToken = (authHeader && authHeader.startsWith("Bearer ")) ? authHeader.split(" ")[1]?.trim() : "";
+  const cookieToken = (req.cookies && (req.cookies[SESSION_COOKIE_NAME] || req.cookies.mess_session)) ? (req.cookies[SESSION_COOKIE_NAME] || req.cookies.mess_session).trim() : "";
 
-  if (!token || token.trim().length === 0) {
+  // Prioritize explicit Authorization header from client, fallback to cookie, or try both
+  const candidateTokens: string[] = [];
+  if (headerToken) candidateTokens.push(headerToken);
+  if (cookieToken && !candidateTokens.includes(cookieToken)) candidateTokens.push(cookieToken);
+
+  if (candidateTokens.length === 0) {
     res.status(401).json({ error: "Unauthorized: Missing session credentials" });
     return;
   }
 
-  token = token.trim();
-  (req as any).token = token;
+  let token = "";
   let tokenUid = "";
   let tokenEmail = "";
   let tokenName = "";
   let tokenPicture: string | null = null;
   let decodedToken: any = null;
+  let authSuccess = false;
+  let lastAuthError = "Invalid credentials";
+  let lastErrorCode = "auth/invalid-token";
 
-  // 1. Authenticate credentials / token
-  if (token.startsWith("ey")) {
-    try {
-      decodedToken = await adminAuth.verifyIdToken(token);
-      tokenUid = decodedToken.uid;
-      tokenEmail = (decodedToken.email || "").toLowerCase();
-      tokenName = decodedToken.name || "";
-      tokenPicture = decodedToken.picture || null;
-    } catch (e: any) {
-      const isExpired = e?.code === "auth/id-token-expired" || e?.message?.includes("expired") || String(e).includes("expired");
-      if (isExpired) {
-        console.warn("Firebase ID token expired (client will auto-refresh):", e.message || e);
-      } else {
-        console.error("Firebase auth verification failed:", e);
+  // Try candidate tokens sequentially until one succeeds
+  for (const candidate of candidateTokens) {
+    if (candidate.startsWith("ey")) {
+      // Firebase ID token candidate
+      try {
+        decodedToken = await adminAuth.verifyIdToken(candidate);
+        tokenUid = decodedToken.uid;
+        tokenEmail = (decodedToken.email || "").toLowerCase();
+        tokenName = decodedToken.name || "";
+        tokenPicture = decodedToken.picture || null;
+        token = candidate;
+        authSuccess = true;
+        break;
+      } catch (e: any) {
+        // Fallback: Google oauth2 tokeninfo endpoint
+        try {
+          const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(candidate)}`);
+          if (googleRes.ok) {
+            const gData: any = await googleRes.json();
+            if (gData.sub && gData.email) {
+              tokenUid = gData.sub;
+              tokenEmail = String(gData.email).trim().toLowerCase();
+              tokenName = gData.name || "";
+              tokenPicture = gData.picture || null;
+              token = candidate;
+              authSuccess = true;
+              break;
+            }
+          }
+        } catch (gErr) {
+          // ignore tokeninfo error
+        }
+
+        const isExpired = e?.code === "auth/id-token-expired" || e?.message?.includes("expired") || String(e).includes("expired");
+        lastAuthError = isExpired ? "Firebase ID token expired" : "Invalid Firebase token";
+        lastErrorCode = isExpired ? "auth/id-token-expired" : "auth/invalid-token";
       }
-      res.status(401).json({ 
-        error: "Unauthorized: Invalid Firebase session",
-        code: isExpired ? "auth/id-token-expired" : "auth/invalid-token"
-      });
-      return;
-    }
-  } else {
-    // Session token: extract user ID and perform server-side active session validation
-    tokenUid = token.split(":")[0];
-    const sessionCheck = validateActiveSession(token, tokenUid);
-    if (!sessionCheck.valid) {
-      res.status(401).json({
-        error: `Unauthorized: ${sessionCheck.reason || "Invalid or expired session"}`,
-        code: "auth/session-invalid"
-      });
-      return;
-    }
-    if (sessionCheck.session) {
-      (req as any).activeSession = sessionCheck.session;
+    } else {
+      // Session token candidate: `${userId}:${sessionId}:${version}` or legacy `${userId}:${version}`
+      const candidateUid = candidate.split(":")[0];
+      const sessionCheck = validateActiveSession(candidate, candidateUid);
+      if (sessionCheck.valid) {
+        tokenUid = candidateUid;
+        token = candidate;
+        if (sessionCheck.session) {
+          (req as any).activeSession = sessionCheck.session;
+          // Refresh session cookie on successful active session request
+          setSessionCookie(res, token, req);
+        }
+        authSuccess = true;
+        break;
+      } else {
+        lastAuthError = sessionCheck.reason || "Invalid or expired session";
+        lastErrorCode = "auth/session-invalid";
+      }
     }
   }
+
+  if (!authSuccess || !token) {
+    res.status(401).json({
+      error: `Unauthorized: ${lastAuthError}`,
+      code: lastErrorCode
+    });
+    return;
+  }
+
+  (req as any).token = token;
 
   // Look up user reference across all messes in the system
   const userLookup = findMemberAcrossAllMesses({

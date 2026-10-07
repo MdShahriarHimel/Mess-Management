@@ -98,6 +98,7 @@ export function clearStoredTokenSafely(): void {
     localStorage.removeItem(LOCAL_TOKEN_KEY);
     localStorage.removeItem("mess_token_expiry");
     localStorage.removeItem("mess_user");
+    localStorage.removeItem("mess_remember_me");
     sessionStorage.removeItem(LOCAL_TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_HASH_KEY);
     sessionStorage.removeItem("mess_user");

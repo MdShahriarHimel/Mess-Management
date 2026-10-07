@@ -64,7 +64,9 @@ interface FailedLoginEntry {
 
 const failedLoginsMap = new Map<string, FailedLoginEntry>();
 const forgotPasswordRequestsMap = new Map<string, number[]>();
-const sessionVersionsMap = new Map<string, string>();
+
+const SESSION_VERSIONS_FILE = "session_versions.json";
+let sessionVersionsCache: Record<string, string> | null = null;
 
 const SECURITY_LOG_FILE = "security_events_log.json";
 const PASSWORD_HISTORY_FILE = "password_history.json";
@@ -304,24 +306,53 @@ function loadActiveSessions(): Record<string, ActiveSession> {
   return activeSessionsCache;
 }
 
+export const SESSION_LIFESPAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days persistent session
+
 function saveActiveSessions(): void {
   if (!activeSessionsCache) return;
   writeAndPersistFile(ACTIVE_SESSIONS_FILE, JSON.stringify(activeSessionsCache, null, 2));
 }
 
-export function getSessionVersion(memberId: string): string {
-  if (!sessionVersionsMap.has(memberId)) {
-    sessionVersionsMap.set(memberId, "v1");
+function loadSessionVersions(): Record<string, string> {
+  if (sessionVersionsCache) return sessionVersionsCache;
+
+  const filePath = path.join(DB_DIR, SESSION_VERSIONS_FILE);
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = fs.readFileSync(filePath, "utf-8");
+      sessionVersionsCache = JSON.parse(data);
+      return sessionVersionsCache!;
+    } catch (e) {
+      console.error("Failed to parse session_versions.json:", e);
+    }
   }
-  return sessionVersionsMap.get(memberId)!;
+
+  sessionVersionsCache = {};
+  return sessionVersionsCache;
+}
+
+function saveSessionVersions(): void {
+  if (!sessionVersionsCache) return;
+  writeAndPersistFile(SESSION_VERSIONS_FILE, JSON.stringify(sessionVersionsCache, null, 2));
+}
+
+export function getSessionVersion(memberId: string): string {
+  const versions = loadSessionVersions();
+  if (!versions[memberId]) {
+    versions[memberId] = "v1";
+    saveSessionVersions();
+  }
+  return versions[memberId];
 }
 
 export function invalidateMemberSessions(memberId: string, previousIds?: string[]): string {
   const newVer = "s_" + generateUUID();
+  const versions = loadSessionVersions();
   const allIds = [memberId, ...(previousIds || [])].filter(Boolean);
   for (const id of allIds) {
-    sessionVersionsMap.set(id, newVer);
+    versions[id] = newVer;
   }
+  saveSessionVersions();
 
   // Invalidate any persisted active sessions for this member
   const sessions = loadActiveSessions();
@@ -357,7 +388,7 @@ export function createActiveSession(
     userAgent: meta?.userAgent || "Unknown",
     createdAt: now,
     lastActivity: now,
-    expiresAt: now + 10 * 24 * 60 * 60 * 1000, // 10 days
+    expiresAt: now + SESSION_LIFESPAN_MS, // 30 days persistent session
     isValid: true
   };
 
@@ -422,8 +453,10 @@ export function validateActiveSession(
       return { valid: false, reason: "Session version outdated" };
     }
 
-    // Touch lastActivity
+    // Touch lastActivity and slide expiration window (sliding 30 days)
     session.lastActivity = Date.now();
+    session.expiresAt = Date.now() + SESSION_LIFESPAN_MS;
+    saveActiveSessions();
     return { valid: true, session };
   }
 
@@ -476,7 +509,7 @@ export function getSessionCookieOptions(req?: any) {
     httpOnly: true,
     secure: isHttps || process.env.NODE_ENV === "production",
     sameSite: "strict" as const,
-    maxAge: 10 * 24 * 60 * 60 * 1000, // 10 days
+    maxAge: SESSION_LIFESPAN_MS, // 30 days persistent cookie
     path: "/"
   };
 }
