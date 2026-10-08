@@ -7,6 +7,7 @@ import nodemailer from "nodemailer";
 import { db } from "../src/db/index.js";
 import { persistentFiles } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
+import { writeAndPersistFile } from "./db.js";
 
 export interface SendMailOptions {
   to: string;
@@ -23,7 +24,7 @@ export interface SendMailResult {
   error?: string;
 }
 
-interface SmtpConfig {
+export interface SmtpConfig {
   user: string;
   pass: string;
   host: string;
@@ -32,7 +33,7 @@ interface SmtpConfig {
 
 let cachedSmtpConfig: SmtpConfig | null = null;
 
-async function getSmtpCredentials(): Promise<SmtpConfig> {
+export async function getSmtpCredentials(): Promise<SmtpConfig> {
   // 1. Check all standard environment variable variations used in Render / hosting platforms
   const envUser = (
     process.env.SMTP_USER ||
@@ -95,6 +96,16 @@ async function getSmtpCredentials(): Promise<SmtpConfig> {
   }
 
   return { user: "", pass: "", host: "smtp.gmail.com" };
+}
+
+export async function saveSmtpCredentials(config: SmtpConfig): Promise<void> {
+  cachedSmtpConfig = {
+    user: config.user.trim(),
+    pass: config.pass.trim().replace(/\s+/g, ""),
+    host: (config.host || "smtp.gmail.com").trim(),
+    port: config.port || 587
+  };
+  writeAndPersistFile("smtp_credentials.json", JSON.stringify(cachedSmtpConfig, null, 2));
 }
 
 /**

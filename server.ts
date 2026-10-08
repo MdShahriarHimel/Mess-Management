@@ -15,6 +15,7 @@ import { initializeDbCache, pendingSyncPromises, checkAndSyncDbCacheIfNeeded, ge
 import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
 import { startDailyBackupCron } from "./server/backupCron.js";
+import { startMarketReminderScheduler } from "./server/marketReminderService.js";
 import { initSocketIO } from "./server/socket.js";
 import { recordCronPing, cronStatus } from "./server/cronStatus.js";
 
@@ -244,6 +245,7 @@ const initPromise = (async () => {
   ensureDbInitialized()
     .then(() => {
       startDailyBackupCron();
+      startMarketReminderScheduler();
     })
     .catch(err => {
       console.error("Eager database initialization failed:", err);

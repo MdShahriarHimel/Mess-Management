@@ -6,9 +6,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus,
-  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight, Printer, Download, Search, CheckCircle2, Shield
+  ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight, Printer, Download, Search, CheckCircle2, Shield,
+  Mail
 } from "lucide-react";
 import { Member, MarketEntry, Duty, UserRole, MessMonth, RespectSenioritySettings, Meal, MemberStatus } from "../types.js";
+import MarketReminderModal from "./MarketReminderModal.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import QRCode from "qrcode";
 import { RefreshButton } from "./RefreshButton.tsx";
@@ -73,6 +75,7 @@ export default function MarketLogs({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showDutyScheduleModal, setShowDutyScheduleModal] = useState(false);
+  const [showMarketReminderModal, setShowMarketReminderModal] = useState(false);
   const [scheduleSearchQuery, setScheduleSearchQuery] = useState("");
   const [viewMonthId, setViewMonthId] = useState<string>(currentMonthId);
   const [isCreatingNextCycle, setIsCreatingNextCycle] = useState(false);
@@ -1429,6 +1432,18 @@ export default function MarketLogs({
                 <FileText size={14} className="text-emerald-400" />
                 <span className="hidden sm:inline">DUTY SCHEDULE & PDF</span>
                 <span className="sm:hidden">PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowMarketReminderModal(true)}
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-500/15 to-orange-500/15 hover:from-amber-500/25 hover:to-orange-500/25 text-amber-300 border border-amber-500/40 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                title="স্বয়ংক্রিয় বাজার নোটিফিকেশন ও পুশ মেইল ইঞ্জিন"
+              >
+                <Mail size={14} className="text-amber-400" />
+                <span className="hidden sm:inline">MARKET REMINDER</span>
+                <span className="sm:hidden">REMINDER</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-mono">PUSH</span>
               </button>
 
               {canEditMarketDuty && (
@@ -3049,6 +3064,16 @@ export default function MarketLogs({
           </div>
         </div>
       )}
+
+      {/* 6. AUTOMATED MARKET REMINDER PUSH MAIL MODAL */}
+      <MarketReminderModal
+        isOpen={showMarketReminderModal}
+        onClose={() => setShowMarketReminderModal(false)}
+        currentUser={currentUser}
+        authToken={authToken}
+        isDarkMode={isDarkMode}
+        messName={systemBrandingName || "Ababil Mess"}
+      />
 
     </div>
   );

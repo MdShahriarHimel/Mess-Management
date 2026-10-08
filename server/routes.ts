@@ -72,7 +72,12 @@ import {
 import { eq, sql, and, or } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
-import { sendEmailWithFallback } from "./emailService.js";
+import { sendEmailWithFallback, getSmtpCredentials, saveSmtpCredentials } from "./emailService.js";
+import {
+  checkAndSendMarketReminders,
+  sendTestMarketReminder,
+  getMarketReminderRecentLogs
+} from "./marketReminderService.js";
 import {
   validatePasswordPolicy,
   checkLoginRateLimit,
@@ -4226,6 +4231,174 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
 
   logAudit(req.user!.id, req.user!.nickname, "REMOVE_DUTY", JSON.stringify(original), "Removed", `Removed duty ${original.name}`);
   res.json({ success: true });
+});
+
+// ---------------------------------------------------------
+// AUTOMATED MARKET REMINDERS & SMTP API
+// ---------------------------------------------------------
+
+// Get market reminders status, upcoming duties, and recent logs (tenant-scoped)
+router.get("/market-reminders/status", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const isOwner = isPlatformOwner(req.user!.email);
+    const activeMessId = (req.user as any)?.messId || getActiveMessId() || "default";
+    const smtp = await getSmtpCredentials();
+    const isConfigured = Boolean(smtp.user && smtp.pass);
+    
+    // Mask email for security/privacy (e.g. "md***@gmail.com")
+    let maskedUser = "";
+    if (smtp.user) {
+      const parts = smtp.user.split("@");
+      if (parts.length === 2) {
+        maskedUser = `${parts[0].slice(0, 2)}***@${parts[1]}`;
+      } else {
+        maskedUser = `${smtp.user.slice(0, 2)}***`;
+      }
+    }
+
+    // Tenant-isolated recent logs
+    const recentLogs = getMarketReminderRecentLogs(isOwner ? undefined : activeMessId, 15);
+
+    // Retrieve tomorrow's market duties for the active mess
+    const now = new Date();
+    const dhakaFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Dhaka",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+    const tomorrow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = dhakaFormatter.format(tomorrow);
+
+    const db = loadDB(activeMessId);
+    const tomorrowDuties = (db.duties || [])
+      .filter((d: any) => {
+        const isMarket = d.name?.toLowerCase().includes("market") || d.name?.toLowerCase().includes("bazar");
+        return isMarket && d.name?.includes(tomorrowStr);
+      })
+      .map((d: any) => {
+        const member = (db.members || []).find((m: any) => m.id === d.memberId);
+        return {
+          id: d.id,
+          dutyName: d.name,
+          date: tomorrowStr,
+          memberId: d.memberId,
+          memberName: member?.name || "Unassigned",
+          memberNickname: member?.nickname || "",
+          memberEmail: member?.email || ""
+        };
+      });
+
+    res.json({
+      configured: isConfigured,
+      smtpUser: maskedUser,
+      smtpHost: smtp.host || "smtp.gmail.com",
+      smtpPort: smtp.port || 587,
+      messId: activeMessId,
+      tomorrowStr,
+      tomorrowDuties,
+      recentLogs
+    });
+  } catch (err: any) {
+    console.error("[MarketReminder Status] Error:", err);
+    res.status(500).json({ error: "Failed to retrieve market reminder status" });
+  }
+});
+
+// Trigger an immediate check and send of market reminders (tenant-isolated)
+router.post("/market-reminders/check-and-send", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const isOwner = isPlatformOwner(req.user!.email);
+    const targetMessId = isOwner ? req.body.messId : ((req.user as any)?.messId || getActiveMessId() || "default");
+    
+    const result = await checkAndSendMarketReminders({
+      specificMessId: targetMessId || undefined,
+      forceAll: !!req.body.forceAll
+    });
+
+    res.json({
+      success: true,
+      remindersSent: result.remindersSent,
+      processedMesses: result.processedMesses,
+      errors: result.errors,
+      logs: result.logs
+    });
+  } catch (err: any) {
+    console.error("[MarketReminder Run] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to trigger market reminders" });
+  }
+});
+
+// Send a test market reminder email to verify SMTP and preview layout
+router.post("/market-reminders/send-test", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const activeMessId = (req.user as any)?.messId || getActiveMessId() || "default";
+    const recipientEmail = (req.body.email || req.user!.email || "").trim().toLowerCase();
+
+    if (!recipientEmail || !recipientEmail.includes("@")) {
+      res.status(400).json({ error: "Valid recipient email address is required" });
+      return;
+    }
+
+    const testResult = await sendTestMarketReminder({
+      recipientEmail,
+      messId: activeMessId,
+      memberName: req.user!.name || "মেম্বার",
+      memberNickname: req.user!.nickname || ""
+    });
+
+    if (testResult.success) {
+      res.json({
+        success: true,
+        message: `টেস্ট বাজার রিমাইন্ডার সফলভাবে ${recipientEmail}-এ পাঠানো হয়েছে! আপনার ইনবক্স চেক করুন।`,
+        messageId: testResult.messageId
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: testResult.error || "টেস্ট ইমেইল ডেলিভারি ব্যর্থ হয়েছে। অনুগ্রহ করে SMTP সেটিংস যাচাই করুন।"
+      });
+    }
+  } catch (err: any) {
+    console.error("[MarketReminder Test] Error:", err);
+    res.status(500).json({ error: err.message || "Test email delivery failed" });
+  }
+});
+
+// Save SMTP credentials directly from UI (persisted securely in PostgreSQL)
+router.post("/market-reminders/smtp-config", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { user, pass, host, port } = req.body;
+    if (!user || !pass) {
+      res.status(400).json({ error: "Email address (User) and App Password are required" });
+      return;
+    }
+
+    await saveSmtpCredentials({
+      user: String(user).trim(),
+      pass: String(pass).trim(),
+      host: host ? String(host).trim() : "smtp.gmail.com",
+      port: port ? Number(port) : 587
+    });
+
+    logAudit(
+      req.user!.id,
+      req.user!.nickname,
+      "CONFIG_SMTP",
+      "SMTP Credentials",
+      "Saved",
+      `Configured SMTP credentials for user: ${user}`
+    );
+
+    res.json({
+      success: true,
+      message: "SMTP ক্রেডেনশিয়াল সফলভাবে সংরক্ষিত হয়েছে!"
+    });
+  } catch (err: any) {
+    console.error("[MarketReminder SMTP Config] Error:", err);
+    res.status(500).json({ error: "Failed to save SMTP configuration" });
+  }
 });
 
 // ---------------------------------------------------------
