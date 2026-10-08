@@ -4245,11 +4245,12 @@ router.get("/market-reminders/status", authMiddleware, async (req: Authenticated
     const activeMessId = (req.user as any)?.messId || getActiveMessId() || "default";
     const smtp = await getSmtpCredentials();
     const resendKey = (smtp.resendApiKey || process.env.RESEND_API_KEY || (smtp.pass && smtp.pass.startsWith("re_") ? smtp.pass : "") || (smtp.user && smtp.user.startsWith("re_") ? smtp.user : "")).trim();
-    const isConfigured = Boolean((smtp.user && smtp.pass) || resendKey);
+    const brevoKey = (smtp.brevoApiKey || process.env.BREVO_API_KEY || (smtp.pass && smtp.pass.startsWith("xkeysib-") ? smtp.pass : "") || (smtp.user && smtp.user.startsWith("xkeysib-") ? smtp.user : "")).trim();
+    const isConfigured = Boolean((smtp.user && smtp.pass) || resendKey || brevoKey);
     
     // Mask email for security/privacy (e.g. "md***@gmail.com")
     let maskedUser = "";
-    if (smtp.user && !smtp.user.startsWith("re_")) {
+    if (smtp.user && !smtp.user.startsWith("re_") && !smtp.user.startsWith("xkeysib-")) {
       const parts = smtp.user.split("@");
       if (parts.length === 2) {
         maskedUser = `${parts[0].slice(0, 2)}***@${parts[1]}`;
@@ -4259,6 +4260,7 @@ router.get("/market-reminders/status", authMiddleware, async (req: Authenticated
     }
 
     const maskedResendKey = resendKey ? `${resendKey.slice(0, 5)}...${resendKey.slice(-4)}` : "";
+    const maskedBrevoKey = brevoKey ? `${brevoKey.slice(0, 8)}...${brevoKey.slice(-4)}` : "";
 
     // Tenant-isolated recent logs
     const recentLogs = getMarketReminderRecentLogs(isOwner ? undefined : activeMessId, 15);
@@ -4310,6 +4312,8 @@ router.get("/market-reminders/status", authMiddleware, async (req: Authenticated
       configured: isConfigured,
       hasResend: Boolean(resendKey),
       maskedResendKey,
+      hasBrevo: Boolean(brevoKey),
+      maskedBrevoKey,
       resendFromEmail: smtp.resendFromEmail || "onboarding@resend.dev",
       smtpUser: maskedUser,
       smtpHost: smtp.host || "smtp.gmail.com",
@@ -4390,14 +4394,15 @@ router.post("/market-reminders/send-test", authMiddleware, async (req: Authentic
   }
 });
 
-// Save SMTP / Resend credentials directly from UI (persisted securely in PostgreSQL)
+// Save SMTP / Resend / Brevo credentials directly from UI (persisted securely in PostgreSQL)
 router.post("/market-reminders/smtp-config", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { user, pass, host, port, resendApiKey, resendFromEmail } = req.body;
+    const { user, pass, host, port, resendApiKey, resendFromEmail, brevoApiKey } = req.body;
     const cleanResendKey = resendApiKey ? String(resendApiKey).trim() : (pass && String(pass).startsWith("re_") ? String(pass).trim() : "");
+    const cleanBrevoKey = brevoApiKey ? String(brevoApiKey).trim() : (pass && String(pass).startsWith("xkeysib-") ? String(pass).trim() : "");
 
-    if (!cleanResendKey && (!user || !pass)) {
-      res.status(400).json({ error: "Resend API Key অথবা Email ও App Password পূরণ করা আবশ্যক" });
+    if (!cleanResendKey && !cleanBrevoKey && (!user || !pass)) {
+      res.status(400).json({ error: "Resend API Key অথবা Brevo Key অথবা Gmail User ও App Password পূরণ করা আবশ্যক" });
       return;
     }
 
@@ -4407,7 +4412,8 @@ router.post("/market-reminders/smtp-config", authMiddleware, checkRole([UserRole
       host: host ? String(host).trim() : "smtp.gmail.com",
       port: port ? Number(port) : 587,
       resendApiKey: cleanResendKey,
-      resendFromEmail: resendFromEmail ? String(resendFromEmail).trim() : ""
+      resendFromEmail: resendFromEmail ? String(resendFromEmail).trim() : "",
+      brevoApiKey: cleanBrevoKey
     });
 
     logAudit(
@@ -4416,14 +4422,19 @@ router.post("/market-reminders/smtp-config", authMiddleware, checkRole([UserRole
       "CONFIG_SMTP",
       "Email Credentials",
       "Saved",
-      `Configured email delivery credentials (Resend: ${cleanResendKey ? "YES" : "NO"})`
+      `Configured email delivery credentials (Resend: ${cleanResendKey ? "YES" : "NO"}, Brevo: ${cleanBrevoKey ? "YES" : "NO"})`
     );
+
+    let successMsg = "ইমেইল সেটিংস সফলভাবে সংরক্ষিত হয়েছে!";
+    if (cleanResendKey) {
+      successMsg = "Resend API Key সফলভাবে সংরক্ষিত হয়েছে! Render-এ এটি HTTPS পোর্ট ৪৪৩ দিয়ে কাজ করবে।";
+    } else if (cleanBrevoKey) {
+      successMsg = "Brevo API Key সফলভাবে সংরক্ষিত হয়েছে! Render-এ এটি HTTPS পোর্ট ৪৪৩ দিয়ে কাজ করবে।";
+    }
 
     res.json({
       success: true,
-      message: cleanResendKey 
-        ? "Resend API Key সফলভাবে সংরক্ষিত হয়েছে! Render-এ HTTPS পোর্ট ৪৪৩ দিয়ে নির্বিঘ্নে মেইল যাবে।" 
-        : "SMTP ক্রেডেনশিয়াল সফলভাবে সংরক্ষিত হয়েছে!"
+      message: successMsg
     });
   } catch (err: any) {
     console.error("[MarketReminder SMTP Config] Error:", err);

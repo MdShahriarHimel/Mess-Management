@@ -30,7 +30,7 @@ export default function MarketReminderModal({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "setup" | "logs">("overview");
-  const [setupMode, setSetupMode] = useState<"resend" | "gmail">("resend");
+  const [setupMode, setSetupMode] = useState<"resend" | "brevo" | "gmail">("resend");
 
   // Test email state
   const [testEmail, setTestEmail] = useState(currentUser.email || "");
@@ -48,6 +48,12 @@ export default function MarketReminderModal({
   const [savingResend, setSavingResend] = useState(false);
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+
+  // Brevo API state
+  const [brevoApiKey, setBrevoApiKey] = useState("");
+  const [savingBrevo, setSavingBrevo] = useState(false);
+  const [brevoSuccess, setBrevoSuccess] = useState<string | null>(null);
+  const [brevoError, setBrevoError] = useState<string | null>(null);
 
   // SMTP Setup form state
   const [smtpUser, setSmtpUser] = useState("");
@@ -192,6 +198,42 @@ export default function MarketReminderModal({
       setResendError(err.message || "নেটওয়ার্ক এরর");
     } finally {
       setSavingResend(false);
+    }
+  };
+
+  const handleSaveBrevo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!brevoApiKey || !brevoApiKey.trim()) {
+      setBrevoError("Brevo API Key দিন (যা xkeysib- দিয়ে শুরু হয়)");
+      return;
+    }
+    setSavingBrevo(true);
+    setBrevoSuccess(null);
+    setBrevoError(null);
+
+    try {
+      const res = await fetch("/api/market-reminders/smtp-config", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          brevoApiKey: brevoApiKey.trim()
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setBrevoSuccess("🎉 Brevo API Key সফলভাবে সংরক্ষিত হয়েছে! Render-এ এটি পোর্ট ৪৪৩ (HTTPS) দিয়ে নির্বিঘ্নে চলবে এবং যেকোনো ইমেইলে মেইল পৌঁছাবে।");
+        setBrevoApiKey("");
+        fetchStatus();
+      } else {
+        setBrevoError(data.error || "Brevo Key সংরক্ষণ ব্যর্থ হয়েছে");
+      }
+    } catch (err: any) {
+      setBrevoError(err.message || "নেটওয়ার্ক এরর");
+    } finally {
+      setSavingBrevo(false);
     }
   };
 
@@ -503,6 +545,15 @@ export default function MarketReminderModal({
                   নিচের ইমেইলে ১-ক্লিকে একটি টেস্ট বাজার রিমাইন্ডার পাঠিয়ে দেখতে পারেন কেমন রঙিন কার্ড ও ইমোজি আসে।
                 </p>
 
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <span>💡 টেস্ট করার গুরুত্বপূর্ণ টিপ:</span>
+                  </div>
+                  <p className="text-slate-300">
+                    Resend-এর ডিফল্ট <code className="text-amber-200">onboarding@resend.dev</code> ব্যবহার করলে শুধুমাত্র আপনি যে গুগল একাউন্ট দিয়ে Resend.com-এ সাইন-আপ করেছেন সেই একাউন্টেই টেস্ট যাবে। তাই টেস্ট করার সময় নিচের বক্সে আপনার সেই জিমেইলটি দিন।
+                  </p>
+                </div>
+
                 <form onSubmit={handleSendTest} className="flex gap-2">
                   <input
                     type="email"
@@ -556,7 +607,7 @@ export default function MarketReminderModal({
             <div className="space-y-4">
               
               {/* Setup Mode Switcher */}
-              <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-950 rounded-2xl border border-slate-800">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-slate-950 rounded-2xl border border-slate-800">
                 <button
                   type="button"
                   onClick={() => setSetupMode("resend")}
@@ -567,13 +618,33 @@ export default function MarketReminderModal({
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
-                    ⚡ Resend API Key
+                    ⚡ Resend API
                     <span className="text-[9px] bg-emerald-500/30 text-emerald-300 px-1.5 py-0.2 rounded-full uppercase font-black">
-                      সেরা সমাধান
+                      HTTPS
                     </span>
                   </span>
                   <span className="text-[10px] text-slate-400 font-normal">
-                    রেন্ডার (Render)-এ ১০০% কানেকশন গ্যারান্টি (Port 443)
+                    রেকমেন্ডেড (Port 443)
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSetupMode("brevo")}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-0.5 ${
+                    setupMode === "brevo"
+                      ? "bg-gradient-to-r from-teal-500/20 to-cyan-500/20 text-teal-300 border border-teal-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    📧 Brevo API
+                    <span className="text-[9px] bg-teal-500/30 text-teal-300 px-1.5 py-0.2 rounded-full uppercase font-black">
+                      ফ্রি ৩০০/দিন
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    ডোমেইন ছাড়া সব মেম্বারকে যায়
                   </span>
                 </button>
 
@@ -590,7 +661,7 @@ export default function MarketReminderModal({
                     ✉️ Gmail SMTP
                   </span>
                   <span className="text-[10px] text-slate-400 font-normal">
-                    লোকালহোস্টে ভালো চলে (Port 587)
+                    লোকালহোস্টে চলে (Port 587)
                   </span>
                 </button>
               </div>
@@ -674,7 +745,70 @@ export default function MarketReminderModal({
                 </div>
               )}
 
-              {/* METHOD 2: GMAIL SMTP */}
+              {/* METHOD 2: BREVO API (ZERO DOMAIN REQUIRED) */}
+              {setupMode === "brevo" && (
+                <div className="space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-teal-950/20 border border-teal-500/30 text-xs text-slate-300 leading-relaxed space-y-2">
+                    <div className="font-bold text-teal-400 text-sm flex items-center gap-1.5">
+                      <span>📧 কেন Brevo ব্যবহার করবেন?</span>
+                    </div>
+                    <p className="text-slate-300 text-[11px]">
+                      Brevo (সাবেক Sendinblue)-তে কোনো নিজস্ব ডোমেইন কেনা ছাড়াই <strong>প্রতিদিন ৩০০টি ফ্রি ইমেইল</strong> পাঠানো যায় এবং এটি Render-এ পোর্ট ৪৪৩ (HTTPS) দিয়ে ১০০% সফলভাবে চলে। মেসের সকল ১৬ জন সদস্যের কাছে সরাসরি নোটিফিকেশন পৌঁছে যায়!
+                    </p>
+                    <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 space-y-1">
+                      <div className="text-teal-400 font-bold">কীভাবে Brevo এপিআই কি পাবেন (১ মিনিট):</div>
+                      <p>১. <a href="https://brevo.com" target="_blank" rel="noreferrer" className="underline text-teal-400 font-bold">brevo.com</a>-এ গিয়ে বিনামূল্যে অ্যাকাউন্ট তৈরি করুন।</p>
+                      <p>২. প্রোফাইল থেকে <strong>SMTP & API</strong> মেনুতে যান এবং একটি API Key তৈরি করে কপি করুন (যা <code>xkeysib-...</code> দিয়ে শুরু হয়)।</p>
+                      <p>৩. নিচে কি-টি পেস্ট করে সেভ করুন।</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleSaveBrevo} className="space-y-3.5 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Brevo API Key (xkeysib-...)
+                      </label>
+                      <input
+                        type="password"
+                        value={brevoApiKey}
+                        onChange={(e) => setBrevoApiKey(e.target.value)}
+                        placeholder={status?.maskedBrevoKey ? `বর্তমান কী: ${status.maskedBrevoKey}` : "xkeysib-..."}
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-755 text-white text-xs font-mono focus:outline-none focus:border-teal-400"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-1 block">
+                        পোস্টগ্রেস ডেটাবেজে সংরক্ষিত থাকবে। Render রিস্টার্ট নিলেও হারিয়ে যাবে না।
+                      </span>
+                    </div>
+
+                    {brevoSuccess && (
+                      <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                        <CheckCircle2 size={15} className="shrink-0" />
+                        <span>{brevoSuccess}</span>
+                      </div>
+                    )}
+
+                    {brevoError && (
+                      <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                        <AlertTriangle size={15} className="shrink-0" />
+                        <span>{brevoError}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingBrevo}
+                        className="px-5 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                      >
+                        {savingBrevo ? "সংরক্ষণ করা হচ্ছে..." : "Brevo Key সংরক্ষণ করুন (Save Key)"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* METHOD 3: GMAIL SMTP */}
               {setupMode === "gmail" && (
                 <div className="space-y-3.5">
                   <div className="p-4 rounded-2xl bg-cyan-950/20 border border-cyan-500/30 text-xs text-slate-300 leading-relaxed space-y-2">

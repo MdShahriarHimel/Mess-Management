@@ -5,10 +5,12 @@
 
 import nodemailer from "nodemailer";
 import dns from "dns";
+import fs from "fs";
+import path from "path";
 import { db } from "../src/db/index.js";
 import { persistentFiles } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
-import { writeAndPersistFile } from "./db.js";
+import { writeAndPersistFile, DB_DIR } from "./db.js";
 
 function ipv4Lookup(hostname: string, options: any, callback: any) {
   return dns.lookup(hostname, { family: 4 }, callback);
@@ -36,6 +38,7 @@ export interface SmtpConfig {
   port?: number;
   resendApiKey?: string;
   resendFromEmail?: string;
+  brevoApiKey?: string;
 }
 
 let cachedSmtpConfig: SmtpConfig | null = null;
@@ -49,6 +52,12 @@ export async function getSmtpCredentials(): Promise<SmtpConfig> {
   ).trim();
 
   const envResendFrom = (process.env.RESEND_FROM_EMAIL || "").trim();
+
+  const envBrevoKey = (
+    process.env.BREVO_API_KEY ||
+    (process.env.SMTP_PASS && process.env.SMTP_PASS.startsWith("xkeysib-") ? process.env.SMTP_PASS : "") ||
+    ""
+  ).trim();
 
   const envUser = (
     process.env.SMTP_USER ||
@@ -75,19 +84,20 @@ export async function getSmtpCredentials(): Promise<SmtpConfig> {
 
   const envPort = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
 
-  if (envResendKey || (envUser && envPass)) {
+  if (envResendKey || envBrevoKey || (envUser && envPass)) {
     return {
       user: envUser,
       pass: envPass,
       host: envHost || "smtp.gmail.com",
       port: envPort,
       resendApiKey: envResendKey,
-      resendFromEmail: envResendFrom
+      resendFromEmail: envResendFrom,
+      brevoApiKey: envBrevoKey
     };
   }
 
   // 2. Check memory cache
-  if (cachedSmtpConfig && (cachedSmtpConfig.resendApiKey || (cachedSmtpConfig.user && cachedSmtpConfig.pass))) {
+  if (cachedSmtpConfig && (cachedSmtpConfig.resendApiKey || cachedSmtpConfig.brevoApiKey || (cachedSmtpConfig.user && cachedSmtpConfig.pass))) {
     return cachedSmtpConfig;
   }
 
@@ -109,14 +119,22 @@ export async function getSmtpCredentials(): Promise<SmtpConfig> {
           ""
         ).trim();
 
-        if (storedResendKey || (parsed.user && parsed.pass)) {
+        const storedBrevoKey = (
+          parsed.brevoApiKey ||
+          (parsed.pass && String(parsed.pass).startsWith("xkeysib-") ? parsed.pass : "") ||
+          (parsed.user && String(parsed.user).startsWith("xkeysib-") ? parsed.user : "") ||
+          ""
+        ).trim();
+
+        if (storedResendKey || storedBrevoKey || (parsed.user && parsed.pass)) {
           cachedSmtpConfig = {
             user: String(parsed.user || "").trim(),
             pass: String(parsed.pass || "").trim().replace(/\s+/g, ""),
             host: String(parsed.host || envHost || "smtp.gmail.com").trim(),
             port: parsed.port ? Number(parsed.port) : envPort,
             resendApiKey: storedResendKey,
-            resendFromEmail: parsed.resendFromEmail ? String(parsed.resendFromEmail).trim() : envResendFrom
+            resendFromEmail: parsed.resendFromEmail ? String(parsed.resendFromEmail).trim() : envResendFrom,
+            brevoApiKey: storedBrevoKey
           };
           return cachedSmtpConfig;
         }
@@ -126,7 +144,45 @@ export async function getSmtpCredentials(): Promise<SmtpConfig> {
     console.error("[EmailService] Error retrieving SMTP credentials from PostgreSQL:", err);
   }
 
-  return { user: "", pass: "", host: "smtp.gmail.com", resendApiKey: "", resendFromEmail: "" };
+  // 4. Fallback to local disk file in DB_DIR/smtp_credentials.json
+  try {
+    const diskPath = path.join(DB_DIR, "smtp_credentials.json");
+    if (fs.existsSync(diskPath)) {
+      const diskContent = fs.readFileSync(diskPath, "utf-8");
+      if (diskContent) {
+        const parsed = JSON.parse(diskContent);
+        const storedResendKey = (
+          parsed.resendApiKey ||
+          (parsed.pass && String(parsed.pass).startsWith("re_") ? parsed.pass : "") ||
+          (parsed.user && String(parsed.user).startsWith("re_") ? parsed.user : "") ||
+          ""
+        ).trim();
+
+        const storedBrevoKey = (
+          parsed.brevoApiKey ||
+          (parsed.pass && String(parsed.pass).startsWith("xkeysib-") ? parsed.pass : "") ||
+          ""
+        ).trim();
+
+        if (storedResendKey || storedBrevoKey || (parsed.user && parsed.pass)) {
+          cachedSmtpConfig = {
+            user: String(parsed.user || "").trim(),
+            pass: String(parsed.pass || "").trim().replace(/\s+/g, ""),
+            host: String(parsed.host || envHost || "smtp.gmail.com").trim(),
+            port: parsed.port ? Number(parsed.port) : envPort,
+            resendApiKey: storedResendKey,
+            resendFromEmail: parsed.resendFromEmail ? String(parsed.resendFromEmail).trim() : envResendFrom,
+            brevoApiKey: storedBrevoKey
+          };
+          return cachedSmtpConfig;
+        }
+      }
+    }
+  } catch (diskErr) {
+    console.error("[EmailService] Error retrieving SMTP credentials from disk:", diskErr);
+  }
+
+  return { user: "", pass: "", host: "smtp.gmail.com", resendApiKey: "", resendFromEmail: "", brevoApiKey: "" };
 }
 
 export async function saveSmtpCredentials(config: SmtpConfig): Promise<void> {
@@ -137,7 +193,8 @@ export async function saveSmtpCredentials(config: SmtpConfig): Promise<void> {
     host: (config.host || existing.host || "smtp.gmail.com").trim(),
     port: config.port || existing.port || 587,
     resendApiKey: (config.resendApiKey !== undefined ? config.resendApiKey : (existing.resendApiKey || "")).trim(),
-    resendFromEmail: (config.resendFromEmail !== undefined ? config.resendFromEmail : (existing.resendFromEmail || "")).trim()
+    resendFromEmail: (config.resendFromEmail !== undefined ? config.resendFromEmail : (existing.resendFromEmail || "")).trim(),
+    brevoApiKey: (config.brevoApiKey !== undefined ? config.brevoApiKey : (existing.brevoApiKey || "")).trim()
   };
   writeAndPersistFile("smtp_credentials.json", JSON.stringify(cachedSmtpConfig, null, 2));
 }
@@ -150,7 +207,7 @@ export async function saveSmtpCredentials(config: SmtpConfig): Promise<void> {
  */
 export async function sendEmailWithFallback(options: SendMailOptions): Promise<SendMailResult> {
   const smtpConfig = await getSmtpCredentials();
-  const { user: smtpUser, pass: smtpPass, host: smtpHost, port: customPort, resendApiKey, resendFromEmail } = smtpConfig;
+  const { user: smtpUser, pass: smtpPass, host: smtpHost, port: customPort, resendApiKey, resendFromEmail, brevoApiKey } = smtpConfig;
 
   // --------------------------------------------------------------------------
   // PRIORITY 1: Resend HTTP/REST API (Port 443 HTTPS - Works 100% on Render free tier!)
@@ -165,9 +222,12 @@ export async function sendEmailWithFallback(options: SendMailOptions): Promise<S
   if (resendKey) {
     try {
       console.log(`[EmailService] Attempting delivery via Resend HTTPS API (Port 443)...`);
-      const fromSender = resendFromEmail || (options.fromName 
-        ? `${options.fromName} <onboarding@resend.dev>` 
-        : "Mess ERP <onboarding@resend.dev>");
+      const safeFromName = (options.fromName || "Mess ERP").replace(/[^\x20-\x7E]/g, "").trim() || "Mess ERP";
+      let fromSender = `${safeFromName} <onboarding@resend.dev>`;
+      if (resendFromEmail && resendFromEmail.trim()) {
+        const customEmail = resendFromEmail.trim();
+        fromSender = customEmail.includes("<") ? customEmail : `${safeFromName} <${customEmail}>`;
+      }
 
       const resendRes = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -188,45 +248,62 @@ export async function sendEmailWithFallback(options: SendMailOptions): Promise<S
       if (resendRes.ok && resData.id) {
         console.log(`[EmailService] Email sent successfully via Resend HTTPS API: ${resData.id}`);
         return { success: true, messageId: resData.id, portUsed: "https-443-resend" };
-      } else {
-        const errDetail = resData.message || resData.error || (typeof resData === "string" ? resData : JSON.stringify(resData));
-        console.warn(`[EmailService] Resend API returned error status ${resendRes.status}:`, resData);
-        // If Resend was explicitly provided or no other SMTP configured, return the direct Resend error
-        if (!smtpUser || !smtpPass || !smtpPass.length || smtpPass.startsWith("re_")) {
-          return {
-            success: false,
-            error: `Resend API Error (${resendRes.status}): ${errDetail}`
-          };
-        }
       }
+
+      const errDetail = String(resData.message || resData.error || (typeof resData === "string" ? resData : JSON.stringify(resData)));
+      console.warn(`[EmailService] Resend API returned error status ${resendRes.status}:`, resData);
+
+      let friendlyError = `Resend Error (${resendRes.status}): ${errDetail}`;
+      if (resendRes.status === 403 && (errDetail.toLowerCase().includes("testing emails to your own email address") || errDetail.toLowerCase().includes("validation_error"))) {
+        friendlyError = `Resend ফ্রি মোড সীমাবদ্ধতা: Resend-এর ডিফল্ট 'onboarding@resend.dev' দিয়ে কেবল আপনি যে ইমেইল দিয়ে Resend-এ সাইন-আপ করেছেন সেই একাউন্টেই টেস্ট পাঠানো যায়। টেস্ট করার জন্য রিসিভার বক্সে আপনার Resend অ্যাকাউন্টের ইমেইল দিন। মেসের সবাইকে পাঠাতে resend.com/domains এ ডোমেন যুক্ত করুন অথবা Brevo ব্যবহার করুন। (${errDetail})`;
+      } else if (resendRes.status === 401) {
+        friendlyError = `Resend API Key সঠিক নয়: resend.com/api-keys থেকে আপনার 're_...' দিয়ে শুরু হওয়া সঠিক কি পেস্ট করুন। (${errDetail})`;
+      } else if (resendRes.status === 422) {
+        friendlyError = `Resend প্যারামিটার ত্রুটি: ${errDetail}. প্রেরক ইমেইল খালি রাখুন অথবা ভেরিফাইড ডোমেইন দিন।`;
+      }
+
+      // DO NOT fall back to SMTP on Render when user configured Resend!
+      return {
+        success: false,
+        error: friendlyError
+      };
     } catch (resendErr: any) {
-      console.warn(`[EmailService] Resend API failed: ${resendErr.message}. Falling back to SMTP...`);
-      if (!smtpUser || !smtpPass || smtpPass.startsWith("re_")) {
-        return {
-          success: false,
-          error: `Resend HTTPS Request Failed: ${resendErr.message}`
-        };
-      }
+      console.warn(`[EmailService] Resend HTTPS request failed:`, resendErr);
+      return {
+        success: false,
+        error: `Resend HTTPS সংযোগ ত্রুটি: ${resendErr.message}`
+      };
     }
   }
 
   // --------------------------------------------------------------------------
-  // PRIORITY 2: Brevo HTTP/REST API (Port 443 HTTPS)
+  // PRIORITY 2: Brevo HTTP/REST API (Port 443 HTTPS - Works 100% on Render!)
   // --------------------------------------------------------------------------
-  const brevoKey = process.env.BREVO_API_KEY || (smtpPass && smtpPass.startsWith("xkeysib-") ? smtpPass : "");
-  if (brevoKey) {
+  const activeBrevoKey = (
+    process.env.BREVO_API_KEY || 
+    brevoApiKey ||
+    (smtpPass && smtpPass.startsWith("xkeysib-") ? smtpPass : "") ||
+    (smtpUser && smtpUser.startsWith("xkeysib-") ? smtpUser : "")
+  ).trim();
+
+  if (activeBrevoKey) {
     try {
       console.log(`[EmailService] Attempting delivery via Brevo HTTPS API (Port 443)...`);
+      const safeFromName = (options.fromName || "Mess ERP").replace(/[^\x20-\x7E]/g, "").trim() || "Mess ERP";
+      const senderEmail = (smtpUser && smtpUser.includes("@")) 
+        ? smtpUser 
+        : (resendFromEmail && resendFromEmail.includes("@") ? resendFromEmail : "messmanager@mail.com");
+
       const brevoRes = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
-          "api-key": brevoKey,
+          "api-key": activeBrevoKey,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
           sender: { 
-            name: options.fromName || "Mess ERP", 
-            email: smtpUser.includes("@") ? smtpUser : "no-reply@brevo.com" 
+            name: safeFromName, 
+            email: senderEmail 
           },
           to: [{ email: options.to }],
           subject: options.subject,
@@ -236,12 +313,23 @@ export async function sendEmailWithFallback(options: SendMailOptions): Promise<S
       });
 
       const bData: any = await brevoRes.json().catch(() => ({}));
-      if (brevoRes.ok && bData.messageId) {
-        console.log(`[EmailService] Email sent successfully via Brevo HTTPS API: ${bData.messageId}`);
-        return { success: true, messageId: bData.messageId, portUsed: "https-443-brevo" };
+      if (brevoRes.ok && (bData.messageId || bData.id)) {
+        console.log(`[EmailService] Email sent successfully via Brevo HTTPS API: ${bData.messageId || bData.id}`);
+        return { success: true, messageId: bData.messageId || bData.id, portUsed: "https-443-brevo" };
       }
+
+      const bErrDetail = String(bData.message || bData.error || JSON.stringify(bData));
+      console.warn(`[EmailService] Brevo API error (${brevoRes.status}):`, bData);
+      return {
+        success: false,
+        error: `Brevo API ত্রুটি (${brevoRes.status}): ${bErrDetail}`
+      };
     } catch (bErr: any) {
-      console.warn(`[EmailService] Brevo API failed: ${bErr.message}`);
+      console.warn(`[EmailService] Brevo API exception:`, bErr);
+      return {
+        success: false,
+        error: `Brevo HTTPS সংযোগ ত্রুটি: ${bErr.message}`
+      };
     }
   }
 
@@ -408,12 +496,14 @@ export async function sendEmailWithFallback(options: SendMailOptions): Promise<S
   const isTimeout = lastErrorMsg.includes("ETIMEDOUT") || 
     lastErrorMsg.includes("timeout") || 
     lastErrorMsg.includes("ECONNREFUSED") ||
+    lastErrorMsg.includes("ENETUNREACH") ||
+    lastErrorMsg.includes("EHOSTUNREACH") ||
     lastErrorMsg.includes("Connection timed out");
 
   if (isTimeout) {
     return {
       success: false,
-      error: "রেন্ডার (Render) তাদের ফ্রি/স্টার্টার সার্ভারে সরাসরি আউটবাউন্ড SMTP পোর্ট (২৫, ৪৬৫, ৫৮৭) ব্লক বা ফিল্টার করে রাখে। সমাধান: জিমেইলের বদলে বিনামূল্যে Resend API Key (re_...) ব্যবহার করুন (resend.com থেকে ৫ সেকেন্ডে ফ্রি পাওয়া যায়), যা পোর্ট ৪৪৩ (HTTPS) দিয়ে চলে এবং রেন্ডারে কখনোই আটকে থাকে না।"
+      error: "রেন্ডার (Render) তাদের ক্লাউড সার্ভারে সরাসরি আউটবাউন্ড SMTP পোর্ট (২৫, ৪৬৫, ৫৮৭) ব্লক বা ফিল্টার করে রাখে (ENETUNREACH / ETIMEDOUT)। সমাধান: জিমেইলের বদলে বিনামূল্যে Resend API Key (re_...) অথবা Brevo Key ব্যবহার করুন (যা পোর্ট ৪৪৩ HTTPS দিয়ে চলে এবং রেন্ডারে কখনোই ব্লক হয় না)।"
     };
   }
 
