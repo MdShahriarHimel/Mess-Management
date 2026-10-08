@@ -30,6 +30,7 @@ export default function MarketReminderModal({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "setup" | "logs">("overview");
+  const [setupMode, setSetupMode] = useState<"resend" | "gmail">("resend");
 
   // Test email state
   const [testEmail, setTestEmail] = useState(currentUser.email || "");
@@ -40,6 +41,13 @@ export default function MarketReminderModal({
   // Manual trigger state
   const [triggeringManual, setTriggeringManual] = useState(false);
   const [manualMessage, setManualMessage] = useState<string | null>(null);
+
+  // Resend API state
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [resendFromEmail, setResendFromEmail] = useState("");
+  const [savingResend, setSavingResend] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   // SMTP Setup form state
   const [smtpUser, setSmtpUser] = useState("");
@@ -64,6 +72,9 @@ export default function MarketReminderModal({
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
+        if (data.hasResend) {
+          setSetupMode("resend");
+        }
       }
     } catch (e) {
       console.error("Failed to fetch market reminder status:", e);
@@ -81,6 +92,8 @@ export default function MarketReminderModal({
       setManualMessage(null);
       setSmtpSuccess(null);
       setSmtpError(null);
+      setResendSuccess(null);
+      setResendError(null);
     }
   }, [isOpen]);
 
@@ -109,7 +122,7 @@ export default function MarketReminderModal({
       if (res.ok && data.success) {
         setTestSuccess(data.message || "টেস্ট রিমাইন্ডার সফলভাবে পাঠানো হয়েছে! ইনবক্স চেক করুন।");
       } else {
-        setTestError(data.error || "টেস্ট ইমেইল পাঠানো সম্ভব হয়নি। অনুগ্রহ করে SMTP সেটিংস যাচাই করুন।");
+        setTestError(data.error || "টেস্ট ইমেইল পাঠানো সম্ভব হয়নি। অনুগ্রহ করে সেটিংস যাচাই করুন।");
       }
     } catch (err: any) {
       setTestError(err.message || "নেটওয়ার্ক এরর");
@@ -118,7 +131,7 @@ export default function MarketReminderModal({
     }
   };
 
-  const handleTriggerManualSend = async () => {
+  const handleTriggerManualSend = async (targetScope: "tomorrow" | "today" = "tomorrow") => {
     setTriggeringManual(true);
     setManualMessage(null);
 
@@ -129,7 +142,7 @@ export default function MarketReminderModal({
           "Content-Type": "application/json",
           "Authorization": `Bearer ${authToken}`
         },
-        body: JSON.stringify({ forceAll: true })
+        body: JSON.stringify({ forceAll: true, targetScope })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
@@ -142,6 +155,43 @@ export default function MarketReminderModal({
       setManualMessage(err.message || "নেটওয়ার্ক এরর");
     } finally {
       setTriggeringManual(false);
+    }
+  };
+
+  const handleSaveResend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resendApiKey || !resendApiKey.trim()) {
+      setResendError("Resend API Key দিন (যা সাধারণত re_ দিয়ে শুরু হয়)");
+      return;
+    }
+    setSavingResend(true);
+    setResendSuccess(null);
+    setResendError(null);
+
+    try {
+      const res = await fetch("/api/market-reminders/smtp-config", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          resendApiKey: resendApiKey.trim(),
+          resendFromEmail: resendFromEmail.trim() || undefined
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setResendSuccess("🎉 Resend API Key সফলভাবে সংরক্ষিত হয়েছে! Render-এ এটি পোর্ট ৪৪৩ (HTTPS) দিয়ে ১০০% সফলভাবে কাজ করবে।");
+        setResendApiKey("");
+        fetchStatus();
+      } else {
+        setResendError(data.error || "Resend Key সংরক্ষণ ব্যর্থ হয়েছে");
+      }
+    } catch (err: any) {
+      setResendError(err.message || "নেটওয়ার্ক এরর");
+    } finally {
+      setSavingResend(false);
     }
   };
 
@@ -240,7 +290,7 @@ export default function MarketReminderModal({
               }`}
             >
               <Settings size={14} />
-              ইমেইল / Gmail কনফিগারেশন
+              ইমেইল কনফিগারেশন {status?.hasResend ? "⚡ Resend" : ""}
             </button>
           )}
           <button
@@ -273,9 +323,13 @@ export default function MarketReminderModal({
                       ইমেইল ডেলিভারি স্ট্যাটাস:
                     </div>
                     <div className="text-sm font-extrabold text-white mt-0.5">
-                      {status?.configured ? (
+                      {status?.hasResend ? (
                         <span className="text-emerald-400 flex items-center gap-1.5">
-                          🟢 সক্রিয় (Active) • জিমেইল সংযুক্ত ({status?.smtpUser || "Configured"})
+                          🟢 সক্রিয় (Active) • Resend HTTPS API ৪৪৩ ({status.maskedResendKey || "Connected"})
+                        </span>
+                      ) : status?.configured ? (
+                        <span className="text-emerald-400 flex items-center gap-1.5">
+                          🟢 সক্রিয় (Active) • SMTP সংযুক্ত ({status?.smtpUser || "Configured"})
                         </span>
                       ) : (
                         <span className="text-amber-400 flex items-center gap-1.5">
@@ -286,30 +340,59 @@ export default function MarketReminderModal({
                   </div>
                 </div>
 
-                {isPrivileged && !status?.configured && (
+                {isPrivileged && (
                   <button
                     onClick={() => setActiveTab("setup")}
-                    className="px-3.5 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+                    className="px-3.5 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl shadow transition-all cursor-pointer self-start sm:self-auto"
                   >
-                    সেটিংস কনফিগার করুন
+                    {status?.configured ? "সেটিংস পরিবর্তন" : "সেটিংস কনফিগার করুন"}
                   </button>
                 )}
               </div>
 
+              {/* Bangladesh Time Info Bar */}
+              <div className="p-3 rounded-2xl bg-cyan-950/30 border border-cyan-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-cyan-300">
+                  <Clock size={15} className="shrink-0 text-cyan-400" />
+                  <span className="font-semibold">
+                    বর্তমান বাংলাদেশ সময় (BDT UTC+6):
+                  </span>
+                  <span className="font-mono font-bold text-white">
+                    {status?.currentDhakaTimeFormatted || "লোডিং..."}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  আজ: <span className="text-white font-bold">{status?.todayStr || "..."}</span> • 
+                  কাল: <span className="text-emerald-400 font-bold">{status?.tomorrowStr || "..."}</span>
+                </div>
+              </div>
+
+              {manualMessage && (
+                <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs flex items-center justify-between">
+                  <span>{manualMessage}</span>
+                  <button onClick={() => setManualMessage(null)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+              )}
+
               {/* Tomorrow's Market Duties */}
               <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
                   <div className="flex items-center gap-2">
-                    <Calendar size={16} className="text-cyan-400" />
-                    <span className="font-bold text-white text-xs uppercase tracking-wider">
-                      আগামীকালকের বাজার শিডিউল (তারিখ: {status?.tomorrowStr || "Checking..."})
-                    </span>
+                    <Calendar size={16} className="text-emerald-400" />
+                    <div>
+                      <span className="font-bold text-white text-xs uppercase tracking-wider block">
+                        আগামীকালের বাজার শিডিউল (তারিখ: {status?.tomorrowStr || "..."})
+                      </span>
+                      <span className="text-[11px] text-emerald-400/90 font-medium">
+                        (স্বয়ংক্রিয়ভাবে যার আগের দিন সন্ধ্যায় মেইল পৌঁছাবে)
+                      </span>
+                    </div>
                   </div>
                   {isPrivileged && (
                     <button
-                      onClick={handleTriggerManualSend}
+                      onClick={() => handleTriggerManualSend("tomorrow")}
                       disabled={triggeringManual || !status?.configured}
-                      className="px-3 py-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow"
+                      className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow self-start sm:self-auto"
                     >
                       {triggeringManual ? <RefreshCw size={13} className="animate-spin" /> : <Send size={13} />}
                       কালকের মেইল এখনই পাঠান
@@ -317,40 +400,90 @@ export default function MarketReminderModal({
                   )}
                 </div>
 
-                {manualMessage && (
-                  <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs">
-                    {manualMessage}
-                  </div>
-                )}
-
                 {status?.tomorrowDuties && status.tomorrowDuties.length > 0 ? (
                   <div className="space-y-2">
                     {status.tomorrowDuties.map((d: any) => (
                       <div key={d.id} className="p-3 rounded-xl bg-slate-900 border border-slate-750 flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-xs">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-xs">
                             🛒
                           </div>
                           <div>
                             <div className="font-extrabold text-white text-xs">
                               {d.memberName} {d.memberNickname ? `(${d.memberNickname})` : ""}
                             </div>
-                            <div className="text-[11px] text-slate-400">
+                            <div className="text-[11px] text-slate-400 font-mono">
                               {d.memberEmail ? `ইমেইল: ${d.memberEmail}` : "⚠️ কোনো ইমেইল সেট নেই"}
                             </div>
                           </div>
                         </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          নির্ধারিত
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          কালকে নির্ধারিত ({status?.tomorrowStr})
                         </span>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-4 text-xs text-slate-500 italic">
-                    আগামীকালকের জন্য এখনও কোনো মেম্বারের বাজার ডিউটি শিডিউল করা হয়নি।
+                    আগামীকালকের ({status?.tomorrowStr || "..."}) জন্য কোনো মেম্বার এখনও নির্ধারিত নেই।
                     <br />
-                    (Market Logs-এর Calendar-এ ক্লিক করে যেকোনো তারিখে মেম্বার অ্যাসাইন করতে পারবেন)
+                    (মার্কেট ক্যালেন্ডারের তারিখ বক্সে ক্লিক করে যেকোনো মেম্বারকে কালকের বাজার অ্যাসাইন করতে পারবেন)
+                  </div>
+                )}
+              </div>
+
+              {/* Today's Market Duties */}
+              <div className="p-4 rounded-2xl bg-slate-800/30 border border-slate-800/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={16} className="text-cyan-400" />
+                    <div>
+                      <span className="font-bold text-white text-xs uppercase tracking-wider block">
+                        আজকের বাজার শিডিউল (তারিখ: {status?.todayStr || "..."})
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        আজকের বাজার যার করার পালা
+                      </span>
+                    </div>
+                  </div>
+                  {isPrivileged && (
+                    <button
+                      onClick={() => handleTriggerManualSend("today")}
+                      disabled={triggeringManual || !status?.configured}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-cyan-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border border-cyan-500/30 self-start sm:self-auto"
+                    >
+                      {triggeringManual ? <RefreshCw size={13} className="animate-spin" /> : <Send size={13} />}
+                      আজকের মেম্বারকে মেইল পাঠান
+                    </button>
+                  )}
+                </div>
+
+                {status?.todayDuties && status.todayDuties.length > 0 ? (
+                  <div className="space-y-2">
+                    {status.todayDuties.map((d: any) => (
+                      <div key={d.id} className="p-3 rounded-xl bg-slate-900 border border-slate-750 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-xs">
+                            🍗
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-white text-xs">
+                              {d.memberName} {d.memberNickname ? `(${d.memberNickname})` : ""}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono">
+                              {d.memberEmail ? `ইমেইল: ${d.memberEmail}` : "⚠️ কোনো ইমেইল সেট নেই"}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                          আজকে নির্ধারিত ({status?.todayStr})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-3 text-xs text-slate-500 italic">
+                    আজকের ({status?.todayStr || "..."}) জন্য কোনো বাজার নির্ধারিত নেই।
                   </div>
                 )}
               </div>
@@ -418,79 +551,198 @@ export default function MarketReminderModal({
             </>
           )}
 
-          {/* TAB 2: SMTP SETUP (GMAIL) */}
+          {/* TAB 2: SETUP (RESEND vs GMAIL) */}
           {activeTab === "setup" && (
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-cyan-950/20 border border-cyan-500/30 text-xs text-slate-300 leading-relaxed space-y-2">
-                <div className="font-bold text-cyan-400 text-sm flex items-center gap-1.5">
-                  <span>🔑 আপনার জিমেইল দিয়ে ফ্রি ইমেইল নোটিফিকেশন সেটআপ (২ মিনিটের কাজ)</span>
-                </div>
-                <p>
-                  জিমেইলের মাধ্যমে সম্পূর্ণ বিনামূল্যে মেসের বাজার রিমাইন্ডার পাঠাতে নিচের সহজ ৩টি ধাপ অনুসরণ করুন:
-                </p>
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5 font-mono text-[11px] text-slate-300">
-                  <p><strong>ধাপ ১:</strong> আপনার গুগল অ্যাকাউন্টের <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" className="text-cyan-400 underline">Security সেকশনে</a> যান। 2-Step Verification অন থাকতে হবে।</p>
-                  <p><strong>ধাপ ২:</strong> সার্চ বারে <strong>"App passwords"</strong> লিখে সার্চ করুন (অথবা 2-Step Verification এর ভেতর খুঁজুন)।</p>
-                  <p><strong>ধাপ ৩:</strong> App Name দিন <strong>"Mess ERP"</strong> এবং <strong>Create</strong> চাপুন। গুগল আপনাকে ১৬ অক্ষরের একটি কোড দিবে (যেমন: <code>abcd efgh ijkl mnop</code>)।</p>
-                </div>
+              
+              {/* Setup Mode Switcher */}
+              <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-950 rounded-2xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSetupMode("resend")}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-0.5 ${
+                    setupMode === "resend"
+                      ? "bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    ⚡ Resend API Key
+                    <span className="text-[9px] bg-emerald-500/30 text-emerald-300 px-1.5 py-0.2 rounded-full uppercase font-black">
+                      সেরা সমাধান
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    রেন্ডার (Render)-এ ১০০% কানেকশন গ্যারান্টি (Port 443)
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSetupMode("gmail")}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-0.5 ${
+                    setupMode === "gmail"
+                      ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    ✉️ Gmail SMTP
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    লোকালহোস্টে ভালো চলে (Port 587)
+                  </span>
+                </button>
               </div>
 
-              <form onSubmit={handleSaveSmtp} className="space-y-3.5 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                    আপনার জিমেইল এড্রেস (Sender Email)
-                  </label>
-                  <input
-                    type="email"
-                    value={smtpUser}
-                    onChange={(e) => setSmtpUser(e.target.value)}
-                    placeholder="e.g. yourname@gmail.com"
-                    required
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-750 text-white text-xs focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                    গুগল ১৬ অক্ষরের অ্যাপ পাসওয়ার্ড (App Password)
-                  </label>
-                  <input
-                    type="password"
-                    value={smtpPass}
-                    onChange={(e) => setSmtpPass(e.target.value)}
-                    placeholder="১৬ অক্ষরের পাসওয়ার্ড (স্পেস ছাড়া বা স্পেস সহ)"
-                    required
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-750 text-white text-xs font-mono focus:outline-none focus:border-cyan-400"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    (এটি আপনার আসল জিমেইল লগইন পাসওয়ার্ড নয়, গুগল সিকিউরিটির ১৬ অক্ষরের App Password)
-                  </span>
-                </div>
-
-                {smtpSuccess && (
-                  <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
-                    <CheckCircle2 size={15} className="shrink-0" />
-                    <span>{smtpSuccess}</span>
+              {/* METHOD 1: RESEND API (RECOMMENDED) */}
+              {setupMode === "resend" && (
+                <div className="space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 text-xs text-slate-300 leading-relaxed space-y-2">
+                    <div className="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
+                      <span>🚀 কেন Resend ব্যবহার করবেন?</span>
+                    </div>
+                    <p className="text-slate-300 text-[11px]">
+                      Render ক্লাউডে সাধারণ SMTP পোর্ট (২৫, ৫৮৭, ৪৬৫) ব্লক থাকে, তাই Gmail দিলে <em>Connection timeout</em> হয়। কিন্তু <strong>Resend</strong> সাধারণ ওয়েবসাইট দেখার মতো HTTPS পোর্ট (৪৪৩) ব্যবহার করে। ফলে রেন্ডারে এক সেকেন্ডের মধ্যে মেইল চলে যায় এবং কোনোদিন টাইমআউট হয় না!
+                    </p>
+                    <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 space-y-1">
+                      <div className="text-cyan-400 font-bold">কীভাবে Resend এপিআই কি পাবেন:</div>
+                      <p>১. <a href="https://resend.com" target="_blank" rel="noreferrer" className="underline text-emerald-400 font-bold">resend.com</a>-এ যান ও গুগল দিয়ে সাইন ইন করুন।</p>
+                      <p>২. বাম পাশের মেনুতে <strong>API Keys</strong>-এ ক্লিক করে একটি কী কপি করুন (যা <code>re_...</code> দিয়ে শুরু হয়)।</p>
+                      <p>৩. নিচে কী-টি পেস্ট করে "Save Resend Key" চাপুন।</p>
+                    </div>
                   </div>
-                )}
 
-                {smtpError && (
-                  <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                    <AlertTriangle size={15} className="shrink-0" />
-                    <span>{smtpError}</span>
-                  </div>
-                )}
+                  <form onSubmit={handleSaveResend} className="space-y-3.5 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Resend API Key (re_...)
+                      </label>
+                      <input
+                        type="password"
+                        value={resendApiKey}
+                        onChange={(e) => setResendApiKey(e.target.value)}
+                        placeholder={status?.maskedResendKey ? `বর্তমান কী: ${status.maskedResendKey}` : "re_123456789abcdef..."}
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-755 text-white text-xs font-mono focus:outline-none focus:border-emerald-400"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-1 block">
+                        পোস্টগ্রেস ডেটাবেজে স্থায়ীভাবে সেভ হবে। Render রিস্টার্ট নিলেও হারিয়ে যাবে না।
+                      </span>
+                    </div>
 
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={savingSmtp}
-                    className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer"
-                  >
-                    {savingSmtp ? "সংরক্ষণ করা হচ্ছে..." : "ক্রেডেনশিয়াল সংরক্ষণ করুন (SAVE SMTP)"}
-                  </button>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        প্রেরক ইমেইল (ঐচ্ছিক - ডিফল্ট: onboarding@resend.dev)
+                      </label>
+                      <input
+                        type="text"
+                        value={resendFromEmail}
+                        onChange={(e) => setResendFromEmail(e.target.value)}
+                        placeholder="onboarding@resend.dev অথবা আপনার ভেরিফাইড ডোমেন"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-755 text-white text-xs font-mono focus:outline-none focus:border-emerald-400"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-1 block">
+                        ফ্রি টেস্ট অ্যাকাউন্টে <code>onboarding@resend.dev</code> দিয়ে আপনার সাইনআপ করা জিমেইলে টেস্ট পাঠানো যায়।
+                      </span>
+                    </div>
+
+                    {resendSuccess && (
+                      <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                        <CheckCircle2 size={15} className="shrink-0" />
+                        <span>{resendSuccess}</span>
+                      </div>
+                    )}
+
+                    {resendError && (
+                      <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                        <AlertTriangle size={15} className="shrink-0" />
+                        <span>{resendError}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingResend}
+                        className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                      >
+                        {savingResend ? "সংরক্ষণ করা হচ্ছে..." : "Resend Key সংরক্ষণ করুন (Save Key)"}
+                      </button>
+                    </div>
+                  </form>
                 </div>
-              </form>
+              )}
+
+              {/* METHOD 2: GMAIL SMTP */}
+              {setupMode === "gmail" && (
+                <div className="space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-cyan-950/20 border border-cyan-500/30 text-xs text-slate-300 leading-relaxed space-y-2">
+                    <div className="font-bold text-cyan-400 text-sm flex items-center gap-1.5">
+                      <span>🔑 জিমেইল অ্যাপ পাসওয়ার্ড (Gmail App Password)</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1 font-mono text-[11px] text-slate-300">
+                      <p>১. Google Account Security (myaccount.google.com/security) এ গিয়ে "App passwords" সার্চ করুন।</p>
+                      <p>২. "Mess ERP" দিয়ে Generate চাপুন এবং প্রাপ্ত ১৬ অক্ষরের কোডটি নিচের পাসওয়ার্ড ঘরে দিন।</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleSaveSmtp} className="space-y-3.5 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        আপনার প্রেরক ইমেইল (Sender Email / Gmail)
+                      </label>
+                      <input
+                        type="email"
+                        value={smtpUser}
+                        onChange={(e) => setSmtpUser(e.target.value)}
+                        placeholder="e.g. yourname@gmail.com"
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-755 text-white text-xs focus:outline-none focus:border-cyan-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        গুগল ১৬ অক্ষরের অ্যাপ পাসওয়ার্ড
+                      </label>
+                      <input
+                        type="password"
+                        value={smtpPass}
+                        onChange={(e) => setSmtpPass(e.target.value)}
+                        placeholder="১৬ অক্ষরের Google App Password"
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-755 text-white text-xs font-mono focus:outline-none focus:border-cyan-400"
+                      />
+                    </div>
+
+                    {smtpSuccess && (
+                      <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                        <CheckCircle2 size={15} className="shrink-0" />
+                        <span>{smtpSuccess}</span>
+                      </div>
+                    )}
+
+                    {smtpError && (
+                      <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                        <AlertTriangle size={15} className="shrink-0" />
+                        <span>{smtpError}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingSmtp}
+                        className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                      >
+                        {savingSmtp ? "সংরক্ষণ করা হচ্ছে..." : "Gmail SMTP সংরক্ষণ করুন"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
             </div>
           )}
 

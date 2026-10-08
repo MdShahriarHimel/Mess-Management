@@ -76,7 +76,8 @@ import { sendEmailWithFallback, getSmtpCredentials, saveSmtpCredentials } from "
 import {
   checkAndSendMarketReminders,
   sendTestMarketReminder,
-  getMarketReminderRecentLogs
+  getMarketReminderRecentLogs,
+  getDhakaDates
 } from "./marketReminderService.js";
 import {
   validatePasswordPolicy,
@@ -4243,11 +4244,12 @@ router.get("/market-reminders/status", authMiddleware, async (req: Authenticated
     const isOwner = isPlatformOwner(req.user!.email);
     const activeMessId = (req.user as any)?.messId || getActiveMessId() || "default";
     const smtp = await getSmtpCredentials();
-    const isConfigured = Boolean(smtp.user && smtp.pass);
+    const resendKey = (smtp.resendApiKey || process.env.RESEND_API_KEY || (smtp.pass && smtp.pass.startsWith("re_") ? smtp.pass : "") || (smtp.user && smtp.user.startsWith("re_") ? smtp.user : "")).trim();
+    const isConfigured = Boolean((smtp.user && smtp.pass) || resendKey);
     
     // Mask email for security/privacy (e.g. "md***@gmail.com")
     let maskedUser = "";
-    if (smtp.user) {
+    if (smtp.user && !smtp.user.startsWith("re_")) {
       const parts = smtp.user.split("@");
       if (parts.length === 2) {
         maskedUser = `${parts[0].slice(0, 2)}***@${parts[1]}`;
@@ -4256,29 +4258,43 @@ router.get("/market-reminders/status", authMiddleware, async (req: Authenticated
       }
     }
 
+    const maskedResendKey = resendKey ? `${resendKey.slice(0, 5)}...${resendKey.slice(-4)}` : "";
+
     // Tenant-isolated recent logs
     const recentLogs = getMarketReminderRecentLogs(isOwner ? undefined : activeMessId, 15);
 
-    // Retrieve tomorrow's market duties for the active mess
-    const now = new Date();
-    const dhakaFormatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Dhaka",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    });
-    const tomorrow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = dhakaFormatter.format(tomorrow);
+    // Retrieve today and tomorrow's market duties for the active mess
+    const { todayStr, tomorrowStr, currentDhakaTimeFormatted } = getDhakaDates();
 
     const db = loadDB(activeMessId);
-    const tomorrowDuties = (db.duties || [])
+    const allDuties = db.duties || [];
+    const allMembers = db.members || [];
+
+    const todayDuties = allDuties
+      .filter((d: any) => {
+        const isMarket = d.name?.toLowerCase().includes("market") || d.name?.toLowerCase().includes("bazar");
+        return isMarket && d.name?.includes(todayStr);
+      })
+      .map((d: any) => {
+        const member = allMembers.find((m: any) => m.id === d.memberId);
+        return {
+          id: d.id,
+          dutyName: d.name,
+          date: todayStr,
+          memberId: d.memberId,
+          memberName: member?.name || "Unassigned",
+          memberNickname: member?.nickname || "",
+          memberEmail: member?.email || ""
+        };
+      });
+
+    const tomorrowDuties = allDuties
       .filter((d: any) => {
         const isMarket = d.name?.toLowerCase().includes("market") || d.name?.toLowerCase().includes("bazar");
         return isMarket && d.name?.includes(tomorrowStr);
       })
       .map((d: any) => {
-        const member = (db.members || []).find((m: any) => m.id === d.memberId);
+        const member = allMembers.find((m: any) => m.id === d.memberId);
         return {
           id: d.id,
           dutyName: d.name,
@@ -4292,11 +4308,17 @@ router.get("/market-reminders/status", authMiddleware, async (req: Authenticated
 
     res.json({
       configured: isConfigured,
+      hasResend: Boolean(resendKey),
+      maskedResendKey,
+      resendFromEmail: smtp.resendFromEmail || "onboarding@resend.dev",
       smtpUser: maskedUser,
       smtpHost: smtp.host || "smtp.gmail.com",
       smtpPort: smtp.port || 587,
       messId: activeMessId,
+      todayStr,
       tomorrowStr,
+      currentDhakaTimeFormatted,
+      todayDuties,
       tomorrowDuties,
       recentLogs
     });
@@ -4311,10 +4333,12 @@ router.post("/market-reminders/check-and-send", authMiddleware, checkRole([UserR
   try {
     const isOwner = isPlatformOwner(req.user!.email);
     const targetMessId = isOwner ? req.body.messId : ((req.user as any)?.messId || getActiveMessId() || "default");
+    const targetScope = req.body.targetScope || "tomorrow";
     
     const result = await checkAndSendMarketReminders({
       specificMessId: targetMessId || undefined,
-      forceAll: !!req.body.forceAll
+      forceAll: !!req.body.forceAll,
+      targetScope: targetScope as any
     });
 
     res.json({
@@ -4357,7 +4381,7 @@ router.post("/market-reminders/send-test", authMiddleware, async (req: Authentic
     } else {
       res.status(500).json({
         success: false,
-        error: testResult.error || "টেস্ট ইমেইল ডেলিভারি ব্যর্থ হয়েছে। অনুগ্রহ করে SMTP সেটিংস যাচাই করুন।"
+        error: testResult.error || "টেস্ট ইমেইল ডেলিভারি ব্যর্থ হয়েছে। অনুগ্রহ করে সেটিংস যাচাই করুন।"
       });
     }
   } catch (err: any) {
@@ -4366,38 +4390,44 @@ router.post("/market-reminders/send-test", authMiddleware, async (req: Authentic
   }
 });
 
-// Save SMTP credentials directly from UI (persisted securely in PostgreSQL)
+// Save SMTP / Resend credentials directly from UI (persisted securely in PostgreSQL)
 router.post("/market-reminders/smtp-config", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { user, pass, host, port } = req.body;
-    if (!user || !pass) {
-      res.status(400).json({ error: "Email address (User) and App Password are required" });
+    const { user, pass, host, port, resendApiKey, resendFromEmail } = req.body;
+    const cleanResendKey = resendApiKey ? String(resendApiKey).trim() : (pass && String(pass).startsWith("re_") ? String(pass).trim() : "");
+
+    if (!cleanResendKey && (!user || !pass)) {
+      res.status(400).json({ error: "Resend API Key অথবা Email ও App Password পূরণ করা আবশ্যক" });
       return;
     }
 
     await saveSmtpCredentials({
-      user: String(user).trim(),
-      pass: String(pass).trim(),
+      user: user ? String(user).trim() : "",
+      pass: pass ? String(pass).trim() : "",
       host: host ? String(host).trim() : "smtp.gmail.com",
-      port: port ? Number(port) : 587
+      port: port ? Number(port) : 587,
+      resendApiKey: cleanResendKey,
+      resendFromEmail: resendFromEmail ? String(resendFromEmail).trim() : ""
     });
 
     logAudit(
       req.user!.id,
       req.user!.nickname,
       "CONFIG_SMTP",
-      "SMTP Credentials",
+      "Email Credentials",
       "Saved",
-      `Configured SMTP credentials for user: ${user}`
+      `Configured email delivery credentials (Resend: ${cleanResendKey ? "YES" : "NO"})`
     );
 
     res.json({
       success: true,
-      message: "SMTP ক্রেডেনশিয়াল সফলভাবে সংরক্ষিত হয়েছে!"
+      message: cleanResendKey 
+        ? "Resend API Key সফলভাবে সংরক্ষিত হয়েছে! Render-এ HTTPS পোর্ট ৪৪৩ দিয়ে নির্বিঘ্নে মেইল যাবে।" 
+        : "SMTP ক্রেডেনশিয়াল সফলভাবে সংরক্ষিত হয়েছে!"
     });
   } catch (err: any) {
     console.error("[MarketReminder SMTP Config] Error:", err);
-    res.status(500).json({ error: "Failed to save SMTP configuration" });
+    res.status(500).json({ error: "Failed to save email configuration" });
   }
 });
 

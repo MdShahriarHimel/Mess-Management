@@ -63,6 +63,7 @@ export function buildMarketReminderHtml(params: {
   taskDescription?: string;
   appUrl?: string;
   isTest?: boolean;
+  timing?: "tomorrow" | "today";
 }): { html: string; text: string; subject: string } {
   const {
     memberName,
@@ -72,25 +73,28 @@ export function buildMarketReminderHtml(params: {
     marketDateFormattedEn,
     taskDescription,
     appUrl = "https://mymessmanagement.onrender.com",
-    isTest = false
+    isTest = false,
+    timing = "tomorrow"
   } = params;
 
   const displayName = memberNickname ? `${memberName} (${memberNickname})` : memberName;
   const safeTask = taskDescription?.trim() || "মেসের নিয়মিত তাজা বাজার ও ফর্দ সংগ্রহ (Regular Market Duty)";
+  const timeHeadingBn = timing === "today" ? "আজ আপনার বাজার করার দিন!" : "আগামীকাল আপনার বাজার করার পালা!";
+  const timeSubheadingEn = timing === "today" ? "Today is Your Market Day! ⚡" : "Tomorrow is Your Market Day! ⚡";
 
   // Highly distinctive subject with vibrant emojis so it stands out among thousands of emails
   const subjectPrefix = isTest ? "[TEST REMINDER 🧪] " : "";
-  const subject = `${subjectPrefix}🛒 🥦 🚨 [${messName}] জরুরি নোটিশ: আগামীকাল আপনার বাজার করার পালা! 🍗 🧺`;
+  const subject = `${subjectPrefix}🛒 🥦 🚨 [${messName}] জরুরি নোটিশ: ${timeHeadingBn} 🍗 🧺`;
 
   const text = `
-🛒 🚨 জরুরি বাজার নোটিশ: আগামীকাল আপনার বাজার করার পালা!
+🛒 🚨 জরুরি বাজার নোটিশ: ${timeHeadingBn}
 মেস: ${messName}
 দায়িত্বপ্রাপ্ত: ${displayName}
 বাজারের তারিখ: ${marketDateFormattedBn} (${marketDateFormattedEn})
 কাজের বিবরণ: ${safeTask}
 
 প্রিয় ${memberName},
-আগামীকাল আপনার মেসের বাজার করার পালা নির্ধারিত রয়েছে। মেসের সবার খাবারের সুবিধার জন্য নির্ধারিত সময়ে প্রয়োজনীয় তাজা বাজার সম্পন্ন করার জন্য বিনীত অনুরোধ জানানো হচ্ছে।
+${timing === "today" ? "আজ" : "আগামীকাল"} আপনার মেসের বাজার করার পালা নির্ধারিত রয়েছে। মেসের সবার খাবারের সুবিধার জন্য নির্ধারিত সময়ে প্রয়োজনীয় তাজা বাজার সম্পন্ন করার জন্য বিনীত অনুরোধ জানানো হচ্ছে।
 
 চেকলিস্ট:
 1. মিল ম্যানেজার বা বাবুর্চির থেকে প্রয়োজনীয় মালামালের ফর্দ সংগ্রহ করুন।
@@ -307,32 +311,48 @@ export function buildMarketReminderHtml(params: {
 
 /**
  * Gets current date and tomorrow's date formatted for Bangladesh standard time (UTC+6)
+ * Uses strict UTC date arithmetic on the formatted date string to prevent double-timezone drift.
  */
-function getDhakaDates(): { todayStr: string; tomorrowStr: string; dhakaNow: Date } {
+export function getDhakaDates(): {
+  todayStr: string;
+  tomorrowStr: string;
+  currentDhakaTimeFormatted: string;
+} {
   const now = new Date();
-  // Format as YYYY-MM-DD in Asia/Dhaka
-  const dhakaFormatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Dhaka",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
   });
-  const todayStr = dhakaFormatter.format(now);
+  const todayStr = formatter.format(now); // e.g. "2026-10-08"
+  const [year, month, day] = todayStr.split("-").map(Number);
+  const tomorrowDate = new Date(Date.UTC(year, month - 1, day + 1));
+  const tomorrowStr = tomorrowDate.toISOString().split("T")[0]; // e.g. "2026-10-09"
 
-  const dhakaNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
-  const tomorrow = new Date(dhakaNow);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = dhakaFormatter.format(tomorrow);
+  const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Dhaka",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  });
+  const timeDhaka = timeFormatter.format(now);
 
-  return { todayStr, tomorrowStr, dhakaNow };
+  const bengaliMonths = ["জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"];
+  const toBn = (n: number | string) => String(n).replace(/[0-9]/g, c => "০১২৩৪৫৬৭৮৯"[+c]);
+  const currentDhakaTimeFormatted = `${toBn(day)} ${bengaliMonths[month - 1]} ${toBn(year)}, ${timeDhaka} (BDT UTC+6)`;
+
+  return { todayStr, tomorrowStr, currentDhakaTimeFormatted };
 }
 
 function formatDatePretty(dateStr: string): { bn: string; en: string } {
   try {
     const [year, month, day] = dateStr.split("-").map(Number);
-    const d = new Date(year, month - 1, day);
+    const d = new Date(Date.UTC(year, month - 1, day));
     
     const en = d.toLocaleDateString("en-GB", {
+      timeZone: "UTC",
       weekday: "long",
       day: "numeric",
       month: "long",
@@ -343,8 +363,8 @@ function formatDatePretty(dateStr: string): { bn: string; en: string } {
     const bengaliMonths = ["জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"];
     const toBnNum = (n: number) => String(n).replace(/[0-9]/g, c => "০১২৩৪৫৬৭৮৯"[+c]);
 
-    const dayName = bengaliDays[d.getDay()];
-    const monthName = bengaliMonths[d.getMonth()];
+    const dayName = bengaliDays[d.getUTCDay()];
+    const monthName = bengaliMonths[d.getUTCMonth()];
     const bn = `${dayName}, ${toBnNum(day)} ${monthName} ${toBnNum(year)}`;
 
     return { bn, en };
@@ -360,13 +380,14 @@ function formatDatePretty(dateStr: string): { bn: string; en: string } {
 export async function checkAndSendMarketReminders(options?: {
   specificMessId?: string;
   forceAll?: boolean;
+  targetScope?: "tomorrow" | "today" | "all";
 }): Promise<{
   processedMesses: number;
   remindersSent: number;
   errors: string[];
   logs: MarketReminderLogEntry[];
 }> {
-  const { specificMessId, forceAll = false } = options || {};
+  const { specificMessId, forceAll = false, targetScope = "tomorrow" } = options || {};
   const { todayStr, tomorrowStr } = getDhakaDates();
   const allMesses = loadMesses().messes || [];
   const messesToProcess = specificMessId
@@ -401,7 +422,13 @@ export async function checkAndSendMarketReminders(options?: {
         const isTomorrow = dutyDate === tomorrowStr;
         const isToday = dutyDate === todayStr;
 
-        if (!isTomorrow && !isToday && !forceAll) {
+        if (targetScope === "tomorrow" && !isTomorrow && !forceAll) {
+          continue;
+        }
+        if (targetScope === "today" && !isToday && !forceAll) {
+          continue;
+        }
+        if (targetScope === "all" && !isTomorrow && !isToday && !forceAll) {
           continue;
         }
 
@@ -434,7 +461,8 @@ export async function checkAndSendMarketReminders(options?: {
           marketDateStr: dutyDate,
           marketDateFormattedBn: datePretty.bn,
           marketDateFormattedEn: datePretty.en,
-          taskDescription: duty.task
+          taskDescription: duty.task,
+          timing: isToday ? "today" : "tomorrow"
         });
 
         console.log(`[MarketReminder] Dispatching market reminder email to ${recipientEmail} for duty date ${dutyDate} (Mess: ${mess.name})...`);
