@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { 
   Camera, Upload, X, Check, Loader2, Sparkles, AlertCircle, 
   HelpCircle, CheckCircle2, XCircle, RefreshCw, Save, ArrowRight,
-  Plus, Minus, Users
+  Plus, Minus, Users, FlipHorizontal, Eye
 } from "lucide-react";
 import { Member } from "../types.js";
 
@@ -67,8 +67,140 @@ export default function AIMealScannerModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
 
+  // Live Camera states
+  const [isLiveCamera, setIsLiveCamera] = useState(false);
+  const [isCameraStarting, setIsCameraStarting] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Stop live camera stream helper
+  const stopLiveCamera = () => {
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      } catch (e) {
+        console.error("Error stopping camera tracks:", e);
+      }
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsLiveCamera(false);
+    setIsCameraStarting(false);
+  };
+
+  // Start live in-app camera viewfinder
+  const startLiveCamera = async (facing: "environment" | "user" = "environment") => {
+    setErrorMessage(null);
+    setIsCameraStarting(true);
+    setIsLiveCamera(true);
+    setCameraFacing(facing);
+
+    // Stop previous track if any
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("আপনার ব্রাউজারে সরাসরি লাইভ ক্যামেরা চালু করা সম্ভব হয়নি।");
+      }
+
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try {
+          await videoRef.current.play();
+        } catch {
+          // Some browsers auto-play without issue
+        }
+      }
+    } catch (err: any) {
+      console.warn("[AIMealScannerModal] Live camera error:", err);
+      stopLiveCamera();
+      
+      let errMsg = "সরাসরি ক্যামেরা চালু করা সম্ভব হয়নি।";
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        errMsg = "ক্যামেরার অনুমতি (Permission) দেওয়া হয়নি। ব্রাউজার সেটিংসে ক্যামেরা এলাউ করুন অথবা গ্যালারি থেকে ছবি নির্বাচন করুন।";
+      } else if (err.message) {
+        errMsg = `${errMsg} (${err.message})`;
+      }
+      setErrorMessage(errMsg);
+
+      // Attempt fallback to native camera input
+      setTimeout(() => {
+        cameraInputRef.current?.click();
+      }, 300);
+    } finally {
+      setIsCameraStarting(false);
+    }
+  };
+
+  // Toggle between back and front camera
+  const toggleCameraFacing = () => {
+    const nextFacing = cameraFacing === "environment" ? "user" : "environment";
+    startLiveCamera(nextFacing);
+  };
+
+  // Capture frame from live camera video
+  const captureLivePhoto = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // Draw current video frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+      setImagePreview(dataUrl);
+      setScanResult(null);
+      setErrorMessage(null);
+
+      // Convert to file object
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], `meal-sheet-${Date.now()}.jpg`, { type: "image/jpeg" });
+          setImageFile(file);
+        }
+      }, "image/jpeg", 0.92);
+
+      // Stop video stream after capture
+      stopLiveCamera();
+    } catch (e: any) {
+      console.error("Failed to capture photo from video:", e);
+      setErrorMessage("ছবি ক্যাপচার করতে সমস্যা হয়েছে: " + e.message);
+    }
+  };
+
+  // Clean up camera stream on unmount
+  useEffect(() => {
+    return () => {
+      stopLiveCamera();
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -176,11 +308,16 @@ export default function AIMealScannerModal({
     });
   };
 
+  const handleCloseModal = () => {
+    stopLiveCamera();
+    onClose();
+  };
+
   const handleApply = async (autoSave: boolean = false) => {
     setIsApplying(true);
     try {
       await onApplyMeals(editableMeals, autoSave);
-      onClose();
+      handleCloseModal();
     } catch (e: any) {
       setErrorMessage(e.message || "মিল ইনপুট করতে সমস্যা হয়েছে");
     } finally {
@@ -189,6 +326,7 @@ export default function AIMealScannerModal({
   };
 
   const resetScanner = () => {
+    stopLiveCamera();
     setImageFile(null);
     setImagePreview(null);
     setScanResult(null);
@@ -233,7 +371,7 @@ export default function AIMealScannerModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseModal}
             className={`p-2 rounded-xl border transition-all cursor-pointer ${
               isDarkMode 
                 ? "border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white" 
@@ -291,13 +429,99 @@ export default function AIMealScannerModal({
           {!scanResult && (
             <div className="space-y-4">
               <div 
-                className={`p-6 sm:p-8 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-4 text-center transition-all ${
-                  imagePreview 
-                    ? isDarkMode ? "border-cyan-500/40 bg-slate-950/40" : "border-cyan-300 bg-cyan-50/30"
-                    : isDarkMode ? "border-slate-800 hover:border-cyan-500/30 bg-slate-950/30" : "border-slate-300 hover:border-cyan-400 bg-slate-50"
+                className={`p-4 sm:p-6 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-4 text-center transition-all ${
+                  isLiveCamera
+                    ? "border-cyan-500 bg-slate-950/60"
+                    : imagePreview 
+                      ? isDarkMode ? "border-cyan-500/40 bg-slate-950/40" : "border-cyan-300 bg-cyan-50/30"
+                      : isDarkMode ? "border-slate-800 hover:border-cyan-500/30 bg-slate-950/30" : "border-slate-300 hover:border-cyan-400 bg-slate-50"
                 }`}
               >
-                {imagePreview ? (
+                {/* 1. Live In-App Camera Viewfinder */}
+                {isLiveCamera ? (
+                  <div className="w-full flex flex-col items-center gap-3">
+                    <div className="relative w-full max-w-lg aspect-[4/3] rounded-2xl overflow-hidden bg-black border-2 border-cyan-500 shadow-2xl flex items-center justify-center">
+                      <video
+                        ref={videoRef}
+                        playsInline
+                        autoPlay
+                        muted
+                        className={`w-full h-full object-cover ${cameraFacing === "user" ? "scale-x-[-1]" : ""}`}
+                      />
+
+                      {/* Viewfinder Guide Overlay Frame */}
+                      <div className="absolute inset-3 sm:inset-5 border-2 border-dashed border-cyan-400/80 rounded-xl pointer-events-none flex flex-col justify-between p-2.5 sm:p-3">
+                        <div className="flex items-center gap-1.5 self-start bg-slate-950/80 backdrop-blur-sm px-2.5 py-1 rounded-md text-[11px] font-bold text-cyan-300 border border-cyan-500/30">
+                          <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                          <span>লাইভ ক্যামেরা • খাতা বা বোর্ডের ছবি সোজা ফ্রেমে রাখুন</span>
+                        </div>
+                        <div className="self-center bg-slate-950/80 backdrop-blur-sm px-3 py-1 rounded-md text-[11px] font-semibold text-cyan-200 border border-cyan-500/20">
+                          নিচের বাটনে চাপ দিয়ে ছবি তুলুন
+                        </div>
+                      </div>
+
+                      {/* Top Action Buttons inside Viewfinder */}
+                      <div className="absolute top-2.5 right-2.5 flex items-center gap-2 z-10">
+                        <button
+                          type="button"
+                          onClick={toggleCameraFacing}
+                          className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 text-cyan-300 border border-cyan-500/30 backdrop-blur-sm transition-all shadow cursor-pointer active:scale-95"
+                          title="ক্যামেরা সুইচ করুন (সামনে/পেছনে)"
+                        >
+                          <FlipHorizontal size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopLiveCamera}
+                          className="p-2 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/30 backdrop-blur-sm transition-all shadow cursor-pointer active:scale-95"
+                          title="ক্যামেরা বন্ধ করুন"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      {/* Camera Initializing Loader */}
+                      {isCameraStarting && (
+                        <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center gap-2 text-cyan-400 z-20">
+                          <Loader2 size={32} className="animate-spin" />
+                          <span className="text-xs font-bold">ক্যামেরা চালু হচ্ছে...</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Camera Control Action Buttons */}
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={stopLiveCamera}
+                        className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors cursor-pointer"
+                      >
+                        বাতিল করুন
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={captureLivePhoto}
+                        disabled={isCameraStarting}
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-600 hover:from-cyan-400 hover:via-indigo-400 hover:to-purple-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer border border-cyan-300/40"
+                      >
+                        <Camera size={16} />
+                        <span>ছবি তুলুন (ক্যাপচার)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={toggleCameraFacing}
+                        className="px-4 py-2.5 rounded-xl border border-cyan-500/30 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="সামনের ও পেছনের ক্যামেরা বদলান"
+                      >
+                        <FlipHorizontal size={14} />
+                        <span>ক্যামেরা পরিবর্তন</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : imagePreview ? (
+                  /* 2. Image Preview when Captured or Selected */
                   <div className="space-y-4 w-full flex flex-col items-center">
                     <div className="relative max-w-md max-h-72 rounded-xl overflow-hidden border border-cyan-500/30 shadow-lg">
                       <img 
@@ -308,68 +532,100 @@ export default function AIMealScannerModal({
                       <button
                         type="button"
                         onClick={resetScanner}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-900/80 text-rose-400 hover:bg-slate-900 transition-colors shadow"
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-900/80 text-rose-400 hover:bg-slate-900 transition-colors shadow cursor-pointer"
                         title="ছবি পরিবর্তন করুন"
                       >
                         <X size={14} />
                       </button>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-center gap-2">
+                    <div className="flex flex-wrap items-center justify-center gap-2.5">
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                        onClick={() => startLiveCamera("environment")}
+                        className="px-3.5 py-1.5 text-xs font-bold rounded-xl border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
-                        অন্য ছবি নির্বাচন করুন
+                        <Camera size={14} />
+                        ক্যামেরা দিয়ে পুনরায় তুলুন
                       </button>
                       <button
                         type="button"
-                        onClick={() => cameraInputRef.current?.click()}
-                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3.5 py-1.5 text-xs font-bold rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
-                        <Camera size={13} />
-                        পুনরায় ছবি তুলুন
+                        <Upload size={14} />
+                        গ্যালারি থেকে অন্য ছবি দিন
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetScanner}
+                        className="px-3.5 py-1.5 text-xs font-bold rounded-xl border border-rose-800/40 bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <X size={14} />
+                        ছবি মুছুন
                       </button>
                     </div>
                   </div>
                 ) : (
+                  /* 3. Initial Choice: Live Camera vs Gallery */
                   <>
                     <div className="p-4 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                      <Camera size={32} />
+                      <Camera size={36} />
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-slate-200">
-                        মিল খাতা বা বোর্ডের স্পষ্ট ছবি আপলোড করুন
+                        মিল খাতা বা বোর্ডের স্পষ্ট ছবি দিন
                       </h4>
                       <p className="text-xs text-slate-400 mt-1 max-w-md">
-                        কাগজের মিল চার্টের ছবি তুলুন যেখানে মেম্বারদের নামের পাশে দুপুরের ও রাতের ঘর রয়েছে।
+                        সরাসরি ক্যামেরা দিয়ে ছবি তুলুন অথবা আপনার ফোনের গ্যালারি থেকে পূর্বে তোলা ছবি সিলেক্ট করুন।
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 w-full max-w-md">
+                      {/* Choice A: Open Real Live In-App Camera */}
                       <button
                         type="button"
-                        onClick={() => cameraInputRef.current?.click()}
-                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+                        onClick={() => startLiveCamera("environment")}
+                        className="p-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-indigo-950/40 active:scale-95 transition-all cursor-pointer border border-cyan-400/30 group"
                       >
-                        <Camera size={15} />
-                        ক্যামেরা দিয়ে ছবি তুলুন
+                        <div className="flex items-center gap-2 text-sm font-extrabold">
+                          <Camera size={18} className="text-cyan-200 group-hover:scale-110 transition-transform" />
+                          <span>সরাসরি ক্যামেরা অন করুন</span>
+                        </div>
+                        <span className="text-[11px] text-cyan-100 font-normal">
+                          লাইভ ভিউ দিয়ে সরাসরি ছবি তুলুন
+                        </span>
                       </button>
 
+                      {/* Choice B: Choose from Gallery / Storage */}
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
+                        className="p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 font-bold text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer group"
                       >
-                        <Upload size={15} />
-                        গ্যালারি / ফাইল থেকে নির্বাচন করুন
+                        <div className="flex items-center gap-2 text-sm font-extrabold text-slate-100">
+                          <Upload size={18} className="text-cyan-400 group-hover:scale-110 transition-transform" />
+                          <span>গ্যালারি / ফাইল থেকে বাছুন</span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          আগে তোলা ছবি বা ফাইল নির্বাচন করুন
+                        </span>
                       </button>
                     </div>
+
+                    {/* Native Camera App Fallback Link */}
+                    <button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="text-[11px] text-slate-400 hover:text-cyan-400 underline underline-offset-4 flex items-center gap-1 transition-colors pt-1 cursor-pointer"
+                    >
+                      <span>বা ফোনের নিজস্ব ক্যামেরা অ্যাপ দিয়ে সরাসরি তুলতে এখানে ট্যাপ করুন</span>
+                    </button>
                   </>
                 )}
 
                 {/* Hidden File Inputs */}
+                {/* 1. Gallery input: NO capture attribute, pure photo picker */}
                 <input 
                   type="file" 
                   ref={fileInputRef} 
@@ -378,8 +634,10 @@ export default function AIMealScannerModal({
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) handleImageSelect(f);
+                    e.target.value = "";
                   }}
                 />
+                {/* 2. Device Camera fallback input: capture="environment" */}
                 <input 
                   type="file" 
                   ref={cameraInputRef} 
@@ -389,6 +647,7 @@ export default function AIMealScannerModal({
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) handleImageSelect(f);
+                    e.target.value = "";
                   }}
                 />
               </div>
