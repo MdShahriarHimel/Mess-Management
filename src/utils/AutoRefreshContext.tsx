@@ -88,8 +88,12 @@ export const AutoRefreshProvider: React.FC<{ children: React.ReactNode; erpBrand
   };
 
   useEffect(() => {
-    // Start central tick loop
+    // Start central tick loop - pause if tab is hidden to save database & server compute hours
     const tickInterval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
+
       let changed = false;
       const updates: Partial<Record<RefreshModule, number>> = {};
 
@@ -125,13 +129,22 @@ export const AutoRefreshProvider: React.FC<{ children: React.ReactNode; erpBrand
     return () => clearInterval(tickInterval);
   }, [refreshSettings, refreshTriggers]);
 
-  // Sync with global system refresh events
+  // Sync with global system refresh events and tab visibility restoration
   useEffect(() => {
     const handleGlobal = () => {
       refreshAllModules();
     };
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        refreshAllModules();
+      }
+    };
     window.addEventListener("app-global-refresh", handleGlobal);
-    return () => window.removeEventListener("app-global-refresh", handleGlobal);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("app-global-refresh", handleGlobal);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return (

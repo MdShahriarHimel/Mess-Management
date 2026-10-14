@@ -74,9 +74,6 @@ export default function AIMealScannerModal({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-
   // Stop live camera stream helper
   const stopLiveCamera = () => {
     if (streamRef.current) {
@@ -94,7 +91,7 @@ export default function AIMealScannerModal({
     setIsCameraStarting(false);
   };
 
-  // Start live in-app camera viewfinder
+  // Start live in-app camera viewfinder with progressive fallback constraints
   const startLiveCamera = async (facing: "environment" | "user" = "environment") => {
     setErrorMessage(null);
     setIsCameraStarting(true);
@@ -109,19 +106,29 @@ export default function AIMealScannerModal({
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("আপনার ব্রাউজারে সরাসরি লাইভ ক্যামেরা চালু করা সম্ভব হয়নি।");
+        throw new Error("আপনার ব্রাউজারে সরাসরি ক্যামেরা সমর্থন নেই। নিচে 'ফোনের ক্যামেরা অ্যাপ' বা 'গ্যালারি' ব্যবহার করুন।");
       }
 
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: facing },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      };
+      let stream: MediaStream | null = null;
+      try {
+        // Attempt 1: Ideal facingMode
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facing } },
+          audio: false
+        });
+      } catch (firstErr) {
+        // Attempt 2: Basic video fallback
+        console.warn("[AIMealScannerModal] Ideal facingMode failed, trying generic video constraint:", firstErr);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (!stream) {
+        throw new Error("ক্যামেরা স্ট্রিম পাওয়া যায়নি।");
+      }
+
       streamRef.current = stream;
 
       if (videoRef.current) {
@@ -138,16 +145,11 @@ export default function AIMealScannerModal({
       
       let errMsg = "সরাসরি ক্যামেরা চালু করা সম্ভব হয়নি।";
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        errMsg = "ক্যামেরার অনুমতি (Permission) দেওয়া হয়নি। ব্রাউজার সেটিংসে ক্যামেরা এলাউ করুন অথবা গ্যালারি থেকে ছবি নির্বাচন করুন।";
+        errMsg = "ক্যামেরার অনুমতি (Permission) দেওয়া হয়নি। ব্রাউজারের অ্যাড্রেস বারের লক আইকনে ক্লিক করে ক্যামেরা 'Allow' করুন, অথবা নিচের 'ফোনের ক্যামেরা অ্যাপ' বাটন ব্যবহার করুন।";
       } else if (err.message) {
-        errMsg = `${errMsg} (${err.message})`;
+        errMsg = `${errMsg} ${err.message}`;
       }
       setErrorMessage(errMsg);
-
-      // Attempt fallback to native camera input
-      setTimeout(() => {
-        cameraInputRef.current?.click();
-      }, 300);
     } finally {
       setIsCameraStarting(false);
     }
@@ -548,14 +550,20 @@ export default function AIMealScannerModal({
                         <Camera size={14} />
                         ক্যামেরা দিয়ে পুনরায় তুলুন
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-3.5 py-1.5 text-xs font-bold rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
+                      <label className="px-3.5 py-1.5 text-xs font-bold rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer">
                         <Upload size={14} />
-                        গ্যালারি থেকে অন্য ছবি দিন
-                      </button>
+                        <span>গ্যালারি থেকে অন্য ছবি দিন</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleImageSelect(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
                       <button
                         type="button"
                         onClick={resetScanner}
@@ -581,75 +589,62 @@ export default function AIMealScannerModal({
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 w-full max-w-md">
-                      {/* Choice A: Open Real Live In-App Camera */}
-                      <button
-                        type="button"
-                        onClick={() => startLiveCamera("environment")}
-                        className="p-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-indigo-950/40 active:scale-95 transition-all cursor-pointer border border-cyan-400/30 group"
-                      >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 w-full max-w-md">
+                      {/* Choice A: Direct Native Phone Camera */}
+                      <label className="p-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-indigo-950/40 active:scale-95 transition-all cursor-pointer border border-cyan-400/30 group">
                         <div className="flex items-center gap-2 text-sm font-extrabold">
-                          <Camera size={18} className="text-cyan-200 group-hover:scale-110 transition-transform" />
-                          <span>সরাসরি ক্যামেরা অন করুন</span>
+                          <Camera size={19} className="text-cyan-200 group-hover:scale-110 transition-transform" />
+                          <span>সরাসরি ক্যামেরা দিয়ে তুলুন</span>
                         </div>
                         <span className="text-[11px] text-cyan-100 font-normal">
-                          লাইভ ভিউ দিয়ে সরাসরি ছবি তুলুন
+                          ফোনের ক্যামেরা অ্যাপ অন করে ছবি তুলুন
                         </span>
-                      </button>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleImageSelect(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
 
                       {/* Choice B: Choose from Gallery / Storage */}
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 font-bold text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer group"
-                      >
+                      <label className="p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 font-bold text-xs rounded-xl flex flex-col items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer group">
                         <div className="flex items-center gap-2 text-sm font-extrabold text-slate-100">
-                          <Upload size={18} className="text-cyan-400 group-hover:scale-110 transition-transform" />
-                          <span>গ্যালারি / ফাইল থেকে বাছুন</span>
+                          <Upload size={19} className="text-cyan-400 group-hover:scale-110 transition-transform" />
+                          <span>গ্যালারি থেকে ছবি বাছুন</span>
                         </div>
                         <span className="text-[11px] text-slate-400 font-normal">
-                          আগে তোলা ছবি বা ফাইল নির্বাচন করুন
+                          আগে তোলা ছবি বা গ্যালারি থেকে নির্বাচন
                         </span>
-                      </button>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleImageSelect(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
                     </div>
 
-                    {/* Native Camera App Fallback Link */}
+                    {/* Choice C: Browser In-App Live Camera Viewfinder */}
                     <button
                       type="button"
-                      onClick={() => cameraInputRef.current?.click()}
-                      className="text-[11px] text-slate-400 hover:text-cyan-400 underline underline-offset-4 flex items-center gap-1 transition-colors pt-1 cursor-pointer"
+                      onClick={() => startLiveCamera("environment")}
+                      className="text-[12px] font-semibold text-cyan-400 hover:text-cyan-300 underline underline-offset-4 flex items-center gap-1.5 transition-colors pt-2 cursor-pointer"
                     >
-                      <span>বা ফোনের নিজস্ব ক্যামেরা অ্যাপ দিয়ে সরাসরি তুলতে এখানে ট্যাপ করুন</span>
+                      <Camera size={14} />
+                      <span>অথবা ব্রাউজারের লাইভ ভিউফাইন্ডার (ইন-অ্যাপ স্ক্রিন) অন করুন</span>
                     </button>
                   </>
                 )}
-
-                {/* Hidden File Inputs */}
-                {/* 1. Gallery input: NO capture attribute, pure photo picker */}
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  accept="image/*" 
-                  className="hidden" 
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleImageSelect(f);
-                    e.target.value = "";
-                  }}
-                />
-                {/* 2. Device Camera fallback input: capture="environment" */}
-                <input 
-                  type="file" 
-                  ref={cameraInputRef} 
-                  accept="image/*" 
-                  capture="environment" 
-                  className="hidden" 
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleImageSelect(f);
-                    e.target.value = "";
-                  }}
-                />
               </div>
 
               {/* Start Scan Button */}

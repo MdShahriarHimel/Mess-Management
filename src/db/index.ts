@@ -12,7 +12,10 @@ export const createPool = () => {
   if (process.env.DATABASE_URL) {
     return new Pool({
       connectionString: process.env.DATABASE_URL,
-      connectionTimeoutMillis: 15000,
+      max: 5,
+      idleTimeoutMillis: 3000, // Close idle connections after 3 seconds of inactivity so Neon Postgres compute can sleep
+      connectionTimeoutMillis: 10000,
+      allowExitOnIdle: true,
       ssl: {
         rejectUnauthorized: false
       }
@@ -23,7 +26,10 @@ export const createPool = () => {
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     database: process.env.SQL_DB_NAME,
-    connectionTimeoutMillis: 15000,
+    max: 5,
+    idleTimeoutMillis: 3000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true,
   });
 };
 
@@ -34,3 +40,4 @@ pool.on("error", (err) => {
 });
 
 export const db = drizzle(pool, { schema });
+

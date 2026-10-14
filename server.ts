@@ -117,17 +117,13 @@ app.all(keepAlivePaths, (req, res) => {
   const recordedAt = recordCronPing(req.path, userAgent);
   console.log(`[Keepalive/Cron Ping] Received via ${req.method} ${req.path} from '${userAgent}' at ${recordedAt} (Total Pings: ${cronStatus.totalPingsReceived})`);
 
-  // Asynchronously ensure database connection in background without blocking this fast HTTP response
-  if (!isDbInitialized) {
-    ensureDbInitialized().catch(e => console.warn("[Keepalive Background Boot]", e.message));
-  } else {
+  // CRITICAL NEON SLEEP OPTIMIZATION:
+  // Do NOT query PostgreSQL (e.g. SELECT 1) on keep-alive/uptime pings!
+  // Normal pings from UptimeRobot reset Neon's auto-suspend timer every 1-5 minutes,
+  // which burns 24/7 compute hours. Instead, report memory state instantly (<1ms).
+  const testDbExplicitly = req.query.testDb === "true";
+  if (testDbExplicitly && isDbInitialized) {
     pool.query("SELECT 1;").catch(() => {});
-  }
-
-  if (!cachedDbVersion && isDbInitialized) {
-    pool.query("SELECT version();")
-      .then(r => { cachedDbVersion = r.rows[0]?.version || "Connected"; })
-      .catch(() => {});
   }
 
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -135,14 +131,15 @@ app.all(keepAlivePaths, (req, res) => {
   res.setHeader("Pragma", "no-cache");
   res.status(200).json({
     status: "ok",
-    message: "Keep-alive ping received successfully. Service is active and warm.",
+    message: "Keep-alive ping received successfully. Service is active and warm. Neon compute auto-sleep preserved.",
     timestamp: recordedAt,
     uptimeSeconds: Math.floor(process.uptime()),
     serverUptime: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
     totalPings: cronStatus.totalPingsReceived,
-    database: isDbInitialized ? "connected" : "booting",
+    database: isDbInitialized ? "ready" : "standby",
     databaseReady: isDbInitialized,
     version: cachedDbVersion || "PostgreSQL 18.6",
+    neonComputeOptimized: true,
     author: "Md. Shahriar Himel"
   });
 });
