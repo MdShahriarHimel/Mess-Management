@@ -5070,7 +5070,17 @@ router.get("/auditlogs", authMiddleware, (req: AuthenticatedRequest, res: Respon
   }
 
   const db = loadDB();
-  let logs = db.auditLogs || [];
+  let logs = (db.auditLogs || []).map(log => {
+    let role = log.userRole;
+    if (!role || role === "UNKNOWN") {
+      const member = (db.members || []).find((m: any) => m.id === log.userId || m.email === log.userId || m.name === log.userName || m.nickname === log.userName);
+      role = member?.role || "MEMBER";
+    }
+    return {
+      ...log,
+      userRole: role
+    };
+  });
   
   // 1. Enforce Hierarchical Access Control
   if (!isAdmin) {

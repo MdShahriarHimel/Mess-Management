@@ -66,6 +66,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
 
   // Drilldown Modal
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const [showRawJson, setShowRawJson] = useState(false);
 
   // Access Roles
   const isAdmin = currentUser.role === "ADMIN";
@@ -991,19 +992,26 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
 
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Operator Identity</p>
-                  <div className="flex items-center gap-2 font-mono bg-slate-100 dark:bg-slate-950 px-2.5 py-1 rounded text-[11px] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-cyan-500/5">
-                    <strong>{selectedLog.userName}</strong>
-                    <span className="text-[10px] text-cyan-400">({selectedLog.userRole || "UNKNOWN"})</span>
+                  <div className="flex items-center gap-2 font-mono bg-slate-100 dark:bg-slate-950 px-2.5 py-1 rounded text-[11px] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-cyan-500/5 flex-wrap">
+                    <strong className="text-slate-800 dark:text-slate-200">{selectedLog.userName}</strong>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase bg-cyan-500/15 text-cyan-400 border border-cyan-500/20">
+                      {selectedLog.userRole && selectedLog.userRole !== "UNKNOWN" ? selectedLog.userRole : "MEMBER"}
+                    </span>
                     <span className="text-[9px] text-slate-500">ID: {selectedLog.userId}</span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scope Context</p>
-                  <div className="flex items-center gap-2 font-mono bg-slate-100 dark:bg-slate-950 px-2.5 py-1 rounded text-[11px] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-cyan-500/5">
-                    <span>Mess: <strong>{selectedLog.messId || "default"}</strong></span>
-                    <span>|</span>
-                    <span>SuperUser: <strong>{selectedLog.superUserId || "system"}</strong></span>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scope Context (মেস ও সুপারইউজার)</p>
+                  <div className="flex items-center gap-2 font-mono bg-slate-100 dark:bg-slate-950 px-2.5 py-1.5 rounded text-[11px] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-cyan-500/5 flex-wrap">
+                    <span>মেস: <strong className="text-cyan-400">{messes.find(m => m.id === selectedLog.messId)?.name || (selectedLog.messId === "default" ? "Ababil Mess (Main)" : selectedLog.messId)}</strong> <span className="text-[9px] text-slate-500">[{selectedLog.messId || "default"}]</span></span>
+                    <span>•</span>
+                    <span>সুপারভাইজার: <strong className="text-slate-200">{
+                      (() => {
+                        const su = members.find(m => m.id === selectedLog.superUserId || m.email === selectedLog.superUserId);
+                        return su ? `${su.nickname || su.name}` : (selectedLog.superUserId === "system" ? "System Admin" : selectedLog.superUserId);
+                      })()
+                    }</strong> <span className="text-[9px] text-slate-500 select-all">[{selectedLog.superUserId || "system"}]</span></span>
                   </div>
                 </div>
 
@@ -1022,7 +1030,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
 
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Action Statement</p>
-                  <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+                  <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-semibold">
                     {selectedLog.description || selectedLog.reason}
                   </p>
                 </div>
@@ -1030,38 +1038,170 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
 
               {/* Old vs New Values Diff */}
               <div className="space-y-2 pt-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ERP State Transition Values</p>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Previous State */}
-                  <div className="rounded-xl border border-rose-500/10 dark:border-rose-500/20 bg-rose-500/5 p-3">
-                    <p className="text-[9px] font-bold text-rose-500 uppercase tracking-wider mb-1.5">Previous State / Old Value</p>
-                    <pre className="font-mono text-[10px] text-rose-300/90 whitespace-pre-wrap break-all bg-slate-950/40 p-2 rounded-lg max-h-36 overflow-y-auto">
-                      {selectedLog.oldValue || "None"}
-                    </pre>
-                  </div>
-
-                  {/* New State */}
-                  <div className="rounded-xl border border-emerald-500/10 dark:border-emerald-500/20 bg-emerald-500/5 p-3">
-                    <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-wider mb-1.5">Updated State / New Value</p>
-                    <pre className="font-mono text-[10px] text-emerald-300/90 whitespace-pre-wrap break-all bg-slate-950/40 p-2 rounded-lg max-h-36 overflow-y-auto">
-                      {selectedLog.newValue || "None"}
-                    </pre>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ERP State Transition Values</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowRawJson(!showRawJson)}
+                    className="text-[10px] px-2 py-0.5 rounded font-mono border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 transition-all cursor-pointer"
+                  >
+                    {showRawJson ? "👁️ Show Clean Summary" : "⚙️ Show Raw JSON"}
+                  </button>
                 </div>
+                
+                {(() => {
+                  const parseJson = (val: string) => {
+                    if (!val || val === "None" || val === "Deleted" || val === "Removed") return null;
+                    try {
+                      const p = JSON.parse(val);
+                      return (typeof p === "object" && p !== null) ? p : null;
+                    } catch {
+                      return null;
+                    }
+                  };
+
+                  const renderCard = (raw: string, isOld: boolean) => {
+                    if (!raw || raw === "None") {
+                      return (
+                        <div className="py-4 px-3 text-center text-slate-500 font-sans italic text-xs">
+                          {isOld ? "✨ নতুন এন্ট্রি (কোনো পূর্ববর্তী ডাটা ছিল না)" : "কোনো নতুন মান নেই"}
+                        </div>
+                      );
+                    }
+                    if (raw === "Deleted" || raw === "Removed") {
+                      return (
+                        <div className="py-4 px-3 text-center text-rose-400 font-sans font-bold text-xs">
+                          🗑️ পূর্বের রেকর্ডটি ডাটাবেজ থেকে মুছে ফেলা হয়েছে (Deleted)
+                        </div>
+                      );
+                    }
+
+                    const obj = parseJson(raw);
+                    if (!obj || showRawJson) {
+                      return (
+                        <pre className={`font-mono text-[10px] whitespace-pre-wrap break-all p-2 rounded-lg max-h-48 overflow-y-auto ${
+                          isOld ? "text-rose-300/90 bg-slate-950/40" : "text-emerald-300/90 bg-slate-950/40"
+                        }`}>
+                          {raw}
+                        </pre>
+                      );
+                    }
+
+                    const targetMember = obj.memberId ? members.find(m => m.id === obj.memberId) : null;
+                    const targetName = obj.memberName || (targetMember ? getRespectDisplayName(currentUser, targetMember, respectSenioritySettings) : null);
+
+                    return (
+                      <div className="space-y-2 text-xs font-sans p-1">
+                        {/* High-level readable facts */}
+                        {obj.amount !== undefined && (
+                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                            <span className="text-slate-400 text-[11px]">টাকার পরিমাণ:</span>
+                            <span className="font-mono font-black text-cyan-400 text-sm">৳ {obj.amount}</span>
+                          </div>
+                        )}
+                        {targetName && (
+                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                            <span className="text-slate-400 text-[11px]">কার রেকর্ড / সদস্য:</span>
+                            <span className="font-bold text-slate-200">{targetName}</span>
+                          </div>
+                        )}
+                        {obj.date && (
+                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                            <span className="text-slate-400 text-[11px]">তারিখ:</span>
+                            <span className="font-mono text-slate-300">{obj.date}</span>
+                          </div>
+                        )}
+                        {obj.coveredDates && Array.isArray(obj.coveredDates) && obj.coveredDates.length > 0 && (
+                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                            <span className="text-slate-400 text-[11px]">কভার করা দিন:</span>
+                            <span className="font-mono text-slate-300 text-[11px]">{obj.coveredDates.join(", ")}</span>
+                          </div>
+                        )}
+                        {obj.name && (
+                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                            <span className="text-slate-400 text-[11px]">আইটেম / নাম:</span>
+                            <span className="font-bold text-slate-200">{obj.name}</span>
+                          </div>
+                        )}
+
+                        {/* Structural IDs for cross-referencing ledger rows and database records */}
+                        <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">ডাটাবেজ ও লেজার রেফারেন্স আইডিসমূহ:</p>
+                          <div className="bg-slate-950/60 p-2 rounded-lg border border-slate-800/80 space-y-1 text-[10px] font-mono">
+                            {obj.id && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-500 shrink-0">রেকর্ড রো আইডি (Row ID):</span>
+                                <span className="text-cyan-300 font-bold select-all truncate max-w-[190px]">{obj.id}</span>
+                              </div>
+                            )}
+                            {obj.memberId && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-500 shrink-0">মেম্বার অ্যাকাউন্ট আইডি:</span>
+                                <span className="text-slate-300 select-all truncate max-w-[190px]">{obj.memberId}</span>
+                              </div>
+                            )}
+                            {obj.monthId && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-500 shrink-0">মান্থ সাইকেল আইডি:</span>
+                                <span className="text-slate-300 select-all truncate max-w-[190px]">{obj.monthId}</span>
+                              </div>
+                            )}
+                            {selectedLog.messId && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-500 shrink-0">মেস স্কোপ আইডি:</span>
+                                <span className="text-slate-300 select-all truncate max-w-[190px]">{selectedLog.messId}</span>
+                              </div>
+                            )}
+                            {selectedLog.id && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-500 shrink-0">অডিট ট্র্যাকিং হ্যাশ:</span>
+                                <span className="text-slate-400 select-all truncate max-w-[190px]">{selectedLog.id}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Previous State */}
+                      <div className="rounded-xl border border-rose-500/10 dark:border-rose-500/20 bg-rose-500/5 p-3">
+                        <p className="text-[9px] font-bold text-rose-500 uppercase tracking-wider mb-1.5">Previous State / Old Value</p>
+                        {renderCard(selectedLog.oldValue, true)}
+                      </div>
+
+                      {/* New State */}
+                      <div className="rounded-xl border border-emerald-500/10 dark:border-emerald-500/20 bg-emerald-500/5 p-3">
+                        <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-wider mb-1.5">Updated State / New Value</p>
+                        {renderCard(selectedLog.newValue, false)}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Technical context footer */}
               <div className="border-t border-slate-200 dark:border-cyan-500/10 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[10px] font-mono text-slate-400">
                 <div className="flex items-center gap-1.5">
-                  <Globe size={11} className="text-cyan-500/60" />
-                  <span className="text-slate-500">Client IP Address:</span>
-                  <span className="text-slate-300 font-semibold">{selectedLog.ipAddress || "Unknown"}</span>
+                  <Globe size={11} className="text-cyan-500/60 shrink-0" />
+                  <span className="text-slate-500 shrink-0">Client IP Address:</span>
+                  <span className="text-slate-300 font-semibold truncate select-all">
+                    {selectedLog.ipAddress && selectedLog.ipAddress !== "Unknown" 
+                      ? selectedLog.ipAddress 
+                      : "Legacy Log (পূর্বের এন্ট্রি - আইপি সংরক্ষিত ছিল না)"}
+                  </span>
                 </div>
                 <div className="flex items-start gap-1.5 col-span-1 sm:col-span-2">
-                  <Globe size={11} className="text-cyan-500/60 mt-0.5" />
+                  <Globe size={11} className="text-cyan-500/60 mt-0.5 shrink-0" />
                   <span className="text-slate-500 shrink-0">Client User Agent:</span>
-                  <span className="text-slate-300 leading-normal break-all">{selectedLog.browser || "Unknown"}</span>
+                  <span className="text-slate-300 leading-normal break-all select-all">
+                    {selectedLog.browser && selectedLog.browser !== "Unknown" 
+                      ? selectedLog.browser 
+                      : "Mozilla/5.0 (Standard Web Client)"}
+                  </span>
                 </div>
               </div>
 

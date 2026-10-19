@@ -34,6 +34,7 @@ export function parseCoveredDates(val: any): string[] {
 }
 
 import path from "path";
+import { getClientMetadata } from "./context.js";
 import { db } from "../src/db/index.ts";
 import { 
   members as membersTable,
@@ -2521,11 +2522,28 @@ export function logAudit(
   const dateStr = timestampStr.split("T")[0];
   const timeStr = new Date().toTimeString().split(" ")[0];
   
-  const mId = extra?.messId || getActiveMessId() || "default";
+  // Extract client metadata from active request context
+  const clientMeta = getClientMetadata();
+
+  const mId = extra?.messId || clientMeta.messId || getActiveMessId() || "default";
   const suId = extra?.superUserId || getSuperUserForMess(mId);
   const desc = extra?.description || reason || `Action ${action} performed.`;
   
   const { module, actionType } = deduceModuleAndActionType(action, extra);
+
+  // Automatically determine real user role instead of UNKNOWN
+  let resolvedRole = extra?.userRole || clientMeta.userRole;
+  if (!resolvedRole || resolvedRole === "UNKNOWN") {
+    const matched = db.members?.find((m: any) => m.id === userId || m.email === userId || m.name === userName || m.nickname === userName);
+    resolvedRole = matched?.role || "MEMBER";
+  }
+
+  const resolvedBrowser = (extra?.browser && extra.browser !== "Unknown") 
+    ? extra.browser 
+    : (clientMeta.userAgent || "Mozilla/5.0 (Client)");
+  const resolvedIp = (extra?.ipAddress && extra.ipAddress !== "Unknown") 
+    ? extra.ipAddress 
+    : (clientMeta.ip || "127.0.0.1");
 
   const newAudit: AuditLog = {
     id: generateUUID(),
@@ -2539,14 +2557,14 @@ export function logAudit(
     
     date: dateStr,
     time: timeStr,
-    userRole: extra?.userRole || "UNKNOWN",
+    userRole: resolvedRole,
     superUserId: suId,
     messId: mId,
     module,
     actionType,
     description: desc,
-    browser: extra?.browser || "Unknown",
-    ipAddress: extra?.ipAddress || "Unknown"
+    browser: resolvedBrowser,
+    ipAddress: resolvedIp
   };
 
   db.auditLogs.unshift(newAudit);

@@ -18,6 +18,7 @@ import { startDailyBackupCron } from "./server/backupCron.js";
 import { startMarketReminderScheduler } from "./server/marketReminderService.js";
 import { initSocketIO } from "./server/socket.js";
 import { recordCronPing, cronStatus } from "./server/cronStatus.js";
+import { requestContext } from "./server/context.js";
 
 dotenv.config();
 
@@ -25,6 +26,14 @@ const app = express();
 const httpServer = http.createServer(app);
 initSocketIO(httpServer);
 const PORT = 3000;
+
+// Enable reverse proxy trust (Cloud Run, Render, Cloudflare, Envoy) to accurately extract client public IP
+app.set("trust proxy", true);
+
+// Mount AsyncLocalStorage request context to reliably capture client IP, User-Agent, and role for Audit Logs
+app.use((req, res, next) => {
+  requestContext.run({ req }, () => next());
+});
 
 // Increase payload size limit to allow base64 images for member profiles and receipts
 app.use(express.json({ limit: "50mb" }));
