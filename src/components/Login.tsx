@@ -8,10 +8,12 @@ import { User, Lock, Mail, ChevronRight, Eye, EyeOff, KeyRound, Shield, Sparkles
 import { Member } from "../types.js";
 import { signInWithPopup, signInWithRedirect, setPersistence, browserLocalPersistence, browserSessionPersistence } from "firebase/auth";
 import { auth, googleAuthProvider } from "../lib/firebase.ts";
+import { AUTHOR_WATERMARK } from "../utils/watermark.ts";
 
 interface LoginProps {
   onLoginSuccess: (token: string, user: Member, rememberMe?: boolean) => void;
   isDarkMode: boolean;
+  erpBranding?: any;
   customization?: {
     title: string;
     subtitle: string;
@@ -32,7 +34,7 @@ interface LoginProps {
   };
 }
 
-export default function Login({ onLoginSuccess, isDarkMode, customization }: LoginProps) {
+export default function Login({ onLoginSuccess, isDarkMode, erpBranding, customization }: LoginProps) {
   const [activeTab, setActiveTab] = useState<"login" | "activate" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,6 +52,17 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
 
   const [liveCustomization, setLiveCustomization] = useState<any>(customization || null);
   const [logoError, setLogoError] = useState(false);
+
+  // Provenance branding & Support states
+  const [brandingInfo, setBrandingInfo] = useState<any>(erpBranding || null);
+  const [showSupportEmail, setShowSupportEmail] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+
+  useEffect(() => {
+    if (erpBranding) {
+      setBrandingInfo((prev: any) => ({ ...(prev || {}), ...erpBranding }));
+    }
+  }, [erpBranding]);
 
   useEffect(() => {
     setLogoError(false);
@@ -69,6 +82,12 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
               ...data.loginCustomization,
               ...(prev || {}),
               ...(customization || {})
+            }));
+          }
+          if (data.branding) {
+            setBrandingInfo((prev: any) => ({
+              ...data.branding,
+              ...(prev || {})
             }));
           }
         }
@@ -1097,6 +1116,110 @@ export default function Login({ onLoginSuccess, isDarkMode, customization }: Log
         )}
 
       </div>
+
+      {/* Login Page Footer: Copyright, Developer Signature, Support Button */}
+      <footer 
+        id="login-page-footer"
+        className={`mt-6 pt-3 pb-2 text-xs transition-all border-t ${
+          isDarkMode 
+            ? "border-slate-800/80 text-slate-400" 
+            : "border-slate-200 text-slate-600"
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left px-1">
+          {/* Copyright & Live Status Dot */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className={`font-bold text-[11px] ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
+              {brandingInfo?.copyright || "Copyright © 2026 Mess ERP"}
+            </span>
+          </div>
+
+          {/* Developer, Signature, Support Button */}
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2.5 text-[11px]">
+            {/* Dev */}
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-slate-500">Dev:</span>
+              <span className={`font-bold ${isDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>
+                {brandingInfo?.developerInfo || "H"}
+              </span>
+            </div>
+
+            <span className="text-slate-500">•</span>
+
+            {/* Sig */}
+            <div 
+              className="flex items-center gap-1 cursor-help shrink-0"
+              title={`Original Project Signature: ${AUTHOR_WATERMARK.signatureId}\nAuthor: ${AUTHOR_WATERMARK.author} (${AUTHOR_WATERMARK.email})\nFingerprint: ${AUTHOR_WATERMARK.fingerprint}`}
+            >
+              <span className="text-slate-500">Sig:</span>
+              <span className={`font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded transition-all ${
+                isDarkMode 
+                  ? "bg-cyan-950/70 text-cyan-400 border border-cyan-800/60 hover:border-cyan-400" 
+                  : "bg-cyan-50 text-cyan-800 border border-cyan-200 hover:border-cyan-400"
+              }`}>
+                {brandingInfo?.signatureId || AUTHOR_WATERMARK.signatureId}
+              </span>
+            </div>
+
+            <span className="text-slate-500">•</span>
+
+            {/* Support button - click reveals email, not shown directly */}
+            <div className="relative inline-flex items-center">
+              {!showSupportEmail ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSupportEmail(true)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer active:scale-95 shadow-xs ${
+                    isDarkMode 
+                      ? "bg-slate-900/90 hover:bg-slate-800 text-cyan-400 border-cyan-500/30 hover:border-cyan-400" 
+                      : "bg-white hover:bg-slate-50 text-cyan-700 border-cyan-200 hover:border-cyan-400"
+                  }`}
+                  title="Click to view support email"
+                >
+                  <Mail size={12} className="text-cyan-400 shrink-0" />
+                  <span>Support</span>
+                </button>
+              ) : (
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] border transition-all animate-in fade-in zoom-in-95 duration-200 ${
+                  isDarkMode 
+                    ? "bg-cyan-950/90 border-cyan-500/50 text-cyan-200 shadow-md shadow-cyan-950/50" 
+                    : "bg-cyan-50/90 border-cyan-300 text-cyan-950 shadow-sm"
+                }`}>
+                  <Mail size={12} className="text-cyan-500 shrink-0" />
+                  <a 
+                    href={`mailto:${brandingInfo?.supportInfo || "zakiamesssylhet@gmail.com"}`}
+                    className="font-mono font-bold hover:underline text-[10px]"
+                  >
+                    {brandingInfo?.supportInfo || "zakiamesssylhet@gmail.com"}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard?.writeText(brandingInfo?.supportInfo || "zakiamesssylhet@gmail.com");
+                      setCopiedEmail(true);
+                      setTimeout(() => setCopiedEmail(false), 2000);
+                    }}
+                    className="ml-1 text-[9px] px-1.5 py-0.5 rounded font-bold bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 cursor-pointer transition-all"
+                    title="Copy email to clipboard"
+                  >
+                    {copiedEmail ? "✓ Copied" : "Copy"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSupportEmail(false)}
+                    className="ml-0.5 text-slate-400 hover:text-slate-200 cursor-pointer p-0.5 rounded hover:bg-slate-700/40"
+                    title="Close"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 

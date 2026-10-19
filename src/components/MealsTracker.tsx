@@ -609,9 +609,6 @@ export default function MealsTracker({
             <Coffee className="text-cyan-400" />
             Daily Meals Intake
           </h2>
-          <p className="text-xs text-slate-400">
-            Select a date and enter the daily servings consumed by each mess member.
-          </p>
         </div>
 
         {/* Date Selector, Refresh & AI Scanner */}
@@ -855,9 +852,6 @@ export default function MealsTracker({
           <div className={`p-4 border-t flex justify-end items-center gap-3 ${
             isDarkMode ? "bg-slate-950/40 border-cyan-500/10" : "bg-slate-50 border-slate-200"
           }`}>
-            <p className="text-[11px] text-slate-400 italic">
-              * Click "SAVE DAILY SERVINGS" to write the logs and trigger balance calculations.
-            </p>
             <button
               id="save-meals-btn"
               onClick={handleSave}

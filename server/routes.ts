@@ -6645,6 +6645,7 @@ router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequ
 router.get("/settings/public", (req: Request, res: Response) => {
   const s = loadSettings();
   const pc = loadPlatformControls();
+  const branding = loadErpBranding();
   res.json({
     messName: s.messName,
     siteColor: s.siteColor,
@@ -6659,7 +6660,14 @@ router.get("/settings/public", (req: Request, res: Response) => {
     disableBackgroundAudio: s.disableBackgroundAudio,
     activeAudioSettings: s.activeAudioSettings,
     systemWebsiteUrl: pc.systemWebsiteUrl || "https://mymessmanagement.onrender.com",
-    systemBrandingName: pc.systemBrandingName || "My Mess (Mess ERP)"
+    systemBrandingName: pc.systemBrandingName || "My Mess (Mess ERP)",
+    branding: {
+      copyright: branding?.copyright || "Copyright © 2026 Mess ERP",
+      developerInfo: branding?.developerInfo || "H",
+      supportInfo: branding?.supportInfo || "zakiamesssylhet@gmail.com",
+      erpVersion: branding?.erpVersion || "v2.5.4",
+      signatureId: "SIG-HIMEL-MESSEXP-2026-X799"
+    }
   });
 });
 

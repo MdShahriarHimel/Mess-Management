@@ -2421,9 +2421,6 @@ export default function FinanceSettlement({
             <FileSpreadsheet className="text-cyan-400" />
             Financial Settlement & Bills
           </h2>
-          <p className="text-xs text-slate-400">
-            Audit monthly balances, manage management advance pools, and register utility bills.
-          </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -2592,9 +2589,6 @@ export default function FinanceSettlement({
               <FileSpreadsheet size={16} className="text-cyan-400" />
               Resident Daily Meal Spreadsheet
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Everyone can see total daily meal counts. {canEditSpreadsheet ? "Change values inside cells and click Save when finished." : "View-only access for residents."}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -2760,20 +2754,11 @@ export default function FinanceSettlement({
               <div className={`p-5 rounded-3xl border ${
                 isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200/60 shadow-sm text-slate-800"
               }`} id="finance-add-new-bill-inline">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-4">
                   <div className="w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-extrabold shadow-sm shrink-0">
                     <Plus size={14} className="stroke-[3px]" />
                   </div>
-                  <div>
-                    <h3 className="text-xs font-black tracking-wider uppercase">ADD NEW BILL</h3>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Quickly add member wise utility, worker, rent & extra bills.</p>
-                  </div>
-                </div>
-
-                {/* Note Callout */}
-                <div className="mt-3 mb-4 p-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 rounded-2xl text-[10px] font-semibold leading-relaxed flex items-center gap-2">
-                  <AlertCircle size={14} className="shrink-0 text-cyan-500" />
-                  <span>Note: Bill amounts cannot exceed the per member limits set in bill settings.</span>
+                  <h3 className="text-xs font-black tracking-wider uppercase">ADD NEW BILL</h3>
                 </div>
 
                 <form onSubmit={handleAddBill} className="space-y-4">

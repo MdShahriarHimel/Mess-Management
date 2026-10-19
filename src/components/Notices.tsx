@@ -232,9 +232,6 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
             <Bell className="text-cyan-400" />
             Notice Board & Bulletins Manager
           </h2>
-          <p className="text-xs text-slate-400">
-            Publish, pin, and archive announcements across the hostel.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

@@ -4129,7 +4129,7 @@ export default function App() {
                 Full Lock Active
               </span>
             </div>
-            <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
+            <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} erpBranding={erpBrandingState} />
           </div>
         </div>
       );
@@ -4196,7 +4196,7 @@ export default function App() {
   // Authentication gate
   if (!sessionToken || !currentUser) {
     return (
-      <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} />
+      <Login onLoginSuccess={handleLoginSuccess} isDarkMode={isDarkMode} customization={loginCustomization} erpBranding={erpBrandingState} />
     );
   }
   // Sidebar navigation menu options
@@ -6830,7 +6830,7 @@ export default function App() {
                 <div className="flex items-center gap-1">
                   <span className="text-slate-500">Support:</span>
                   <span className={`font-medium ${activeIsDarkMode ? "text-slate-300" : "text-slate-700"}`}>
-                    {erpBrandingState?.supportInfo || "Ababil team"}
+                    {erpBrandingState?.supportInfo || "zakiamesssylhet@gmail.com"}
                   </span>
                 </div>
                 <span className="text-slate-500">•</span>

@@ -321,9 +321,6 @@ export default function FoodMenu({
           <Sparkles className="text-cyan-400" />
           Meal Planner & Food Statistics
         </h2>
-        <p className="text-xs text-slate-400">
-          Check today's lunch or dinner arrangements and inspect meal analytics.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="menu-grid">
@@ -705,20 +702,16 @@ export default function FoodMenu({
           <div className={`p-6 rounded-2xl border ${
             isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
           }`}>
-            <h3 className="text-base font-bold font-display mb-3 flex items-center gap-1.5">
+            <h3 className="text-base font-bold font-display mb-4 flex items-center gap-1.5">
               <PieChart size={18} className="text-cyan-400" />
               Dish Distribution
             </h3>
-            <p className={`text-xs ${isDarkMode ? "text-slate-400" : "text-slate-600"} leading-relaxed mb-6`}>
-              Tracks and groups all planned meals semantically to display real-world frequency metrics of canonical food items, resolving dialect spellings, English/Bangla variations, and typos.
-            </p>
 
             {stats ? (
               <div className="space-y-6">
                 
                 {/* Detailed All Dishes & Items Frequency Distribution */}
                 <div className="space-y-3">
-                  <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Semantic Dishes Frequency</span>
                   <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar" id="all-dishes-distribution-list">
                     {stats.allDishes && stats.allDishes.length > 0 ? (
                       stats.allDishes.map((dish: any, idx: number) => {

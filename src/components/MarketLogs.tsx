@@ -1405,11 +1405,6 @@ export default function MarketLogs({
             <ShoppingCart className="text-cyan-400" />
             {subTab === "standard" ? "Market Schedule & Expenses" : "Monthly Expenses of Manager"}
           </h2>
-          <p className="text-xs text-slate-400">
-            {subTab === "standard" 
-              ? "Log physical cash expenditures on daily groceries and rotate scheduled dates." 
-              : "Track and manage managerial/mass expenses such as rice bags, mass spices, etc."}
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

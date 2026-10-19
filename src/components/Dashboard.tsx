@@ -1143,14 +1143,10 @@ export default function Dashboard({
               <p className={`text-xs mt-1 max-w-xl ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                 {homeCustomization?.welcomeSubtitle || "Welcome to the Mess ERP Hub. Check details, submit your market expenses, track meals, and manage monthly balances with ease."}
               </p>
-              {currentUserDuty ? (
+              {currentUserDuty && (
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-xs text-orange-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
                   <span><strong>Work Assigned:</strong> {currentUserDuty.assignedTask}{currentUserDuty.taskDetails ? ` (${currentUserDuty.taskDetails})` : ""}</span>
-                </div>
-              ) : (
-                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-500/5 border border-slate-500/10 text-xs text-slate-400">
-                  <span>No specific mess duties assigned currently for this month cycle.</span>
                 </div>
               )}
             </div>
@@ -1897,7 +1893,6 @@ export default function Dashboard({
               ৳ {reportSummary ? reportSummary.mealRate : "0.00"}
             </span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">Calculated live based on current meals and purchases.</p>
         </div>
 
         {/* KPI: Total Cost */}
@@ -1915,9 +1910,6 @@ export default function Dashboard({
               ৳ {reportSummary ? reportSummary.totalCost : "0.00"}
             </span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">
-            Total Deposits (৳{reportSummary?.totalDeposits || 0}) + Total Market (৳{reportSummary?.totalMarkets || 0})
-          </p>
         </div>
 
         {/* KPI: Total Meals */}
@@ -1936,7 +1928,6 @@ export default function Dashboard({
             </span>
             <span className="text-xs text-slate-400">meals</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">Sum of all active members' active meals count.</p>
         </div>
 
         {/* KPI: Manager Monthly Market */}
@@ -1954,9 +1945,6 @@ export default function Dashboard({
               ৳ {reportSummary ? reportSummary.managerMarketSpent : "0.00"}
             </span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">
-            Total monthly bazaar spending managed by the active manager.
-          </p>
         </div>
 
       </div>
@@ -1971,13 +1959,10 @@ export default function Dashboard({
           <div className={`p-6 rounded-2xl border transition-all ${
             isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
           }`} id="duty-roster-panel">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-orange-500 mb-2.5 flex items-center gap-2">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-orange-500 mb-4 flex items-center gap-2">
               <UserCheck size={16} className="text-cyan-400" />
               Mess Duty Roster & Work Assignments
             </h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Current duties assigned by the superuser, authorities, or manager for this month cycle:
-            </p>
 
             {assignedMembersForMonth.length === 0 ? (
               <div className={`text-center py-6 border border-dashed rounded-xl text-xs text-slate-500 ${
@@ -2026,49 +2011,41 @@ export default function Dashboard({
             return (
               <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {canViewMealsIntake && (
-                  <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                  <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all flex items-center justify-between group ${
                     isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
                   }`} onClick={() => onNavigateToTab("meals")}>
-                    <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                      <Coffee size={16} /> Meals Tracker
+                    <h4 className="text-sm font-bold flex items-center gap-2 text-cyan-400">
+                      <Coffee size={18} /> Meals Tracker
                     </h4>
-                    <p className="text-xs text-slate-400 leading-relaxed">
-                      Log daily member lunch/dinner servings and compute total rates automatically.
-                    </p>
+                    <ArrowRight size={16} className="text-slate-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                   </div>
                 )}
 
-                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all flex items-center justify-between group ${
                   isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
                 }`} onClick={() => onNavigateToTab("market")}>
-                  <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                    <Calendar size={16} /> Market Scheduling
+                  <h4 className="text-sm font-bold flex items-center gap-2 text-cyan-400">
+                    <Calendar size={18} /> Market Scheduling
                   </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Submit market expense vouchers, check assigned dates, and upload shopping receipts.
-                  </p>
+                  <ArrowRight size={16} className="text-slate-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                 </div>
 
-                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all flex items-center justify-between group ${
                   isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
                 }`} onClick={() => onNavigateToTab("finance")}>
-                  <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                    <DollarSign size={16} /> Live Balance Sheet
+                  <h4 className="text-sm font-bold flex items-center gap-2 text-cyan-400">
+                    <DollarSign size={18} /> Live Balance Sheet
                   </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Review deposits, manager holdings, utility bill lists, and complete calculations.
-                  </p>
+                  <ArrowRight size={16} className="text-slate-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                 </div>
 
-                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all ${
+                <div className={`p-5 rounded-2xl border cursor-pointer hover:border-cyan-400 transition-all flex items-center justify-between group ${
                   isDarkMode ? "bg-slate-900/40 border-slate-800" : "bg-slate-50 border-slate-200"
                 }`} onClick={() => onNavigateToTab("menu")}>
-                  <h4 className="text-sm font-bold flex items-center gap-2 mb-1.5 text-cyan-400">
-                    <FileText size={16} /> Food Menu Planner
+                  <h4 className="text-sm font-bold flex items-center gap-2 text-cyan-400">
+                    <FileText size={18} /> Food Menu Planner
                   </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Check what's cooking today and explore statistical meat vs vegetable cycles.
-                  </p>
+                  <ArrowRight size={16} className="text-slate-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                 </div>
               </div>
             );
@@ -2114,9 +2091,6 @@ export default function Dashboard({
                         <span className="text-base font-black text-cyan-400 font-mono block leading-tight">
                           {myMeals.total} <span className="text-[9px] font-bold text-slate-500">Meals</span>
                         </span>
-                        <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                          Tap to view & manage
-                        </span>
                       </div>
                     </div>
                   )}
@@ -2137,9 +2111,6 @@ export default function Dashboard({
                     <div className="mt-1">
                       <span className="text-base font-black text-orange-400 font-mono block leading-tight">
                         ৳{reportSummary?.totalMarkets || 0}
-                      </span>
-                      <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                        Tap to view vouchers
                       </span>
                     </div>
                   </div>
@@ -2165,9 +2136,6 @@ export default function Dashboard({
                           <span className={`text-base font-black font-mono block leading-tight ${myBalance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                             ৳{myBalance >= 0 ? "+" : ""}{myBalance.toFixed(0)}
                           </span>
-                          <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                            {myBalance >= 0 ? "Return amount" : "Owed amount"}
-                          </span>
                         </div>
                       </div>
                     );
@@ -2189,9 +2157,6 @@ export default function Dashboard({
                     <div className="mt-1">
                       <span className="text-base font-black text-pink-400 block leading-tight truncate">
                         Active Plan
-                      </span>
-                      <span className="text-[8px] text-slate-500 font-bold mt-0.5 block truncate">
-                        Tap to view weekly meals
                       </span>
                     </div>
                   </div>
@@ -2216,9 +2181,6 @@ export default function Dashboard({
 
             {isRatingPeriodOpen ? (
               <div className="space-y-4">
-                <p className={`text-xs ${isDarkMode ? "text-slate-400" : "text-slate-600"} leading-relaxed`}>
-                  Every member has the authority to rate the active manager (0-10) to log a historical performance record.
-                </p>
 
                 <div className="flex justify-between items-center p-3 bg-slate-950/40 border border-slate-800 rounded-xl">
                   <span className="text-xs font-semibold text-slate-300">Average Rating:</span>
@@ -2294,9 +2256,6 @@ export default function Dashboard({
                 </h3>
 
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Tracks the remaining balance between the total deposits collected from members and the manager's monthly market cost:
-                  </p>
 
                   <div className={`p-4 rounded-xl border text-center transition-all duration-300 relative overflow-hidden ${
                     isNegative 
@@ -2315,9 +2274,6 @@ export default function Dashboard({
                       isBalanceFlickering ? "animate-flicker-update text-cyan-300" : ""
                     }`}>
                       ৳ {remaining.toFixed(2)}
-                    </span>
-                    <span className="text-[10px] block mt-1 opacity-80">
-                      {isNegative ? "⚠️ Deposits depleted (Over-spending)" : "✅ Deposits pool has positive balance"}
                     </span>
                   </div>
 

@@ -264,9 +264,6 @@ export default function Deposits({
             <DollarSign className="text-cyan-400" />
             Member Deposits Register
           </h2>
-          <p className="text-xs text-slate-400">
-            Keep track of monthly cash pools collected from active mess residents.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
