@@ -2259,7 +2259,7 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     }
   }
 
-  const { name, startDate, endDate, gracePeriodEnabled } = req.body;
+  const { name, startDate, endDate, gracePeriodEnabled, managerId, managerName } = req.body;
   if (!name || !startDate || !endDate) {
     res.status(400).json({ error: "Month Name, Start Date, and End Date are required" });
     return;
@@ -2272,7 +2272,9 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     startDate,
     endDate,
     isLocked: false,
-    gracePeriodEnabled: gracePeriodEnabled !== undefined ? gracePeriodEnabled : true
+    gracePeriodEnabled: gracePeriodEnabled !== undefined ? gracePeriodEnabled : true,
+    ...(managerId ? { managerId } : {}),
+    ...(managerName ? { managerName } : {})
   };
 
   db.months.push(newMonth);

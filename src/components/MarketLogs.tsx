@@ -79,6 +79,8 @@ export default function MarketLogs({
   const [scheduleSearchQuery, setScheduleSearchQuery] = useState("");
   const [viewMonthId, setViewMonthId] = useState<string>(currentMonthId);
   const [isCreatingNextCycle, setIsCreatingNextCycle] = useState(false);
+  const [selectedScheduleManagerId, setSelectedScheduleManagerId] = useState<string>("");
+  const [isUpdatingCycleManager, setIsUpdatingCycleManager] = useState(false);
 
   // Sync viewed cycle when global month switches
   useEffect(() => {
@@ -955,31 +957,74 @@ export default function MarketLogs({
 
   const currentViewingMonthObj = months.find(m => m.id === (viewMonthId || currentMonthId)) || months.find(m => m.id === currentMonthId);
 
+  // Sync selected manager when viewing cycle changes
+  useEffect(() => {
+    if (currentViewingMonthObj?.managerId) {
+      setSelectedScheduleManagerId(currentViewingMonthObj.managerId);
+    } else {
+      setSelectedScheduleManagerId("");
+    }
+  }, [currentViewingMonthObj?.id, currentViewingMonthObj?.managerId]);
+
   const activeManager = useMemo(() => {
-    // 1. Look for explicit manager role
-    let mgr = members.find(m => m.role === UserRole.MANAGER || (m.role as any) === "MANAGER");
-    if (!mgr) {
-      // 2. Look for member whose name/nickname is Nahid (mess manager as specified)
-      mgr = members.find(m => (m.nickname || m.name || "").toLowerCase().includes("nahid"));
+    // 1. If an explicit manager is assigned to this cycle or selected for this view
+    const cycleMgrId = selectedScheduleManagerId || currentViewingMonthObj?.managerId;
+    if (cycleMgrId) {
+      const found = members.find(m => m.id === cycleMgrId);
+      if (found) return found;
+      if (currentUser.id === cycleMgrId) return currentUser;
     }
-    if (!mgr) {
-      // 3. Fallback to currentUser
-      mgr = currentUser;
+
+    // 2. If currentUser has role MANAGER (e.g. Admin selected "Act As: Manager")
+    if (currentUser.role === UserRole.MANAGER || (currentUser.role as any) === "MANAGER") {
+      return currentUser;
     }
-    if (mgr && (mgr.nickname || mgr.name || "").toLowerCase().includes("nahid")) {
-      if (!mgr.seniorityYear && !mgr.admissionSession) {
-        return { ...mgr, seniorityYear: "2023", admissionSession: "2023" };
+
+    // 3. Look for explicit manager among active members in this mess
+    let mgr = members.find(m => (m.role === UserRole.MANAGER || (m.role as any) === "MANAGER") && m.status === MemberStatus.ACTIVE);
+    if (mgr) return mgr;
+
+    // 4. Look for partial manager among active members
+    mgr = members.find(m => (m.role === UserRole.PARTIAL_MANAGER || (m.role as any) === "PARTIAL_MANAGER") && m.status === MemberStatus.ACTIVE);
+    if (mgr) return mgr;
+
+    // 5. Default fallback to currentUser
+    return currentUser;
+  }, [selectedScheduleManagerId, currentViewingMonthObj?.id, currentViewingMonthObj?.managerId, members, currentUser]);
+
+  const handleCycleManagerChange = async (newManagerId: string) => {
+    setSelectedScheduleManagerId(newManagerId);
+    if (!currentViewingMonthObj) return;
+    const selectedMember = members.find(m => m.id === newManagerId) || (currentUser.id === newManagerId ? currentUser : null);
+    try {
+      setIsUpdatingCycleManager(true);
+      const res = await fetch(`/api/months/${currentViewingMonthObj.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          managerId: newManagerId || null,
+          managerName: selectedMember ? (selectedMember.nickname || selectedMember.name) : null
+        })
+      });
+      if (res.ok && onRefresh) {
+        onRefresh();
       }
+    } catch (err) {
+      console.error("Failed to update cycle manager:", err);
+    } finally {
+      setIsUpdatingCycleManager(false);
     }
-    return mgr;
-  }, [members, currentUser]);
+  };
 
   const handlePrintDutySchedulePDF = async () => {
     const resolvedMessName = (logoText || (typeof window !== "undefined" ? localStorage.getItem("active_mess_name") : "") || "Ababil mess").trim().toUpperCase();
     const cycleName = currentViewingMonthObj?.name || "Current Cycle";
     const startDateStr = currentViewingMonthObj?.startDate ? currentViewingMonthObj.startDate.split("T")[0] : "";
     const endDateStr = currentViewingMonthObj?.endDate ? currentViewingMonthObj.endDate.split("T")[0] : "";
-    const managerDisplayName = activeManager ? (getRespectDisplayName(activeManager, activeManager, respectSenioritySettings) || activeManager.nickname || activeManager.name) : "Manager";
+    const managerDisplayName = activeManager ? (activeManager.nickname || activeManager.name || "Manager") : "Manager";
 
     const effectiveWebsiteUrl = (systemWebsiteUrl || (typeof window !== "undefined" ? window.location.origin : "https://mymessmanagement.onrender.com")).trim();
     const effectiveBrandingName = (systemBrandingName || "My Mess (Mess ERP)").trim();
@@ -2842,10 +2887,13 @@ export default function MarketLogs({
                   <FileText size={20} />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-bold font-display text-white flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-bold font-display text-white flex items-center gap-2 flex-wrap">
                     <span>বাজার দায়িত্ব ও তারিখ তালিকা (Duty Schedule)</span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
                       {currentViewingMonthObj?.name || "Active Cycle"}
+                    </span>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium flex items-center gap-1">
+                      ম্যানেজার: <span className="font-bold text-white">{activeManager ? (activeManager.nickname || activeManager.name) : "Manager"}</span>
                     </span>
                   </h3>
                   <p className="text-xs text-slate-400">
@@ -2874,25 +2922,55 @@ export default function MarketLogs({
               </div>
             </div>
 
-            {/* Filter / Month Switcher Bar */}
+            {/* Filter / Month Switcher & Manager Bar */}
             <div className="p-3 sm:px-5 border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">মাস নির্বাচন:</span>
-                <select
-                  value={viewMonthId || currentMonthId}
-                  onChange={(e) => setViewMonthId(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-cyan-400 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer"
-                >
-                  {[...months].sort((a, b) => {
-                    const aTime = a.startDate ? new Date(a.startDate).getTime() : 0;
-                    const bTime = b.startDate ? new Date(b.startDate).getTime() : 0;
-                    return aTime - bTime;
-                  }).map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} {m.id === currentMonthId ? "★ (Active)" : ""}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">মাস:</span>
+                  <select
+                    value={viewMonthId || currentMonthId}
+                    onChange={(e) => setViewMonthId(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-cyan-400 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer"
+                  >
+                    {[...months].sort((a, b) => {
+                      const aTime = a.startDate ? new Date(a.startDate).getTime() : 0;
+                      const bTime = b.startDate ? new Date(b.startDate).getTime() : 0;
+                      return aTime - bTime;
+                    }).map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} {m.id === currentMonthId ? "★ (Active)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">ম্যানেজার:</span>
+                  <select
+                    value={activeManager?.id || ""}
+                    onChange={(e) => handleCycleManagerChange(e.target.value)}
+                    disabled={isUpdatingCycleManager}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-emerald-400 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer disabled:opacity-50"
+                    title="এই সাইকেলের জন্য দায়িত্বপ্রাপ্ত ম্যানেজার নির্ধারণ করুন"
+                  >
+                    {/* Ensure currentUser is an option if not in members */}
+                    {currentUser && !members.some(m => m.id === currentUser.id) && (
+                      <option value={currentUser.id}>
+                        {currentUser.nickname || currentUser.name} ({currentUser.role})
+                      </option>
+                    )}
+                    {members
+                      .filter(m => m.status === MemberStatus.ACTIVE)
+                      .map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.nickname || m.name} {m.id === currentUser.id ? "(আপনি)" : ""} {m.role === UserRole.MANAGER ? "★" : ""}
+                        </option>
+                      ))}
+                  </select>
+                  {isUpdatingCycleManager && (
+                    <span className="text-[10px] text-emerald-400 animate-pulse">সংরক্ষণ হচ্ছে...</span>
+                  )}
+                </div>
               </div>
 
               <div className="relative flex-1 sm:max-w-xs">

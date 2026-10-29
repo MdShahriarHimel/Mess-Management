@@ -103,6 +103,8 @@ export interface MessMonth {
   isLocked: boolean;
   manuallyUnlocked?: boolean;
   gracePeriodEnabled: boolean;
+  managerId?: string;
+  managerName?: string;
 }
 
 export interface Meal {
