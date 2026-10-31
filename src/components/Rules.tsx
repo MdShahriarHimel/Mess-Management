@@ -825,13 +825,17 @@ ${rule.penalty ? `⚠️ বিবরণ/শাস্তি: ${rule.penalty}` : 
                   </div>
 
                   {/* QUICK CONTROLS: ONLY SUPER USER & ADMIN HAVE EDIT / DELETE / PIN */}
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => copyRuleToClipboard(rule)}
                       title="কপি করুন"
-                      className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                      className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                        isDarkMode 
+                          ? "border border-slate-700 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700" 
+                          : "border-2 border-slate-400 text-slate-800 bg-slate-100 hover:bg-slate-200 shadow-xs"
+                      }`}
                     >
-                      {copiedRuleId === rule.id ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedRuleId === rule.id ? <Check size={15} strokeWidth={2.4} className="text-emerald-500" /> : <Copy size={15} strokeWidth={2.2} />}
                     </button>
 
                     {canManage && (
@@ -839,27 +843,37 @@ ${rule.penalty ? `⚠️ বিবরণ/শাস্তি: ${rule.penalty}` : 
                         <button
                           onClick={() => handleTogglePin(rule)}
                           title={rule.pinned ? "আনপিন করুন" : "পিন করুন"}
-                          className={`p-1 rounded-lg transition-all ${
-                            rule.pinned ? "text-amber-400 bg-amber-500/10" : "text-slate-400 hover:text-amber-400 hover:bg-slate-800"
+                          className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                            isDarkMode
+                              ? (rule.pinned ? "border border-amber-500/50 text-amber-400 bg-amber-500/20" : "border border-slate-700 text-slate-400 hover:text-amber-400 hover:bg-slate-800")
+                              : (rule.pinned ? "border-2 border-amber-600 text-amber-900 bg-amber-100 shadow-xs" : "border-2 border-slate-400 text-slate-700 hover:text-amber-800 hover:bg-amber-50 bg-slate-100 shadow-xs")
                           }`}
                         >
-                          <Pin size={13} className={rule.pinned ? "fill-current" : ""} />
+                          <Pin size={15} strokeWidth={2.2} className={rule.pinned ? "fill-current" : ""} />
                         </button>
 
                         <button
                           onClick={() => openEditModal(rule)}
                           title="সম্পাদনা করুন"
-                          className="p-1 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800"
+                          className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                            isDarkMode 
+                              ? "border border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/20 bg-cyan-950/30" 
+                              : "border-2 border-cyan-600 text-cyan-800 hover:text-cyan-950 hover:bg-cyan-100 bg-cyan-50 shadow-xs"
+                          }`}
                         >
-                          <Edit3 size={13} />
+                          <Edit3 size={15} strokeWidth={2.6} color={isDarkMode ? "#22d3ee" : "#0e7490"} className="shrink-0" />
                         </button>
 
                         <button
                           onClick={() => handleDeleteRule(rule.id)}
                           title="ডিলিট করুন"
-                          className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800"
+                          className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                            isDarkMode 
+                              ? "border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 bg-rose-950/30" 
+                              : "border-2 border-red-600 text-red-700 hover:text-red-900 hover:bg-red-100 bg-red-50 shadow-xs"
+                          }`}
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={15} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                         </button>
                       </>
                     )}

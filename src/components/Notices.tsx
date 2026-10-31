@@ -278,16 +278,16 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
             key={notice.id} 
             className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
               notice.archived ? "opacity-60 border-slate-800 bg-slate-900/10 text-slate-500" :
-              notice.pinned ? "border-cyan-500/30 bg-cyan-950/10 text-white" :
+              notice.pinned ? (isDarkMode ? "border-cyan-500/30 bg-cyan-950/10 text-white" : "border-cyan-400 bg-cyan-50/70 text-slate-900 shadow-sm") :
               isDarkMode ? "bg-slate-900/40 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800 shadow-sm"
             }`}
           >
             <div>
               <div className="flex justify-between items-start">
-                <span className={`text-[9px] font-bold tracking-widest uppercase ${
-                  notice.isDirectToManager ? "text-rose-400 bg-rose-950/30 px-1.5 py-0.5 rounded" : 
-                  (notice.isGlobal || notice.pinned) ? "text-orange-400 bg-orange-950/30 px-1.5 py-0.5 rounded" : 
-                  "text-cyan-400 bg-cyan-950/30 px-1.5 py-0.5 rounded"
+                <span className={`text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded ${
+                  notice.isDirectToManager ? (isDarkMode ? "text-rose-400 bg-rose-950/30" : "text-rose-700 bg-rose-50 border border-rose-200") : 
+                  (notice.isGlobal || notice.pinned) ? (isDarkMode ? "text-orange-400 bg-orange-950/30" : "text-amber-800 bg-amber-50 border border-amber-200 font-bold") : 
+                  (isDarkMode ? "text-cyan-400 bg-cyan-950/30" : "text-cyan-800 bg-cyan-50 border border-cyan-200 font-bold")
                 }`}>
                   {notice.isDirectToManager ? "DIRECT NOTICE TO MANAGER ✉" : 
                    (notice.isGlobal || notice.pinned) ? "GLOBAL PINNED BULLETIN 📌" : 
@@ -305,7 +305,9 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
               </p>
             </div>
 
-            <div className="flex items-center gap-2 justify-between mt-5 pt-4 border-t border-cyan-500/10 text-[10px] text-slate-500">
+            <div className={`flex items-center gap-2 justify-between mt-5 pt-4 border-t text-[10px] ${
+              isDarkMode ? "border-cyan-500/10 text-slate-400" : "border-slate-200 text-slate-600"
+            }`}>
               <div>
                 <span>By {notice.authorName}</span>
                 <span className="mx-1.5">•</span>
@@ -318,28 +320,40 @@ export default function Notices({ currentUser, isDarkMode }: NoticesProps) {
                     <>
                       <button
                         onClick={() => handleTogglePin(notice.id, notice.pinned)}
-                        className="p-1 rounded hover:bg-cyan-500/10 text-cyan-400 cursor-pointer"
+                        className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                          isDarkMode 
+                            ? "border border-cyan-500/40 text-cyan-400 bg-cyan-950/30 hover:bg-cyan-500/20" 
+                            : "border-2 border-cyan-600 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 shadow-xs"
+                        }`}
                         title={notice.pinned ? "Unpin notice" : "Pin notice"}
                       >
-                        <Pin size={12} className={notice.pinned ? "fill-cyan-400" : ""} />
+                        <Pin size={15} strokeWidth={2.6} color={isDarkMode ? "#22d3ee" : "#4338ca"} className={notice.pinned ? (isDarkMode ? "fill-cyan-400" : "fill-indigo-700") : "shrink-0"} />
                       </button>
 
                       <button
                         onClick={() => handleToggleArchive(notice.id, notice.archived)}
-                        className="p-1 rounded hover:bg-orange-500/10 text-orange-400 cursor-pointer"
+                        className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                          isDarkMode 
+                            ? "border border-amber-500/40 text-amber-400 bg-amber-950/30 hover:bg-amber-500/20" 
+                            : "border-2 border-amber-600 bg-amber-50 hover:bg-amber-100 text-amber-800 shadow-xs"
+                        }`}
                         title={notice.archived ? "Restore notice" : "Archive notice"}
                       >
-                        <Archive size={12} />
+                        <Archive size={15} strokeWidth={2.6} color={isDarkMode ? "#fbbf24" : "#b45309"} className="shrink-0" />
                       </button>
                     </>
                   )}
 
                   <button
                     onClick={() => handleDelete(notice.id)}
-                    className="p-1 rounded hover:bg-rose-500/10 text-rose-400 cursor-pointer"
+                    className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                      isDarkMode 
+                        ? "border border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-500/20" 
+                        : "border-2 border-red-600 bg-red-50 hover:bg-red-100 text-red-700 shadow-xs"
+                    }`}
                     title="Permanently Delete Notice"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={15} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                   </button>
                 </div>
               )}

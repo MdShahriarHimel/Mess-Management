@@ -870,34 +870,40 @@ export default function Members({
                       setOriginalRole(member.role);
                       setShiftReason("");
                     }}
-                    className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
-                      isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                    className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                      isDarkMode 
+                        ? "border-cyan-500/40 text-cyan-400 bg-cyan-950/30 hover:bg-cyan-500/20" 
+                        : "border-cyan-600 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 shadow-xs"
                     }`}
                     title="Edit profile"
                   >
-                    <Edit2 size={13} />
+                    <Edit2 size={15} strokeWidth={2.2} />
                   </button>
 
                   {member.role !== UserRole.ADMIN && (
                     member.status !== MemberStatus.ARCHIVED ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleArchive(member.id); }}
-                        className={`p-1.5 rounded-lg border cursor-pointer hover:border-orange-500 hover:text-orange-500 transition-all ${
-                          isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                        className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                          isDarkMode 
+                            ? "border-amber-500/40 text-amber-400 bg-amber-950/30 hover:bg-amber-500/20" 
+                            : "border-amber-600 text-amber-800 bg-amber-50 hover:bg-amber-100 shadow-xs"
                         }`}
                         title="Archive member"
                       >
-                        <Archive size={13} />
+                        <Archive size={15} strokeWidth={2.6} color={isDarkMode ? "#fbbf24" : "#b45309"} className="shrink-0" />
                       </button>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
-                        className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
-                          isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                        className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                          isDarkMode 
+                            ? "border-emerald-500/40 text-emerald-400 bg-emerald-950/30 hover:bg-emerald-500/20" 
+                            : "border-emerald-600 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-xs"
                         }`}
                         title="Restore member"
                       >
-                        <RotateCcw size={13} />
+                        <RotateCcw size={15} strokeWidth={2.6} color={isDarkMode ? "#34d399" : "#047857"} className="shrink-0" />
                       </button>
                     )
                   )}
@@ -905,10 +911,14 @@ export default function Members({
                   {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
-                      className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                      className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                        isDarkMode 
+                          ? "border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-500/20" 
+                          : "border-red-600 text-red-700 bg-red-50 hover:bg-red-100 shadow-xs"
+                      }`}
                       title="Permanently Delete member"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={15} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                     </button>
                   )}
                 </>
@@ -1205,31 +1215,35 @@ export default function Members({
                                     setOriginalRole(member.role);
                                     setShiftReason("");
                                   }}
-                                  className={`p-1.5 rounded-lg border cursor-pointer hover:border-cyan-400 hover:text-cyan-400 transition-all ${
-                                    isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                                  className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                                    isDarkMode ? "border-cyan-500/40 text-cyan-400 bg-cyan-950/30 hover:bg-cyan-500/20" : "border-cyan-600 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 shadow-xs"
                                   }`}
                                   title="Edit profile"
                                 >
-                                  <Edit2 size={13} />
+                                  <Edit2 size={15} strokeWidth={2.2} />
                                 </button>
 
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleRestore(member.id); }}
-                                  className={`p-1.5 rounded-lg border cursor-pointer hover:border-emerald-500 hover:text-emerald-500 transition-all ${
-                                    isDarkMode ? "border-slate-800 text-slate-400 bg-slate-950/20" : "border-slate-200 text-slate-500"
+                                  className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                                    isDarkMode ? "border-emerald-500/40 text-emerald-400 bg-emerald-950/30 hover:bg-emerald-500/20" : "border-emerald-600 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 shadow-xs"
                                   }`}
                                   title="Restore member to active status"
                                 >
-                                  <RotateCcw size={13} />
+                                  <RotateCcw size={15} strokeWidth={2.6} color={isDarkMode ? "#34d399" : "#047857"} className="shrink-0" />
                                 </button>
 
                                 {currentUser.role === UserRole.ADMIN && member.id !== currentUser.id && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleDelete(member.id); }}
-                                    className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                                    className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
+                                      isDarkMode 
+                                        ? "border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-500/20" 
+                                        : "border-red-600 text-red-700 bg-red-50 hover:bg-red-100 shadow-xs"
+                                    }`}
                                     title="Permanently Delete member"
                                   >
-                                    <Trash2 size={13} />
+                                    <Trash2 size={15} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                                   </button>
                                 )}
                               </>

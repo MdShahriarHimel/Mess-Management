@@ -904,7 +904,7 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
                         </td>
 
                         {/* Description */}
-                        <td className="py-3 px-4 text-slate-300 dark:text-slate-200 max-w-xs truncate" title={l.description || l.reason}>
+                        <td className={`py-3 px-4 max-w-xs truncate ${isDarkMode ? "text-slate-200" : "text-slate-800 font-medium"}`} title={l.description || l.reason}>
                           {l.description || l.reason}
                         </td>
 
@@ -912,10 +912,14 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
                         <td className="py-3 px-4 text-center print:hidden" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => setSelectedLog(l)}
-                            className="p-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 transition-all"
+                            className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                              isDarkMode 
+                                ? "border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-500/20 text-cyan-400" 
+                                : "border-2 border-cyan-600 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 shadow-xs"
+                            }`}
                             title="Inspect complete metadata block"
                           >
-                            <Eye size={12} />
+                            <Eye size={15} strokeWidth={2.2} />
                           </button>
                         </td>
                       </tr>
@@ -1094,68 +1098,80 @@ export default function AuditLogs({ currentUser, isDarkMode, members = [], respe
                       <div className="space-y-2 text-xs font-sans p-1">
                         {/* High-level readable facts */}
                         {obj.amount !== undefined && (
-                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
-                            <span className="text-slate-400 text-[11px]">টাকার পরিমাণ:</span>
-                            <span className="font-mono font-black text-cyan-400 text-sm">৳ {obj.amount}</span>
+                          <div className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${
+                            isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-white border-slate-200 shadow-xs"
+                          }`}>
+                            <span className={`text-[11px] ${isDarkMode ? "text-slate-400" : "text-slate-600 font-semibold"}`}>টাকার পরিমাণ:</span>
+                            <span className={`font-mono font-black text-sm ${isDarkMode ? "text-cyan-400" : "text-cyan-700 font-extrabold"}`}>৳ {obj.amount}</span>
                           </div>
                         )}
                         {targetName && (
-                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
-                            <span className="text-slate-400 text-[11px]">কার রেকর্ড / সদস্য:</span>
-                            <span className="font-bold text-slate-200">{targetName}</span>
+                          <div className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${
+                            isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-white border-slate-200 shadow-xs"
+                          }`}>
+                            <span className={`text-[11px] ${isDarkMode ? "text-slate-400" : "text-slate-600 font-semibold"}`}>কার রেকর্ড / সদস্য:</span>
+                            <span className={`font-bold ${isDarkMode ? "text-slate-200" : "text-slate-900 font-bold"}`}>{targetName}</span>
                           </div>
                         )}
                         {obj.date && (
-                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
-                            <span className="text-slate-400 text-[11px]">তারিখ:</span>
-                            <span className="font-mono text-slate-300">{obj.date}</span>
+                          <div className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${
+                            isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-white border-slate-200 shadow-xs"
+                          }`}>
+                            <span className={`text-[11px] ${isDarkMode ? "text-slate-400" : "text-slate-600 font-semibold"}`}>তারিখ:</span>
+                            <span className={`font-mono ${isDarkMode ? "text-slate-300" : "text-slate-800 font-medium"}`}>{obj.date}</span>
                           </div>
                         )}
                         {obj.coveredDates && Array.isArray(obj.coveredDates) && obj.coveredDates.length > 0 && (
-                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
-                            <span className="text-slate-400 text-[11px]">কভার করা দিন:</span>
-                            <span className="font-mono text-slate-300 text-[11px]">{obj.coveredDates.join(", ")}</span>
+                          <div className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${
+                            isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-white border-slate-200 shadow-xs"
+                          }`}>
+                            <span className={`text-[11px] ${isDarkMode ? "text-slate-400" : "text-slate-600 font-semibold"}`}>কভার করা দিন:</span>
+                            <span className={`font-mono text-[11px] ${isDarkMode ? "text-slate-300" : "text-slate-800 font-medium"}`}>{obj.coveredDates.join(", ")}</span>
                           </div>
                         )}
                         {obj.name && (
-                          <div className="flex justify-between items-center bg-slate-950/40 px-2.5 py-1.5 rounded-lg border border-slate-800">
-                            <span className="text-slate-400 text-[11px]">আইটেম / নাম:</span>
-                            <span className="font-bold text-slate-200">{obj.name}</span>
+                          <div className={`flex justify-between items-center px-2.5 py-1.5 rounded-lg border ${
+                            isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-white border-slate-200 shadow-xs"
+                          }`}>
+                            <span className={`text-[11px] ${isDarkMode ? "text-slate-400" : "text-slate-600 font-semibold"}`}>আইটেম / নাম:</span>
+                            <span className={`font-bold ${isDarkMode ? "text-slate-200" : "text-slate-900 font-bold"}`}>{obj.name}</span>
                           </div>
                         )}
 
                         {/* Structural IDs for cross-referencing ledger rows and database records */}
-                        <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1.5">
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">ডাটাবেজ ও লেজার রেফারেন্স আইডিসমূহ:</p>
-                          <div className="bg-slate-950/60 p-2 rounded-lg border border-slate-800/80 space-y-1 text-[10px] font-mono">
+                        <div className={`mt-2.5 pt-2 border-t space-y-1.5 ${isDarkMode ? "border-slate-800/80" : "border-slate-200"}`}>
+                          <p className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>ডাটাবেজ ও লেজার রেফারেন্স আইডিসমূহ:</p>
+                          <div className={`p-2 rounded-lg border space-y-1 text-[10px] font-mono ${
+                            isDarkMode ? "bg-slate-950/60 border-slate-800/80" : "bg-slate-50 border-slate-200 shadow-xs"
+                          }`}>
                             {obj.id && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-slate-500 shrink-0">রেকর্ড রো আইডি (Row ID):</span>
-                                <span className="text-cyan-300 font-bold select-all truncate max-w-[190px]">{obj.id}</span>
+                                <span className={`shrink-0 ${isDarkMode ? "text-slate-500" : "text-slate-600 font-medium"}`}>রেকর্ড রো আইডি (Row ID):</span>
+                                <span className={`font-bold select-all truncate max-w-[190px] ${isDarkMode ? "text-cyan-300" : "text-cyan-700"}`}>{obj.id}</span>
                               </div>
                             )}
                             {obj.memberId && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-slate-500 shrink-0">মেম্বার অ্যাকাউন্ট আইডি:</span>
-                                <span className="text-slate-300 select-all truncate max-w-[190px]">{obj.memberId}</span>
+                                <span className={`shrink-0 ${isDarkMode ? "text-slate-500" : "text-slate-600 font-medium"}`}>মেম্বার অ্যাকাউন্ট আইডি:</span>
+                                <span className={`select-all truncate max-w-[190px] ${isDarkMode ? "text-slate-300" : "text-slate-800 font-semibold"}`}>{obj.memberId}</span>
                               </div>
                             )}
                             {obj.monthId && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-slate-500 shrink-0">মান্থ সাইকেল আইডি:</span>
-                                <span className="text-slate-300 select-all truncate max-w-[190px]">{obj.monthId}</span>
+                                <span className={`shrink-0 ${isDarkMode ? "text-slate-500" : "text-slate-600 font-medium"}`}>মান্থ সাইকেল আইডি:</span>
+                                <span className={`select-all truncate max-w-[190px] ${isDarkMode ? "text-slate-300" : "text-slate-800 font-semibold"}`}>{obj.monthId}</span>
                               </div>
                             )}
                             {selectedLog.messId && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-slate-500 shrink-0">মেস স্কোপ আইডি:</span>
-                                <span className="text-slate-300 select-all truncate max-w-[190px]">{selectedLog.messId}</span>
+                                <span className={`shrink-0 ${isDarkMode ? "text-slate-500" : "text-slate-600 font-medium"}`}>মেস স্কোপ আইডি:</span>
+                                <span className={`select-all truncate max-w-[190px] ${isDarkMode ? "text-slate-300" : "text-slate-800 font-semibold"}`}>{selectedLog.messId}</span>
                               </div>
                             )}
                             {selectedLog.id && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-slate-500 shrink-0">অডিট ট্র্যাকিং হ্যাশ:</span>
-                                <span className="text-slate-400 select-all truncate max-w-[190px]">{selectedLog.id}</span>
+                                <span className={`shrink-0 ${isDarkMode ? "text-slate-500" : "text-slate-600 font-medium"}`}>অডিট ট্র্যাকিং হ্যাশ:</span>
+                                <span className={`select-all truncate max-w-[190px] ${isDarkMode ? "text-slate-400" : "text-slate-700 font-semibold"}`}>{selectedLog.id}</span>
                               </div>
                             )}
                           </div>

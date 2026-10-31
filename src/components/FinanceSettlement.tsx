@@ -3382,17 +3382,25 @@ export default function FinanceSettlement({
                                     setEditBillCollectorId(b.collectorId);
                                     setShowEditBillModal(true);
                                   }}
-                                  className="p-1 rounded bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-cyan-400 hover:text-cyan-350 transition-all cursor-pointer"
+                                  className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                                    isDarkMode 
+                                      ? "border border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/20 bg-cyan-950/30" 
+                                      : "border-2 border-cyan-600 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 hover:text-cyan-950 shadow-xs"
+                                  }`}
                                   title="Edit"
                                 >
-                                  <Edit3 size={11} />
+                                  <Edit3 size={15} strokeWidth={2.6} color={isDarkMode ? "#22d3ee" : "#0e7490"} className="shrink-0" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteBill(b.id)}
-                                  className="p-1 rounded bg-slate-100 dark:bg-slate-850 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-400 hover:text-rose-350 transition-all cursor-pointer"
+                                  className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                                    isDarkMode 
+                                      ? "border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 bg-rose-950/30" 
+                                      : "border-2 border-red-600 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-900 shadow-xs"
+                                  }`}
                                   title="Delete"
                                 >
-                                  <Trash2 size={11} />
+                                  <Trash2 size={15} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                                 </button>
                               </div>
                             </td>
@@ -3416,10 +3424,12 @@ export default function FinanceSettlement({
       }`} id="finance-manager-monthly-market-log">
         <div className="flex justify-between items-center mb-4 border-b border-cyan-500/5 pb-2">
           <h3 className="text-sm font-bold font-display text-orange-500 flex items-center gap-1.5">
-            <ShoppingCart className="text-cyan-400 animate-bounce" size={16} />
+            <ShoppingCart className={isDarkMode ? "text-cyan-400 animate-bounce" : "text-cyan-600 animate-bounce"} size={16} />
             Manager's Monthly Market Log (Entire Month)
           </h3>
-          <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/20 px-2.5 py-1 rounded">
+          <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded ${
+            isDarkMode ? "text-cyan-400 bg-cyan-950/20" : "text-cyan-800 bg-cyan-50 border border-cyan-200"
+          }`}>
             Total Expense: ৳ {reportSummary?.managerMarketSpent || 0}
           </span>
         </div>
@@ -3433,28 +3443,36 @@ export default function FinanceSettlement({
             {reportSummary.managerHoldings.map((h: any) => {
               const memberObj = members.find(u => u.id === h.memberId);
               return (
-                <div key={h.id} className="p-3.5 rounded-xl border border-slate-850 bg-slate-950/20 flex flex-col justify-between text-xs space-y-3">
+                <div key={h.id} className={`p-3.5 rounded-xl border flex flex-col justify-between text-xs space-y-3 ${
+                  isDarkMode ? "border-slate-850 bg-slate-950/20 text-white" : "border-slate-200 bg-slate-50 text-slate-800 shadow-xs"
+                }`}>
                   <div>
                     <div className="flex justify-between items-start">
                       <span className="text-[10px] font-mono font-bold text-slate-500">MANAGER LOG ENTRY</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-black font-mono text-cyan-400">৳ {h.marketSpent || 0}</span>
+                        <span className={`text-xs font-black font-mono ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`}>৳ {h.marketSpent || 0}</span>
                         {(currentUser?.role === UserRole.MANAGER || currentUser?.isUltimateAdmin || currentUser?.isPlatformOwner) && (
                           <button
                             onClick={() => handleDeleteManagerMarketLog(h.id)}
-                            className="p-1 hover:bg-rose-500/10 rounded text-rose-500/50 hover:text-rose-500 transition-all cursor-pointer"
+                            className={`p-1.5 rounded-lg transition-all cursor-pointer active:scale-95 ${
+                              isDarkMode 
+                                ? "border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 bg-rose-950/30" 
+                                : "border-2 border-red-600 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-900 shadow-xs"
+                            }`}
                             title="Delete entry"
                           >
-                            <Trash2 size={12} />
+                            <Trash2 size={15} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className="font-semibold text-slate-200 mt-2 leading-relaxed whitespace-pre-wrap">
+                    <p className={`font-semibold mt-2 leading-relaxed whitespace-pre-wrap ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
                       {h.description || "No detailed description entered."}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5 border-t border-slate-850/30 pt-2 text-[10px] text-slate-400">
+                  <div className={`flex items-center gap-1.5 border-t pt-2 text-[10px] ${
+                    isDarkMode ? "border-slate-850/30 text-slate-400" : "border-slate-200 text-slate-600"
+                  }`}>
                     <span>Logged by {memberObj?.nickname || memberObj?.name || "Manager"}</span>
                   </div>
                 </div>

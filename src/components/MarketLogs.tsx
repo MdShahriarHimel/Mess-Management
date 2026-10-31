@@ -1630,19 +1630,23 @@ export default function MarketLogs({
                               <span>{getRespectDisplayName(currentUser, buyer, respectSenioritySettings) || "Manager"}</span>
                             </div>
                           </td>
-                          <td className="py-3.5 px-4 font-mono">{parsedDate}</td>
-                          <td className="py-3.5 px-4 font-semibold text-slate-200">{parsedText || "Managerial Market Expense"}</td>
-                          <td className="py-3.5 px-4 text-right font-bold font-mono text-cyan-400">
+                          <td className={`py-3.5 px-4 font-mono ${isDarkMode ? "text-slate-300" : "text-slate-700 font-medium"}`}>{parsedDate}</td>
+                          <td className={`py-3.5 px-4 font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>{parsedText || "Managerial Market Expense"}</td>
+                          <td className={`py-3.5 px-4 text-right font-mono ${isDarkMode ? "text-cyan-400 font-bold" : "text-cyan-700 font-black"}`}>
                             ৳ {h.marketSpent}
                           </td>
                           {isManagerOrAdmin && (
                             <td className="py-3.5 px-4 text-right">
                               <button
                                 onClick={() => handleDeleteManagerialExpense(h.id)}
-                                className="p-1 text-rose-400 hover:bg-rose-500/10 rounded cursor-pointer"
+                                className={`p-1.5 rounded-lg transition-all ${
+                                  isDarkMode 
+                                    ? "border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 bg-rose-950/30 cursor-pointer active:scale-95" 
+                                    : "border-2 border-red-600 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-900 shadow-xs cursor-pointer active:scale-95"
+                                }`}
                                 title="Delete entry"
                               >
-                                <Trash2 size={12} />
+                                <Trash2 size={16} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                               </button>
                             </td>
                           )}
@@ -2196,13 +2200,13 @@ export default function MarketLogs({
                           {m.receiptUrl ? (
                             <button
                               onClick={() => { setActiveReceipt(m.receiptUrl); }}
-                              className={`px-2 py-1 rounded font-bold text-[10px] cursor-pointer inline-flex items-center gap-1 border transition-colors ${
+                              className={`px-2 py-1 rounded-md font-bold text-[10px] cursor-pointer inline-flex items-center gap-1 transition-all ${
                                 isDarkMode 
-                                  ? "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40" 
-                                  : "bg-cyan-100 hover:bg-cyan-200 text-cyan-800 border-cyan-300"
+                                  ? "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40" 
+                                  : "bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border-2 border-cyan-600 shadow-xs"
                               }`}
                             >
-                              <Eye size={10} /> VIEW
+                              <Eye size={12} strokeWidth={2.6} color={isDarkMode ? "#67e8f9" : "#0e7490"} className="shrink-0" /> VIEW
                             </button>
                           ) : (
                             <span className={`font-mono text-[11px] font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>None</span>
@@ -2212,10 +2216,14 @@ export default function MarketLogs({
                           {(isManagerOrAdmin || m.memberId === currentUser.id) && (
                             <button
                               onClick={() => handleDeleteMarket(m.id)}
-                              className="p-1 text-rose-400 hover:bg-rose-500/10 rounded cursor-pointer"
+                              className={`p-1.5 rounded-lg transition-all ${
+                                isDarkMode 
+                                  ? "border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 bg-rose-950/30 cursor-pointer active:scale-95" 
+                                  : "border-2 border-red-600 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-900 shadow-xs cursor-pointer active:scale-95"
+                              }`}
                               title="Delete log"
                             >
-                              <Trash2 size={12} />
+                              <Trash2 size={16} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                             </button>
                           )}
                         </td>

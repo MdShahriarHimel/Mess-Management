@@ -272,25 +272,33 @@ export default function FoodMenu({
             </div>
 
             <div className="space-y-2 text-xs leading-relaxed">
-              <p className="font-bold text-slate-200">
+              <p className={`font-bold ${isDarkMode ? "text-slate-200" : "text-slate-900"}`}>
                 Excellent! Today's meal planner is updated. Now you are requested to fill in your bazaar expenditure values in the ledger.
               </p>
-              <p className="text-slate-400">
+              <p className={isDarkMode ? "text-slate-400" : "text-slate-600"}>
                 Please follow this specific order to log your market values so the mess ledger balances correctly:
               </p>
               
-              <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-800 space-y-2 text-[11px] text-slate-300 font-mono">
+              <div className={`p-3 rounded-xl border space-y-2 text-[11px] font-mono ${
+                isDarkMode ? "bg-slate-950/40 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-800 shadow-xs"
+              }`}>
                 <div className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[9px] font-bold text-cyan-400 shrink-0">1</span>
-                  <span>Go to <strong className="text-cyan-400">Settlement Sheet</strong></span>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                    isDarkMode ? "bg-cyan-500/10 border border-cyan-500/20 text-cyan-400" : "bg-cyan-100 border border-cyan-300 text-cyan-800"
+                  }`}>1</span>
+                  <span>Go to <strong className={isDarkMode ? "text-cyan-400" : "text-cyan-700"}>Settlement Sheet</strong></span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[9px] font-bold text-cyan-400 shrink-0">2</span>
-                  <span>Inspect the <strong className="text-cyan-400">Financial Statement</strong> / manager's accounts</span>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                    isDarkMode ? "bg-cyan-500/10 border border-cyan-500/20 text-cyan-400" : "bg-cyan-100 border border-cyan-300 text-cyan-800"
+                  }`}>2</span>
+                  <span>Inspect the <strong className={isDarkMode ? "text-cyan-400" : "text-cyan-700"}>Financial Statement</strong> / manager's accounts</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-[9px] font-bold text-cyan-400 shrink-0">3</span>
-                  <span>Navigate to the <strong className="text-orange-400 font-bold">Individual Month Balance Sheet</strong> table column, click your row, and log your bazaar/market spending value!</span>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                    isDarkMode ? "bg-cyan-500/10 border border-cyan-500/20 text-cyan-400" : "bg-cyan-100 border border-cyan-300 text-cyan-800"
+                  }`}>3</span>
+                  <span>Navigate to the <strong className={isDarkMode ? "text-orange-400 font-bold" : "text-orange-600 font-bold"}>Individual Month Balance Sheet</strong> table column, click your row, and log your bazaar/market spending value!</span>
                 </div>
               </div>
             </div>
@@ -723,10 +731,10 @@ export default function FoodMenu({
                                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0"></span>
                                 {dish.name}
                               </span>
-                              <span className="font-bold text-cyan-400 font-mono text-[11px]">{dish.count} servings ({dishPercentage}%)</span>
+                              <span className={`font-bold font-mono text-[11px] ${isDarkMode ? "text-cyan-400" : "text-cyan-700 font-extrabold"}`}>{dish.count} servings ({dishPercentage}%)</span>
                             </div>
-                            <div className="w-full h-1.5 rounded-full bg-slate-950/40 overflow-hidden">
-                              <div className="h-full bg-cyan-400 rounded-full transition-all duration-500" style={{ width: `${dishPercentage}%` }}></div>
+                            <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? "bg-slate-950/40" : "bg-slate-200"}`}>
+                              <div className={`h-full rounded-full transition-all duration-500 ${isDarkMode ? "bg-cyan-400" : "bg-cyan-600"}`} style={{ width: `${dishPercentage}%` }}></div>
                             </div>
                           </div>
                         );
@@ -740,16 +748,18 @@ export default function FoodMenu({
                 {/* Detailed Vegetables Display */}
                 {stats.vegetableDetails && stats.vegetableDetails.length > 0 && (
                   <div className="pt-5 border-t border-cyan-500/10 space-y-3">
-                    <span className="text-xs font-bold text-orange-500 uppercase tracking-widest block">Detected Vegetable Items</span>
+                    <span className={`text-xs font-bold uppercase tracking-widest block ${isDarkMode ? "text-orange-500" : "text-orange-600"}`}>Detected Vegetable Items</span>
                     <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
                       {stats.vegetableDetails.map((veg: any, idx: number) => (
                         <div key={idx} className={`p-2.5 rounded-xl border text-[11px] flex justify-between items-center animate-fade-in ${
                           isDarkMode 
                             ? "bg-slate-950/30 border-slate-800/60" 
-                            : "bg-slate-50 border-slate-200"
+                            : "bg-slate-50 border-slate-200 text-slate-800 shadow-xs"
                         }`}>
                           <span className={`truncate font-medium ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{veg.name}</span>
-                          <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-bold font-mono text-[9px] shrink-0">x{veg.count}</span>
+                          <span className={`px-1.5 py-0.5 rounded font-bold font-mono text-[9px] shrink-0 ${
+                            isDarkMode ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-50 text-cyan-800 border border-cyan-200"
+                          }`}>x{veg.count}</span>
                         </div>
                       ))}
                     </div>
@@ -757,7 +767,7 @@ export default function FoodMenu({
                 )}
 
                 <div className="pt-4 border-t border-cyan-500/10 flex items-center gap-2 text-[10px] text-slate-500">
-                  <Info size={14} className="text-cyan-400 shrink-0" />
+                  <Info size={14} className={`shrink-0 ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`} />
                   <span>Calculated from {stats.totalMealsLogged} total menu items planned this month.</span>
                 </div>
 

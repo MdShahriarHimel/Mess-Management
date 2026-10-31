@@ -308,8 +308,8 @@ export default function Deposits({
           customColors?.cashDepositBg ? "" : (isDarkMode ? "bg-slate-900/30 border-cyan-500/10" : "bg-white border-slate-200")
         } ${isDarkMode ? "text-white" : "text-slate-800"}`}
       >
-        <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">CUMULATIVE MONTHLY DEPOSITS REGISTERED</span>
-        <span className="text-xl font-black font-mono text-cyan-400">{currencySymbol} {totalDepositedSum}</span>
+        <span className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? "text-orange-500" : "text-orange-600"}`}>CUMULATIVE MONTHLY DEPOSITS REGISTERED</span>
+        <span className={`text-xl font-black font-mono ${isDarkMode ? "text-cyan-400" : "text-cyan-700 font-extrabold"}`}>{currencySymbol} {totalDepositedSum}</span>
       </div>
 
       {/* Table list */}
@@ -323,14 +323,14 @@ export default function Deposits({
         } ${isDarkMode ? "text-white" : "text-slate-800"}`} 
         id="deposits-history-panel"
       >
-        <h3 className="text-xs font-bold font-display text-orange-500 uppercase tracking-wider mb-4">
+        <h3 className={`text-xs font-bold font-display uppercase tracking-wider mb-4 ${isDarkMode ? "text-orange-500" : "text-orange-600"}`}>
           All Registered Deposits
         </h3>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-600"} font-bold`}>
+              <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-700"} font-bold`}>
                 <th className="py-3 px-4">Member Nickname</th>
                 <th className="py-3 px-4">Date Collected</th>
                 <th className="py-3 px-4 text-right">Amount Deposited ({currencySymbol})</th>
@@ -341,18 +341,18 @@ export default function Deposits({
             <tbody className="divide-y divide-cyan-500/5">
               {sortedDeposits.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-slate-500">No deposits recorded yet. Click register to record.</td>
+                  <td colSpan={5} className={`py-6 text-center ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>No deposits recorded yet. Click register to record.</td>
                 </tr>
               ) : (
                 sortedDeposits.map((d) => {
                   const targetM = members.find(u => u.id === d.memberId);
                   const recorder = members.find(u => u.id === d.enteredBy);
                   return (
-                    <tr key={d.id} className="hover:bg-cyan-500/5">
-                      <td className="py-3 px-4 font-bold text-cyan-400">{targetM?.nickname || "Unknown"}</td>
-                      <td className="py-3 px-4 font-mono">{d.date}</td>
-                      <td className="py-3 px-4 text-right font-extrabold font-mono text-cyan-400">{currencySymbol} {d.amount}</td>
-                      <td className="py-3 px-4 text-center text-slate-500 font-mono text-[10px]">{recorder?.nickname || "System Seeder"}</td>
+                    <tr key={d.id} className={isDarkMode ? "hover:bg-cyan-500/5" : "hover:bg-slate-50"}>
+                      <td className={`py-3 px-4 font-bold ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`}>{targetM?.nickname || "Unknown"}</td>
+                      <td className={`py-3 px-4 font-mono ${isDarkMode ? "text-slate-300" : "text-slate-700 font-medium"}`}>{d.date}</td>
+                      <td className={`py-3 px-4 text-right font-extrabold font-mono ${isDarkMode ? "text-cyan-400" : "text-cyan-700 font-black"}`}>{currencySymbol} {d.amount}</td>
+                      <td className={`py-3 px-4 text-center font-mono text-[10px] ${isDarkMode ? "text-slate-400" : "text-slate-700 font-medium"}`}>{recorder?.nickname || "System Seeder"}</td>
                       <td className="py-3 px-4 text-right">
                         {isManagerOrAdmin && (
                           <button
@@ -363,14 +363,18 @@ export default function Deposits({
                               }
                               handleDelete(d.id);
                             }}
-                            className={`p-1 rounded ${
+                            className={`p-1.5 rounded-lg transition-all ${
                               isMonthLocked
-                                ? "text-slate-600 cursor-not-allowed"
-                                : "text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                                ? isDarkMode
+                                  ? "border border-slate-700 bg-slate-800 text-slate-600 cursor-not-allowed"
+                                  : "border-2 border-slate-300 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : isDarkMode
+                                  ? "border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 bg-rose-950/30 cursor-pointer active:scale-95"
+                                  : "border-2 border-red-600 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-900 shadow-xs cursor-pointer active:scale-95"
                             }`}
                             title={isMonthLocked ? "This month is locked. Unlock it before modifying deposits." : "Delete deposit"}
                           >
-                            <Trash2 size={12} />
+                            <Trash2 size={16} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                           </button>
                         )}
                       </td>
@@ -386,13 +390,15 @@ export default function Deposits({
       {/* REGISTER DEPOSIT MODAL */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-sm p-6 rounded-2xl bg-slate-900 border border-slate-800 text-white shadow-2xl">
-            <div className="flex justify-between items-center mb-5 border-b border-slate-850 pb-3">
+          <div className={`w-full max-w-sm p-6 rounded-2xl border shadow-2xl ${
+            isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-900"
+          }`}>
+            <div className={`flex justify-between items-center mb-5 border-b pb-3 ${isDarkMode ? "border-slate-850" : "border-slate-200"}`}>
               <h3 className="text-base font-bold font-display flex items-center gap-1.5">
-                <DollarSign size={18} className="text-cyan-400" />
+                <DollarSign size={18} className={isDarkMode ? "text-cyan-400" : "text-cyan-600"} />
                 Register Member Deposit
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setShowAddModal(false)} className={`cursor-pointer ${isDarkMode ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900"}`}>
                 <X size={18} />
               </button>
             </div>
@@ -435,12 +441,14 @@ export default function Deposits({
             <form onSubmit={handleAddDeposit} className="space-y-4">
               
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Select Resident Member</label>
+                <label className={`text-xs font-bold uppercase tracking-wider block ${isDarkMode ? "text-orange-400" : "text-orange-600"}`}>Select Resident Member</label>
                 <select
                   required
                   value={memberId}
                   onChange={(e) => setMemberId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
+                  className={`w-full px-3 py-2 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                    isDarkMode ? "bg-slate-950 border border-slate-800 text-white" : "bg-white border border-slate-300 text-slate-900 shadow-xs"
+                  }`}
                 >
                   <option value="">-- Select Member --</option>
                   {activeMembers.map(m => (
@@ -450,40 +458,46 @@ export default function Deposits({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Deposit Amount ({currencySymbol})</label>
+                <label className={`text-xs font-bold uppercase tracking-wider block ${isDarkMode ? "text-orange-400" : "text-orange-600"}`}>Deposit Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   required
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="2000"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
+                  className={`w-full px-3 py-2 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                    isDarkMode ? "bg-slate-950 border border-slate-800 text-white" : "bg-white border border-slate-300 text-slate-900 shadow-xs"
+                  }`}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Date Received</label>
+                <label className={`text-xs font-bold uppercase tracking-wider block ${isDarkMode ? "text-orange-400" : "text-orange-600"}`}>Date Received</label>
                 <input
                   type="date"
                   required
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 text-white"
+                  className={`w-full px-3 py-2 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                    isDarkMode ? "bg-slate-950 border border-slate-800 text-white" : "bg-white border border-slate-300 text-slate-900 shadow-xs"
+                  }`}
                 />
               </div>
 
-              <div className="flex gap-3 pt-3 border-t border-slate-850">
+              <div className={`flex gap-3 pt-3 border-t ${isDarkMode ? "border-slate-850" : "border-slate-200"}`}>
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2 rounded-lg bg-slate-850 hover:bg-slate-800 text-xs font-semibold text-slate-300 cursor-pointer"
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold cursor-pointer ${
+                    isDarkMode ? "bg-slate-850 hover:bg-slate-800 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
+                  }`}
                 >
                   CANCEL
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs cursor-pointer"
+                  className="flex-1 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs cursor-pointer shadow-sm"
                 >
                   REGISTER DEPOSIT
                 </button>

@@ -1026,22 +1026,22 @@ export default function Dashboard({
                         <span className="text-[8px] font-mono font-bold text-orange-400 bg-orange-950/50 px-1.5 py-0.5 rounded border border-orange-500/30 uppercase flex items-center gap-1">
                           <Pin size={9} className="rotate-45" /> GLOBAL PINNED
                         </span>
-                        <h4 className="font-bold text-cyan-300 text-xs">{notice.title}</h4>
+                        <h4 className={`font-bold text-xs ${isDarkMode ? "text-cyan-300" : "text-cyan-900"}`}>{notice.title}</h4>
                       </div>
                       <div className="flex items-center gap-1.5 text-slate-400 text-[10px] shrink-0 font-mono">
                         <span>{notice.date}</span>
                         {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
                           <button 
                             onClick={() => handleDeleteNotice(notice.id)}
-                            className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded"
+                            className="text-red-600 hover:text-red-800 dark:text-rose-400 dark:hover:text-rose-300 p-0.5 cursor-pointer rounded"
                             title="Delete notice"
                           >
-                            <Trash2 size={11} />
+                            <Trash2 size={12} strokeWidth={2.5} color={isDarkMode ? "#fb7185" : "#b91c1c"} />
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                    <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
                       {notice.content}
                     </p>
                     <div className="text-[9px] text-slate-500 font-mono mt-1">
@@ -1063,22 +1063,22 @@ export default function Dashboard({
                         <span className="text-[8px] font-mono font-bold text-cyan-400 bg-cyan-950/50 px-1.5 py-0.5 rounded border border-cyan-800/40 uppercase">
                           MESS NOTICE
                         </span>
-                        <h4 className="font-bold text-slate-200 text-xs">{notice.title}</h4>
+                        <h4 className={`font-bold text-xs ${isDarkMode ? "text-slate-200" : "text-slate-900"}`}>{notice.title}</h4>
                       </div>
                       <div className="flex items-center gap-1.5 text-slate-400 text-[10px] shrink-0 font-mono">
                         <span>{notice.date}</span>
                         {(isManagerOrAdmin || notice.authorId === currentUser.id) && (
                           <button 
                             onClick={() => handleDeleteNotice(notice.id)}
-                            className="text-rose-400 hover:text-rose-300 p-0.5 cursor-pointer rounded"
+                            className="text-red-600 hover:text-red-800 dark:text-rose-400 dark:hover:text-rose-300 p-0.5 cursor-pointer rounded"
                             title="Delete notice"
                           >
-                            <Trash2 size={11} />
+                            <Trash2 size={12} strokeWidth={2.5} color={isDarkMode ? "#fb7185" : "#b91c1c"} />
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
+                    <p className={`text-[11px] leading-relaxed line-clamp-2 ${isDarkMode ? "text-slate-400" : "text-slate-700"}`}>
                       {notice.content}
                     </p>
                     <div className="text-[9px] text-slate-500 font-mono mt-1">
