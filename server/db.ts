@@ -793,6 +793,7 @@ export async function initializeDbCache() {
           ALTER TABLE members ADD COLUMN IF NOT EXISTS room_rent real;
           ALTER TABLE meals ADD COLUMN IF NOT EXISTS mess_id text DEFAULT 'default';
           ALTER TABLE meals ADD COLUMN IF NOT EXISTS breakfast double precision DEFAULT 0;
+          CREATE UNIQUE INDEX IF NOT EXISTS meals_unique_member_date_idx ON meals (mess_id, month_id, member_id, date);
         `);
       } catch (colErr) {
         console.warn("Notice: Column migration for academic/respect fields on members table:", colErr);

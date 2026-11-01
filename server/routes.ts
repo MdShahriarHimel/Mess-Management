@@ -2710,6 +2710,10 @@ export const mealDebugLogs: string[] = [];
 
 async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: any[], targetMessId: string = "default") {
   mealDebugLogs.push(`[upsertMealsTx] Starting upsert with ${meals.length} meals, types: ${mealTypes.map(t => t.id).join(",")}`);
+  const messCondition = (targetMessId === "default")
+    ? or(eq(mealsTable.messId, "default"), sql`${mealsTable.messId} IS NULL`)
+    : eq(mealsTable.messId, targetMessId);
+
   for (const m of meals) {
     if (!m.memberId || !m.date) {
       mealDebugLogs.push(`[upsertMealsTx] Skipping item due to missing memberId/date: ${JSON.stringify(m)}`);
@@ -2721,9 +2725,9 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
         eq(mealsTable.monthId, monthId),
         eq(mealsTable.memberId, m.memberId),
         eq(mealsTable.date, m.date),
-        eq(mealsTable.messId, targetMessId)
+        messCondition
       )
-    ).limit(1);
+    );
 
     mealDebugLogs.push(`[upsertMealsTx] Member ${m.memberId} date ${m.date}: found ${existing.length} existing rows`);
 
@@ -2738,6 +2742,13 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
       await tx.update(mealsTable)
         .set(updatedMeal)
         .where(eq(mealsTable.id, existing[0].id));
+
+      // If any duplicate records previously existed in Postgres, purge them immediately
+      if (existing.length > 1) {
+        for (let i = 1; i < existing.length; i++) {
+          await tx.delete(mealsTable).where(eq(mealsTable.id, existing[i].id));
+        }
+      }
     } else {
       const newMeal: any = {
         id: generateUUID(),

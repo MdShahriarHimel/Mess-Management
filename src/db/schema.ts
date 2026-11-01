@@ -74,6 +74,10 @@ export const meals = pgTable("meals", {
   lunch: doublePrecision("lunch").notNull().default(0),
   dinner: doublePrecision("dinner").notNull().default(0),
   breakfast: doublePrecision("breakfast").notNull().default(0),
+}, (table) => {
+  return {
+    uniqueMealIdx: index("meals_unique_member_date_idx").on(table.messId, table.monthId, table.memberId, table.date),
+  };
 });
 
 export const foodMenus = pgTable("food_menus", {
