@@ -1,79 +1,38 @@
-# Custom Cycle End-Time Override & Global Timezone Search Plan (Completed)
+# Custom Cycle End-Time Override & Cycle Date Fix Plan (Completed)
 
 ## Direct Alignment with User Choices
 
 > [!IMPORTANT]
-> **বাস্তবায়িত সিদ্ধান্তের সারসংক্ষেপ:**
-> 1. **জিরো-ওভারহেড গ্লোবাল টাইমজোন সার্চ (Zero Compute / Bandwidth):**
->    - ব্রাউজারের নেটিভ `Intl.supportedValuesOf('timeZone')` এপিআই ব্যবহার করা হয়েছে। এতে **কোনো সার্ভার রিকোয়েস্ট নেই, রেন্ডারের কোনো ব্যান্ডউইথ খরচ নেই এবং নিয়ন পোস্টগ্রের (Neon PostgreSQL) ০% কম্পিউট ইউনিট (CU)** ব্যবহার হয়।
->    - এটি পুরোপুরি ক্লায়েন্ট-সাইড ব্রাউজার মেমোরিতে চলে, যা ব্যবহারকারীকে বিশ্বের ৪২০+ টাইমজোন (যেমন: ভারতের `Asia/Kolkata`, বাংলাদেশের `Asia/Dhaka`, দুবাইয়ের `Asia/Dubai`, আমেরিকার `America/New_York` ইত্যাদি) তাত্ক্ষণিক সার্চ করার এবং প্রয়োজনে কাস্টম টেক্সট ইনপুটে যেকোনো ভ্যালিড IANA রিজিয়ন লেখার সুযোগ দিচ্ছে।
-> 2. **সাইকেল শেষ হওয়ার সময় ম্যানুয়াল ওভাররাইড (Cycle Settings Panel Only):**
->    - শুধুমাত্র **Cycle Settings** প্যানেলে সুপার ইউজার বা অ্যাডমিন কোনো নির্দিষ্ট সাইকেলের সমাপ্তি সময় পরিবর্তন করে তারিখের সাথে নির্দিষ্ট সময়ও (যেমন: **4th November 06:00 PM / 18:00:00**) নির্ধারণ করতে পারবেন।
->    - ডিফল্ট ১ তারিখ দুপুর ২:০০ টার বদলে ওই সাইকেলটি নির্ধারিত ম্যানুয়াল সময় (যেমন: ৪ নভেম্বর সন্ধ্যা ৬:০০ টা) পর্যন্ত **আনলক** থাকবে এবং সেই সময় অতিক্রম হওয়ামাত্রই স্বয়ংক্রিয়ভাবে লক হবে।
-> 3. **কঠোর মেস আইসোলেশন (`RULE[AGENTS_md]`):**
->    - এই ম্যানুয়াল সময় পরিবর্তন শুধুমাত্র সংশ্লিষ্ট মেসের ওই নির্দিষ্ট সাইকেলেই প্রযোজ্য হবে; অন্য কোনো মেসের সাইকেলে এর বিন্দুমাত্র প্রভাব পড়বে না।
+> **বাস্তবায়িত সমাধানের সারসংক্ষেপ:**
+> 1. **নিউ সাইকেল তৈরিতে তারিখ উল্টা হওয়া সমাধান (Fixed New Cycle Creation Dates):**
+>    - পূর্বে `getMonthDefaults`-এ পূর্ববর্তী সাইকেলের শেষ দিনকে (`Nov 30`) নতুন সাইকেলের শুরুর দিন ধরে ১ মাস যোগ করায় ভুলভাবে `30-Nov` থেকে `30-Dec` প্রদর্শিত হচ্ছিল এবং সাইকেলের নাম আবার `November 2026` সাজেস্ট করছিল।
+>    - এটি পুরোপুরি সংশোধন করা হয়েছে: মেসের বিদ্যমান সাইকেলগুলোর মধ্যে সর্বশেষ সাইকেল (নভেম্বর ২০২৬) পরীক্ষা করে পরবর্তী নতুন সাইকেল হিসেবে স্বয়ংক্রিয়ভাবে **December 2026** সাজেস্ট করা হচ্ছে।
+>    - সাইকেল শুরুর সময়: **১লা ডিসেম্বর রাত ১২:০০ টা (00:00)** এবং শেষ হওয়ার সময়: **পরবর্তী মাসের ১লা জানুয়ারি দুপুর ২:০০ টা (14:00)**।
+>    - কেউ যদি বক্সে যেকোনো মাস টাইপ করেন (যেমন: `November 2026`), স্বয়ংক্রিয়ভাবে ১লা নভেম্বর রাত ১২:০০ টা থেকে ১লা ডিসেম্বর দুপুর ২:০০ টা সেট হবে।
+> 2. **সাইকেলের সমাপ্তি তারিখ পরবর্তী মাসের ১ তারিখ দুপুর ২:০০ টা (Cycle Ends on 1st of Next Month at 2:00 PM):**
+>    - ডাটাবেজে নভেম্বর ২০২৬ সাইকেলের শেষ তারিখ `Nov 30, 11:59 PM` থেকে আপডেট করে সঠিক নিয়মে **`2026-12-01T14:00:00` (Dec 1, 02:00 PM)** করা হয়েছে।
+>    - একইভাবে অক্টোবর ২০২৬ সাইকেলের শেষ তারিখ **`2026-11-01T14:00:00` (Nov 1, 02:00 PM)** করা হয়েছে।
+>    - সক্রিয় সাইকেল তালিকায় এখন যথাযথভাবে প্রদর্শিত হচ্ছে: `Nov 1, 12:00 AM ➔ Dec 1, 2:00 PM`।
+> 3. **জিরো-ব্যান্ডউইথ গ্লোবাল টাইমজোন ও কাস্টম ওভাররাইড:**
+>    - ব্রাউজারের নেটিভ `Intl.supportedValuesOf('timeZone')` এপিআই অপরিবর্তিত ও সক্রিয় রয়েছে (০% নেটওয়ার্ক ব্যান্ডউইথ ও ০% নিয়ন পোস্টগ্রে কম্পিউট)।
+>    - সাইকেল এডিট প্যানেলে যেকোনো কাস্টম কাটঅফ (যেমন: ৪ঠা নভেম্বর সন্ধ্যা ৬:০০ টা) নির্ধারণ করলে সেই সময় অনুযায়ী সাইকেলটি আনলক থাকবে এবং সেই মুহূর্তে স্বয়ংক্রিয়ভাবে লক হবে।
 
 ---
 
-## 1. Overview & Core Concept
+## 1. Resolved Issues
 
-- **Completed Implementation**:
-  - `Intl.supportedValuesOf('timeZone')` ভিত্তিক জিরো-ব্যান্ডউইথ ক্লায়েন্ট সার্চ ও ভ্যালিডেটেড টেক্সট ইনপুট কার্যকর।
-  - সাইকেল এডিট ফর্মে `datetime-local` ইনপুট ফিল্ড ও বিস্তারিত নির্দেশনামূলক কার্ড যুক্ত করা হয়েছে যাতে নির্দিষ্ট তারিখের সাথে ঘণ্টা ও মিনিট সংরক্ষণ করা যায়।
-  - `src/utils/cycleUtils.ts`-এ `parseDhakaDate` সুনির্দিষ্ট সময় (`THH:mm:ss`, `THH:mm`, `YYYY-MM-DD HH:mm`) মেস টাইমজোনে অক্ষুণ্ণ রেখে পার্স করে।
-  - `getCycleEffectiveEndDate`-এ অ্যাডমিন নির্ধারিত কাস্টম সময় ডিফল্ট কাটঅফের চেয়ে বেশি হলে সেই কাস্টম সময় অনুযায়ী সাইকেলটি আনলক থাকে এবং ঠিক সেই সময়ে অটো-লক কার্যকর হয়।
-
----
-
-## 2. Technical Architecture & Component Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                 Client-Side Zero-Overhead Timezone Engine                   │
-│                                                                             │
-│  Intl.supportedValuesOf('timeZone') ──► Local Search (0 KB Bandwidth, 0 CU) │
-│                                         Live Validation via Intl.DateTime   │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                 Cycle Custom End Time Override (Isolated)                   │
-│                                                                             │
-│  Superuser sets: endDate = "2026-11-04T18:00:00" in Settings                │
-│                                                                             │
-│  getCycleEffectiveEndDate(month, messTimezone):                             │
-│  - Detects explicit datetime later than default cutoff                      │
-│  - Returns exact custom instant: 2026-11-04 18:00:00 in Mess Timezone       │
-│  - Cycle remains UNLOCKED until that exact moment                           │
-│  - Reaching 18:00 on Nov 4: System AUTO-LOCKS only this cycle               │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Source Changes:
-
-1. **`src/utils/cycleUtils.ts`**:
-   - `parseDhakaDate`: `THH:mm:ss` বা `THH:mm` ফরম্যাট থাকলে সেই সুনির্দিষ্ট ঘণ্টা ও মিনিট উদ্ধার করে মেস টাইমজোনে Date অবজেক্ট তৈরি করে।
-   - `getCycleEffectiveEndDate`: অ্যাডমিন কর্তৃক নির্ধারিত এক্সপ্লিসিট `endDate`-এ সময় উল্লেখ থাকলে সেই সময়কে প্রাধান্য দেয় (`explicitEnd > defaultBoundary`)।
-2. **`server/db.ts`**:
-   - `getMessTimezone`: মেসের সংরক্ষিত টাইমজোন অনুযায়ী স্বয়ংক্রিয়ভাবে নতুন মাস তৈরি ও অটো-লক টাইমিং পরিচালনা করে।
-   - নভেম্বর ২০২৬ সাইকেল প্রস্তুত এবং সক্রিয় রাখা হয়েছে।
-3. **`src/components/UnifiedSettingsDashboard.tsx`**:
-   - টাইমজোন কার্ডে ক্লায়েন্ট-সাইড মেমোরি সার্চ (সব ৪২০+ IANA টাইমজোন) ও কাস্টম টেক্সট ইনপুট উইথ লাইভ প্রিভিউ ও ডিভাইস অটো-ডিটেকশন।
-   - `activeSubTab === "cycles"`-এ সাইকেল এডিট ফর্মে কাস্টম কাটঅফ ওভাররাইডের স্পষ্ট নির্দেশনাবলী ও সক্রিয় সাইকেল তালিকায় টাইমজোন-সচেতন তারিখ ও সময় ডিসপ্লে।
-4. **Multi-Tenant Scoping**:
-   - মেস আইসোলেশন অপরিবর্তিত রাখা হয়েছে (`months` টেবিল ও `settings_${messId}.json` শুধুমাত্র সংশ্লিষ্ট মেসের জন্য কার্যকর)।
+1. **Bug 1: Upside Down Dates on New Cycle Form**:
+   - `getMonthDefaults` now scores all registered cycles by `year * 12 + monthIdx` to determine the latest registered month, and accurately generates the next chronological cycle (e.g. `December 2026` from `2026-12-01T00:00` to `2027-01-01T14:00`).
+   - `getDatesForMonthName` dynamically maps typed month names to start on the 1st at 00:00 and end on the 1st of the next month at 14:00.
+2. **Bug 2: Month Ending within Same Month (30 Nov 11:59 PM)**:
+   - Updated `server/db.ts` auto-creation logic to set `endIso` to `${nextYear}-${pad(nextMonthIdx + 1)}-01T14:00:00`.
+   - Updated records in PostgreSQL Cloud SQL (`monthsTable`) and `database_backup.json` for October and November 2026.
+   - Cycle list now renders: `Nov 1, 12:00 AM ➔ Dec 1, 2:00 PM`.
 
 ---
 
-## 3. Verification Results
+## 2. Verification
 
-1. **Timezone Search & Custom Input**:
-   - `Intl.supportedValuesOf('timeZone')` সফলভাবে ৪২০+ গ্লোবাল টাইমজোন মেমোরি থেকে রিটার্ন করছে।
-   - ভারতের `Asia/Kolkata`, আমেরিকার `America/New_York`, ইউরোপের `Europe/London` এবং বাংলাদেশের `Asia/Dhaka` নিখুঁতভাবে হ্যান্ডেল হচ্ছে।
-   - কোনো এক্সটার্নাল এপিআই রিকোয়েস্ট নেই, রেন্ডারের কোনো নেটওয়ার্ক ব্যান্ডউইথ খরচ নেই এবং Neon PostgreSQL-এ শূন্য কম্পিউট ইউনিট (CU) ওভারহেড।
-2. **Custom Cycle End Time Simulation**:
-   - টেস্ট স্ক্রিপ্টে `2026-11-04T18:00:00` দিয়ে যাচাই করা হয়েছে: ৩ নভেম্বর দুপুর ১২টায় সাইকেলটি আনলক থাকছে এবং ৪ নভেম্বর সন্ধ্যা ৬টা পেরোলেই অটো-লক হচ্ছে।
-3. **Multi-Tenant Verification**:
-   - প্রতিটি মেসের টাইমজোন এবং সাইকেলের সময়সূচি স্ব-স্ব মেস স্কোপে আইসোলেটেড।
-4. **Build & Type Checking**:
-   - `compile_applet` এবং `lint_applet` (tsc --noEmit) উভয়ই ১০০% সফল ও কোনো ত্রুটি ছাড়াই পাস হয়েছে।
+- `npx tsx` স্ক্রিপ্টের মাধ্যমে ডাটাবেজ এবং মেমোরি ক্যাশে উভয় জায়গায় `October 2026` (`2026-10-01T00:00:00` ➔ `2026-11-01T14:00:00`) এবং `November 2026` (`2026-11-01T00:00:00` ➔ `2026-12-01T14:00:00`) সফলভাবে যাচাই করা হয়েছে।
+- `getMonthDefaults` টেস্টে নতুন সাইকেল প্রস্তাবনা এখন `December 2026` (`2026-12-01T00:00` ➔ `2027-01-01T14:00`) রিটার্ন করছে।
+- `compile_applet` এবং `lint_applet` (tsc --noEmit) উভয়ই ১০০% সফল।

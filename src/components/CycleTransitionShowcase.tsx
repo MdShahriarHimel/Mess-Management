@@ -277,6 +277,33 @@ export function CycleTransitionShowcase({
     }, 250);
   };
 
+  const formatDateRange = (startStr?: string, endStr?: string) => {
+    if (!startStr) return "Active Period";
+    const formatSingle = (dt?: string) => {
+      if (!dt) return "";
+      try {
+        const d = new Date(dt);
+        if (isNaN(d.getTime())) return dt.split("T")[0];
+        return new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true
+        }).format(d);
+      } catch {
+        return dt.replace("T", " ").substring(0, 16);
+      }
+    };
+
+    const s = formatSingle(startStr);
+    const e = formatSingle(endStr);
+    if (s && e) {
+      return `${s} ➔ ${e}`;
+    }
+    return s || "Active Period";
+  };
+
   return (
     <div 
       className={`fixed inset-0 z-[99990] flex items-center justify-center p-4 transition-opacity duration-300 ${
@@ -330,8 +357,8 @@ export function CycleTransitionShowcase({
       <div 
         className={`relative z-10 w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden backdrop-blur-xl transition-all duration-300 ${
           isDarkMode 
-            ? "bg-slate-950/85 border-amber-500/30 shadow-amber-500/10 text-white" 
-            : "bg-white/95 border-amber-400/40 shadow-slate-900/20 text-slate-900"
+            ? "bg-slate-950/90 border-amber-500/30 shadow-amber-500/10 text-white" 
+            : "bg-white/95 border-amber-400/50 shadow-2xl shadow-slate-900/20 text-slate-900"
         }`}
       >
         {/* Top Glowing Trim */}
@@ -340,7 +367,11 @@ export function CycleTransitionShowcase({
         {/* Close / Dismiss Button */}
         <button
           onClick={handleDismissCurrent}
-          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer z-20"
+          className={`absolute top-4 right-4 p-2 rounded-xl transition-all cursor-pointer z-20 ${
+            isDarkMode 
+              ? "text-slate-400 hover:text-white hover:bg-slate-800/60" 
+              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+          }`}
           title="Close / Stay in current month"
         >
           <X size={20} />
@@ -348,72 +379,100 @@ export function CycleTransitionShowcase({
 
         <div className="p-6 sm:p-8 space-y-6 text-center">
           {/* Top Subtitle Badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-cyan-500/15 border border-amber-500/30 text-amber-300 text-xs font-black tracking-widest uppercase shadow-sm">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-cyan-500/15 border border-amber-500/30 text-amber-500 dark:text-amber-300 text-xs font-black tracking-widest uppercase shadow-sm">
             <Flame size={14} className="text-amber-400 animate-bounce" />
             <span>Monthly Cycle Rollover</span>
-            {isPreview && <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded ml-1">Preview</span>}
+            {isPreview && <span className="text-[10px] bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 px-1.5 py-0.5 rounded ml-1 font-bold">Preview</span>}
           </div>
 
           {/* User Personalized Greeting */}
           <div className="space-y-1.5">
-            <h2 className="text-2xl sm:text-3xl font-black font-display tracking-tight">
-              Hey, <span className="bg-gradient-to-r from-amber-400 via-orange-400 to-cyan-400 bg-clip-text text-transparent">{userName}</span>! 👋
+            <h2 className={`text-2xl sm:text-3xl font-black font-display tracking-tight ${isDarkMode ? "text-white" : "text-slate-950"}`}>
+              Hey, <span className="bg-gradient-to-r from-amber-500 via-orange-500 to-cyan-500 bg-clip-text text-transparent">{userName}</span>! 👋
             </h2>
-            <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
+            <p className={`text-sm max-w-md mx-auto leading-relaxed font-medium ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
               পূর্ববর্তী মাসের হিসাব সাইকেল সম্পন্ন হয়ে নতুন মাসের যাত্রা শুরু হয়েছে। আপনার ড্যাশবোর্ড প্রস্তুত!
             </p>
           </div>
 
           {/* Season Reclassification Rank Badges (Left >>> Right) */}
-          <div className="py-3 px-2 sm:px-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-around gap-4 sm:gap-2">
+          <div className={`py-4 px-3 sm:px-6 rounded-2xl border flex flex-col sm:flex-row items-center justify-around gap-4 sm:gap-2 ${
+            isDarkMode 
+              ? "bg-slate-900/60 border-slate-800/80" 
+              : "bg-slate-50/90 border-slate-200/90 shadow-inner"
+          }`}>
             {/* Left: Previous Month Badge */}
-            <div className="flex flex-col items-center p-3 rounded-xl bg-slate-950/70 border border-amber-500/25 w-full sm:w-44 text-center group hover:border-amber-400 transition-all">
+            <div className={`flex flex-col items-center p-3.5 rounded-2xl border w-full sm:w-44 text-center transition-all ${
+              isDarkMode 
+                ? "bg-slate-950/80 border-amber-500/30 text-white" 
+                : "bg-white border-amber-400/70 shadow-sm text-slate-900"
+            }`}>
               <div className="relative mb-2">
                 {/* Diamond geometric glow frame */}
-                <div className="w-12 h-12 rotate-45 rounded-lg bg-gradient-to-br from-amber-600 to-amber-900 border border-amber-400/50 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                <div className="w-12 h-12 rotate-45 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 border border-amber-300 flex items-center justify-center shadow-lg shadow-amber-500/25">
                   <div className="-rotate-45">
-                    <History size={22} className="text-amber-200" />
+                    <History size={20} className="text-white" />
                   </div>
                 </div>
-                <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">
+                <div className="absolute -bottom-1 -right-1 bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase shadow">
                   Ended
                 </div>
               </div>
-              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Previous Cycle</span>
-              <span className="text-sm font-extrabold text-white mt-0.5">{prevMonthName}</span>
-              <span className="text-[10px] text-slate-400 mt-1">হিসাব ক্লোজ ও সমাপ্ত</span>
+              <span className={`text-[10px] font-black uppercase tracking-wider ${isDarkMode ? "text-amber-400" : "text-amber-800"}`}>
+                Previous Cycle
+              </span>
+              <span className={`text-base font-black mt-0.5 tracking-tight ${isDarkMode ? "text-white" : "text-slate-950"}`}>
+                {prevMonthName}
+              </span>
+              <span className={`text-[11px] font-semibold mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
+                হিসাব ক্লোজ ও সমাপ্ত
+              </span>
             </div>
 
             {/* Middle: Sonic Chevrons */}
-            <div className="flex flex-col items-center justify-center text-cyan-400 px-2 animate-pulse">
-              <ChevronsRight size={32} className="hidden sm:block text-gradient-to-r from-amber-400 to-cyan-400" />
-              <div className="sm:hidden text-xs font-bold text-slate-400 uppercase tracking-widest">
+            <div className="flex flex-col items-center justify-center text-cyan-500 px-2 animate-pulse">
+              <ChevronsRight size={32} className="hidden sm:block text-cyan-500" />
+              <div className={`sm:hidden text-xs font-bold uppercase tracking-widest ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                 Transited To
               </div>
             </div>
 
             {/* Right: Current Active Month Badge */}
-            <div className="flex flex-col items-center p-3 rounded-xl bg-slate-950/70 border border-cyan-500/40 w-full sm:w-44 text-center group hover:border-cyan-400 transition-all shadow-lg shadow-cyan-500/10">
+            <div className={`flex flex-col items-center p-3.5 rounded-2xl border-2 w-full sm:w-44 text-center transition-all shadow-md ${
+              isDarkMode 
+                ? "bg-slate-950/90 border-cyan-400 shadow-cyan-500/20 text-white" 
+                : "bg-cyan-50/90 border-cyan-500 shadow-cyan-500/15 text-cyan-950"
+            }`}>
               <div className="relative mb-2">
                 {/* Diamond geometric neon glow frame */}
-                <div className="w-12 h-12 rotate-45 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 border border-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-400/40">
+                <div className="w-12 h-12 rotate-45 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 border border-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-400/50">
                   <div className="-rotate-45">
                     <ShieldCheck size={22} className="text-white" />
                   </div>
                 </div>
-                <div className="absolute -bottom-1 -right-1 bg-cyan-400 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase animate-pulse">
+                <div className="absolute -bottom-1 -right-1 bg-cyan-400 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase animate-pulse shadow">
                   Live
                 </div>
               </div>
-              <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Active Cycle</span>
-              <span className="text-sm font-extrabold text-white mt-0.5">{currMonthName}</span>
-              <span className="text-[10px] text-emerald-400 mt-1 font-semibold">চলমান সক্রিয় মাস</span>
+              <span className={`text-[10px] font-black uppercase tracking-wider ${isDarkMode ? "text-cyan-400" : "text-cyan-800"}`}>
+                Active Cycle
+              </span>
+              <span className={`text-base font-black mt-0.5 tracking-tight ${isDarkMode ? "text-white" : "text-cyan-950"}`}>
+                {currMonthName}
+              </span>
+              <span className={`text-[11px] font-bold mt-1 px-2.5 py-0.5 rounded-full ${
+                isDarkMode 
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" 
+                  : "bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold"
+              }`}>
+                চলমান সক্রিয় মাস
+              </span>
             </div>
           </div>
 
           {/* Action Explanatory Notice */}
-          <div className="text-xs text-slate-400 flex items-center justify-center gap-1.5">
-            <Sparkles size={14} className="text-amber-400 shrink-0" />
+          <div className={`text-xs flex items-center justify-center gap-1.5 font-medium ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+            <Sparkles size={14} className="text-amber-500 shrink-0" />
             <span>আপনি যেকোনো সময় উপরের ড্রপডাউন থেকে পূর্বের মাসের বিবরণ দেখতে পারবেন।</span>
           </div>
 
@@ -439,7 +498,11 @@ export function CycleTransitionShowcase({
             <button
               onClick={handleDismissCurrent}
               disabled={cometActive}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider border border-slate-700 bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer hover:border-slate-600"
+              className={`w-full sm:w-auto px-6 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                isDarkMode
+                  ? "border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white"
+                  : "border-slate-300 bg-white hover:bg-slate-50 text-slate-800 hover:text-slate-950 shadow-sm"
+              }`}
             >
               <span>Stay in Current ({currMonthName})</span>
             </button>
@@ -447,9 +510,22 @@ export function CycleTransitionShowcase({
         </div>
 
         {/* Bottom Status bar */}
-        <div className="px-6 py-3 bg-slate-950/90 border-t border-slate-850 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Mess Cycle Auto-Transition Engine</span>
-          <span>{currentMonth?.startDate ? `${currentMonth.startDate} — ${currentMonth.endDate || "Ongoing"}` : "Active Period"}</span>
+        <div className={`px-6 py-3.5 border-t flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-medium ${
+          isDarkMode 
+            ? "bg-slate-950 border-slate-800 text-slate-300" 
+            : "bg-slate-100 border-slate-200 text-slate-800"
+        }`}>
+          <span className="flex items-center gap-2 font-bold tracking-wide">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-xs"></span>
+            <span className={isDarkMode ? "text-slate-200" : "text-slate-800"}>Mess Cycle Auto-Transition Engine</span>
+          </span>
+          <span className={`font-mono text-xs px-3 py-1 rounded-lg font-bold tracking-wide ${
+            isDarkMode 
+              ? "bg-slate-900 text-cyan-300 border border-cyan-500/40 shadow-sm" 
+              : "bg-white text-cyan-900 border border-cyan-400 shadow-xs"
+          }`}>
+            {formatDateRange(currentMonth?.startDate, currentMonth?.endDate)}
+          </span>
         </div>
       </div>
     </div>

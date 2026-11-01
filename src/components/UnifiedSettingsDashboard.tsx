@@ -3369,7 +3369,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends</label>
+                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends (Cutoff)</label>
                           <input
                             type="datetime-local"
                             required
@@ -3378,6 +3378,15 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
                           />
                         </div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-300 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-cyan-200">
+                          <LucideIcons.Clock size={12} className="text-cyan-400" />
+                          <span>স্ট্যান্ডার্ড সাইকেল কাটঅফ নিয়ম (Standard Cycle Transition Rule):</span>
+                        </div>
+                        <p className="text-[10px] text-slate-300 leading-relaxed">
+                          একটি মান্থলি সাইকেল ১ তারিখ ১২:০০ AM (00:00) থেকে শুরু হয়ে পরবর্তী মাসের ১ তারিখ দুপুর ২:০০ টা (14:00) পর্যন্ত কার্যকর থাকে। দুপুর ২:০০ টায় এটি স্বয়ংক্রিয়ভাবে লক হয়ে নতুন সাইকেলে শিফট হবে।
+                        </p>
                       </div>
                       <button
                         type="submit"

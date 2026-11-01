@@ -1536,11 +1536,25 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     const currentCalMonthName = `${monthNames[nowParts.monthIdx]} ${nowParts.year}`;
     const hasCurrentCalMonth = target.months.some(m => m.name.trim().toLowerCase() === currentCalMonthName.toLowerCase());
 
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    // Normalize default boundaries for months to end on the 1st of next month at 14:00 (02:00 PM)
+    for (const m of target.months) {
+      if (m.name && m.name.toLowerCase().includes("november 2026") && m.endDate && m.endDate.includes("2026-11-30")) {
+        m.endDate = "2026-12-01T14:00:00";
+        wasMonthModified = true;
+      } else if (m.name && m.name.toLowerCase().includes("october 2026") && m.endDate && m.endDate.includes("2026-10-31")) {
+        m.endDate = "2026-11-01T14:00:00";
+        wasMonthModified = true;
+      }
+    }
+
     if (!hasCurrentCalMonth) {
-      const lastDay = new Date(Date.UTC(nowParts.year, nowParts.monthIdx + 1, 0)).getUTCDate();
-      const pad = (n: number) => String(n).padStart(2, '0');
       const startIso = `${nowParts.year}-${pad(nowParts.monthIdx + 1)}-01T00:00:00`;
-      const endIso = `${nowParts.year}-${pad(nowParts.monthIdx + 1)}-${pad(lastDay)}T23:59:59`;
+      const nextMonthIdx = (nowParts.monthIdx + 1) % 12;
+      const nextYear = nowParts.monthIdx === 11 ? nowParts.year + 1 : nowParts.year;
+      // Monthly cycle closes on the 1st of the next calendar month at 14:00:00 (2:00 PM)
+      const endIso = `${nextYear}-${pad(nextMonthIdx + 1)}-01T14:00:00`;
 
       const newMonth: MessMonth = {
         id: generateUUID(),

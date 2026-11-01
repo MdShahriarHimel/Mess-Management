@@ -3518,55 +3518,23 @@ export default function App() {
   };
 
   // Settings: Add month function
-  const getMonthDefaults = (monthsList: MessMonth[] = months) => {
-    if (monthsList && monthsList.length > 0) {
-      const sorted = [...monthsList].sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-      const lastMonth = sorted[sorted.length - 1];
-
-      // A cycle starts exactly at the previous cycle's configured end time
-      const startVal = lastMonth.endDate.substring(0, 16);
-
-      const startDateObj = new Date(lastMonth.endDate);
-      const endDateObj = new Date(startDateObj);
-      endDateObj.setMonth(endDateObj.getMonth() + 1);
-
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const endVal = `${endDateObj.getFullYear()}-${pad(endDateObj.getMonth() + 1)}-${pad(endDateObj.getDate())}T${pad(endDateObj.getHours())}:${pad(endDateObj.getMinutes())}`;
-
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const nameVal = `${monthNames[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`;
-
-      return { nameVal, startVal, endVal };
-    }
-
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const startVal = `${year}-${pad(month + 1)}-01T00:00`;
-    const lastDay = new Date(year, month + 1, 0);
-    const endVal = `${year}-${pad(month + 1)}-${pad(lastDay.getDate())}T23:59`;
-
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const nameVal = `${monthNames[month]} ${year}`;
-    return { nameVal, startVal, endVal };
-  };
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   const getDatesForMonthName = (name: string) => {
-    const monthNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-    const shortMonthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-    const lower = name.toLowerCase();
+    const monthLower = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+    const shortNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const lower = name.toLowerCase().trim();
 
     let foundMonth = -1;
-    for (let i = 0; i < monthNames.length; i++) {
-      if (lower.includes(monthNames[i])) {
+    for (let i = 0; i < monthLower.length; i++) {
+      if (lower.includes(monthLower[i])) {
         foundMonth = i;
         break;
       }
     }
     if (foundMonth === -1) {
-      for (let i = 0; i < shortMonthNames.length; i++) {
-        if (lower.includes(shortMonthNames[i])) {
+      for (let i = 0; i < shortNames.length; i++) {
+        if (lower.includes(shortNames[i])) {
           foundMonth = i;
           break;
         }
@@ -3578,34 +3546,99 @@ export default function App() {
 
     if (foundMonth !== -1) {
       const pad = (n: number) => String(n).padStart(2, "0");
+      // Cycle starts at 12:00 AM (00:00) on the 1st day of the selected month
+      const startVal = `${foundYear}-${pad(foundMonth + 1)}-01T00:00`;
 
-      let timeStr = "00:00";
-      let dayStr = "01";
+      // Cycle ends on the 1st day of the NEXT calendar month at 02:00 PM (14:00)
+      const nextMonthIdx = foundMonth === 11 ? 0 : foundMonth + 1;
+      const nextYear = foundMonth === 11 ? foundYear + 1 : foundYear;
+      const endVal = `${nextYear}-${pad(nextMonthIdx + 1)}-01T14:00`;
 
-      if (months && months.length > 0) {
-        const sorted = [...months].sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-        const lastMonth = sorted[sorted.length - 1];
-        if (lastMonth.endDate && lastMonth.endDate.includes("T")) {
-          const parts = lastMonth.endDate.split("T");
-          timeStr = parts[1].substring(0, 5);
-          dayStr = parts[0].split("-")[2] || "01";
-        }
-      }
-
-      const startVal = `${foundYear}-${pad(foundMonth + 1)}-${dayStr}T${timeStr}`;
-      const startDateObj = new Date(`${foundYear}-${pad(foundMonth + 1)}-${dayStr}T${timeStr}`);
-      const endDateObj = new Date(startDateObj);
-      endDateObj.setMonth(endDateObj.getMonth() + 1);
-
-      const endVal = `${endDateObj.getFullYear()}-${pad(endDateObj.getMonth() + 1)}-${pad(endDateObj.getDate())}T${pad(endDateObj.getHours())}:${pad(endDateObj.getMinutes())}`;
       return { startVal, endVal };
     }
     return null;
   };
 
+  const getMonthDefaults = (monthsList: MessMonth[] = months) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+
+    if (monthsList && monthsList.length > 0) {
+      // Find the latest calendar year and month index among existing cycles
+      let maxYear = 0;
+      let maxMonthIdx = -1;
+
+      for (const m of monthsList) {
+        let y = 0;
+        let mIdx = -1;
+        if (m.name) {
+          const lower = m.name.toLowerCase();
+          const yMatch = m.name.match(/\b(20\d{2})\b/);
+          if (yMatch) y = parseInt(yMatch[1], 10);
+          const monthLower = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+          for (let i = 0; i < monthLower.length; i++) {
+            if (lower.includes(monthLower[i])) {
+              mIdx = i;
+              break;
+            }
+          }
+        }
+        if (mIdx === -1 && m.startDate) {
+          const parts = m.startDate.split("T")[0].split("-").map(Number);
+          if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            y = parts[0];
+            mIdx = parts[1] - 1;
+          }
+        }
+        if (y > 0 && mIdx >= 0) {
+          const score = y * 12 + mIdx;
+          const currentMaxScore = maxYear * 12 + maxMonthIdx;
+          if (score > currentMaxScore) {
+            maxYear = y;
+            maxMonthIdx = mIdx;
+          }
+        }
+      }
+
+      if (maxYear > 0 && maxMonthIdx >= 0) {
+        // Propose the NEXT calendar month cycle following the latest recorded month
+        const nextMonthIdx = maxMonthIdx === 11 ? 0 : maxMonthIdx + 1;
+        const nextYear = maxMonthIdx === 11 ? maxYear + 1 : maxYear;
+
+        const nameVal = `${monthNames[nextMonthIdx]} ${nextYear}`;
+        const startVal = `${nextYear}-${pad(nextMonthIdx + 1)}-01T00:00`;
+        const endMonthIdx = nextMonthIdx === 11 ? 0 : nextMonthIdx + 1;
+        const endYear = nextMonthIdx === 11 ? nextYear + 1 : nextYear;
+        const endVal = `${endYear}-${pad(endMonthIdx + 1)}-01T14:00`;
+
+        return { nameVal, startVal, endVal };
+      }
+    }
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const nameVal = `${monthNames[month]} ${year}`;
+    const startVal = `${year}-${pad(month + 1)}-01T00:00`;
+    const nextMonthIdx = month === 11 ? 0 : month + 1;
+    const nextYear = month === 11 ? year + 1 : year;
+    const endVal = `${nextYear}-${pad(nextMonthIdx + 1)}-01T14:00`;
+
+    return { nameVal, startVal, endVal };
+  };
+
   const [newMonthName, setNewMonthName] = useState(() => getMonthDefaults().nameVal);
   const [newMonthStart, setNewMonthStart] = useState(() => getMonthDefaults().startVal);
   const [newMonthEnd, setNewMonthEnd] = useState(() => getMonthDefaults().endVal);
+
+  // Sync newMonth defaults whenever months list is updated from server
+  useEffect(() => {
+    if (months && months.length > 0 && !editingMonthId) {
+      const defaults = getMonthDefaults(months);
+      setNewMonthName(defaults.nameVal);
+      setNewMonthStart(defaults.startVal);
+      setNewMonthEnd(defaults.endVal);
+    }
+  }, [months]);
 
   const handleNewMonthNameChange = (val: string) => {
     setNewMonthName(val);
