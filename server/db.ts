@@ -80,11 +80,30 @@ import {
   getCycleEffectiveStartDate,
   isCycleActiveAtDate,
   isCalendarMonthMatch,
-  findCurrentActiveCycle
+  findCurrentActiveCycle,
+  getMessTimeParts,
+  createDateInTimezone
 } from "../src/utils/cycleUtils.js";
 
 export const DB_DIR = process.env.VERCEL ? "/tmp/data" : path.join(process.cwd(), "data");
 const CREDENTIALS_FILE = path.join(DB_DIR, "credentials.json");
+
+export function getMessTimezone(messId: string = "default"): string {
+  try {
+    const settingsFile = messId === "default"
+      ? path.join(DB_DIR, "settings.json")
+      : path.join(DB_DIR, `settings_${messId}.json`);
+    if (fs.existsSync(settingsFile)) {
+      const data = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
+      if (data && data.timezone && typeof data.timezone === "string" && data.timezone.trim()) {
+        return data.timezone.trim();
+      }
+    }
+  } catch (e) {
+    // fallback
+  }
+  return "Asia/Dhaka";
+}
 
 // Global queue of pending DB sync promises
 export let pendingSyncPromises: Promise<any>[] = [];
@@ -1452,6 +1471,7 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
   // Automatic Month Transition & Deduplication Check
   if (target && target.months && target.months.length > 0) {
     const now = new Date();
+    const messTimezone = getMessTimezone(messId);
     let wasMonthModified = false;
 
     // 1. Strict deduplication safeguard by ID and by normalized name
@@ -1495,12 +1515,11 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     }
 
     // 2. Safeguard: Prevent premature locking of ongoing cycles.
-    // By default, a monthly cycle MUST continue through the end of the 1st of the next month,
-    // and only auto-closes at the start of the 2nd day of the next month (00:00:00 Dhaka time).
-    // If a cycle was mistakenly marked locked before its effective closure boundary, unlock it.
+    // By default, a monthly cycle MUST continue through the 1st of the next month until 02:00 PM (14:00:00 in Mess Timezone).
+    // If a cycle was mistakenly marked locked before its effective closure boundary (14:00 on Day 1), unlock it.
     for (const m of target.months) {
       if (m.isLocked && !m.manuallyUnlocked) {
-        const effectiveEnd = getCycleEffectiveEndDate(m);
+        const effectiveEnd = getCycleEffectiveEndDate(m, messTimezone);
         if (now < effectiveEnd) {
           console.log(`[Cycle-Safeguard] Restoring premature lock for active month '${m.name}' in mess '${messId}'.`);
           m.isLocked = false;
@@ -1509,17 +1528,54 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
       }
     }
 
-    // 3. Check for active (unlocked) months whose effective closure boundary has arrived.
-    // Excluding manually unlocked cycles or cycles explicitly extended by admin.
+    // 3. Proactive Auto-Creation on Day 1 12:00 AM (00:00:00 in Mess Timezone):
+    // Check if the current calendar month in the mess's timezone exists in target.months.
+    // If missing, auto-create it immediately so it appears in the dropdown on the 1st day at 12:00 AM!
+    const nowParts = getMessTimeParts(now, messTimezone);
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const currentCalMonthName = `${monthNames[nowParts.monthIdx]} ${nowParts.year}`;
+    const hasCurrentCalMonth = target.months.some(m => m.name.trim().toLowerCase() === currentCalMonthName.toLowerCase());
+
+    if (!hasCurrentCalMonth) {
+      const lastDay = new Date(Date.UTC(nowParts.year, nowParts.monthIdx + 1, 0)).getUTCDate();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const startIso = `${nowParts.year}-${pad(nowParts.monthIdx + 1)}-01T00:00:00`;
+      const endIso = `${nowParts.year}-${pad(nowParts.monthIdx + 1)}-${pad(lastDay)}T23:59:59`;
+
+      const newMonth: MessMonth = {
+        id: generateUUID(),
+        name: currentCalMonthName,
+        startDate: startIso,
+        endDate: endIso,
+        isLocked: false,
+        gracePeriodEnabled: true
+      };
+      target.months.push(newMonth);
+      wasMonthModified = true;
+      console.log(`[Auto-Transition] Automatically created and added current month '${newMonth.name}' (${newMonth.startDate} to ${newMonth.endDate}) for mess '${messId}' (Timezone: ${messTimezone}).`);
+      logAudit(
+        "SYSTEM",
+        "System Engine",
+        "AUTOMATIC_MONTH_CREATION",
+        "None",
+        newMonth.name,
+        `System automatically created ${newMonth.name} at 12:00 AM on 1st day for mess ${messId} (Timezone: ${messTimezone}).`,
+        { module: "CYCLE", actionType: "AUTOMATIC_MONTH_CREATION", description: `System automatically created ${newMonth.name}.`, messId }
+      );
+    }
+
+    // 4. Check for active (unlocked) months whose effective closure boundary (1st day 14:00:00 in Mess Timezone) has arrived.
+    // Excluding manually unlocked cycles, cycles explicitly extended by admin, or the current calendar month itself.
     const activeMonthsToClose = target.months.filter(m => {
       if (m.isLocked) return false;
       if (m.manuallyUnlocked) return false;
-      const effectiveEndDate = getCycleEffectiveEndDate(m);
+      if (isCalendarMonthMatch(m, now, messTimezone)) return false;
+      const effectiveEndDate = getCycleEffectiveEndDate(m, messTimezone);
       return !isNaN(effectiveEndDate.getTime()) && now >= effectiveEndDate;
     });
 
     for (const endedMonth of activeMonthsToClose) {
-      console.log(`[Auto-Transition] Mess '${messId}' Month '${endedMonth.name}' cycle ended. Closing cycle...`);
+      console.log(`[Auto-Transition] Mess '${messId}' Month '${endedMonth.name}' reached 2:00 PM cutoff. Auto-locking cycle...`);
       endedMonth.isLocked = true;
       wasMonthModified = true;
 
@@ -1529,66 +1585,11 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
         "AUTOMATIC_CYCLE_LOCK",
         "Unlocked",
         "Locked",
-        `System automatically locked ${endedMonth.name}.`,
+        `System automatically locked ${endedMonth.name} at 2:00 PM transition cutoff for mess ${messId}.`,
         { module: "CYCLE", actionType: "AUTOMATIC_CYCLE_LOCK", description: `System automatically locked ${endedMonth.name}.`, messId }
       );
-
-      // Check if a next month or current month covering now already exists
-      const endedEndEpoch = getCycleEffectiveEndDate(endedMonth).getTime();
-      let nextMonth = target.months.find(m => {
-        if (m.id === endedMonth.id) return false;
-        const mStartEpoch = getCycleEffectiveStartDate(m).getTime();
-        const mEndEpoch = getCycleEffectiveEndDate(m).getTime();
-        // covers now or starts on/after endedMonth end
-        return (now.getTime() >= mStartEpoch && now.getTime() < mEndEpoch) || mStartEpoch >= endedEndEpoch;
-      });
-
-      if (nextMonth) {
-        nextMonth.isLocked = false;
-        console.log(`[Auto-Transition] Activated existing next month '${nextMonth.name}'.`);
-        logAudit(
-          "SYSTEM",
-          "System Engine",
-          "AUTOMATIC_MONTH_TRANSITION",
-          "Inactive",
-          "Active",
-          `System automatically transitioned to ${nextMonth.name}.`,
-          { module: "CYCLE", actionType: "AUTOMATIC_MONTH_TRANSITION", description: `System automatically transitioned to ${nextMonth.name}.`, messId }
-        );
-      } else {
-        // Calculate next month name based on endedMonth effective end date
-        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        const nextStartObj = getCycleEffectiveEndDate(endedMonth);
-        const nextMonthName = `${monthNames[nextStartObj.getMonth()]} ${nextStartObj.getFullYear()}`;
-
-        // Double check if a month with nextMonthName already exists in target.months
-        const existingByName = target.months.find(m => m.name.trim().toLowerCase() === nextMonthName.toLowerCase());
-        if (existingByName) {
-          existingByName.isLocked = false;
-          console.log(`[Auto-Transition] Activated existing month by name '${existingByName.name}'.`);
-        } else {
-          const nextEndObj = new Date(nextStartObj);
-          nextEndObj.setMonth(nextEndObj.getMonth() + 1);
-
-          const pad = (n: number) => String(n).padStart(2, '0');
-          const formatISO = (d: Date) => {
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-          };
-
-          const newMonth: MessMonth = {
-            id: generateUUID(),
-            name: nextMonthName,
-            startDate: formatISO(nextStartObj),
-            endDate: formatISO(nextEndObj),
-            isLocked: false,
-            gracePeriodEnabled: true
-          };
-          target.months.push(newMonth);
-          wasMonthModified = true;
-          console.log(`[Auto-Transition] Automatically created and activated next month '${newMonth.name}' (${newMonth.startDate} to ${newMonth.endDate}) for mess ${messId}.`);
-        }
-      }
     }
+
 
     if (wasMonthModified) {
       try {

@@ -77,6 +77,8 @@ interface UnifiedSettingsDashboardProps {
   handleUpdatePreferences: (updates: any) => Promise<boolean>;
   handleToggleMessLock: (messId: string, locked: boolean) => Promise<boolean>;
   handleUpdateSettings: (updates: any) => Promise<boolean>;
+  messTimezone?: string;
+  setMessTimezone?: (tz: string) => void;
   allowSuperUserUnlock?: boolean;
   setAllowSuperUserUnlock?: React.Dispatch<React.SetStateAction<boolean>>;
   memberHistoryWindowMonths?: number;
@@ -164,6 +166,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   handleUpdatePreferences,
   handleToggleMessLock,
   handleUpdateSettings,
+  messTimezone = "Asia/Dhaka",
+  setMessTimezone,
   allowSuperUserUnlock = false,
   setAllowSuperUserUnlock,
   memberHistoryWindowMonths = 0,
@@ -2905,6 +2909,114 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   <LucideIcons.ShieldCheck size={13} className="text-emerald-400 shrink-0" />
                   <span>
                     মেস আইসোলেশন সুরক্ষিত: এই সেটিংস পরিবর্তন অন্য কোনো মেসের মিল বা হিসাবকে প্রভাবিত করবে না।
+                  </span>
+                </div>
+              </div>
+
+              {/* ERP SETTING: Mess Timezone Configuration (Per-Mess Isolated) */}
+              <div className="p-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 space-y-4" id="mess-timezone-setting-card">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <LucideIcons.Globe size={16} className="text-cyan-400" />
+                      <label className="text-xs font-bold text-slate-200">
+                        মেস টাইমজোন ও সাইকেল শিফটিং (Mess Timezone & Cycle Transition)
+                      </label>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        {activeMessId ? `মেস: ${activeMessId}` : "বর্তমান মেস"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      মেসের অবস্থান অনুযায়ী টাইমজোন নির্ধারণ করুন (যেমন: বাংলাদেশ বা ইউএসএ)। এই মেসের জন্য প্রতি মাসের ১ তারিখ ১২:০১ AM-এ নতুন মাস তৈরি হবে, দুপুর ২:০০ টা পর্যন্ত বিগত মাসের হিসাব চলবে এবং দুপুর ২:০০ টায় বিগত মাস অটো-লক হবে।
+                    </p>
+                  </div>
+
+                  {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Dhaka";
+                          if (setMessTimezone) setMessTimezone(detectedTz);
+                          const ok = await handleUpdateSettings({ timezone: detectedTz });
+                          if (ok) {
+                            showStatus("success", `ডিভাইস থেকে টাইমজোন শনাক্ত করা হয়েছে: ${detectedTz}`);
+                          }
+                        } catch (err) {
+                          showStatus("error", "টাইমজোন শনাক্ত করতে সমস্যা হয়েছে");
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition shrink-0 cursor-pointer active:scale-95"
+                      title="Auto-detect timezone from your device/browser"
+                    >
+                      <LucideIcons.Compass size={14} className="text-cyan-400" />
+                      Auto-Detect My Timezone
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-2 border-t border-cyan-500/10">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      সিলেক্টেড টাইমজোন (Selected Timezone):
+                    </label>
+                    <select
+                      value={messTimezone}
+                      disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                      onChange={async (e) => {
+                        const newTz = e.target.value;
+                        if (setMessTimezone) setMessTimezone(newTz);
+                        const ok = await handleUpdateSettings({ timezone: newTz });
+                        if (ok) {
+                          showStatus("success", `মেস টাইমজোন আপডেট করা হয়েছে: ${newTz}`);
+                        }
+                      }}
+                      className="w-full px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    >
+                      <option value="Asia/Dhaka">Asia/Dhaka (Bangladesh Standard Time, UTC+6)</option>
+                      <option value="America/New_York">America/New_York (US Eastern Time, UTC-5 / UTC-4)</option>
+                      <option value="America/Chicago">America/Chicago (US Central Time, UTC-6 / UTC-5)</option>
+                      <option value="America/Denver">America/Denver (US Mountain Time, UTC-7 / UTC-6)</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles (US Pacific Time, UTC-8 / UTC-7)</option>
+                      <option value="Europe/London">Europe/London (UK GMT/BST, UTC+0 / UTC+1)</option>
+                      <option value="Asia/Dubai">Asia/Dubai (UAE / Gulf Standard Time, UTC+4)</option>
+                      <option value="Asia/Riyadh">Asia/Riyadh (Saudi Arabia, UTC+3)</option>
+                      <option value="Asia/Kolkata">Asia/Kolkata (India Standard Time, UTC+5:30)</option>
+                      <option value="Asia/Singapore">Asia/Singapore (Singapore / Malaysia, UTC+8)</option>
+                      <option value="Asia/Tokyo">Asia/Tokyo (Japan Standard Time, UTC+9)</option>
+                      <option value="Australia/Sydney">Australia/Sydney (Australia Eastern, UTC+10 / UTC+11)</option>
+                      <option value="UTC">UTC (Coordinated Universal Time)</option>
+                    </select>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] space-y-1">
+                    <div className="flex items-center justify-between text-slate-300">
+                      <span className="font-semibold text-slate-400">মেসের বর্তমান স্থানীয় সময়:</span>
+                      <span className="font-mono text-cyan-400 font-bold">
+                        {(() => {
+                          try {
+                            return new Intl.DateTimeFormat("en-US", {
+                              timeZone: messTimezone,
+                              dateStyle: "medium",
+                              timeStyle: "short"
+                            }).format(new Date());
+                          } catch {
+                            return "N/A";
+                          }
+                        })()}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                      <LucideIcons.Clock size={11} className="text-amber-400 shrink-0" />
+                      <span>ট্রানজিশন বাউন্ডারি: ১ তারিখ দুপুর ২:০০ টা (14:00 local time)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t border-cyan-500/10 text-[11px] text-slate-400">
+                  <LucideIcons.ShieldCheck size={13} className="text-emerald-400 shrink-0" />
+                  <span>
+                    মেস আইসোলেশন সুরক্ষিত: এই টাইমজোন শুধুমাত্র বর্তমান মেসের জন্য নির্ধারিত থাকবে, অন্য কোনো মেসে প্রভাব পড়বে না।
                   </span>
                 </div>
               </div>

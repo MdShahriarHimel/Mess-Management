@@ -6155,6 +6155,7 @@ export function loadSettings(overrideMessId?: string) {
     fontStyle: "sans",
     isDarkMode: false,
     defaultMode: "light",
+    timezone: "Asia/Dhaka",
     logoText: messId === "default" ? "Ababil mess" : `Mess ${messId.toUpperCase()}`,
     dropdownOptions: ["Rent/ভাড়া", "বুয়া বিল", "WiFi", "Electricity + Water"],
     translations: {},

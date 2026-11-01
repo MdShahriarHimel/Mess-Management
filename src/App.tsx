@@ -1566,6 +1566,7 @@ export default function App() {
   const [currencySymbol, setCurrencySymbol] = useState("৳");
   const [messName, setMessName] = useState("Ababil mess");
   const [newMessName, setNewMessName] = useState("Ababil mess");
+  const [messTimezone, setMessTimezone] = useState<string>("Asia/Dhaka");
 
   // Custom RGB colors
   const [customColors, setCustomColors] = useState({
@@ -2357,6 +2358,7 @@ export default function App() {
           setMessName(data.messName);
           setNewMessName(data.messName);
         }
+        if (data.timezone) setMessTimezone(data.timezone);
         if (data.allowSuperUserUnlock !== undefined) setAllowSuperUserUnlock(data.allowSuperUserUnlock);
         if (data.memberHistoryWindowMonths !== undefined) setMemberHistoryWindowMonths(Number(data.memberHistoryWindowMonths) || 0);
         if (data.siteColor) setSiteColor(data.siteColor);
@@ -2850,8 +2852,8 @@ export default function App() {
         setNewMonthEnd(defaults.endVal);
 
         if (loadedMonths.length > 0) {
-          // Find month corresponding to current system time using unified cycle timing rules
-          const activeMonth = findCurrentActiveCycle(loadedMonths, new Date());
+          // Find month corresponding to current system time using unified cycle timing rules in mess timezone
+          const activeMonth = findCurrentActiveCycle(loadedMonths, new Date(), messTimezone);
 
           if (!currentMonthId || !loadedMonths.some((m: MessMonth) => m.id === currentMonthId)) {
             if (activeMonth) setCurrentMonthId(activeMonth.id);
@@ -3416,7 +3418,7 @@ export default function App() {
     const selectable = getSelectableMonths();
     const isAllowed = selectable.some(m => m.id === currentMonthId);
     if (!isAllowed && selectable.length > 0) {
-      const active = findCurrentActiveCycle(selectable, new Date());
+      const active = findCurrentActiveCycle(selectable, new Date(), messTimezone);
       if (active) {
         setCurrentMonthId(active.id);
       } else {
@@ -6606,6 +6608,8 @@ export default function App() {
                 handleToggleMessLock={handleToggleMessLock}
                 handleToggleMonthLock={handleToggleMonthLock}
                 handleUpdateSettings={handleUpdateSettings}
+                messTimezone={messTimezone}
+                setMessTimezone={setMessTimezone}
                 allowSuperUserUnlock={allowSuperUserUnlock}
                 setAllowSuperUserUnlock={setAllowSuperUserUnlock}
                 memberHistoryWindowMonths={memberHistoryWindowMonths}
