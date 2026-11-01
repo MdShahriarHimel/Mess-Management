@@ -82,9 +82,27 @@ export function createDateInTimezone(
 
 export function parseDhakaDate(dateStr: string, isEndOfDay: boolean = false, timezone: string = "Asia/Dhaka"): Date {
   if (!dateStr) return new Date();
-  if (dateStr.includes("Z") || dateStr.includes("+") || (dateStr.includes("-") && dateStr.length > 19)) {
+  if (dateStr.includes("Z") || dateStr.includes("+") || (dateStr.includes("-") && dateStr.length > 25)) {
     return new Date(dateStr);
   }
+
+  // Handle explicit date + time strings (e.g. "2026-11-04T18:00:00", "2026-11-04T18:00", or "2026-11-04 18:00")
+  if (dateStr.includes("T") || (dateStr.includes(" ") && dateStr.includes(":"))) {
+    const separator = dateStr.includes("T") ? "T" : " ";
+    const [dPart, tPart] = dateStr.split(separator);
+    const dNums = (dPart || "").split("-").map(Number);
+    if (dNums.length === 3 && !isNaN(dNums[0]) && !isNaN(dNums[1]) && !isNaN(dNums[2])) {
+      const year = dNums[0];
+      const monthIdx = dNums[1] - 1;
+      const day = dNums[2];
+      const tNums = (tPart || "").split(":").map(Number);
+      const hours = !isNaN(tNums[0]) ? tNums[0] : (isEndOfDay ? 23 : 0);
+      const minutes = !isNaN(tNums[1]) ? tNums[1] : (isEndOfDay ? 59 : 0);
+      const seconds = !isNaN(tNums[2]) ? tNums[2] : (isEndOfDay ? 59 : 0);
+      return createDateInTimezone(year, monthIdx, day, hours, minutes, seconds, timezone);
+    }
+  }
+
   const cleanStr = dateStr.split("T")[0];
   const parts = cleanStr.split("-").map(Number);
   if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {

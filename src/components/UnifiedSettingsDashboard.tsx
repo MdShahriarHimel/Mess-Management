@@ -9,6 +9,7 @@ import { getRespectDisplayName } from "../utils/respectHelper";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { MessBackupModal } from "./MessBackupModal";
 import { deduplicateMembersList } from "../utils/memberUtils.ts";
+import { parseDhakaDate } from "../utils/cycleUtils.ts";
 
 interface Member {
   id: string;
@@ -783,6 +784,63 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const showStatus = (type: "success" | "error" | "info", text: string) => {
     setStatusMsg({ type, text });
     setTimeout(() => setStatusMsg(null), 4000);
+  };
+
+  // Zero-Overhead Client-Side Native Timezone Engine (0 KB bandwidth, 0 Neon Postgres CU)
+  const allSupportedTimezones = useMemo(() => {
+    try {
+      if (typeof Intl !== "undefined" && typeof (Intl as any).supportedValuesOf === "function") {
+        return (Intl as any).supportedValuesOf("timeZone") as string[];
+      }
+    } catch (e) {
+      // fallback
+    }
+    return [
+      "Asia/Dhaka", "Asia/Kolkata", "Asia/Dubai", "Asia/Riyadh", "Asia/Singapore", 
+      "Asia/Tokyo", "Asia/Karachi", "Asia/Kathmandu", "Asia/Colombo", "Asia/Bangkok",
+      "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", 
+      "America/Toronto", "America/Vancouver", "Europe/London", "Europe/Berlin", 
+      "Europe/Paris", "Europe/Rome", "Europe/Madrid", "Australia/Sydney", "Australia/Melbourne", "UTC"
+    ];
+  }, []);
+
+  const [tzSearchQuery, setTzSearchQuery] = useState("");
+  const [customTzInput, setCustomTzInput] = useState("");
+
+  const filteredTimezones = useMemo(() => {
+    if (!tzSearchQuery.trim()) {
+      const priority = ["Asia/Dhaka", "Asia/Kolkata", "America/New_York", "America/Chicago", "America/Los_Angeles", "Europe/London", "Asia/Dubai", "Asia/Riyadh", "Asia/Singapore", "Asia/Tokyo", "UTC"];
+      const rest = allSupportedTimezones.filter((tz: string) => !priority.includes(tz));
+      return [...new Set([...priority.filter(p => allSupportedTimezones.includes(p)), ...rest])].slice(0, 40);
+    }
+    const q = tzSearchQuery.trim().toLowerCase();
+    return allSupportedTimezones.filter((tz: string) => tz.toLowerCase().includes(q)).slice(0, 60);
+  }, [allSupportedTimezones, tzSearchQuery]);
+
+  const checkTimezoneValid = (tzStr: string): boolean => {
+    try {
+      new Intl.DateTimeFormat(undefined, { timeZone: tzStr });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const formatCycleDateTime = (dtStr?: string, tz: string = "Asia/Dhaka") => {
+    if (!dtStr) return "N/A";
+    try {
+      const d = parseDhakaDate(dtStr, false, tz);
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        hour12: true
+      }).format(d);
+    } catch {
+      return dtStr.replace("T", " ");
+    }
   };
 
   // Level 1: Branding Local State
@@ -2955,50 +3013,125 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center pt-2 border-t border-cyan-500/10">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      সিলেক্টেড টাইমজোন (Selected Timezone):
-                    </label>
-                    <select
-                      value={messTimezone}
-                      disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
-                      onChange={async (e) => {
-                        const newTz = e.target.value;
-                        if (setMessTimezone) setMessTimezone(newTz);
-                        const ok = await handleUpdateSettings({ timezone: newTz });
-                        if (ok) {
-                          showStatus("success", `মেস টাইমজোন আপডেট করা হয়েছে: ${newTz}`);
-                        }
-                      }}
-                      className="w-full px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                    >
-                      <option value="Asia/Dhaka">Asia/Dhaka (Bangladesh Standard Time, UTC+6)</option>
-                      <option value="America/New_York">America/New_York (US Eastern Time, UTC-5 / UTC-4)</option>
-                      <option value="America/Chicago">America/Chicago (US Central Time, UTC-6 / UTC-5)</option>
-                      <option value="America/Denver">America/Denver (US Mountain Time, UTC-7 / UTC-6)</option>
-                      <option value="America/Los_Angeles">America/Los_Angeles (US Pacific Time, UTC-8 / UTC-7)</option>
-                      <option value="Europe/London">Europe/London (UK GMT/BST, UTC+0 / UTC+1)</option>
-                      <option value="Asia/Dubai">Asia/Dubai (UAE / Gulf Standard Time, UTC+4)</option>
-                      <option value="Asia/Riyadh">Asia/Riyadh (Saudi Arabia, UTC+3)</option>
-                      <option value="Asia/Kolkata">Asia/Kolkata (India Standard Time, UTC+5:30)</option>
-                      <option value="Asia/Singapore">Asia/Singapore (Singapore / Malaysia, UTC+8)</option>
-                      <option value="Asia/Tokyo">Asia/Tokyo (Japan Standard Time, UTC+9)</option>
-                      <option value="Australia/Sydney">Australia/Sydney (Australia Eastern, UTC+10 / UTC+11)</option>
-                      <option value="UTC">UTC (Coordinated Universal Time)</option>
-                    </select>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start pt-2 border-t border-cyan-500/10">
+                  {/* Select or Search Timezone */}
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                          <LucideIcons.Search size={12} className="text-cyan-400" />
+                          বিশ্বের যেকোনো টাইমজোন খুঁজুন (Search All 400+ World Timezones):
+                        </label>
+                        <span className="text-[10px] text-slate-500 font-mono">Zero Network/CU Overhead</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={tzSearchQuery}
+                        onChange={(e) => setTzSearchQuery(e.target.value)}
+                        placeholder="যেমন: Kolkata, India, Dhaka, New York, London, Dubai..."
+                        disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                        className="w-full px-3 py-1.5 text-xs rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        তালিকা থেকে নির্বাচন করুন ({filteredTimezones.length} টি টাইমজোন প্রাপ্ত):
+                      </label>
+                      <select
+                        value={messTimezone}
+                        disabled={currentUser.role !== "ADMIN" && currentUser.role !== "SUPERUSER" && !isUltimateAdmin}
+                        onChange={async (e) => {
+                          const newTz = e.target.value;
+                          if (setMessTimezone) setMessTimezone(newTz);
+                          const ok = await handleUpdateSettings({ timezone: newTz });
+                          if (ok) {
+                            showStatus("success", `মেস টাইমজোন আপডেট করা হয়েছে: ${newTz}`);
+                          }
+                        }}
+                        className="w-full px-3 py-2 text-xs font-semibold rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                      >
+                        {!filteredTimezones.includes(messTimezone) && (
+                          <option value={messTimezone}>{messTimezone} (Active)</option>
+                        )}
+                        {filteredTimezones.map(tz => (
+                          <option key={tz} value={tz}>
+                            {tz === "Asia/Kolkata" ? "Asia/Kolkata (India Standard Time, IST UTC+5:30)" :
+                             tz === "Asia/Dhaka" ? "Asia/Dhaka (Bangladesh Standard Time, BST UTC+6)" :
+                             tz === "America/New_York" ? "America/New_York (US Eastern Time, UTC-5/UTC-4)" :
+                             tz === "America/Chicago" ? "America/Chicago (US Central Time, UTC-6/UTC-5)" :
+                             tz === "America/Los_Angeles" ? "America/Los_Angeles (US Pacific Time, UTC-8/UTC-7)" :
+                             tz === "Europe/London" ? "Europe/London (UK GMT/BST, UTC+0/UTC+1)" :
+                             tz === "Asia/Dubai" ? "Asia/Dubai (UAE / Gulf Standard Time, UTC+4)" :
+                             tz === "Asia/Riyadh" ? "Asia/Riyadh (Saudi Arabia, UTC+3)" :
+                             tz}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Manual Region Input */}
+                    {(currentUser.role === "ADMIN" || currentUser.role === "SUPERUSER" || isUltimateAdmin) && (
+                      <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                        <label className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                          <span>অথবা সরাসরি টাইপ করুন (Manual Region Entry):</span>
+                          {customTzInput.trim() && (
+                            <span className={checkTimezoneValid(customTzInput.trim()) ? "text-emerald-400 text-[10px] font-bold" : "text-rose-400 text-[10px]"}>
+                              {checkTimezoneValid(customTzInput.trim()) ? "✓ Valid Timezone" : "✗ Invalid Region"}
+                            </span>
+                          )}
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={customTzInput}
+                            onChange={(e) => setCustomTzInput(e.target.value)}
+                            placeholder="যেমন: Asia/Kolkata বা Europe/Berlin"
+                            className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-slate-950 border border-slate-700 text-cyan-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-400 font-mono"
+                          />
+                          <button
+                            type="button"
+                            disabled={!customTzInput.trim() || !checkTimezoneValid(customTzInput.trim())}
+                            onClick={async () => {
+                              const targetTz = customTzInput.trim();
+                              if (!checkTimezoneValid(targetTz)) {
+                                showStatus("error", "সঠিক IANA টাইমজোন নাম লিখুন (যেমন: Asia/Kolkata)");
+                                return;
+                              }
+                              if (setMessTimezone) setMessTimezone(targetTz);
+                              const ok = await handleUpdateSettings({ timezone: targetTz });
+                              if (ok) {
+                                showStatus("success", `মেস টাইমজোন সেট করা হয়েছে: ${targetTz}`);
+                                setCustomTzInput("");
+                              }
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-600 text-white transition cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            Set
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] space-y-1">
-                    <div className="flex items-center justify-between text-slate-300">
-                      <span className="font-semibold text-slate-400">মেসের বর্তমান স্থানীয় সময়:</span>
-                      <span className="font-mono text-cyan-400 font-bold">
+                  {/* Current Mess Local Time Preview */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="font-semibold text-slate-400">মেসের সক্রিয় টাইমজোন:</span>
+                      <span className="font-mono text-cyan-300 font-bold px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
+                        {messTimezone}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-400">বর্তমান স্থানীয় সময়:</span>
+                      <span className="font-mono text-emerald-400 font-black text-sm">
                         {(() => {
                           try {
                             return new Intl.DateTimeFormat("en-US", {
                               timeZone: messTimezone,
                               dateStyle: "medium",
-                              timeStyle: "short"
+                              timeStyle: "medium"
                             }).format(new Date());
                           } catch {
                             return "N/A";
@@ -3006,9 +3139,16 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                         })()}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <LucideIcons.Clock size={11} className="text-amber-400 shrink-0" />
-                      <span>ট্রানজিশন বাউন্ডারি: ১ তারিখ দুপুর ২:০০ টা (14:00 local time)</span>
+
+                    <div className="text-[11px] text-slate-300 space-y-1 pt-1.5 border-t border-slate-800/60">
+                      <div className="flex items-start gap-1.5">
+                        <LucideIcons.CheckCircle2 size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                        <span>১ তারিখ রাত ১২:০১ AM (স্থানীয় সময়): নতুন মাসের সাইকেল ড্রপডাউনে স্বয়ংক্রিয়ভাবে তৈরি হবে।</span>
+                      </div>
+                      <div className="flex items-start gap-1.5">
+                        <LucideIcons.Clock size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                        <span>১ তারিখ দুপুর ২:০০ টা (14:00 local time): বিগত মাসের হিসাব চলবে এবং ২:০০ টায় অটো-লক হবে (যদি না নিচে ম্যানুয়ালি সময় পরিবর্তন করা থাকে)।</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3178,7 +3318,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends</label>
+                          <label className="text-[10px] font-bold text-orange-400 uppercase block">Ends (Cutoff)</label>
                           <input
                             type="datetime-local"
                             required
@@ -3187,6 +3327,15 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none"
                           />
                         </div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-300 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-cyan-200">
+                          <LucideIcons.Clock size={12} className="text-cyan-400" />
+                          <span>কাস্টম সাইকেল কাটঅফ ও শিফটিং সময় (Custom End Cutoff Override):</span>
+                        </div>
+                        <p className="text-[10px] text-slate-300 leading-relaxed">
+                          ডিফল্টভাবে পরবর্তী মাসের ১ তারিখ দুপুর ২:০০ টা পর্যন্ত বিগত সাইকেলের হিসাব চলে এবং তারপর অটো-লক হয়। আপনি যদি এখানে সাইকেলের শেষ সময় পরিবর্তন করেন (যেমন: ৪ঠা নভেম্বর সন্ধ্যা ৬:০০ টা), তবে ঠিক সেই নির্ধারিত সময় পর্যন্ত এই সাইকেলটি সক্রিয় ও আনলক থাকবে, এবং সময় পার হলে স্বয়ংক্রিয়ভাবে লক হবে।
+                        </p>
                       </div>
                       <button
                         type="submit"
@@ -3293,8 +3442,10 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                                 </span>
                               )}
                             </div>
-                            <span className="text-[9px] text-slate-500 font-mono">
-                              {new Date(month.startDate).toLocaleDateString()} - {new Date(month.endDate).toLocaleDateString()}
+                            <span className="text-[9px] text-slate-400 font-mono flex items-center gap-1">
+                              <span>{formatCycleDateTime(month.startDate, messTimezone)}</span>
+                              <span className="text-slate-600">➔</span>
+                              <span className="text-cyan-400/90 font-medium">{formatCycleDateTime(month.endDate, messTimezone)}</span>
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
