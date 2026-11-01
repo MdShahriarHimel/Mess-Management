@@ -37,6 +37,7 @@ import { loadDB, saveDB, syncState,
   getCleanMessData,
   deduplicateMembers,
   deduplicateDeposits,
+  deduplicateMarketEntries,
   deduplicateMeals,
   DB_DIR
 } from "./db.js";
@@ -3553,8 +3554,8 @@ router.get("/foodmenu/statistics/:monthId", authMiddleware, async (req: Authenti
 router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
   const db = loadDB();
-  const markets = db.marketEntries
-    .filter(m => m.monthId === monthId)
+  const rawMarkets = db.marketEntries.filter(m => m.monthId === monthId);
+  const markets = deduplicateMarketEntries(rawMarkets)
     .sort((a, b) => {
       const getEntryDate = (entry: any) => {
         if (entry.coveredDates && Array.isArray(entry.coveredDates) && entry.coveredDates.length > 0) {
@@ -3668,6 +3669,21 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
     }
   }
 
+  // Deduplication guard against rapid double-clicks or repeated submissions
+  if (!id) {
+    const isDuplicate = db.marketEntries.find(e => 
+      e.monthId === monthId &&
+      e.memberId === memberId &&
+      e.date === date &&
+      Number(e.amount) === Number(amount) &&
+      (e.description || "").trim() === (description || "").trim()
+    );
+    if (isDuplicate) {
+      res.json({ success: true, entry: isDuplicate, isDuplicateSkipped: true });
+      return;
+    }
+  }
+
   const newEntry: MarketEntry = {
     id: id || generateUUID(),
     monthId,
@@ -3699,6 +3715,7 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
     db.marketEntries.push(newEntry);
   }
 
+  db.marketEntries = deduplicateMarketEntries(db.marketEntries);
   saveDB();
   try {
     const mapped = {
@@ -3717,7 +3734,12 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
       target: marketEntriesTable.id,
       set: mapped
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      console.warn("PostgreSQL unique duplicate caught:", err.detail);
+      res.json({ success: true, entry: newEntry, isDuplicateSkipped: true });
+      return;
+    }
     console.warn("Direct PostgreSQL market entry upsert error:", err);
   }
 
@@ -5223,8 +5245,8 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   await checkAndSyncDbCacheIfNeeded(currentMessId);
   const db = loadDB(currentMessId);
 
-  let monthDeposits = db.deposits.filter(d => d.monthId === monthId);
-  let monthMarkets = db.marketEntries.filter(m => m.monthId === monthId);
+  let monthDeposits = deduplicateDeposits(db.deposits.filter(d => d.monthId === monthId));
+  let monthMarkets = deduplicateMarketEntries(db.marketEntries.filter(m => m.monthId === monthId));
   const monthMeals = await getMealsForCurrentCycle(monthId, currentMessId);
   let monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
   const monthBills = db.bills.filter(b => b.monthId === monthId);
@@ -5242,18 +5264,22 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
         monthHoldings = liveHoldings as any[];
       }
       if (liveMarkets && liveMarkets.length > 0) {
-        monthMarkets = liveMarkets.map(item => ({
+        monthMarkets = deduplicateMarketEntries(liveMarkets.map(item => ({
           ...item,
           coveredDates: parseCoveredDates((item as any).coveredDates)
-        })) as any[];
+        })) as any[]);
       }
       if (liveDeposits && liveDeposits.length > 0) {
-        monthDeposits = liveDeposits as any[];
+        monthDeposits = deduplicateDeposits(liveDeposits as any[]);
       }
     } catch (dbErr) {
       // Fallback safely to in-memory db.*
     }
   }
+
+  // Ensure strict deduplication defense right before financial aggregation
+  monthMarkets = deduplicateMarketEntries(monthMarkets);
+  monthDeposits = deduplicateDeposits(monthDeposits);
 
   // Month cycle date range
   const monthObj = db.months?.find((m: any) => m.id === monthId);

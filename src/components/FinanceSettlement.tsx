@@ -1877,6 +1877,7 @@ export default function FinanceSettlement({
   const [newMarAmount, setNewMarAmount] = useState("");
   const [newMarDate, setNewMarDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [newMarDesc, setNewMarDesc] = useState("");
+  const [isSubmittingMarket, setIsSubmittingMarket] = useState(false);
 
   // Fetch individual transactions
   const fetchMemberAccountings = async (memberId: string) => {
@@ -2023,7 +2024,8 @@ export default function FinanceSettlement({
 
   const handleAddIndividualMarket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMarAmount || !selectedMemberForAccountings) return;
+    if (!newMarAmount || !selectedMemberForAccountings || isSubmittingMarket) return;
+    setIsSubmittingMarket(true);
 
     try {
       const response = await fetch("/api/markets", {
@@ -2054,6 +2056,8 @@ export default function FinanceSettlement({
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsSubmittingMarket(false);
     }
   };
 
@@ -3836,9 +3840,12 @@ export default function FinanceSettlement({
                             />
                             <button
                               type="submit"
-                              className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 font-bold text-xs rounded text-white cursor-pointer transition-all shrink-0"
+                              disabled={isSubmittingMarket}
+                              className={`px-3 py-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 font-bold text-xs rounded text-white transition-all shrink-0 ${
+                                isSubmittingMarket ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                              }`}
                             >
-                              ADD EXPENSE
+                              {isSubmittingMarket ? "ADDING..." : "ADD EXPENSE"}
                             </button>
                           </div>
                         </div>
