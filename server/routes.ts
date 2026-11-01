@@ -37,6 +37,7 @@ import { loadDB, saveDB, syncState,
   getCleanMessData,
   deduplicateMembers,
   deduplicateDeposits,
+  deduplicateMeals,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
@@ -2763,15 +2764,25 @@ async function getMealsForCurrentCycle(monthId: string, targetMessId: string = "
     ? or(eq(mealsTable.messId, "default"), sql`${mealsTable.messId} IS NULL`)
     : eq(mealsTable.messId, targetMessId);
 
-  const rawMeals = await drizzleDb.select().from(mealsTable).where(
-    and(
-      eq(mealsTable.monthId, monthId),
-      messCondition
-    )
-  );
+  let rawMeals: any[] = [];
+  try {
+    rawMeals = await drizzleDb.select().from(mealsTable).where(
+      and(
+        eq(mealsTable.monthId, monthId),
+        messCondition
+      )
+    );
+  } catch (err) {
+    rawMeals = [];
+  }
+
+  const sourceMeals = (rawMeals && rawMeals.length > 0)
+    ? rawMeals
+    : (dbConfig.meals?.filter(m => m.monthId === monthId) || []);
+
   const monthObj = dbConfig.months?.find((m: any) => m.id === monthId);
   if (!monthObj) {
-    return rawMeals;
+    return deduplicateMeals(sourceMeals as any[]);
   }
   
   const validDates = new Set<string>();
@@ -2787,7 +2798,8 @@ async function getMealsForCurrentCycle(monthId: string, targetMessId: string = "
     validDates.add(`${year}-${m}-${d}`);
     current.setDate(current.getDate() + 1);
   }
-  return rawMeals.filter(meal => validDates.has(meal.date));
+  const filtered = sourceMeals.filter(meal => validDates.has(meal.date));
+  return deduplicateMeals(filtered as any[]);
 }
 
 router.get("/meals/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
@@ -2923,32 +2935,25 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
     const dbConfig = loadDB(currentMessId);
     if (!dbConfig.meals) dbConfig.meals = [];
     for (const m of meals) {
-      const existingIdx = dbConfig.meals.findIndex(
-        x => x.monthId === monthId && x.memberId === m.memberId && x.date === m.date
-      );
       const lunch = Number(m.lunch) || 0;
       const dinner = Number(m.dinner) || 0;
       const breakfast = Number(m.breakfast) || 0;
-      if (existingIdx !== -1) {
-        dbConfig.meals[existingIdx] = {
-          ...dbConfig.meals[existingIdx],
-          lunch,
-          dinner,
-          breakfast
-        };
-      } else {
-        dbConfig.meals.push({
-          id: generateUUID(),
-          messId: currentMessId,
-          monthId,
-          memberId: m.memberId,
-          date: m.date,
-          lunch,
-          dinner,
-          breakfast
-        });
-      }
+      // Remove any existing records for this member and date to keep it 100% strictly unique
+      dbConfig.meals = dbConfig.meals.filter(
+        x => !(x.monthId === monthId && x.memberId === m.memberId && x.date === m.date)
+      );
+      dbConfig.meals.push({
+        id: generateUUID(),
+        messId: currentMessId,
+        monthId,
+        memberId: m.memberId,
+        date: m.date,
+        lunch,
+        dinner,
+        breakfast
+      });
     }
+    dbConfig.meals = deduplicateMeals(dbConfig.meals);
     saveDB(currentMessId);
   } catch (syncErr) {
     console.warn("Failed to synchronize meal cache:", syncErr);

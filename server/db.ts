@@ -535,6 +535,26 @@ export function deduplicateDuties(duties: Duty[]): Duty[] {
   return result;
 }
 
+export function deduplicateMeals(meals: Meal[]): Meal[] {
+  if (!Array.isArray(meals)) return [];
+  const map = new Map<string, Meal>();
+  for (const m of meals) {
+    if (!m || !m.id) continue;
+    const key = `${m.messId || "default"}_${m.monthId}_${m.memberId}_${m.date}`;
+    if (map.has(key)) {
+      const existing = map.get(key)!;
+      const exTotal = (Number(existing.lunch) || 0) + (Number(existing.dinner) || 0) + (Number(existing.breakfast) || 0);
+      const curTotal = (Number(m.lunch) || 0) + (Number(m.dinner) || 0) + (Number(m.breakfast) || 0);
+      if (curTotal >= exTotal) {
+        map.set(key, m);
+      }
+    } else {
+      map.set(key, m);
+    }
+  }
+  return Array.from(map.values());
+}
+
 export const lastCacheRefreshTimestamp = new Map<string, number>();
 export const lastKnownDbVersion = new Map<string, number>();
 const lastVersionCheckTimestamps = new Map<string, number>();
@@ -611,7 +631,7 @@ export async function refreshDbCache(targetMessId: string = "default") {
         ...m,
         manuallyUnlocked: !!m.manuallyUnlocked
       })) as any[],
-    meals: (mealsList || [])
+    meals: deduplicateMeals((mealsList || [])
       .filter((m: any) => !m.messId || m.messId === "default")
       .map((m: any) => ({
         id: m.id,
@@ -622,7 +642,7 @@ export async function refreshDbCache(targetMessId: string = "default") {
         lunch: Number(m.lunch) || 0,
         dinner: Number(m.dinner) || 0,
         breakfast: Number(m.breakfast) || 0
-      })),
+      }))),
     foodMenus: foodMenusList as any[],
     marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
       ...item,
@@ -868,7 +888,7 @@ export async function initializeDbCache() {
             ...m,
             manuallyUnlocked: !!m.manuallyUnlocked
           })) as any[],
-        meals: (mealsList || []).map((m: any) => ({
+        meals: deduplicateMeals((mealsList || []).map((m: any) => ({
           id: m.id,
           monthId: m.monthId,
           memberId: m.memberId,
@@ -876,7 +896,7 @@ export async function initializeDbCache() {
           lunch: m.lunch,
           dinner: m.dinner,
           breakfast: m.breakfast || 0
-        })),
+        }))),
         foodMenus: foodMenusList as any[],
         marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
           ...item,
@@ -1072,6 +1092,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
     }
 
     if (cache.meals && cache.meals.length > 0) {
+      cache.meals = deduplicateMeals(cache.meals);
       const mealsToInsert = cache.meals.map(item => ({
         id: item.id || generateUUID(),
         messId: targetMessId || "default",
@@ -1417,6 +1438,10 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
   if (target && target.duties) {
     target.duties = deduplicateDuties(target.duties);
+  }
+
+  if (target && target.meals) {
+    target.meals = deduplicateMeals(target.meals);
   }
 
   if (messId === "default") {
