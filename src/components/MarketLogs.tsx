@@ -848,6 +848,29 @@ export default function MarketLogs({
   const totalManagerialCost = holdingsList.reduce((sum, h) => sum + (h.marketSpent || 0), 0);
   const remainingDeposits = totalDeposits - totalManagerialCost;
 
+  // Managerial expenses sorted strictly in descending order by shopping date (e.g. 31, 30, 29...)
+  const sortedManagerExpenses = useMemo(() => {
+    return holdingsList
+      .filter(h => (h.marketSpent || 0) > 0)
+      .map(h => {
+        const match = (h.description || "").match(/^\[(\d{4}-\d{2}-\d{2})\]\s*(.*)$/);
+        const parsedDate = match ? match[1] : (h.date ? (typeof h.date === "string" ? h.date.split("T")[0] : "") : "");
+        const parsedText = match ? match[2] : (h.description || "");
+        return {
+          ...h,
+          parsedDate: parsedDate || "N/A",
+          parsedText: parsedText || "Managerial Market Expense"
+        };
+      })
+      .sort((a, b) => {
+        const dateA = a.parsedDate === "N/A" ? "" : a.parsedDate;
+        const dateB = b.parsedDate === "N/A" ? "" : b.parsedDate;
+        const dateCmp = dateB.localeCompare(dateA); // Descending order: newest date first (31, 30, 29...)
+        if (dateCmp !== 0) return dateCmp;
+        return (b.id || "").localeCompare(a.id || "");
+      });
+  }, [holdingsList]);
+
   // Active real mess members for the selected cycle:
   // "ম্যাচ মেম্বারদের নামগুলো অ্যালফাবেটিক অর্ডারে থাকবে। এখানে শুধু আসল মেম্বাররা থাকবে, কোনো বট, অ্যাডমিন বা টেস্ট ইউজাররা নয়। যাদের মিল হচ্ছে, ডিপোজিট দিচ্ছে, খাচ্ছে বা একদিন হলেও হয়েছে, এমন মেম্বারদের নাম অ্যালফাবেটিক অর্ডারে থাকবে।"
   const activeParticipatingMembers = useMemo(() => {
@@ -1598,18 +1621,13 @@ export default function MarketLogs({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cyan-500/5">
-                  {holdingsList.filter(h => (h.marketSpent || 0) > 0).length === 0 ? (
+                  {sortedManagerExpenses.length === 0 ? (
                     <tr>
                       <td colSpan={isManagerOrAdmin ? 5 : 4} className="py-6 text-center text-slate-500">No managerial expenses logged yet.</td>
                     </tr>
                   ) : (
-                    holdingsList.filter(h => (h.marketSpent || 0) > 0).map((h) => {
+                    sortedManagerExpenses.map((h) => {
                       const buyer = members.find(u => u.id === h.memberId);
-                      
-                      // Parse Date and Text from description
-                      const match = (h.description || "").match(/^\[(\d{4}-\d{2}-\d{2})\]\s*(.*)$/);
-                      const parsedDate = match ? match[1] : "N/A";
-                      const parsedText = match ? match[2] : h.description;
 
                       return (
                         <tr key={h.id} className="hover:bg-cyan-500/5">
@@ -1630,8 +1648,8 @@ export default function MarketLogs({
                               <span>{getRespectDisplayName(currentUser, buyer, respectSenioritySettings) || "Manager"}</span>
                             </div>
                           </td>
-                          <td className={`py-3.5 px-4 font-mono ${isDarkMode ? "text-slate-300" : "text-slate-700 font-medium"}`}>{parsedDate}</td>
-                          <td className={`py-3.5 px-4 font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>{parsedText || "Managerial Market Expense"}</td>
+                          <td className={`py-3.5 px-4 font-mono ${isDarkMode ? "text-slate-300" : "text-slate-700 font-medium"}`}>{h.parsedDate}</td>
+                          <td className={`py-3.5 px-4 font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>{h.parsedText || "Managerial Market Expense"}</td>
                           <td className={`py-3.5 px-4 text-right font-mono ${isDarkMode ? "text-cyan-400 font-bold" : "text-cyan-700 font-black"}`}>
                             ৳ {h.marketSpent}
                           </td>
