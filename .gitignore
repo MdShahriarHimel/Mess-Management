@@ -29,3 +29,27 @@ android-app/.idea/
 data/
 *.json.bak
 database_backup*.json
+
+# AI Studio Chat Uploads (User screenshots from chat)
+public/assets/aistudio/
+
+# Temporary patch, fix & scratch test scripts (Internal dev/debugging)
+check-*.*
+fix_*.*
+patch*.*
+test_*.*
+test-*.*
+get_*.*
+read-*.*
+revert.*
+rewrite_sync.*
+find-*.*
+transform_*.*
+update_exports.*
+timing.patch
+enhance_glows.py
+export_functions.js
+old_sync.ts
+wait.js
+test.css
+fix_summary.txt

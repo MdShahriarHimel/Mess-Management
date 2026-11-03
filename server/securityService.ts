@@ -337,7 +337,11 @@ function saveSessionVersions(): void {
 }
 
 export function getSessionVersion(memberId: string): string {
-  const versions = loadSessionVersions();
+  let versions = loadSessionVersions();
+  if (!versions[memberId]) {
+    sessionVersionsCache = null;
+    versions = loadSessionVersions();
+  }
   if (!versions[memberId]) {
     versions[memberId] = "v1";
     saveSessionVersions();
@@ -425,8 +429,14 @@ export function validateActiveSession(
       return { valid: false, reason: "User ID mismatch in session token" };
     }
 
-    const sessions = loadActiveSessions();
-    const session = sessions[sessionId];
+    let sessions = loadActiveSessions();
+    let session = sessions[sessionId];
+
+    if (!session) {
+      activeSessionsCache = null;
+      sessions = loadActiveSessions();
+      session = sessions[sessionId];
+    }
 
     if (!session) {
       return { valid: false, reason: "Active session not found or terminated" };

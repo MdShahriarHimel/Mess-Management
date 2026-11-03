@@ -22,7 +22,8 @@ import {
   syncState,
   pendingSyncPromises
 } from "./db.js";
-import { authMiddleware, loadMesses, loadAdminControls, saveAdminControls } from "./routes.js";
+import { authMiddleware } from "./middleware/authMiddleware.js";
+import { loadMesses, loadAdminControls, saveAdminControls } from "./routes.js";
 import { getSecurityDashboardData } from "./securityService.js";
 import { 
   members as membersTable,
