@@ -51,6 +51,7 @@ import {
   generateDailyBackupPayload 
 } from "./backupCron.js";
 import { loadPlatformControls, savePlatformControls, isPlatformOwner } from "./founder.js";
+import { sanitizeMemberUpdatePayload } from "../src/schemas/apiValidationSchemas.js";
 import { db as drizzleDb, pool } from "../src/db/index.js";
 import { 
   foodKnowledgeBase, 
@@ -1657,7 +1658,6 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
 // Update Member (Self, Admin, Super User, Assistant Super User, Manager)
 router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const updates: Partial<Member> = req.body;
   const db = loadDB();
   const index = db.members.findIndex(m => m.id === id);
 
@@ -1672,6 +1672,14 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
   const isSelf = req.user!.id === id;
   const isMessAdmin = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
   const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
+
+  // Strict DTO Allowlist Validation (OWASP Gate 2 BOPLA / Mass Assignment Defense)
+  const sanitizeResult = sanitizeMemberUpdatePayload(req.body, isSelf, isActorUltimateAdmin, isMessAdmin);
+  if (!sanitizeResult.success) {
+    res.status(400).json({ error: sanitizeResult.error });
+    return;
+  }
+  const updates: Partial<Member> = sanitizeResult.data;
 
   // Ultimate admin account protection
   if (isTargetUltimateAdmin && !isActorUltimateAdmin) {
@@ -2561,8 +2569,8 @@ router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequ
     return;
   }
 
-  if (proposal.status === "APPLIED") {
-    res.status(400).json({ error: "Proposal has already been applied." });
+  if (proposal.status === "APPLIED" || proposal.status === "REJECTED") {
+    res.status(400).json({ error: `Proposal is already closed (Status: ${proposal.status}).` });
     return;
   }
 
@@ -3774,6 +3782,12 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
   }
 
   const hasMarketPermission = checkAdminPermission(req, "canAddMarkets");
+  const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ADMIN, UserRole.MANAGER].includes(req.user!.role);
+
+  if (!isManagerOrAdmin && original.memberId !== req.user!.id) {
+    res.status(403).json({ error: "Forbidden: You are only permitted to delete your own market expenses." });
+    return;
+  }
 
   // Apply standard member rules if the user is a normal member OR a restricted Admin acting as a member
   const actsAsMember = (req.user!.role === UserRole.MEMBER) || (req.user!.role === UserRole.ADMIN && !hasMarketPermission);

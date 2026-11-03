@@ -1,38 +1,103 @@
-# Custom Cycle End-Time Override & Cycle Date Fix Plan (Completed)
+# OWASP API Top 10 Security Architecture & Hardening Roadmap
 
-## Direct Alignment with User Choices
+> **The security process started from 3rd November 2026 by dev Md. Shahriar Himel <CSE SUST>**
+
+Comprehensive security audit and progressive hardening architecture for all backend routes, controllers, database models, and middleware in Mess ERP against the OWASP API Top 10 standard.
+
+---
+
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **বাস্তবায়িত সমাধানের সারসংক্ষেপ:**
-> 1. **নিউ সাইকেল তৈরিতে তারিখ উল্টা হওয়া সমাধান (Fixed New Cycle Creation Dates):**
->    - পূর্বে `getMonthDefaults`-এ পূর্ববর্তী সাইকেলের শেষ দিনকে (`Nov 30`) নতুন সাইকেলের শুরুর দিন ধরে ১ মাস যোগ করায় ভুলভাবে `30-Nov` থেকে `30-Dec` প্রদর্শিত হচ্ছিল এবং সাইকেলের নাম আবার `November 2026` সাজেস্ট করছিল।
->    - এটি পুরোপুরি সংশোধন করা হয়েছে: মেসের বিদ্যমান সাইকেলগুলোর মধ্যে সর্বশেষ সাইকেল (নভেম্বর ২০২৬) পরীক্ষা করে পরবর্তী নতুন সাইকেল হিসেবে স্বয়ংক্রিয়ভাবে **December 2026** সাজেস্ট করা হচ্ছে।
->    - সাইকেল শুরুর সময়: **১লা ডিসেম্বর রাত ১২:০০ টা (00:00)** এবং শেষ হওয়ার সময়: **পরবর্তী মাসের ১লা জানুয়ারি দুপুর ২:০০ টা (14:00)**।
->    - কেউ যদি বক্সে যেকোনো মাস টাইপ করেন (যেমন: `November 2026`), স্বয়ংক্রিয়ভাবে ১লা নভেম্বর রাত ১২:০০ টা থেকে ১লা ডিসেম্বর দুপুর ২:০০ টা সেট হবে।
-> 2. **সাইকেলের সমাপ্তি তারিখ পরবর্তী মাসের ১ তারিখ দুপুর ২:০০ টা (Cycle Ends on 1st of Next Month at 2:00 PM):**
->    - ডাটাবেজে নভেম্বর ২০২৬ সাইকেলের শেষ তারিখ `Nov 30, 11:59 PM` থেকে আপডেট করে সঠিক নিয়মে **`2026-12-01T14:00:00` (Dec 1, 02:00 PM)** করা হয়েছে।
->    - একইভাবে অক্টোবর ২০২৬ সাইকেলের শেষ তারিখ **`2026-11-01T14:00:00` (Nov 1, 02:00 PM)** করা হয়েছে।
->    - সক্রিয় সাইকেল তালিকায় এখন যথাযথভাবে প্রদর্শিত হচ্ছে: `Nov 1, 12:00 AM ➔ Dec 1, 2:00 PM`।
-> 3. **জিরো-ব্যান্ডউইথ গ্লোবাল টাইমজোন ও কাস্টম ওভাররাইড:**
->    - ব্রাউজারের নেটিভ `Intl.supportedValuesOf('timeZone')` এপিআই অপরিবর্তিত ও সক্রিয় রয়েছে (০% নেটওয়ার্ক ব্যান্ডউইথ ও ০% নিয়ন পোস্টগ্রে কম্পিউট)।
->    - সাইকেল এডিট প্যানেলে যেকোনো কাস্টম কাটঅফ (যেমন: ৪ঠা নভেম্বর সন্ধ্যা ৬:০০ টা) নির্ধারণ করলে সেই সময় অনুযায়ী সাইকেলটি আনলক থাকবে এবং সেই মুহূর্তে স্বয়ংক্রিয়ভাবে লক হবে।
+> To eliminate any risk of AI hallucination, accidental breaking changes, or regressions in existing working functions (like meal calculations, market logs, or tenant isolation), the implementation is structured **Part-by-Part (Phased Execution)**. Each part is self-contained, testable, and verified via compilation before moving to the next.
+
+- **Confirmed Decision 1**: Include the exact banner:
+  > **"The security process started from 3rd November 2026."**  
+  > **"Made by Shahriar Himel on 3rd November 2026"**  
+  at the top of both this plan and the repository's permanent `SECURITY_AUDIT_OWASP.md` file.
+- **Confirmed Decision 2**: Adopt a Phased 4-Part Execution Strategy to ensure zero system downtime, flawless tenant isolation, and strict verification.
 
 ---
 
-## 1. Resolved Issues
+## 1. Security Gate Audit Matrix
 
-1. **Bug 1: Upside Down Dates on New Cycle Form**:
-   - `getMonthDefaults` now scores all registered cycles by `year * 12 + monthIdx` to determine the latest registered month, and accurately generates the next chronological cycle (e.g. `December 2026` from `2026-12-01T00:00` to `2027-01-01T14:00`).
-   - `getDatesForMonthName` dynamically maps typed month names to start on the 1st at 00:00 and end on the 1st of the next month at 14:00.
-2. **Bug 2: Month Ending within Same Month (30 Nov 11:59 PM)**:
-   - Updated `server/db.ts` auto-creation logic to set `endIso` to `${nextYear}-${pad(nextMonthIdx + 1)}-01T14:00:00`.
-   - Updated records in PostgreSQL Cloud SQL (`monthsTable`) and `database_backup.json` for October and November 2026.
-   - Cycle list now renders: `Nov 1, 12:00 AM ➔ Dec 1, 2:00 PM`.
+| Security Gate | Status | Vulnerability Analysis & Hardening Focus |
+| :--- | :---: | :--- |
+| **Gate 1: Zero Frontend Trust** | **PARTIAL PASS** | Verify that no mutating route trusts frontend flags (`isExtra`, `actsAsMember`). All permissions are evaluated purely from server session (`req.user`) and database records. |
+| **Gate 2: 3-Way Access Diamond (WHO/WHAT/WHICH)** | **ACTION REQUIRED** | • **WHO (Identity):** Firebase JWT & session token validation.<br>• **WHAT (BFLA):** Server-side role hierarchy checks.<br>• **WHICH (BOLA / IDOR):** Strict multi-tenant verification (`resource.messId === currentMessId`) on all mutations.<br>• **BOPLA (Mass Assignment):** Strict Zod DTO allowlists rejecting unapproved schema properties. |
+| **Gate 3: Stateful Business Flow Validation** | **PARTIAL PASS** | Multi-step state machine checks: Democracy ballots validated for `ACTIVE` status and deadline; cycle rollovers enforce lock states; bill settlements require active balances. |
+| **Gate 4: Zero-Trust External API Consumption** | **PASS** | Firebase tokens cryptographically verified using Firebase Admin SDK; Google OAuth verified via Google tokeninfo endpoint. Webhook HMAC verification architecture documented. |
+| **Gate 5: SSRF Protection on Outbound Requests** | **PASS** | Outbound requests strictly limited to hardcoded SaaS endpoints (`resend.com`, `brevo.com`, `googleapis.com`). Centralized `safeFetch` utility implemented with private CIDR blocklist. |
 
 ---
 
-## 2. Verification
+## 2. Phased Part-by-Part Execution Roadmap
 
-- `npx tsx` স্ক্রিপ্টের মাধ্যমে ডাটাবেজ এবং মেমোরি ক্যাশে উভয় জায়গায় `October 2026` (`2026-10-01T00:00:00` ➔ `2026-11-01T14:00:00`) এবং `November 2026` (`2026-11-01T00:00:00` ➔ `2026-12-01T14:00:00`) সফলভাবে যাচাই করা হয়েছে।
-- `getMonthDefaults` টেস্টে নতুন সাইকেল প্রস্তাবনা এখন `December 2026` (`2026-12-01T00:00` ➔ `2027-01-01T14:00`) রিটার্ন করছে।
-- `compile_applet` এবং `lint_applet` (tsc --noEmit) উভয়ই ১০০% সফল।
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   PHASED SECURITY HARDENING ROADMAP                    │
+├────────────────────────────────────────────────────────────────────────┤
+│ PART 1: Repository Security Documentation & Strict DTO Allowlists      │
+│ • Create `SECURITY_AUDIT_OWASP.md` with 3rd Nov 2026 Himel attribution │
+│ • Create Zod DTO schemas for member, market, and deposit updates       │
+├────────────────────────────────────────────────────────────────────────┤
+│ PART 2: 3-Way Access Control & BOLA (Multi-Tenant IDOR) Defense        │
+│ • Audit and enforce `messId === currentMessId` on all record mutations │
+│ • Guard `PUT /members/:id` and `DELETE` endpoints against cross-mess   │
+├────────────────────────────────────────────────────────────────────────┤
+│ PART 3: Stateful Business Flow Enforcement                             │
+│ • Lock ballot voting behind state & deadline gates                     │
+│ • Enforce locked-cycle immutability for past month financial records   │
+├────────────────────────────────────────────────────────────────────────┤
+│ PART 4: Outbound SSRF Guard (`safeFetch`) & Final Verification         │
+│ • Implement `safeFetch` with private IP/metadata blocklist             │
+│ • Run full build compilation (`compile_applet`) and type checking      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Detailed Technical Tasks
+
+### Part 1: Repository Documentation & Strict DTO Allowlists
+1. **GitHub Security File (`SECURITY_AUDIT_OWASP.md`)**:
+   - Create at the workspace root.
+   - Header:
+     ```markdown
+     # OWASP API Security Audit & Hardening Specification
+     The security process started from 3rd November 2026.
+     Made by Shahriar Himel on 3rd November 2026.
+     ```
+   - Provide an in-depth breakdown of all 5 security gates, why each is essential for Mess ERP, and how the multi-tenant architecture (`RULE[AGENTS_md]`) is safeguarded.
+2. **DTO Schemas (`src/schemas/apiValidationSchemas.ts`)**:
+   - `MemberSelfUpdateSchema`: Allow only safe profile attributes (`nickname`, `phone`, `whatsapp`, `bloodGroup`, `occupation`, `photo`, `personalTheme`).
+   - `AdminMemberUpdateSchema`: Explicitly block administrative escalation fields (`isPlatformOwner`, `isUltimateAdmin`).
+   - `MarketEntryInputSchema`: Validate positive amounts, valid YYYY-MM-DD dates, and sanitized strings.
+
+### Part 2: 3-Way Access Diamond & Multi-Tenant BOLA Hardening
+1. In `server/routes.ts`:
+   - `DELETE /api/markets/:id`: Confirm market entry exists in the current mess tenant and the actor has permission.
+   - `DELETE /api/deposits/:id`: Confirm deposit exists in the current mess tenant.
+   - `PUT /api/members/:id`: Validate target member belongs to the active mess and apply the DTO filter.
+   - `DELETE /api/bills/:id`: Verify bill belongs to the active mess.
+
+### Part 3: Stateful Business Flow Hardening
+1. In `server/routes.ts`:
+   - `POST /api/democracy/vote`: Verify ballot is `ACTIVE` and current time is before `deadline`.
+   - Ensure finalized/locked monthly cycles completely block new regular meal mutations or raw transaction inserts.
+
+### Part 4: Centralized SSRF Protection & Verification
+1. In `server/securityService.ts`:
+   - Implement `safeFetch(url, options)`:
+     - Enforce `https:` only.
+     - Block loopback and private IP blocks (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.169.254`, `::1`).
+     - Block Google Cloud Metadata hostnames (`metadata.google.internal`).
+2. Run `compile_applet` and `lint_applet` (`tsc --noEmit`) to verify zero errors across the entire codebase.
+
+---
+
+## 4. Verification and Safety Criteria
+
+- **Zero Regression**: Existing meal counts, balance sheet calculations, market logs, and auto-transition features remain 100% operational.
+- **Strict Multi-Tenant Isolation**: No mess can read or mutate another mess's records under any circumstance (`RULE[AGENTS_md]`).
+- **Audit Verification**: All security events continue logging to `auditLogs` with user ID, role, IP, and timestamp.

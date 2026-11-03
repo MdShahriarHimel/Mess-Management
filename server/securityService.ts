@@ -779,3 +779,69 @@ export function getSecurityDashboardData(): {
     suspiciousPatterns
   };
 }
+
+// ============================================================================
+// SSRF PROTECTION UTILITY (OWASP API Top 10 Gate 5)
+// ============================================================================
+
+const BLOCKED_IP_PATTERNS = [
+  /^127\./,                         // 127.0.0.0/8 (Loopback)
+  /^10\./,                          // 10.0.0.0/8 (Private network)
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12 (Private network)
+  /^192\.168\./,                    // 192.168.0.0/16 (Private subnet)
+  /^169\.254\./,                    // 169.254.0.0/16 (Link-local / Cloud metadata)
+  /^0\./,                           // Current network
+  /^::1$/,                          // IPv6 loopback
+  /^fc00:/i,                        // IPv6 unique local
+  /^fe80:/i                         // IPv6 link-local
+];
+
+const BLOCKED_HOSTNAMES = [
+  "localhost",
+  "metadata.google.internal",
+  "169.254.169.254",
+  "instance-data"
+];
+
+/**
+ * Validates a target URL against SSRF attacks.
+ * Rejects non-HTTPS protocols, private/loopback IP ranges, and cloud metadata hostnames.
+ */
+export function isSafeOutboundUrl(targetUrl: string): { safe: boolean; reason?: string } {
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.protocol !== "https:") {
+      return { safe: false, reason: "Insecure protocol: Only HTTPS outbound requests are allowed." };
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Check blocked hostnames
+    if (BLOCKED_HOSTNAMES.includes(hostname) || hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+      return { safe: false, reason: `Blocked destination hostname: ${hostname}` };
+    }
+
+    // Check IP patterns
+    for (const pattern of BLOCKED_IP_PATTERNS) {
+      if (pattern.test(hostname)) {
+        return { safe: false, reason: `Blocked private or loopback destination IP: ${hostname}` };
+      }
+    }
+
+    return { safe: true };
+  } catch (err: any) {
+    return { safe: false, reason: `Malformed URL: ${err?.message || "Invalid URL"}` };
+  }
+}
+
+/**
+ * Secure HTTP fetch client enforcing OWASP SSRF Gate defenses.
+ */
+export async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  const check = isSafeOutboundUrl(url);
+  if (!check.safe) {
+    throw new Error(`SSRF Blocked: ${check.reason}`);
+  }
+  return fetch(url, init);
+}
+
