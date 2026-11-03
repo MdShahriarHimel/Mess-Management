@@ -798,25 +798,6 @@ export async function initializeDbCache() {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[Database Connection] Attempt ${attempt} of ${maxRetries} to connect to PostgreSQL Cloud SQL...`);
-      try {
-        await db.execute(sql`
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS institution text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS department text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS education_type text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS admission_session text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS seniority_year text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS gender text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS manual_title text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS room_label_id text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS room_label text;
-          ALTER TABLE members ADD COLUMN IF NOT EXISTS room_rent real;
-          ALTER TABLE meals ADD COLUMN IF NOT EXISTS mess_id text DEFAULT 'default';
-          ALTER TABLE meals ADD COLUMN IF NOT EXISTS breakfast double precision DEFAULT 0;
-          CREATE UNIQUE INDEX IF NOT EXISTS meals_unique_member_date_idx ON meals (mess_id, month_id, member_id, date);
-        `);
-      } catch (colErr) {
-        console.warn("Notice: Column migration for academic/respect fields on members table:", colErr);
-      }
       [
         membersList,
         monthsList,

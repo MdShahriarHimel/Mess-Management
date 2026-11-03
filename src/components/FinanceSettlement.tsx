@@ -12,7 +12,7 @@ import * as XLSX from "xlsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
-import { getAuthToken } from "../lib/authHeader.ts";
+import { getAuthToken, getAuthHeader } from "../lib/authHeader.ts";
 import { deduplicateMembersList, sortMembersAlphabetically } from "../utils/memberUtils.ts";
 
 interface FinanceSettlementProps {
@@ -210,11 +210,16 @@ export default function FinanceSettlement({
 
   useEffect(() => {
     fetch("/api/settings", {
-      headers: { "Authorization": `Bearer ${authToken}` }
+      headers: getAuthHeader(currentUser)
     })
-      .then(res => res.json())
+      .then(async res => {
+        if (!res.ok) return null;
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) return null;
+        return res.json().catch(() => null);
+      })
       .then(data => {
-        if (data) {
+        if (data && typeof data === "object") {
           setMessSettings(data);
           if (Array.isArray(data.roomLabels)) {
             setRoomLabels(data.roomLabels);

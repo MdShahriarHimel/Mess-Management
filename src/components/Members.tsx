@@ -14,7 +14,7 @@ import { ColorPalettePicker } from "../App.tsx";
 import { processProfilePhoto } from "../utils/imageOptimizer";
 import { getRespectDisplayName } from "../utils/respectHelper.js";
 import { RefreshButton } from "./RefreshButton.tsx";
-import { getAuthToken } from "../lib/authHeader.ts";
+import { getAuthToken, getAuthHeader } from "../lib/authHeader.ts";
 import { deduplicateMembersList, sortMembersAlphabetically } from "../utils/memberUtils.ts";
 import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
 
@@ -204,11 +204,16 @@ export default function Members({
 
   React.useEffect(() => {
     fetch("/api/settings", {
-      headers: { "Authorization": `Bearer ${authToken}` }
+      headers: getAuthHeader(currentUser)
     })
-      .then(res => res.json())
+      .then(async res => {
+        if (!res.ok) return null;
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) return null;
+        return res.json().catch(() => null);
+      })
       .then(data => {
-        if (data) {
+        if (data && typeof data === "object") {
           if (data.roleAnimations) setRoleAnimations(data.roleAnimations);
           if (data.adminVisibility) setAdminVisibility(data.adminVisibility);
           if (Array.isArray(data.roomLabels)) setRoomLabels(data.roomLabels);

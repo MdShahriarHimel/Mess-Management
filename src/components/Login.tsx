@@ -328,13 +328,19 @@ export default function Login({ onLoginSuccess, isDarkMode, erpBranding, customi
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idToken: urlIdToken, accessToken: urlAccessToken })
         })
-          .then(res => res.json())
+          .then(async res => {
+            const data = await res.json().catch(() => ({ error: "Server returned invalid response" }));
+            if (!res.ok) {
+              throw new Error(data.error || `Authentication failed (${res.status})`);
+            }
+            return data;
+          })
           .then(data => {
-            if (data.token && data.user && isMounted) {
+            if (data?.token && data?.user && isMounted) {
               window.history.replaceState(null, "", window.location.pathname);
               onLoginSuccess(data.token, data.user, true);
             } else if (isMounted) {
-              setError(data.error || "Failed to log in with selected Google account.");
+              setError(data?.error || "Failed to log in with selected Google account.");
             }
           })
           .catch(err => {

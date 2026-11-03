@@ -311,9 +311,14 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     fetch("/api/settings", {
       headers: { "Authorization": `Bearer ${effectiveAuthToken}` }
     })
-      .then(res => res.json())
+      .then(async res => {
+        if (!res.ok) return null;
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) return null;
+        return res.json().catch(() => null);
+      })
       .then(data => {
-        if (data) {
+        if (data && typeof data === "object") {
           if (Array.isArray(data.roomLabels)) {
             setRoomList(data.roomLabels);
           }
