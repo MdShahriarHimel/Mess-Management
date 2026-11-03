@@ -2723,3 +2723,32 @@ export function generateUniqueMessCode(existingMesses: any[]): string {
   return code;
 }
 
+const ADMIN_CONTROLS_FILE = path.join(DB_DIR, "admin_controls.json");
+
+export function loadAdminControls(): { controls: Record<string, any> } {
+  const defaultControls = { controls: {} };
+  try {
+    if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
+      const data = fs.readFileSync(ADMIN_CONTROLS_FILE, "utf-8");
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return { ...defaultControls, ...parsed };
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error loading admin controls:", e);
+  }
+  return defaultControls;
+}
+
+export function saveAdminControls(data: any): void {
+  try {
+    writeAndPersistFile("admin_controls.json", JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Error saving admin controls:", e);
+  }
+}
+
+

@@ -12,8 +12,7 @@ Comprehensive security audit and progressive hardening architecture for all back
 > To eliminate any risk of AI hallucination, accidental breaking changes, or regressions in existing working functions (like meal calculations, market logs, or tenant isolation), the implementation is structured **Part-by-Part (Phased Execution)**. Each part is self-contained, testable, and verified via compilation before moving to the next.
 
 - **Confirmed Decision 1**: Include the exact banner:
-  > **"The security process started from 3rd November 2026."**  
-  > **"Made by Shahriar Himel on 3rd November 2026"**  
+  > **The security process started from 3rd November 2026 by dev Md. Shahriar Himel <CSE SUST>**  
   at the top of both this plan and the repository's permanent `SECURITY_AUDIT_OWASP.md` file.
 - **Confirmed Decision 2**: Adopt a Phased 4-Part Execution Strategy to ensure zero system downtime, flawless tenant isolation, and strict verification.
 
