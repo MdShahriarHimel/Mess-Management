@@ -396,29 +396,32 @@ const VoucherDetailsCell: React.FC<{
   return (
     <td 
       ref={cellRef}
-      className="py-3.5 px-4 max-w-[200px] relative group"
+      className="py-2.5 px-2 max-w-[125px] sm:max-w-[140px] relative group"
       onMouseEnter={handleCellMouseEnter}
       onMouseLeave={handleCellMouseLeave}
     >
       <div 
         onClick={handleClick}
-        className="cursor-pointer transition-colors flex items-center justify-between gap-1.5"
+        className="cursor-pointer transition-colors flex items-center justify-between gap-1"
         title="ক্লিক করে বা মাউস রেখে আইটেম ও খরচের ব্রেকডাউন দেখুন"
       >
-        <div className={`font-semibold truncate ${isDarkMode ? "text-slate-100 group-hover:text-cyan-300" : "text-slate-900 group-hover:text-cyan-700"}`}>
+        <div className={`font-semibold truncate max-w-[95px] sm:max-w-[110px] text-xs ${isDarkMode ? "text-slate-100 group-hover:text-cyan-300" : "text-slate-900 group-hover:text-cyan-700"}`}>
           {desc}
         </div>
-        <span className="text-[10px] text-cyan-400 opacity-60 group-hover:opacity-100 shrink-0">
+        <span className="text-[10px] text-cyan-400 opacity-60 group-hover:opacity-100 shrink-0" title="বিস্তারিত দেখুন">
           🔍
         </span>
       </div>
 
       {entry.quantity && (
-        <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-          isDarkMode 
-            ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30" 
-            : "bg-cyan-50 text-cyan-800 border border-cyan-200"
-        }`}>
+        <span 
+          className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold truncate max-w-[110px] ${
+            isDarkMode 
+              ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30" 
+              : "bg-cyan-50 text-cyan-800 border border-cyan-200"
+          }`}
+          title={`Qty: ${entry.quantity}`}
+        >
           Qty: {entry.quantity}
         </span>
       )}
@@ -2539,15 +2542,15 @@ export default function MarketLogs({
           </h3>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs table-auto">
               <thead>
-                <tr className={`border-b ${isDarkMode ? "bg-slate-950/60 border-slate-800 text-cyan-300" : "bg-slate-100 border-slate-200 text-slate-800"} font-extrabold`}>
-                  <th className="py-3 px-4">Purchaser</th>
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Items / Details</th>
-                  <th className="py-3 px-4 text-right">Amount (৳)</th>
-                  <th className="py-3 px-4 text-center">Receipt</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr className={`border-b ${isDarkMode ? "bg-slate-950/60 border-slate-800 text-cyan-300" : "bg-slate-100 border-slate-200 text-slate-800"} font-extrabold text-[11px]`}>
+                  <th className="py-2.5 px-2">Purchaser</th>
+                  <th className="py-2.5 px-1.5 text-center">Date</th>
+                  <th className="py-2.5 px-2 max-w-[130px]">Items / Details</th>
+                  <th className="py-2.5 px-2 text-right whitespace-nowrap">Amount (৳)</th>
+                  <th className="py-2.5 px-1 text-center whitespace-nowrap">Receipt</th>
+                  <th className="py-2.5 px-1.5 text-right w-8">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cyan-500/5">
@@ -2572,39 +2575,41 @@ export default function MarketLogs({
                     const buyer = members.find(u => u.id === m.memberId);
                     return (
                       <tr key={m.id} className="hover:bg-cyan-500/5">
-                        <td className={`py-3.5 px-4 font-bold ${isDarkMode ? "text-cyan-300" : "text-slate-900"}`}>
-                          <div className="flex items-center gap-2">
+                        <td className={`py-2.5 px-2 font-bold ${isDarkMode ? "text-cyan-300" : "text-slate-900"}`}>
+                          <div className="flex items-center gap-1.5">
                             {buyer?.photo ? (
                               <img 
                                 src={buyer.photo} 
                                 alt={buyer.nickname} 
-                                className="w-7 h-7 rounded-full object-cover border border-cyan-500/20 shrink-0"
+                                className="w-6 h-6 rounded-full object-cover border border-cyan-500/20 shrink-0"
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <div className="w-7 h-7 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-[10px] uppercase shrink-0 font-display">
+                              <div className="w-6 h-6 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-[9px] uppercase shrink-0 font-display">
                                 {(buyer?.nickname || "??").slice(0, 2)}
                               </div>
                             )}
-                            <div>
-                              <span>{getRespectDisplayName(currentUser, buyer, respectSenioritySettings) || "Unknown"}</span>
+                            <div className="min-w-0">
+                              <span className="truncate block max-w-[70px] sm:max-w-[85px] text-xs font-bold" title={getRespectDisplayName(currentUser, buyer, respectSenioritySettings)}>
+                                {getRespectDisplayName(currentUser, buyer, respectSenioritySettings) || "Unknown"}
+                              </span>
                               {m.isExtra && (
-                                <span className="block text-[8px] uppercase tracking-wider font-extrabold text-orange-500 mt-0.5">
-                                  EXTRA SHOP
+                                <span className="block text-[7.5px] uppercase tracking-wider font-extrabold text-orange-500">
+                                  EXTRA
                                 </span>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 font-mono text-xs">
+                        <td className="py-2.5 px-1.5 font-mono text-xs text-center">
                           {m.coveredDates && Array.isArray(m.coveredDates) && m.coveredDates.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5 max-w-[130px]">
+                            <div className="flex flex-wrap gap-1 max-w-[80px] justify-center">
                               {m.coveredDates.map((d: string) => {
                                 const dayOnly = d.split("-")[2] || d;
                                 return (
                                   <span 
                                     key={d} 
-                                    className={`inline-flex items-center justify-center min-w-[26px] px-2 py-0.5 rounded text-[11px] font-black tracking-wide border shadow-sm ${
+                                    className={`inline-flex items-center justify-center min-w-[20px] px-1 py-0.5 rounded text-[10px] font-black tracking-wide border shadow-xs ${
                                       isDarkMode 
                                         ? "bg-slate-800/90 text-cyan-300 border-cyan-500/40" 
                                         : "bg-slate-100 text-slate-900 border-slate-300"
@@ -2618,7 +2623,7 @@ export default function MarketLogs({
                             </div>
                           ) : (
                             <span 
-                              className={`inline-flex items-center justify-center min-w-[26px] px-2 py-0.5 rounded text-[11px] font-black tracking-wide border shadow-sm ${
+                              className={`inline-flex items-center justify-center min-w-[20px] px-1 py-0.5 rounded text-[10px] font-black tracking-wide border shadow-xs ${
                                 isDarkMode 
                                   ? "bg-slate-800/90 text-cyan-300 border-cyan-500/40" 
                                   : "bg-slate-100 text-slate-900 border-slate-300"
@@ -2629,28 +2634,28 @@ export default function MarketLogs({
                           )}
                         </td>
                         <VoucherDetailsCell entry={m} isDarkMode={isDarkMode} currentUser={currentUser} />
-                        <td className={`py-3.5 px-4 text-right font-black font-mono text-sm ${
+                        <td className={`py-2.5 px-2 text-right font-black font-mono text-xs whitespace-nowrap ${
                           isDarkMode ? "text-emerald-300" : "text-emerald-700"
                         }`}>
                           ৳ {m.amount}
                         </td>
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-2.5 px-1 text-center whitespace-nowrap">
                           {m.receiptUrl ? (
                             <button
                               onClick={() => { setActiveReceipt(m.receiptUrl); }}
-                              className={`px-2 py-1 rounded-md font-bold text-[10px] cursor-pointer inline-flex items-center gap-1 transition-all ${
+                              className={`px-1.5 py-0.5 rounded-md font-bold text-[9.5px] cursor-pointer inline-flex items-center gap-0.5 transition-all ${
                                 isDarkMode 
                                   ? "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40" 
                                   : "bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border-2 border-cyan-600 shadow-xs"
                               }`}
                             >
-                              <Eye size={12} strokeWidth={2.6} color={isDarkMode ? "#67e8f9" : "#0e7490"} className="shrink-0" /> VIEW
+                              <Eye size={11} strokeWidth={2.4} color={isDarkMode ? "#67e8f9" : "#0e7490"} className="shrink-0" /> VIEW
                             </button>
                           ) : (
-                            <span className={`font-mono text-[11px] font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>None</span>
+                            <span className={`font-mono text-[10px] font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>None</span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-2.5 px-1.5 text-right w-8">
                           {(isManagerOrAdmin || m.memberId === currentUser.id) && (
                             <button
                               onClick={() => handleDeleteMarket(m.id)}
@@ -2661,7 +2666,7 @@ export default function MarketLogs({
                               }`}
                               title="Delete log"
                             >
-                              <Trash2 size={16} strokeWidth={2.6} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
+                              <Trash2 size={13} strokeWidth={2.4} color={isDarkMode ? "#fb7185" : "#b91c1c"} className="shrink-0" />
                             </button>
                           )}
                         </td>
