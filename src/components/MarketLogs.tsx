@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { 
   ShoppingCart, Calendar, Plus, Upload, Trash2, Eye, X, Check, FileText, Sparkles, UserPlus,
   ChevronLeft, ChevronRight, CalendarPlus, Clock, ArrowRight, Printer, Download, Search, CheckCircle2, Shield,
@@ -48,6 +49,486 @@ interface MarketLogsProps {
   systemWebsiteUrl?: string;
   systemBrandingName?: string;
 }
+
+interface ParsedItem {
+  name: string;
+  originalText?: string;
+  amount: number;
+  emoji: string;
+  category?: string;
+  quantity?: string;
+}
+
+// Client-side memoized cache for parsed vouchers
+const clientVoucherCache = new Map<string, { items: ParsedItem[]; total: number; source: string }>();
+
+// Instant client regex dictionary for sub-millisecond local responses
+const CLIENT_EMOJI_MAP: [RegExp, string, string][] = [
+  [/(গরু|বিফ|cow|beef|goru|guru|গোশত)/i, "🥩", "গরুর মাংস"],
+  [/(ছাগল|খাসি|mutton|goat|chagol|sagol)/i, "🍖", "খাসির মাংস"],
+  [/(মুরগি|মুরগী|চিকেন|chicken|murgi|morgi|broiler|সোনালী)/i, "🍗", "মুরগির মাংস"],
+  [/(চিংড়ি|চিংড়ি|chingri|prawn|shrimp)/i, "🦐", "চিংড়ি মাছ"],
+  [/(ফুলকপি|ফুল\s*কপি|fulkopi|phulkopi|cauliflower)/i, "🥦", "ফুলকপি"],
+  [/(লালশাক|লাল\s*শাক|lalshak|lal\s*shak)/i, "🥬", "লালশাক"],
+  [/(বেগুন|begun|eggplant|brinjal)/i, "🍆", "বেগুন"],
+  [/(মাছ|fish|mach|rui|ilish|কাতলা|পাঙ্গাস|তেলাপিয়া|তেলাপিয়া)/i, "🐟", "মাছ"],
+  [/(ডিম|egg|dim|anda|আন্ডা)/i, "🥚", "ডিম"],
+  [/(আলু|potato|alu|aloo)/i, "🥔", "আলু"],
+  [/(পেঁয়াজ|পিঁয়াজ|পিয়াজ|onion|peyaj|peaj|pyaj)/i, "🧅", "পেঁয়াজ"],
+  [/(পেঁপে|পেপে|papaya|pepe)/i, "🍈", "পেঁপে"],
+  [/(মরিচ|কাঁচামরিচ|কাচামরিচ|chili|morich)/i, "🌶️", "কাঁচামরিচ"],
+  [/(রসুন|garlic|roshun|roson)/i, "🧄", "রসুন"],
+  [/(আদা|ginger|ada)/i, "🫚", "আদা"],
+  [/(তেল|সয়াবিন|oil|tel|সরিষার)/i, "🛢️", "ভোজ্যতেল"],
+  [/(ডাল|dal|daal|lentil)/i, "🥣", "ডাল"],
+  [/(চাল|ভাত|rice|chal|bhat|মিনিকেট)/i, "🍚", "চাল"],
+  [/(মসলা|মশলা|spice|হলুদ|জিরা|লবণ|salt)/i, "🧂", "মসলাপাতি"],
+  [/(শাক|সবজি|sobji|shak|লাউ|পটল|ঢেঁড়স|টমেটো)/i, "🥬", "শাকসবজি"],
+  [/(ভাড়া|ভাড়া|রিকশা|rickshaw|vara|fare|গাড়ি|ভ্যান)/i, "🛺", "যাতায়াত ভাড়া"],
+  [/(রুটি|বিস্কুট|bread|biscuit|পাউরুটি)/i, "🍞", "নাস্তা"],
+  [/(দুধ|দই|milk|dudh)/i, "🥛", "দুধ/দুগ্ধজাত"]
+];
+
+function quickClientParse(text: string): ParsedItem[] {
+  if (!text) return [];
+  const bengaliNumbers = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  let normalized = text;
+  for (let i = 0; i < 10; i++) {
+    normalized = normalized.replace(new RegExp(bengaliNumbers[i], "g"), String(i));
+  }
+
+  // Split on comma, semicolon, newline, pipe, or Bengali danda (do NOT split on + or -)
+  const parts = normalized.split(/[,;\n|।]/).map(p => p.trim()).filter(Boolean);
+  const items: ParsedItem[] = [];
+
+  for (const part of parts) {
+    // 1. Detect weight or quantity unit pattern (e.g. 1.08kg, 1.6kg, 800g, 2 কেজি, 3 হালি, 250gm, 1kg)
+    const qtyMatch = part.match(/(\d+(?:\.\d+)?)\s*(?:kg|k\.g\.?|কেজি|কে\.জি\.?|gm|g|গ্রাম|হালি|আঁটি|আটি|পিস|টি|লিটার|লটার|l|ltr|packet|প্যাকেট)/i);
+    let qtyStr = "";
+    let partWithoutQty = part;
+    if (qtyMatch) {
+      qtyStr = qtyMatch[0].trim();
+      partWithoutQty = part.replace(qtyMatch[0], " ");
+    }
+
+    // 2. Detect explicit price indicators (e.g. 600ট, 600 টাকা, 600 tk, 600/-)
+    const explicitPriceMatch = partWithoutQty.match(/(\d+(?:\.\d+)?)\s*(?:টাকা|ট|tk|taka|৳|\/-)/i) ||
+                               partWithoutQty.match(/(?:৳|tk|taka|টাকা)\s*(\d+(?:\.\d+)?)/i);
+
+    let amount = 0;
+    let cleanWord = partWithoutQty;
+
+    if (explicitPriceMatch) {
+      amount = parseFloat(explicitPriceMatch[1]);
+      cleanWord = cleanWord.replace(explicitPriceMatch[0], " ");
+    } else {
+      // 3. If no explicit indicator, check if there's any remaining standalone number
+      const remainingNum = partWithoutQty.match(/(\d+(?:\.\d+)?)/);
+      if (remainingNum) {
+        amount = parseFloat(remainingNum[1]);
+        cleanWord = cleanWord.replace(remainingNum[0], " ");
+      }
+    }
+
+    cleanWord = cleanWord.replace(/(?:taka|tk\.?|টাকা|টা)/gi, "").replace(/[,\-:।+()=]/g, " ").trim();
+
+    // Check all matched categories to support compound combos like "আলু পেঁয়াজ"
+    const matchedEmojis: string[] = [];
+    const matchedLabels: string[] = [];
+    for (const [regex, emoji, label] of CLIENT_EMOJI_MAP) {
+      if (regex.test(cleanWord)) {
+        matchedEmojis.push(emoji);
+        matchedLabels.push(label);
+      }
+    }
+
+    const matchedEmoji = matchedEmojis.length > 0 ? matchedEmojis.join("") : "🛒";
+    const matchedName = matchedLabels.length > 0 ? matchedLabels.join(" ও ") : (cleanWord || "বাজার সামগ্রী");
+
+    items.push({
+      name: matchedName,
+      originalText: cleanWord,
+      amount,
+      quantity: qtyStr || undefined,
+      emoji: matchedEmoji
+    });
+  }
+
+  return items;
+}
+
+const VoucherDetailsCell: React.FC<{
+  entry: MarketEntry;
+  isDarkMode: boolean;
+  currentUser: Member;
+}> = ({ entry, isDarkMode, currentUser }) => {
+  const cellRef = useRef<HTMLTableCellElement>(null);
+  const [showPopup, setShowPopup] = useState(false);
+  const [showMobileModal, setShowMobileModal] = useState(false);
+  const [breakdown, setBreakdown] = useState<ParsedItem[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; placement: "top" | "bottom" } | null>(null);
+
+  const leaveTimerRef = useRef<any>(null);
+  const openTimerRef = useRef<any>(null);
+
+  const desc = entry.description || "Daily mess grocery";
+
+  const fetchBreakdown = async () => {
+    if (clientVoucherCache.has(desc)) {
+      setBreakdown(clientVoucherCache.get(desc)!.items);
+      return;
+    }
+
+    const localItems = quickClientParse(desc);
+    if (localItems.length > 0) {
+      setBreakdown(localItems);
+      clientVoucherCache.set(desc, {
+        items: localItems,
+        total: localItems.reduce((s, i) => s + i.amount, 0),
+        source: "LOCAL"
+      });
+    }
+
+    try {
+      setLoading(true);
+      const token = getAuthToken(currentUser);
+      const res = await fetch("/api/markets/parse-voucher", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          text: desc,
+          totalAmount: entry.amount
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+          setBreakdown(data.items);
+          clientVoucherCache.set(desc, {
+            items: data.items,
+            total: data.totalParsedAmount || entry.amount,
+            source: data.source || "SERVER"
+          });
+        }
+      }
+    } catch {
+      // Retain local parse
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updatePosition = () => {
+    if (!cellRef.current) return;
+    const rect = cellRef.current.getBoundingClientRect();
+    const cardWidth = 360;
+    const estimatedHeight = 350;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let top = 0;
+    let placement: "top" | "bottom" = "bottom";
+
+    // If space below is at least 260px or more than space above, open downwards
+    if (spaceBelow >= 260 || spaceBelow >= spaceAbove) {
+      top = rect.bottom + 6;
+      placement = "bottom";
+    } else {
+      top = Math.max(12, rect.top - estimatedHeight - 6);
+      placement = "top";
+    }
+
+    // Horizontal clamping within viewport
+    let left = rect.left - 10;
+    if (left + cardWidth > window.innerWidth - 16) {
+      left = window.innerWidth - cardWidth - 16;
+    }
+    if (left < 16) left = 16;
+
+    setCoords({ top, left, placement });
+  };
+
+  const handleCellMouseEnter = () => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+    if (openTimerRef.current) clearTimeout(openTimerRef.current);
+
+    openTimerRef.current = setTimeout(() => {
+      updatePosition();
+      setShowPopup(true);
+      fetchBreakdown();
+    }, 80);
+  };
+
+  const handleCellMouseLeave = () => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    leaveTimerRef.current = setTimeout(() => {
+      setShowPopup(false);
+    }, 220);
+  };
+
+  const handlePopupMouseEnter = () => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+  };
+
+  const handlePopupMouseLeave = () => {
+    leaveTimerRef.current = setTimeout(() => {
+      setShowPopup(false);
+    }, 180);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowMobileModal(true);
+    fetchBreakdown();
+  };
+
+  const totalParsedAmount = breakdown ? breakdown.reduce((sum, it) => sum + (it.amount || 0), 0) : 0;
+  const hasItemPrices = breakdown ? breakdown.some(it => it.amount > 0) : false;
+
+  const desktopFloatingCard = showPopup && coords && typeof document !== "undefined" ? (
+    createPortal(
+      <div 
+        style={{
+          position: "fixed",
+          top: `${coords.top}px`,
+          left: `${coords.left}px`,
+          zIndex: 999999,
+          width: "360px",
+          maxHeight: "420px"
+        }}
+        onMouseEnter={handlePopupMouseEnter}
+        onMouseLeave={handlePopupMouseLeave}
+        className={`hidden md:flex flex-col rounded-2xl p-4 shadow-2xl border backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 pointer-events-auto select-text ${
+          isDarkMode 
+            ? "bg-slate-900/98 border-cyan-500/40 text-white shadow-cyan-950/80 ring-1 ring-cyan-500/20" 
+            : "bg-white/98 border-slate-300 text-slate-800 shadow-2xl ring-1 ring-slate-200"
+        }`}
+      >
+        <div className="flex items-center justify-between pb-2.5 border-b border-cyan-500/20 mb-2.5 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base select-none">🛒</span>
+            <div>
+              <div className="font-bold text-xs text-cyan-400">বাজার ভাউচার আইটেম বিবরণ</div>
+              <div className="text-[10px] text-slate-400">
+                {entry.date ? `তারিখ: ${entry.date}` : ""}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-mono font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+              মোট: ৳ {entry.amount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPopup(false)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              title="বন্ধ করুন"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
+          {breakdown && breakdown.length > 0 ? (
+            breakdown.map((item, idx) => (
+              <div 
+                key={idx} 
+                className={`flex items-center justify-between text-xs py-2 px-2.5 rounded-xl border transition-colors ${
+                  isDarkMode 
+                    ? "bg-slate-800/70 border-slate-700/60 hover:bg-slate-800" 
+                    : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <span className="text-lg select-none shrink-0">{item.emoji || "🛒"}</span>
+                  <div className="truncate">
+                    <span className={`font-semibold text-xs truncate block ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>
+                      {item.name}
+                    </span>
+                    {item.quantity && (
+                      <span className={`inline-block text-[10px] font-medium ${isDarkMode ? "text-cyan-400/80" : "text-cyan-700"}`}>
+                        পরিমাণ: {item.quantity}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  {item.amount > 0 ? (
+                    <span className={`font-mono font-extrabold text-xs ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>
+                      ৳ {item.amount}
+                    </span>
+                  ) : item.quantity ? (
+                    <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${isDarkMode ? "bg-cyan-500/10 text-cyan-300" : "bg-cyan-50 text-cyan-800"}`}>
+                      {item.quantity}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-[11px]">—</span>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-xs text-slate-400 py-4 text-center">
+              {loading ? "অ্যানালাইসিস করা হচ্ছে..." : desc}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-2.5 pt-2 border-t border-cyan-500/20 shrink-0">
+          {breakdown && breakdown.length > 0 && (
+            <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+              <span className="text-slate-400 text-[11px]">
+                {hasItemPrices ? "আইটেমভিত্তিক মোট:" : "ভাউচার মোট খরচ:"}
+              </span>
+              <span className="font-mono text-cyan-400 font-extrabold text-sm">
+                ৳ {hasItemPrices ? totalParsedAmount : entry.amount}
+              </span>
+            </div>
+          )}
+          <div className="text-[10px] text-slate-400/80 truncate italic" title={desc}>
+            নোট: {desc}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
+  ) : null;
+
+  return (
+    <td 
+      ref={cellRef}
+      className="py-3.5 px-4 max-w-[200px] relative group"
+      onMouseEnter={handleCellMouseEnter}
+      onMouseLeave={handleCellMouseLeave}
+    >
+      <div 
+        onClick={handleClick}
+        className="cursor-pointer transition-colors flex items-center justify-between gap-1.5"
+        title="ক্লিক করে বা মাউস রেখে আইটেম ও খরচের ব্রেকডাউন দেখুন"
+      >
+        <div className={`font-semibold truncate ${isDarkMode ? "text-slate-100 group-hover:text-cyan-300" : "text-slate-900 group-hover:text-cyan-700"}`}>
+          {desc}
+        </div>
+        <span className="text-[10px] text-cyan-400 opacity-60 group-hover:opacity-100 shrink-0">
+          🔍
+        </span>
+      </div>
+
+      {entry.quantity && (
+        <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+          isDarkMode 
+            ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30" 
+            : "bg-cyan-50 text-cyan-800 border border-cyan-200"
+        }`}>
+          Qty: {entry.quantity}
+        </span>
+      )}
+
+      {/* Desktop Floating Card via React Portal */}
+      {desktopFloatingCard}
+
+      {/* Mobile Modal Bottom Sheet / Dialog */}
+      {showMobileModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          onClick={(e) => { e.stopPropagation(); setShowMobileModal(false); }}
+        >
+          <div 
+            className={`w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-5 border shadow-2xl animate-in slide-in-from-bottom duration-200 ${
+              isDarkMode 
+                ? "bg-slate-900 border-cyan-500/30 text-white" 
+                : "bg-white border-slate-200 text-slate-800"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-cyan-500/15 mb-3">
+              <div className="flex items-center gap-2 font-bold text-sm text-cyan-400">
+                <span className="text-lg">🛒</span>
+                <span>বাজার ভাউচার বিবরণ</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowMobileModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-3 italic break-words">
+              &ldquo;{desc}&rdquo;
+            </p>
+
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {breakdown && breakdown.length > 0 ? (
+                breakdown.map((item, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`flex items-center justify-between p-2.5 rounded-xl border ${
+                      isDarkMode ? "bg-slate-800/60 border-slate-700/50" : "bg-slate-50 border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl select-none">{item.emoji || "🛒"}</span>
+                      <div>
+                        <div className="font-bold text-sm">{item.name}</div>
+                        {item.quantity && (
+                          <div className="text-[10px] text-cyan-400">পরিমাণ: {item.quantity}</div>
+                        )}
+                        {item.originalText && item.originalText !== item.name && !item.quantity && (
+                          <div className="text-[10px] text-slate-400">({item.originalText})</div>
+                        )}
+                      </div>
+                    </div>
+                    {item.amount > 0 ? (
+                      <span className="font-mono font-black text-sm text-emerald-400">
+                        ৳ {item.amount}
+                      </span>
+                    ) : item.quantity ? (
+                      <span className="font-mono text-xs text-cyan-300 font-bold">
+                        {item.quantity}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs">—</span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-xs text-slate-400">
+                  {loading ? "অ্যানালাইসিস করা হচ্ছে..." : desc}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-cyan-500/15 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400">
+                {hasItemPrices ? "আইটেমভিত্তিক মোট:" : "ভাউচার মোট খরচ:"}
+              </span>
+              <span className="font-mono font-black text-base text-cyan-400">
+                ৳ {hasItemPrices ? totalParsedAmount : entry.amount}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </td>
+  );
+};
 
 export default function MarketLogs({ 
   currentUser, 
@@ -1497,17 +1978,19 @@ export default function MarketLogs({
                 <span className="sm:hidden">PDF</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowMarketReminderModal(true)}
-                className="px-3.5 py-2 bg-gradient-to-r from-amber-500/15 to-orange-500/15 hover:from-amber-500/25 hover:to-orange-500/25 text-amber-300 border border-amber-500/40 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
-                title="স্বয়ংক্রিয় বাজার নোটিফিকেশন ও পুশ মেইল ইঞ্জিন"
-              >
-                <Mail size={14} className="text-amber-400" />
-                <span className="hidden sm:inline">MARKET REMINDER</span>
-                <span className="sm:hidden">REMINDER</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-mono">PUSH</span>
-              </button>
+              {canEditMarketDuty && (
+                <button
+                  type="button"
+                  onClick={() => setShowMarketReminderModal(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-amber-500/15 to-orange-500/15 hover:from-amber-500/25 hover:to-orange-500/25 text-amber-300 border border-amber-500/40 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                  title="স্বয়ংক্রিয় বাজার নোটিফিকেশন ও পুশ মেইল ইঞ্জিন"
+                >
+                  <Mail size={14} className="text-amber-400" />
+                  <span className="hidden sm:inline">MARKET REMINDER</span>
+                  <span className="sm:hidden">REMINDER</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 font-mono">PUSH</span>
+                </button>
+              )}
 
               {canEditMarketDuty && (
                 <button
@@ -1689,15 +2172,15 @@ export default function MarketLogs({
               <Calendar size={18} />
               Market Duty & Expense Calendar
             </h3>
-            {/* Visual Status Legend */}
-            <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
-              <div className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 px-2 py-0.5 rounded-md">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Market Pushed (সবুজ = বাজার সম্পন্ন)</span>
+            {/* Clean Visual Status Legend */}
+            <div className="flex items-center gap-3.5 text-xs font-medium">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className={isDarkMode ? "text-slate-300" : "text-slate-600"}>বাজার সম্পন্ন</span>
               </div>
-              <div className="flex items-center gap-1 bg-cyan-500/15 border border-cyan-500/40 text-cyan-400 px-2 py-0.5 rounded-md">
+              <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                <span>Assigned Duty</span>
+                <span className={isDarkMode ? "text-slate-300" : "text-slate-600"}>ডিউটি নির্ধারিত</span>
               </div>
             </div>
           </div>
@@ -1790,8 +2273,8 @@ export default function MarketLogs({
                     )}
                   </div>
 
-                  {/* Manager / Admin Next Month Planning Action */}
-                  {canEditMarketDuty && (
+                  {/* Manager / Admin Next Month Planning Action (Shown only after 20th of the month) */}
+                  {canEditMarketDuty && new Date().getDate() >= 20 && (
                     <div className="flex items-center gap-2 shrink-0">
                       {nextMonthInfo.existingMonth ? (
                         viewMonthId !== nextMonthInfo.existingMonth.id && (
@@ -1837,24 +2320,6 @@ export default function MarketLogs({
                     </button>
                   </div>
                 )}
-
-                {/* Cycle info sub-header */}
-                <div className={`p-3 rounded-xl border text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 ${
-                  isDarkMode ? "bg-slate-950/60 border-slate-800/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
-                }`}>
-                  <div className="flex items-center gap-2 font-bold">
-                    <span className="text-slate-400">📆 Viewed Cycle:</span>
-                    <span className="text-cyan-400 font-extrabold text-sm">{cycleName}</span>
-                    {viewMonthId === currentMonthId && (
-                      <span className="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                        ACTIVE CYCLE
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-400 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-800">
-                    {new Date(startStr).toLocaleDateString()} &rarr; {new Date(endStr).toLocaleDateString()}
-                  </div>
-                </div>
 
                 {/* Staged Calendars */}
                 <div className="space-y-8">
@@ -2197,18 +2662,7 @@ export default function MarketLogs({
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4 truncate max-w-[150px]" title={m.description}>
-                          <div className={`font-semibold ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}>{m.description || "Daily mess grocery"}</div>
-                          {m.quantity && (
-                            <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              isDarkMode 
-                                ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30" 
-                                : "bg-cyan-50 text-cyan-800 border border-cyan-200"
-                            }`}>
-                              Qty: {m.quantity}
-                            </span>
-                          )}
-                        </td>
+                        <VoucherDetailsCell entry={m} isDarkMode={isDarkMode} currentUser={currentUser} />
                         <td className={`py-3.5 px-4 text-right font-black font-mono text-sm ${
                           isDarkMode ? "text-emerald-300" : "text-emerald-700"
                         }`}>

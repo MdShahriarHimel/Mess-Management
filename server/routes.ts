@@ -42,6 +42,7 @@ import { loadDB, saveDB, syncState,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
+import { getVoucherBreakdown } from "./marketParser.js";
 import { scanMealSheetWithAI } from "./aiMealScanner.js";
 import { 
   getTodayBackupForMess, 
@@ -3162,6 +3163,21 @@ router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res:
   res.json({ markets });
 });
 
+router.post("/markets/parse-voucher", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { text, totalAmount } = req.body;
+    if (!text || typeof text !== "string") {
+      res.status(400).json({ error: "Voucher text description is required" });
+      return;
+    }
+    const breakdown = await getVoucherBreakdown(text, typeof totalAmount === "number" ? totalAmount : undefined);
+    res.json(breakdown);
+  } catch (err: any) {
+    console.error("[Route] Failed to parse market voucher:", err);
+    res.status(500).json({ error: "Failed to parse voucher breakdown: " + err.message });
+  }
+});
+
 // Helper functions for market authorization and validation
 function getAssignedMarketDatesForUser(db: any, monthId: string, memberId: string): string[] {
   const userDuties = db.duties.filter((d: any) => 
@@ -3638,7 +3654,8 @@ router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserR
 // ---------------------------------------------------------
 router.get("/duties/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
+  const messId = (req as any).messId || (req.user as any)?.messId || "default";
+  const db = loadDB(messId);
   const duties = db.duties.filter(d => d.monthId === monthId);
   res.json({ duties });
 });

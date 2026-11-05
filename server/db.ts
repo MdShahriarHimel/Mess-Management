@@ -881,6 +881,16 @@ export async function initializeDbCache() {
         await importBackupToPostgres(dbCache);
       }
     } else {
+      // Local backup duty and data merge safeguard: ensure no duties or entries are lost on startup
+      const localBackupFile = path.join(DB_DIR, "database_backup.json");
+      let localDuties: any[] = [];
+      if (fs.existsSync(localBackupFile)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(localBackupFile, "utf-8"));
+          if (Array.isArray(parsed.duties)) localDuties = parsed.duties;
+        } catch (e) {}
+      }
+
       dbCache = {
         members: deduplicateMembers(membersList as any[]),
         months: monthsList
@@ -905,7 +915,7 @@ export async function initializeDbCache() {
         })) as any[]),
         deposits: deduplicateDeposits(depositsList as any[]),
         bills: billsList as any[],
-        duties: deduplicateDuties(dutiesList as any[]),
+        duties: deduplicateDuties([...(dutiesList || []), ...localDuties]),
         managerHoldings: managerHoldingsList as any[],
         managerRatings: managerRatingsList as any[],
         notices: noticesList as any[],

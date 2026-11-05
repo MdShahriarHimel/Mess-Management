@@ -30,7 +30,8 @@ data/
 *.json.bak
 database_backup*.json
 
-# AI Studio Chat Uploads (User screenshots from chat)
+# AI Studio Chat Uploads & Internal Artifacts
+.aistudio/
 public/assets/aistudio/
 
 # Temporary patch, fix & scratch test scripts (Internal dev/debugging)
