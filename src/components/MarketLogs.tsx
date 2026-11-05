@@ -388,22 +388,6 @@ const VoucherDetailsCell: React.FC<{
             </div>
           )}
         </div>
-
-        <div className="mt-2.5 pt-2 border-t border-cyan-500/20 shrink-0">
-          {breakdown && breakdown.length > 0 && (
-            <div className="flex items-center justify-between text-xs font-bold mb-1.5">
-              <span className="text-slate-400 text-[11px]">
-                {hasItemPrices ? "আইটেমভিত্তিক মোট:" : "ভাউচার মোট খরচ:"}
-              </span>
-              <span className="font-mono text-cyan-400 font-extrabold text-sm">
-                ৳ {hasItemPrices ? totalParsedAmount : entry.amount}
-              </span>
-            </div>
-          )}
-          <div className="text-[10px] text-slate-400/80 truncate italic" title={desc}>
-            নোট: {desc}
-          </div>
-        </div>
       </div>,
       document.body
     )
@@ -2085,13 +2069,6 @@ export default function MarketLogs({
           <div className={`p-5 rounded-2xl border ${
             isDarkMode ? "bg-slate-900/40 border-cyan-500/10 text-white" : "bg-white border-slate-200 shadow-sm text-slate-800"
           }`} id="managerial-expenses-list-panel">
-            <div className="flex justify-between items-center mb-4 border-b border-cyan-500/10 pb-3">
-              <h3 className="text-sm font-bold font-display flex items-center gap-1.5 text-cyan-400">
-                <ShoppingCart size={16} />
-                Monthly Expenses of Manager
-              </h3>
-            </div>
-
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -2172,17 +2149,6 @@ export default function MarketLogs({
               <Calendar size={18} />
               Market Duty & Expense Calendar
             </h3>
-            {/* Clean Visual Status Legend */}
-            <div className="flex items-center gap-3.5 text-xs font-medium">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                <span className={isDarkMode ? "text-slate-300" : "text-slate-600"}>বাজার সম্পন্ন</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                <span className={isDarkMode ? "text-slate-300" : "text-slate-600"}>ডিউটি নির্ধারিত</span>
-              </div>
-            </div>
           </div>
 
           {(() => {
