@@ -2768,20 +2768,35 @@ export default function MarketLogs({
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-1">
-                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider">Purchaser Member</label>
-                    <label className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold cursor-pointer select-none transition-all border ${
-                      isExtra 
-                        ? "bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-xs" 
-                        : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:text-slate-300"
-                    }`}>
+                  <div className="flex items-center justify-between gap-1.5 min-h-[38px]">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider leading-tight">
+                      Purchaser<br className="sm:hidden" /> Member
+                    </label>
+                    <label
+                      htmlFor="isExtraCheck"
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold cursor-pointer select-none transition-all border-2 shadow-xs ${
+                        isExtra 
+                          ? isDarkMode
+                            ? "bg-emerald-950/70 border-emerald-400 text-emerald-200 ring-1 ring-emerald-400/40"
+                            : "bg-emerald-100/90 border-emerald-500 text-emerald-950 ring-1 ring-emerald-500/30"
+                          : isDarkMode
+                            ? "bg-amber-950/60 border-amber-500 text-amber-200 hover:bg-amber-900/60"
+                            : "bg-amber-100/90 border-amber-400 text-amber-950 hover:bg-amber-200/90"
+                      }`}
+                    >
                       <input
                         type="checkbox"
+                        id="isExtraCheck"
                         checked={isExtra}
                         onChange={(e) => setIsExtra(e.target.checked)}
-                        className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+                        className={`w-3.5 h-3.5 rounded cursor-pointer ${
+                          isExtra ? "accent-emerald-600" : "accent-amber-600"
+                        }`}
                       />
-                      <span>এক্সট্রা বাজার (Extra)</span>
+                      <div className="flex flex-col leading-tight select-none">
+                        <span className="font-extrabold">{isExtra ? "✓ এক্সট্রা বাজার" : "এক্সট্রা বাজার"}</span>
+                        <span className="text-[9px] font-semibold opacity-90">(Extra)</span>
+                      </div>
                     </label>
                   </div>
                   <select
@@ -2798,9 +2813,11 @@ export default function MarketLogs({
                 </div>
                 
                 <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">
-                    Covered Market Date(s)
-                  </label>
+                  <div className="min-h-[38px] flex items-center">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">
+                      Covered Market Date(s)
+                    </label>
+                  </div>
                   {isExtra || assignedDates.length === 0 ? (
                     <div className="space-y-1">
                       <div className="grid grid-cols-2 gap-1.5">
