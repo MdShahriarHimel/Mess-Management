@@ -1054,43 +1054,47 @@ export default function MarketLogs({
       }
     }
 
-    // 3. Enforce Lunch & Dinner arrangements for all covered dates
-    for (const d of coveredDates) {
-      const plan = mealsPlanning[d];
-      if (!plan || !plan.lunchVegetable?.trim() || !plan.lunchMain?.trim() || !plan.dinnerVegetable?.trim() || !plan.dinnerMain?.trim()) {
-        const formattedDateLabel = new Date(d).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
-        setError(`Forbidden: You must fill out both Lunch and Dinner arrangements (vegetable + main course) for all selected dates. Please complete the setup for ${formattedDateLabel}.`);
-        setLoading(false);
-        return;
+    // 3. Enforce Lunch & Dinner arrangements for standard scheduled dates (optional for extra market logs)
+    if (!isExtra) {
+      for (const d of coveredDates) {
+        const plan = mealsPlanning[d];
+        if (!plan || !plan.lunchVegetable?.trim() || !plan.lunchMain?.trim() || !plan.dinnerVegetable?.trim() || !plan.dinnerMain?.trim()) {
+          const formattedDateLabel = new Date(d).toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          });
+          setError(`Forbidden: You must fill out both Lunch and Dinner arrangements (vegetable + main course) for all selected dates. Please complete the setup for ${formattedDateLabel}.`);
+          setLoading(false);
+          return;
+        }
       }
     }
 
     try {
-      // 4. Save food menu arrangements first for each of the selected/covered dates
+      // 4. Save food menu arrangements first for each of the selected/covered dates if provided
       for (const d of coveredDates) {
         const plan = mealsPlanning[d];
-        const menuResponse = await fetch("/api/foodmenu", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${authToken}`
-          },
-          body: JSON.stringify({
-            monthId: currentMonthId,
-            date: d,
-            lunchVegetable: plan.lunchVegetable,
-            lunchMain: plan.lunchMain,
-            dinnerVegetable: plan.dinnerVegetable,
-            dinnerMain: plan.dinnerMain
-          })
-        });
-        if (!menuResponse.ok) {
-          const errData = await menuResponse.json().catch(() => ({}));
-          throw new Error(errData.error || `Failed to update food menu arrangements for ${d}.`);
+        if (plan && (plan.lunchVegetable?.trim() || plan.lunchMain?.trim() || plan.dinnerVegetable?.trim() || plan.dinnerMain?.trim())) {
+          const menuResponse = await fetch("/api/foodmenu", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+              monthId: currentMonthId,
+              date: d,
+              lunchVegetable: plan.lunchVegetable || "",
+              lunchMain: plan.lunchMain || "",
+              dinnerVegetable: plan.dinnerVegetable || "",
+              dinnerMain: plan.dinnerMain || ""
+            })
+          });
+          if (!menuResponse.ok) {
+            const errData = await menuResponse.json().catch(() => ({}));
+            throw new Error(errData.error || `Failed to update food menu arrangements for ${d}.`);
+          }
         }
       }
 
@@ -2764,7 +2768,22 @@ export default function MarketLogs({
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-orange-500 uppercase tracking-wider block">Purchaser Member</label>
+                  <div className="flex items-center justify-between gap-1">
+                    <label className="text-xs font-bold text-orange-500 uppercase tracking-wider">Purchaser Member</label>
+                    <label className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold cursor-pointer select-none transition-all border ${
+                      isExtra 
+                        ? "bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-xs" 
+                        : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:text-slate-300"
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={isExtra}
+                        onChange={(e) => setIsExtra(e.target.checked)}
+                        className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span>এক্সট্রা বাজার (Extra)</span>
+                    </label>
+                  </div>
                   <select
                     value={memberId}
                     onChange={(e) => setMemberId(e.target.value)}
@@ -2927,139 +2946,124 @@ export default function MarketLogs({
                 </div>
               </div>
 
-              {/* Daily Meal Arrangement - Required to log bazar expenditure */}
-              <div className="p-3.5 rounded-xl border border-cyan-500/10 bg-cyan-500/5 space-y-3">
-                <div className="flex items-center gap-1.5 border-b border-cyan-500/10 pb-2">
-                  <Sparkles size={14} className="text-cyan-400" />
-                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-                    Required: Meal Arrangements ({coveredDates.length} {coveredDates.length === 1 ? "Day" : "Days"})
-                  </span>
+              {/* Daily Meal Arrangement - Only for regular scheduled shopping */}
+              {!isExtra && (
+                <div className="p-3.5 rounded-xl border border-cyan-500/10 bg-cyan-500/5 space-y-3">
+                  <div className="flex items-center gap-1.5 border-b border-cyan-500/10 pb-2">
+                    <Sparkles size={14} className="text-cyan-400" />
+                    <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
+                      Meal Arrangements ({coveredDates.length} {coveredDates.length === 1 ? "Day" : "Days"})
+                    </span>
+                  </div>
+
+                  {coveredDates.length === 0 ? (
+                    <div className="text-center py-4 text-xs text-rose-400 font-medium">
+                      ⚠️ Please select at least one market date to configure meals.
+                    </div>
+                  ) : (
+                    <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                      {coveredDates.map((d) => {
+                        const plan = mealsPlanning[d] || {
+                          lunchVegetable: "",
+                          lunchMain: "",
+                          dinnerVegetable: "",
+                          dinnerMain: "",
+                        };
+
+                        const updatePlanField = (field: string, val: string) => {
+                          setMealsPlanning(prev => ({
+                            ...prev,
+                            [d]: {
+                              ...plan,
+                              [field]: val
+                            }
+                          }));
+                        };
+
+                        const formattedDateLabel = new Date(d).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        });
+
+                        return (
+                          <div 
+                            key={d} 
+                            className={`p-3 rounded-xl border space-y-2.5 transition-all ${
+                              isDarkMode 
+                                ? "bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/20" 
+                                : "bg-white border-slate-200 hover:border-cyan-500/30"
+                            }`}
+                          >
+                            <div className="flex justify-between items-center border-b border-dashed border-slate-700/20 dark:border-slate-800/50 pb-1.5">
+                              <span className="text-[11px] font-bold text-orange-400 font-mono flex items-center gap-1">
+                                📅 {formattedDateLabel}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/10">
+                                Meals Config
+                              </span>
+                            </div>
+
+                            {/* Lunch arrangement */}
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Lunch (দুপুর)</span>
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="শাক-সবজি / ভাজি"
+                                  value={plan.lunchVegetable}
+                                  onChange={(e) => updatePlanField("lunchVegetable", e.target.value)}
+                                  className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                    isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                  }`}
+                                />
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="মাছ / মাংস (Main)"
+                                  value={plan.lunchMain}
+                                  onChange={(e) => updatePlanField("lunchMain", e.target.value)}
+                                  className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                    isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Dinner arrangement */}
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Dinner (রাত)</span>
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="শাক-সবজি / ভাজি"
+                                  value={plan.dinnerVegetable}
+                                  onChange={(e) => updatePlanField("dinnerVegetable", e.target.value)}
+                                  className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                    isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                  }`}
+                                />
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="মাছ / মাংস (Main)"
+                                  value={plan.dinnerMain}
+                                  onChange={(e) => updatePlanField("dinnerMain", e.target.value)}
+                                  className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
+                                    isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <p className="text-[10px] text-slate-400 leading-tight">
-                  Please specify the planned/arranged lunch & dinner menu items for each selected shopping date.
-                </p>
-
-                {coveredDates.length === 0 ? (
-                  <div className="text-center py-4 text-xs text-rose-400 font-medium">
-                    ⚠️ Please select at least one market date to configure meals.
-                  </div>
-                ) : (
-                  <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
-                    {coveredDates.map((d) => {
-                      const plan = mealsPlanning[d] || {
-                        lunchVegetable: "",
-                        lunchMain: "",
-                        dinnerVegetable: "",
-                        dinnerMain: "",
-                      };
-
-                      const updatePlanField = (field: string, val: string) => {
-                        setMealsPlanning(prev => ({
-                          ...prev,
-                          [d]: {
-                            ...plan,
-                            [field]: val
-                          }
-                        }));
-                      };
-
-                      const formattedDateLabel = new Date(d).toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      });
-
-                      return (
-                        <div 
-                          key={d} 
-                          className={`p-3 rounded-xl border space-y-2.5 transition-all ${
-                            isDarkMode 
-                              ? "bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/20" 
-                              : "bg-white border-slate-200 hover:border-cyan-500/30"
-                          }`}
-                        >
-                          <div className="flex justify-between items-center border-b border-dashed border-slate-700/20 dark:border-slate-800/50 pb-1.5">
-                            <span className="text-[11px] font-bold text-orange-400 font-mono flex items-center gap-1">
-                              📅 {formattedDateLabel}
-                            </span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/10">
-                              Meals Config
-                            </span>
-                          </div>
-
-                          {/* Lunch arrangement */}
-                          <div className="space-y-1">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Lunch (দুপুর)</span>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                required
-                                placeholder="শাক-সবজি / ভাজি"
-                                value={plan.lunchVegetable}
-                                onChange={(e) => updatePlanField("lunchVegetable", e.target.value)}
-                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
-                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
-                                }`}
-                              />
-                              <input
-                                type="text"
-                                required
-                                placeholder="মাছ / মাংস (Main)"
-                                value={plan.lunchMain}
-                                onChange={(e) => updatePlanField("lunchMain", e.target.value)}
-                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
-                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
-                                }`}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Dinner arrangement */}
-                          <div className="space-y-1">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Dinner (রাত)</span>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                required
-                                placeholder="শাক-সবজি / ভাজি"
-                                value={plan.dinnerVegetable}
-                                onChange={(e) => updatePlanField("dinnerVegetable", e.target.value)}
-                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
-                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
-                                }`}
-                              />
-                              <input
-                                type="text"
-                                required
-                                placeholder="মাছ / মাংস (Main)"
-                                value={plan.dinnerMain}
-                                onChange={(e) => updatePlanField("dinnerMain", e.target.value)}
-                                className={`px-2.5 py-1.5 rounded-lg bg-slate-950 border text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400 w-full ${
-                                  isDarkMode ? "border-slate-800 text-white" : "border-slate-200 text-slate-850"
-                                }`}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* isExtra checkbox */}
-              <div className="flex items-center gap-2 py-1">
-                <input
-                  type="checkbox"
-                  id="isExtraCheck"
-                  checked={isExtra}
-                  onChange={(e) => setIsExtra(e.target.checked)}
-                  className="rounded border-slate-800 bg-slate-900 text-cyan-500 focus:ring-0"
-                />
-                <label htmlFor="isExtraCheck" className="text-xs font-semibold text-slate-300 cursor-pointer select-none">
-                  Check if this is an <span className="text-orange-500">Extra/Custom shopping</span> not on standard date schedule.
-                </label>
-              </div>
+              )}
 
               </div>
 

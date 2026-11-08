@@ -3251,27 +3251,25 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
       return;
     }
 
-    if (isExtra) {
-      res.status(403).json({ error: "Forbidden: You are not permitted to submit extra market logs." });
-      return;
-    }
+    // For standard scheduled markets (not extra/custom), enforce assigned dates & consecutive days
+    if (!isExtra) {
+      const assignedDates = getAssignedMarketDatesForUser(db, monthId, req.user!.id);
+      const selectedDates: string[] = coveredDates && Array.isArray(coveredDates) && coveredDates.length > 0 
+        ? coveredDates 
+        : [date];
 
-    const assignedDates = getAssignedMarketDatesForUser(db, monthId, req.user!.id);
-    const selectedDates: string[] = coveredDates && Array.isArray(coveredDates) && coveredDates.length > 0 
-      ? coveredDates 
-      : [date];
+      // Check selectedDate ∈ assignedDates
+      const allAssigned = selectedDates.every(d => assignedDates.includes(d));
+      if (!allAssigned) {
+        res.status(403).json({ error: "Forbidden: You are only permitted to submit market logs for your assigned market dates, or check Extra/Custom shopping." });
+        return;
+      }
 
-    // Check selectedDate ∈ assignedDates
-    const allAssigned = selectedDates.every(d => assignedDates.includes(d));
-    if (!allAssigned) {
-      res.status(403).json({ error: "Forbidden: You are only permitted to submit market logs for your assigned market dates." });
-      return;
-    }
-
-    // Check consecutive calendar days
-    if (!areDatesConsecutive(selectedDates)) {
-      res.status(403).json({ error: "Forbidden: Covered dates must be consecutive calendar days." });
-      return;
+      // Check consecutive calendar days
+      if (!areDatesConsecutive(selectedDates)) {
+        res.status(403).json({ error: "Forbidden: Covered dates must be consecutive calendar days." });
+        return;
+      }
     }
   }
 
@@ -3308,12 +3306,18 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
     // If editing, check permissions for the OLD entry to prevent hijacking
     const oldEntry = db.marketEntries[existingIndex];
     if (actsAsMember) {
-      const assignedDates = getAssignedMarketDatesForUser(db, oldEntry.monthId, req.user!.id);
-      const oldDates = oldEntry.coveredDates && Array.isArray(oldEntry.coveredDates) ? oldEntry.coveredDates : [oldEntry.date];
-      const oldAllAssigned = oldDates.every(d => assignedDates.includes(d));
-      if (!oldAllAssigned || oldEntry.memberId !== req.user!.id) {
-        res.status(403).json({ error: "Forbidden: You cannot modify a market entry outside your assigned dates." });
+      if (oldEntry.memberId !== req.user!.id) {
+        res.status(403).json({ error: "Forbidden: You cannot modify a market entry belonging to another member." });
         return;
+      }
+      if (!oldEntry.isExtra) {
+        const assignedDates = getAssignedMarketDatesForUser(db, oldEntry.monthId, req.user!.id);
+        const oldDates = oldEntry.coveredDates && Array.isArray(oldEntry.coveredDates) ? oldEntry.coveredDates : [oldEntry.date];
+        const oldAllAssigned = oldDates.every(d => assignedDates.includes(d));
+        if (!oldAllAssigned) {
+          res.status(403).json({ error: "Forbidden: You cannot modify a market entry outside your assigned dates." });
+          return;
+        }
       }
     }
     db.marketEntries[existingIndex] = newEntry;
@@ -3391,12 +3395,14 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
   const actsAsMember = (req.user!.role === UserRole.MEMBER) || (req.user!.role === UserRole.ADMIN && !hasMarketPermission);
 
   if (actsAsMember) {
-    const assignedDates = getAssignedMarketDatesForUser(db, original.monthId, req.user!.id);
-    const originalDates = original.coveredDates && Array.isArray(original.coveredDates) ? original.coveredDates : [original.date];
-    const isAuthorized = originalDates.every(d => assignedDates.includes(d)) && original.memberId === req.user!.id;
-    if (!isAuthorized) {
-      res.status(403).json({ error: "Forbidden: You cannot delete a market entry outside your assigned dates." });
-      return;
+    if (!original.isExtra) {
+      const assignedDates = getAssignedMarketDatesForUser(db, original.monthId, req.user!.id);
+      const originalDates = original.coveredDates && Array.isArray(original.coveredDates) ? original.coveredDates : [original.date];
+      const isAuthorized = originalDates.every(d => assignedDates.includes(d)) && original.memberId === req.user!.id;
+      if (!isAuthorized) {
+        res.status(403).json({ error: "Forbidden: You cannot delete a market entry outside your assigned dates." });
+        return;
+      }
     }
   }
 
