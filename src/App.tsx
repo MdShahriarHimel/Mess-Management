@@ -6496,6 +6496,7 @@ export default function App() {
               dateRestrictions={dateRestrictions}
               safeMode={safeMode}
               onToggleSafeMode={handleToggleSafeMode}
+              respectSenioritySettings={respectSenioritySettings}
             />
           )}
 

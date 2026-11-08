@@ -5,12 +5,13 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { DollarSign, Plus, X, Trash2, Shield, Sparkles } from "lucide-react";
-import { Member, Deposit, UserRole, MessMonth } from "../types.js";
+import { Member, Deposit, UserRole, MessMonth, RespectSenioritySettings } from "../types.js";
 import { RefreshButton } from "./RefreshButton.tsx";
 import { useAutoRefresh } from "../utils/AutoRefreshContext.tsx";
 import { getAuthToken } from "../lib/authHeader.ts";
 import { sortMembersAlphabetically } from "../utils/memberUtils.ts";
 import { saveFormDraft, getFormDraft, clearFormDraft, hasMeaningfulDraft } from "../utils/draftSessionManager.ts";
+import { getRespectDisplayName } from "../utils/respectHelper.js";
 
 interface DepositsProps {
   currentUser: Member;
@@ -42,6 +43,7 @@ interface DepositsProps {
   };
   safeMode?: boolean;
   onToggleSafeMode?: () => void;
+  respectSenioritySettings?: RespectSenioritySettings;
 }
 
 export default function Deposits({ 
@@ -55,7 +57,8 @@ export default function Deposits({
   customColors,
   dateRestrictions,
   safeMode = false,
-  onToggleSafeMode
+  onToggleSafeMode,
+  respectSenioritySettings
 }: DepositsProps) {
   const authToken = getAuthToken(currentUser);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
@@ -331,7 +334,7 @@ export default function Deposits({
           <table className="w-full text-left text-xs">
             <thead>
               <tr className={`border-b ${isDarkMode ? "bg-slate-950/30 border-slate-850 text-cyan-300" : "bg-slate-50 border-slate-200 text-slate-700"} font-bold`}>
-                <th className="py-3 px-4">Member Nickname</th>
+                <th className="py-3 px-4">Resident Member</th>
                 <th className="py-3 px-4">Date Collected</th>
                 <th className="py-3 px-4 text-right">Amount Deposited ({currencySymbol})</th>
                 <th className="py-3 px-4 text-center">Audited Recorder</th>
@@ -349,10 +352,14 @@ export default function Deposits({
                   const recorder = members.find(u => u.id === d.enteredBy);
                   return (
                     <tr key={d.id} className={isDarkMode ? "hover:bg-cyan-500/5" : "hover:bg-slate-50"}>
-                      <td className={`py-3 px-4 font-bold ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`}>{targetM?.nickname || "Unknown"}</td>
+                      <td className={`py-3 px-4 font-bold ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`}>
+                        {getRespectDisplayName(currentUser, targetM, respectSenioritySettings) || targetM?.nickname || "Unknown"}
+                      </td>
                       <td className={`py-3 px-4 font-mono ${isDarkMode ? "text-slate-300" : "text-slate-700 font-medium"}`}>{d.date}</td>
                       <td className={`py-3 px-4 text-right font-extrabold font-mono ${isDarkMode ? "text-cyan-400" : "text-cyan-700 font-black"}`}>{currencySymbol} {d.amount}</td>
-                      <td className={`py-3 px-4 text-center font-mono text-[10px] ${isDarkMode ? "text-slate-400" : "text-slate-700 font-medium"}`}>{recorder?.nickname || "System Seeder"}</td>
+                      <td className={`py-3 px-4 text-center font-mono text-[10px] ${isDarkMode ? "text-slate-400" : "text-slate-700 font-medium"}`}>
+                        {getRespectDisplayName(currentUser, recorder, respectSenioritySettings) || recorder?.nickname || "System Seeder"}
+                      </td>
                       <td className="py-3 px-4 text-right">
                         {isManagerOrAdmin && (
                           <button
@@ -452,7 +459,9 @@ export default function Deposits({
                 >
                   <option value="">-- Select Member --</option>
                   {activeMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                    <option key={m.id} value={m.id}>
+                      {getRespectDisplayName(currentUser, m, respectSenioritySettings) || m.nickname} ({m.name})
+                    </option>
                   ))}
                 </select>
               </div>

@@ -1592,7 +1592,8 @@ export default function FinanceSettlement({
     sheetData.push(headers);
 
     activeMembers.forEach(member => {
-      const row: any[] = [member.name ? `${member.name} (${member.nickname})` : member.nickname];
+      const displayName = getRespectDisplayName(currentUser, member, respectSenioritySettings) || member.nickname;
+      const row: any[] = [member.name ? `${member.name} (${displayName})` : displayName];
       let memberTotal = 0;
       datesList.forEach(d => {
         const val = spreadsheetData[member.id]?.[d] || 0;
@@ -1666,10 +1667,12 @@ export default function FinanceSettlement({
           </thead>
           <tbody>
             ${activeMembers.map(member => {
+              const displayName = getRespectDisplayName(currentUser, member, respectSenioritySettings) || member.nickname;
+              const memberNameLabel = member.name ? `${member.name} (${displayName})` : displayName;
               const total = datesList.reduce((sum, d) => sum + (spreadsheetData[member.id]?.[d] || 0), 0);
               return `
                 <tr>
-                  <td class="member-col">${member.name ? `${member.name} (${member.nickname})` : member.nickname}</td>
+                  <td class="member-col">${memberNameLabel}</td>
                   ${datesList.map(d => {
                     const val = spreadsheetData[member.id]?.[d];
                     return `<td>${val === undefined || val === null || val === 0 ? '' : val}</td>`;
@@ -2712,7 +2715,7 @@ export default function FinanceSettlement({
                       <td className="sticky left-0 z-10 font-bold px-3 py-2.5 text-xs text-slate-200 bg-slate-900 border-r border-slate-850 min-w-[120px] shadow-[2px_0_5px_rgba(0,0,0,0.3)]">
                         <div className="flex items-center gap-2">
                           {renderMemberPhotoBeforeName(member.id, member.name)}
-                          {member.nickname}
+                          {getRespectDisplayName(currentUser, member, respectSenioritySettings) || member.nickname}
                         </div>
                       </td>
 
@@ -3362,7 +3365,7 @@ export default function FinanceSettlement({
                             )}
                           </td>
                           <td className="py-2.5 px-3 font-semibold text-slate-400">
-                            {collector?.nickname || "Admin"}
+                            {getRespectDisplayName(currentUser, collector, respectSenioritySettings) || collector?.nickname || "Admin"}
                           </td>
                           <td className="py-2.5 px-3 text-right font-bold font-mono">
                             ৳ {b.amount.toFixed(2)}
@@ -3482,7 +3485,7 @@ export default function FinanceSettlement({
                   <div className={`flex items-center gap-1.5 border-t pt-2 text-[10px] ${
                     isDarkMode ? "border-slate-850/30 text-slate-400" : "border-slate-200 text-slate-600"
                   }`}>
-                    <span>Logged by {memberObj?.nickname || memberObj?.name || "Manager"}</span>
+                    <span>Logged by {getRespectDisplayName(currentUser, memberObj, respectSenioritySettings) || memberObj?.nickname || memberObj?.name || "Manager"}</span>
                   </div>
                 </div>
               );
@@ -3618,7 +3621,7 @@ export default function FinanceSettlement({
                 >
                   <option value="">-- Choose Member --</option>
                   {activeMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.nickname} ({m.name})</option>
+                    <option key={m.id} value={m.id}>{getRespectDisplayName(currentUser, m, respectSenioritySettings) || m.nickname} ({m.name})</option>
                   ))}
                 </select>
               </div>
@@ -3654,7 +3657,7 @@ export default function FinanceSettlement({
                 <h3 className="text-lg font-bold font-display text-cyan-400 uppercase tracking-wide flex items-center gap-2">
                   <UserCheck className="text-orange-500" />
                   {renderMemberPhotoBeforeName(selectedMemberForAccountings.memberId || selectedMemberForAccountings.id, selectedMemberForAccountings.name)}
-                  Individual Accountings: {selectedMemberForAccountings.nickname}
+                  Individual Accountings: {getRespectDisplayName(currentUser, selectedMemberForAccountings, respectSenioritySettings) || selectedMemberForAccountings.nickname}
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
                   Full name: <span className="font-semibold text-white">{selectedMemberForAccountings.name}</span> • Role: <span className="text-cyan-400 font-bold">{selectedMemberForAccountings.role}</span>
