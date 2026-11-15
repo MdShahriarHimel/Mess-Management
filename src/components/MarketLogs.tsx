@@ -62,37 +62,101 @@ interface ParsedItem {
 // Client-side memoized cache for parsed vouchers
 const clientVoucherCache = new Map<string, { items: ParsedItem[]; total: number; source: string }>();
 
-// Instant client regex dictionary for sub-millisecond local responses
-const CLIENT_EMOJI_MAP: [RegExp, string, string][] = [
-  [/(গরু|বিফ|cow|beef|goru|guru|গোশত)/i, "🥩", "গরুর মাংস"],
-  [/(ছাগল|খাসি|mutton|goat|chagol|sagol)/i, "🍖", "খাসির মাংস"],
-  [/(মুরগি|মুরগী|চিকেন|chicken|murgi|morgi|broiler|সোনালী)/i, "🍗", "মুরগির মাংস"],
-  [/(চিংড়ি|চিংড়ি|chingri|prawn|shrimp)/i, "🦐", "চিংড়ি মাছ"],
-  [/(ফুলকপি|ফুল\s*কপি|fulkopi|phulkopi|cauliflower)/i, "🥦", "ফুলকপি"],
-  [/(লালশাক|লাল\s*শাক|lalshak|lal\s*shak)/i, "🥬", "লালশাক"],
-  [/(বেগুন|begun|eggplant|brinjal)/i, "🍆", "বেগুন"],
-  [/(মাছ|fish|mach|rui|ilish|কাতলা|পাঙ্গাস|তেলাপিয়া|তেলাপিয়া)/i, "🐟", "মাছ"],
-  [/(ডিম|egg|dim|anda|আন্ডা)/i, "🥚", "ডিম"],
-  [/(আলু|potato|alu|aloo)/i, "🥔", "আলু"],
-  [/(পেঁয়াজ|পিঁয়াজ|পিয়াজ|onion|peyaj|peaj|pyaj)/i, "🧅", "পেঁয়াজ"],
-  [/(পেঁপে|পেপে|papaya|pepe)/i, "🍈", "পেঁপে"],
-  [/(মরিচ|কাঁচামরিচ|কাচামরিচ|chili|morich)/i, "🌶️", "কাঁচামরিচ"],
-  [/(রসুন|garlic|roshun|roson)/i, "🧄", "রসুন"],
-  [/(আদা|ginger|ada)/i, "🫚", "আদা"],
-  [/(তেল|সয়াবিন|oil|tel|সরিষার)/i, "🛢️", "ভোজ্যতেল"],
-  [/(ডাল|dal|daal|lentil)/i, "🥣", "ডাল"],
-  [/(চাল|ভাত|rice|chal|bhat|মিনিকেট)/i, "🍚", "চাল"],
-  [/(মসলা|মশলা|spice|হলুদ|জিরা|লবণ|salt)/i, "🧂", "মসলাপাতি"],
-  [/(শাক|সবজি|sobji|shak|লাউ|পটল|ঢেঁড়স|টমেটো)/i, "🥬", "শাকসবজি"],
-  [/(ভাড়া|ভাড়া|রিকশা|rickshaw|vara|fare|গাড়ি|ভ্যান)/i, "🛺", "যাতায়াত ভাড়া"],
-  [/(রুটি|বিস্কুট|bread|biscuit|পাউরুটি)/i, "🍞", "নাস্তা"],
-  [/(দুধ|দই|milk|dudh)/i, "🥛", "দুধ/দুগ্ধজাত"]
+interface ClientEmojiRule {
+  id: string;
+  regex: RegExp;
+  emoji: string;
+  label: string;
+  group?: "chicken_specific" | "chicken_generic" | "fish_specific" | "fish_generic" | "veg_specific" | "veg_generic";
+}
+
+// Instant client regex dictionary for sub-millisecond local responses (matched against NFC + chandrabindu-stripped lowercase text)
+const CLIENT_EMOJI_MAP: ClientEmojiRule[] = [
+  { id: "beef", regex: /(গরু|বিফ|cow|beef|goru|guru|গোশত)/i, emoji: "🥩", label: "গরুর মাংস" },
+  { id: "mutton", regex: /(ছাগল|খাসি|mutton|goat|chagol|sagol)/i, emoji: "🍖", label: "খাসির মাংস" },
+  { id: "sonali_chicken", regex: /(সোনালি|সোনালী|পাকিস্তানি\s*মুরগ[িী]|sonali)/i, emoji: "🐥", label: "সোনালি মুরগি", group: "chicken_specific" },
+  { id: "broiler_chicken", regex: /(ব্রয়লার|ব্রয়লার|বয়লার|বয়লার|broiler|boiler|broilar)/i, emoji: "🐔", label: "ব্রয়লার মুরগি", group: "chicken_specific" },
+  { id: "chicken", regex: /(মুরগি|মুরগী|মুরগির|মুরগীর|চিকেন|chicken|murgi|morgi|deshi\s*murgi)/i, emoji: "🐔", label: "মুরগির মাংস", group: "chicken_generic" },
+  { id: "shrimp", regex: /(চিংড়ি|চিংড়ি|চিংড়ী|chingri|prawn|shrimp)/i, emoji: "🦐", label: "চিংড়ি মাছ", group: "fish_specific" },
+  { id: "shutki", regex: /(শুটকি|শুটকী|shutki|sutki|dry\s*fish|dried\s*fish)/i, emoji: "🐟", label: "শুটকি", group: "fish_specific" },
+  { id: "cauliflower", regex: /(ফুলকপি|ফুল\s*কপি|fulkopi|phulkopi|cauliflower)/i, emoji: "🥦", label: "ফুলকপি", group: "veg_specific" },
+  { id: "red_amaranth", regex: /(লালশাক|লাল\s*শাক|lalshak|lal\s*shak)/i, emoji: "🥬", label: "লালশাক", group: "veg_specific" },
+  { id: "eggplant", regex: /(বেগুন|begun|eggplant|brinjal)/i, emoji: "🍆", label: "বেগুন", group: "veg_specific" },
+  { id: "chichinga", regex: /(চিচিঙ্গা|চিচিঙা|চিচিংগা|chichinga|chichingha|cicinga|snake\s*gourd)/i, emoji: "🥒", label: "চিচিঙ্গা", group: "veg_specific" },
+  { id: "peanut", regex: /(বাদাম|চিনাবাদাম|চিনা\s*বাদাম|কাজুবাদাম|কাঠবাদাম|badam|baadam|chinabadam|peanut|peanuts|almond|cashew)/i, emoji: "🥜", label: "বাদাম" },
+  { id: "fish", regex: /(মাছ|fish|mach|maach|rui|ilish|রুই|ইলিশ|কাতলা|পাঙ্গাস|তেলাপিয়া|তেলাপিয়া)/i, emoji: "🐟", label: "মাছ", group: "fish_generic" },
+  { id: "egg", regex: /(ডিম|egg|dim|anda|আন্ডা)/i, emoji: "🥚", label: "ডিম" },
+  { id: "potato", regex: /(আলু|potato|alu|aloo)/i, emoji: "🥔", label: "আলু", group: "veg_specific" },
+  { id: "onion", regex: /(পেয়াজ|পিয়াজ|পেঁয়াজ|পিঁয়াজ|onion|peyaj|peaj|piyaj|pyaj|piaj|piaz)/i, emoji: "🧅", label: "পেঁয়াজ", group: "veg_specific" },
+  { id: "papaya", regex: /(পেপে|পেঁপে|papaya|pepe)/i, emoji: "🍈", label: "পেঁপে", group: "veg_specific" },
+  { id: "chili", regex: /(মরিচ|কাচামরিচ|কাঁচামরিচ|chili|morich)/i, emoji: "🌶️", label: "কাঁচামরিচ", group: "veg_specific" },
+  { id: "garlic", regex: /(রসুন|garlic|roshun|roson)/i, emoji: "🧄", label: "রসুন" },
+  { id: "ginger", regex: /(আদা|ginger|ada)/i, emoji: "🫚", label: "আদা" },
+  { id: "oil", regex: /(তেল|সয়াবিন|oil|tel|সরিষার)/i, emoji: "🛢️", label: "ভোজ্যতেল" },
+  { id: "lentil", regex: /(ডাল|dal|daal|lentil)/i, emoji: "🥣", label: "ডাল" },
+  { id: "rice", regex: /(চাল|ভাত|rice|chal|bhat|মিনিকেট)/i, emoji: "🍚", label: "চাল" },
+  { id: "spices", regex: /(মসলা|মশলা|spice|হলুদ|জিরা|লবণ|salt)/i, emoji: "🧂", label: "মসলাপাতি" },
+  { id: "vegetables", regex: /(শাকসবজি|শাক\s*সবজি|শাক|সবজি|sobji|shobji|shak|লাউ|পটল|ঢেড়স|ঢেঁড়স|টমেটো)/i, emoji: "🥬", label: "শাকসবজি", group: "veg_generic" },
+  { id: "fare", regex: /(ভাড়া|ভাড়া|রিকশা|rickshaw|vara|fare|গাড়ি|গাড়ি|ভ্যান)/i, emoji: "🛺", label: "যাতায়াত ভাড়া" },
+  { id: "bread", regex: /(রুটি|বিস্কুট|bread|biscuit|পাউরুটি)/i, emoji: "🍞", label: "নাস্তা" },
+  { id: "dairy", regex: /(দুধ|দই|milk|dudh)/i, emoji: "🥛", label: "দুধ/দুগ্ধজাত" }
 ];
+
+function renderMarketItemIcon(item: ParsedItem, size: "sm" | "lg" = "sm") {
+  const combined = `${item.name || ""} ${item.originalText || ""}`.normalize("NFC");
+  const boxClass = size === "lg" ? "w-7 h-7" : "w-5 h-5";
+
+  // Yellow Sonali Chicken logo
+  if (item.emoji === "🐥" || /সোনাল[িী]|sonali/i.test(combined)) {
+    return (
+      <span className={`inline-flex items-center justify-center shrink-0 select-none ${boxClass}`} title="সোনালি মুরগি">
+        <svg viewBox="0 0 36 36" className="w-full h-full drop-shadow-xs" aria-hidden="true">
+          {/* Red comb */}
+          <path d="M13 7c0-2.2 2-3.5 3.6-2.4.7-1.7 3-1.8 4-.3 1.3-.9 3.2.2 3 2 .8.5 1 1.6.5 2.4l-11-.2c-.6-.4-.4-1.1-.1-1.5z" fill="#EF4444" />
+          {/* Golden-yellow chicken head & body */}
+          <path d="M11 16c0-4.8 3.6-8.2 8-8.2 4.3 0 7.6 3.2 7.6 7.4 0 1.4-.3 2.5-.8 3.6 1.5 1.4 2.2 3.3 2.2 5.4 0 4.4-3.8 7.8-9.2 7.8-5.4 0-9.3-3.4-9.3-7.8 0-2.6 1.1-4.8 2.8-6.2-.8-.6-1.3-1.3-1.3-2z" fill="#FACC15" stroke="#CA8A04" strokeWidth="1.1" />
+          {/* Soft warm wing highlight */}
+          <path d="M14.5 22.5c2.2-1.6 5.6-1.5 7.5.5 1.1 1.2.9 3.1-.5 4-2 1.2-5.2 1-6.9-.6-1-.9-1.1-3-.1-3.9z" fill="#FDE047" stroke="#D97706" strokeWidth="0.9" />
+          {/* Orange beak */}
+          <path d="M9.6 14.3L5.2 15.8l4.4 1.8c.5-.9.5-2.3 0-3.3z" fill="#F97316" stroke="#C2410C" strokeWidth="0.8" />
+          {/* Red wattle */}
+          <path d="M9.8 17.5c-.6.8-.5 2.2.4 2.5.9.3 1.6-.6 1.3-1.7-.2-.7-.9-1-1.7-.8z" fill="#EF4444" />
+          {/* Eye */}
+          <circle cx="13.8" cy="13.5" r="1.45" fill="#1E293B" />
+          <circle cx="13.4" cy="13.1" r="0.45" fill="#FFFFFF" />
+        </svg>
+      </span>
+    );
+  }
+
+  // Distinct Dried Fish (Shutki) icon
+  if (/শুটক[িী]|শুঁটকি|shutki|sutki/i.test(combined)) {
+    return (
+      <span className={`inline-flex items-center justify-center shrink-0 select-none ${boxClass}`} title="শুটকি">
+        <svg viewBox="0 0 36 36" className="w-full h-full drop-shadow-xs" aria-hidden="true">
+          {/* Dried fish body (amber-golden sun-dried look) */}
+          <path d="M7 18c4.5-6.2 13-6.8 19.5-1.5l4.8-3.8c.5-.4 1.2.1 1 0.8l-1.5 4.5 1.5 4.5c.2.7-.5 1.2-1 .8l-4.8-3.8C20 24.8 11.5 24.2 7 18z" fill="#D97706" stroke="#92400E" strokeWidth="1.2" />
+          {/* Lighter belly ridge & drying ribs */}
+          <path d="M10 18c4-3.7 10.5-3.8 15-.3-4.5 3.4-11 3.4-15 .3z" fill="#FCD34D" opacity="0.85" />
+          <path d="M14.5 14.8v6.4M18 14.4v7.2M21.5 15.1v5.8" stroke="#92400E" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
+          {/* Eye */}
+          <circle cx="11.2" cy="17.3" r="1.2" fill="#451A03" />
+        </svg>
+      </span>
+    );
+  }
+
+  return (
+    <span className={`${size === "lg" ? "text-2xl" : "text-lg"} select-none shrink-0`}>
+      {item.emoji || "🛒"}
+    </span>
+  );
+}
 
 function quickClientParse(text: string): ParsedItem[] {
   if (!text) return [];
   const bengaliNumbers = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
-  let normalized = text;
+  let normalized = text.normalize("NFC");
   for (let i = 0; i < 10; i++) {
     normalized = normalized.replace(new RegExp(bengaliNumbers[i], "g"), String(i));
   }
@@ -131,19 +195,31 @@ function quickClientParse(text: string): ParsedItem[] {
     }
 
     cleanWord = cleanWord.replace(/(?:taka|tk\.?|টাকা|টা)/gi, "").replace(/[,\-:।+()=]/g, " ").trim();
+    const matchTarget = cleanWord.normalize("NFC").replace(/[\u200B-\u200D\uFEFF\u0981]/g, "");
 
-    // Check all matched categories to support compound combos like "আলু পেঁয়াজ"
-    const matchedEmojis: string[] = [];
-    const matchedLabels: string[] = [];
-    for (const [regex, emoji, label] of CLIENT_EMOJI_MAP) {
-      if (regex.test(cleanWord)) {
-        matchedEmojis.push(emoji);
-        matchedLabels.push(label);
+    // Check all matched categories while suppressing generic parent when specific variant matched
+    const matchedRules: ClientEmojiRule[] = [];
+    for (const rule of CLIENT_EMOJI_MAP) {
+      if (rule.regex.test(matchTarget)) {
+        matchedRules.push(rule);
       }
     }
 
-    const matchedEmoji = matchedEmojis.length > 0 ? matchedEmojis.join("") : "🛒";
-    const matchedName = matchedLabels.length > 0 ? matchedLabels.join(" ও ") : (cleanWord || "বাজার সামগ্রী");
+    const hasSpecificChicken = matchedRules.some(r => r.group === "chicken_specific");
+    const hasSpecificFish = matchedRules.some(r => r.group === "fish_specific");
+    const hasSpecificVeg = matchedRules.some(r => r.group === "veg_specific");
+
+    const filteredRules = matchedRules.filter(r => {
+      if (r.group === "chicken_generic" && hasSpecificChicken) return false;
+      if (r.group === "fish_generic" && hasSpecificFish) return false;
+      if (r.group === "veg_generic" && hasSpecificVeg) {
+        return /(সবজি|শাকসবজি|sobji|shobji)/i.test(matchTarget);
+      }
+      return true;
+    });
+
+    const matchedEmoji = filteredRules.length > 0 ? filteredRules.map(r => r.emoji).join("") : "🛒";
+    const matchedName = filteredRules.length > 0 ? filteredRules.map(r => r.label).join(" ও ") : (cleanWord || "বাজার সামগ্রী");
 
     items.push({
       name: matchedName,
@@ -355,7 +431,7 @@ const VoucherDetailsCell: React.FC<{
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                  <span className="text-lg select-none shrink-0">{item.emoji || "🛒"}</span>
+                  {renderMarketItemIcon(item, "sm")}
                   <div className="truncate">
                     <span className={`font-semibold text-xs truncate block ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>
                       {item.name}
@@ -471,7 +547,7 @@ const VoucherDetailsCell: React.FC<{
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <span className="text-2xl select-none">{item.emoji || "🛒"}</span>
+                      {renderMarketItemIcon(item, "lg")}
                       <div>
                         <div className="font-bold text-sm">{item.name}</div>
                         {item.quantity && (

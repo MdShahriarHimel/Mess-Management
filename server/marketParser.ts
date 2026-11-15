@@ -64,11 +64,25 @@ export const CANONICAL_GROCERIES: CanonicalGrocery[] = [
     aliases: ["chagol", "sagol", "khasi", "khasir", "mutton", "goat", "ছাগল", "খাসি", "খাসির", "ছাগলের"]
   },
   {
+    id: "sonali_chicken",
+    label: "সোনালি মুরগি",
+    category: "Chicken",
+    emoji: "🐥",
+    aliases: ["sonali", "sonali murgi", "sonali chicken", "pakistani murgi", "সোনালি মুরগি", "সোনালি মুরগী", "সোনালী মুরগি", "সোনালী মুরগী", "সোনালি", "সোনালী", "পাকিস্তানি মুরগি"]
+  },
+  {
+    id: "broiler_chicken",
+    label: "ব্রয়লার মুরগি",
+    category: "Chicken",
+    emoji: "🐔",
+    aliases: ["broiler", "boiler", "broilar", "broiler murgi", "broiler chicken", "ব্রয়লার", "ব্রয়লার", "ব্রয়লার মুরগি", "ব্রয়লার মুরগি", "ব্রয়লার মুরগী", "ব্রয়লার মুরগী", "বয়লার", "বয়লার"]
+  },
+  {
     id: "chicken",
     label: "মুরগির মাংস",
     category: "Chicken",
-    emoji: "🍗",
-    aliases: ["murgi", "morgi", "chicken", "broiler", "sonali", "deshi murgi", "মুরগি", "মুরগী", "চিকেন", "ব্রয়লার", "সোনালী"]
+    emoji: "🐔",
+    aliases: ["murgi", "morgi", "chicken", "deshi murgi", "মুরগি", "মুরগী", "মুরগির মাংস", "মুরগীর মাংস", "মুরগির", "চিকেন", "দেশি মুরগি", "দেশী মুরগি"]
   },
   {
     id: "shrimp",
@@ -76,6 +90,13 @@ export const CANONICAL_GROCERIES: CanonicalGrocery[] = [
     category: "Fish",
     emoji: "🦐",
     aliases: ["chingri", "chingree", "chingri mach", "prawn", "shrimp", "চিংড়ি", "চিংড়ি", "চিংড়ী", "চিংড়ি মাছ"]
+  },
+  {
+    id: "shutki",
+    label: "শুটকি",
+    category: "Fish",
+    emoji: "🐟",
+    aliases: ["shutki", "sutki", "shutki mach", "sutki mach", "loitta shutki", "churi shutki", "dry fish", "dried fish", "শুটকি", "শুটকী", "শুঁটকি", "শুটকি মাছ", "শুটকী মাছ", "লইট্যা শুটকি", "চ্যাপা শুটকি", "ছুরি শুটকি"]
   },
   {
     id: "cauliflower",
@@ -97,6 +118,20 @@ export const CANONICAL_GROCERIES: CanonicalGrocery[] = [
     category: "Vegetables",
     emoji: "🍆",
     aliases: ["begun", "brinjal", "eggplant", "aubergine", "বেগুন", "তাল বেগুন"]
+  },
+  {
+    id: "chichinga",
+    label: "চিচিঙ্গা",
+    category: "Vegetables",
+    emoji: "🥒",
+    aliases: ["chichinga", "chichingha", "cicinga", "snake gourd", "চিচিঙ্গা", "চিচিঙা", "চিচিংগা"]
+  },
+  {
+    id: "peanut",
+    label: "বাদাম",
+    category: "Grocery",
+    emoji: "🥜",
+    aliases: ["badam", "baadam", "chinabadam", "china badam", "kaju", "kajubadam", "kathbadam", "kath badam", "peanut", "peanuts", "nut", "nuts", "almond", "cashew", "বাদাম", "চিনাবাদাম", "চিনা বাদাম", "কাজুবাদাম", "কাঠবাদাম", "পেস্তা বাদাম"]
   },
   {
     id: "fish",
@@ -124,7 +159,7 @@ export const CANONICAL_GROCERIES: CanonicalGrocery[] = [
     label: "পেঁয়াজ",
     category: "Vegetables",
     emoji: "🧅",
-    aliases: ["peyaj", "peaj", "peyaj", "piyaj", "pyaj", "onion", "onions", "পেঁয়াজ", "পিঁয়াজ", "পিয়াজ"]
+    aliases: ["peyaj", "peaj", "piyaj", "pyaj", "piaj", "piaz", "peyaz", "onion", "onions", "পেঁয়াজ", "পেঁয়াজ", "পিঁয়াজ", "পিঁয়াজ", "পিয়াজ", "পিয়াজ", "পেয়াজ", "পেয়াজ"]
   },
   {
     id: "papaya",
@@ -223,14 +258,24 @@ export const CANONICAL_GROCERIES: CanonicalGrocery[] = [
 const aliasToGroceryMap = new Map<string, CanonicalGrocery>();
 let isDictionaryInitialized = false;
 
+function normalizeBengaliText(str: string): string {
+  return (str || "")
+    .normalize("NFC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u0981/g, "") // Normalize optional chandrabindu (ঁ)
+    .toLowerCase()
+    .trim();
+}
+
 // Synchronously populate built-in aliases immediately on startup
 function populateBuiltinAliases() {
   for (const item of CANONICAL_GROCERIES) {
-    aliasToGroceryMap.set(item.id.toLowerCase(), item);
-    aliasToGroceryMap.set(item.label.toLowerCase(), item);
+    aliasToGroceryMap.set(normalizeBengaliText(item.id), item);
+    aliasToGroceryMap.set(normalizeBengaliText(item.label), item);
     for (const alias of item.aliases) {
-      aliasToGroceryMap.set(alias.toLowerCase().trim(), item);
-      const compacted = alias.replace(/\s+/g, "").toLowerCase().trim();
+      const norm = normalizeBengaliText(alias);
+      if (norm) aliasToGroceryMap.set(norm, item);
+      const compacted = norm.replace(/\s+/g, "");
       if (compacted) aliasToGroceryMap.set(compacted, item);
     }
   }
@@ -255,6 +300,8 @@ export async function ensureDictionaryInitialized(): Promise<void> {
     for (const f of customFoods) foodMap.set(f.id, f);
 
     for (const ca of customAliases) {
+      const normAlias = normalizeBengaliText(ca.alias);
+      if (!normAlias || aliasToGroceryMap.has(normAlias)) continue;
       const parentFood = foodMap.get(ca.foodId);
       if (parentFood) {
         const matchingCanonical = findCanonicalByQuery(parentFood.label) || {
@@ -264,7 +311,7 @@ export async function ensureDictionaryInitialized(): Promise<void> {
           emoji: (parentFood as any).emoji || "🛒",
           aliases: []
         };
-        aliasToGroceryMap.set(ca.alias.toLowerCase().trim(), matchingCanonical);
+        aliasToGroceryMap.set(normAlias, matchingCanonical);
       }
     }
     console.log(`[Market Parser] Food dictionary loaded with ${aliasToGroceryMap.size} aliases.`);
@@ -280,7 +327,7 @@ export async function ensureDictionaryInitialized(): Promise<void> {
  */
 function normalizeWord(word: string): string {
   if (!word) return "";
-  let s = word.toLowerCase().trim();
+  let s = normalizeBengaliText(word);
   s = s.replace(/(?:taka|tk\.?|টাকা|টা|কেজি|গ্রাম|kg|gm|g)/gi, " ");
   s = s.replace(/[,\-:।+()=]/g, " ");
   return s.replace(/\s+/g, " ").trim();
@@ -294,31 +341,17 @@ export function findCanonicalByQuery(query: string): CanonicalGrocery | null {
   const clean = normalizeWord(query);
   if (!clean) return null;
 
-  // Direct alias match
+  // Direct exact alias match
   if (aliasToGroceryMap.has(clean)) {
     return aliasToGroceryMap.get(clean)!;
   }
 
-  // Token sub-phrase match
-  const parts = clean.split(" ");
-  for (const part of parts) {
-    if (part.length >= 2 && aliasToGroceryMap.has(part)) {
-      return aliasToGroceryMap.get(part)!;
-    }
-  }
-
-  // Partial match across aliases
-  for (const [alias, item] of aliasToGroceryMap.entries()) {
-    if (alias.length >= 3 && (clean.includes(alias) || alias.includes(clean))) {
-      return item;
-    }
-  }
-
-  // Multi-word compound match (e.g. "আলু পেঁয়াজ", "পেঁপে কাঁচামরিচ")
+  // Multi-word & specific-before-generic match across CANONICAL_GROCERIES
   const matchedCanns: CanonicalGrocery[] = [];
   for (const item of CANONICAL_GROCERIES) {
     for (const al of item.aliases) {
-      if (al.length >= 2 && clean.includes(al.toLowerCase())) {
+      const normAl = normalizeBengaliText(al);
+      if (normAl.length >= 2 && clean.includes(normAl)) {
         if (!matchedCanns.some(c => c.id === item.id)) {
           matchedCanns.push(item);
         }
@@ -327,15 +360,46 @@ export function findCanonicalByQuery(query: string): CanonicalGrocery | null {
     }
   }
 
-  if (matchedCanns.length > 0) {
-    if (matchedCanns.length === 1) return matchedCanns[0];
+  // Suppress generic parent categories when a specific child matched in the same item phrase
+  const hasSpecificChicken = matchedCanns.some(c => c.id === "sonali_chicken" || c.id === "broiler_chicken");
+  const hasSpecificFish = matchedCanns.some(c => c.id === "shutki" || c.id === "shrimp");
+  const hasSpecificVeg = matchedCanns.some(c =>
+    ["cauliflower", "red_amaranth", "eggplant", "chichinga", "potato", "onion", "papaya", "chili"].includes(c.id)
+  );
+
+  const filtered = matchedCanns.filter(c => {
+    if (c.id === "chicken" && hasSpecificChicken) return false;
+    if (c.id === "fish" && hasSpecificFish) return false;
+    if (c.id === "vegetables" && hasSpecificVeg) {
+      // Keep generic vegetables only if user explicitly wrote "সবজি" or "শাকসবজি"
+      return /(সবজি|শাকসবজি|sobji|shobji|vegetable)/i.test(clean);
+    }
+    return true;
+  });
+
+  if (filtered.length > 0) {
+    if (filtered.length === 1) return filtered[0];
     return {
-      id: matchedCanns.map(c => c.id).join("_"),
-      label: matchedCanns.map(c => c.label).join(" ও "),
-      category: matchedCanns[0].category,
-      emoji: matchedCanns.map(c => c.emoji).join(""),
+      id: filtered.map(c => c.id).join("_"),
+      label: filtered.map(c => c.label).join(" ও "),
+      category: filtered[0].category,
+      emoji: filtered.map(c => c.emoji).join(""),
       aliases: []
     };
+  }
+
+  // Fallback: Token & learned DB alias match
+  const parts = clean.split(" ");
+  for (const part of parts) {
+    if (part.length >= 2 && aliasToGroceryMap.has(part)) {
+      return aliasToGroceryMap.get(part)!;
+    }
+  }
+
+  for (const [alias, item] of aliasToGroceryMap.entries()) {
+    if (alias.length >= 3 && (clean.includes(alias) || alias.includes(clean))) {
+      return item;
+    }
   }
 
   return null;
@@ -471,14 +535,19 @@ Analyze this market voucher purchase note: "${text}"
 ${totalAmount ? `Total voucher amount: ${totalAmount} BDT.` : ""}
 
 Extract all individual items purchased or spent, along with their cost in BDT and the most fitting clean single emoji for that item.
-Handle Bengali text, Banglish/transliterations (e.g. "GORU", "chagol", "alu peyaj", "vara", "dim", "pepe kachamorich"), and abbreviations.
+Handle Bengali text, Banglish/transliterations (e.g. "GORU", "chagol", "alu peyaj", "vara", "dim", "pepe kachamorich", "badam", "shutki", "chichinga", "sonali murgi", "broiler murgi"), and abbreviations.
+Emoji rules:
+- গরুর মাংস -> 🥩, খাসির মাংস -> 🍖
+- মুরগির মাংস / ব্রয়লার মুরগি -> 🐔, সোনালি মুরগি -> 🐥
+- চিংড়ি মাছ -> 🦐, শুটকি -> 🐟, অন্যান্য মাছ -> 🐟
+- বাদাম -> 🥜, পেঁয়াজ / পিয়াজ -> 🧅, চিচিঙ্গা -> 🥒
 If multiple items share one price (e.g. "আলু পেঁয়াজ 135"), group them as "আলু ও পেঁয়াজ" with appropriate emoji ("🥔🧅").
 If travel fare is mentioned (e.g. "ভাড়া 20"), use "যাতায়াত ভাড়া" and "🛺".
 
 Respond strictly with a valid JSON array of objects, with NO markdown backticks, matching this schema:
 [
   {
-    "name": "Standard Bengali Name (e.g. গরুর মাংস, ডিম, আলু ও পেঁয়াজ, যাতায়াত ভাড়া)",
+    "name": "Standard Bengali Name (e.g. গরুর মাংস, সোনালি মুরগি, ব্রয়লার মুরগি, বাদাম, শুটকি, চিচিঙ্গা, পেঁয়াজ, যাতায়াত ভাড়া)",
     "originalText": "The exact word from user",
     "amount": 600,
     "emoji": "🥩",
