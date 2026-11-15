@@ -3180,12 +3180,18 @@ router.get("/markets/:monthId", authMiddleware, (req: AuthenticatedRequest, res:
 
 router.post("/markets/parse-voucher", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { text, totalAmount } = req.body;
+    const { text, totalAmount, quantity } = req.body;
     if (!text || typeof text !== "string") {
       res.status(400).json({ error: "Voucher text description is required" });
       return;
     }
-    const breakdown = await getVoucherBreakdown(text, typeof totalAmount === "number" ? totalAmount : undefined);
+    const currentMessId = getActiveMessId();
+    const breakdown = await getVoucherBreakdown(
+      text,
+      typeof totalAmount === "number" ? totalAmount : undefined,
+      currentMessId,
+      typeof quantity === "string" ? quantity : undefined
+    );
     res.json(breakdown);
   } catch (err: any) {
     console.error("[Route] Failed to parse market voucher:", err);

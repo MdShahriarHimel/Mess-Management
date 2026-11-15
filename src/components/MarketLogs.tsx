@@ -74,30 +74,46 @@ interface ClientEmojiRule {
 const CLIENT_EMOJI_MAP: ClientEmojiRule[] = [
   { id: "beef", regex: /(গরু|বিফ|cow|beef|goru|guru|গোশত)/i, emoji: "🥩", label: "গরুর মাংস" },
   { id: "mutton", regex: /(ছাগল|খাসি|mutton|goat|chagol|sagol)/i, emoji: "🍖", label: "খাসির মাংস" },
-  { id: "sonali_chicken", regex: /(সোনালি|সোনালী|পাকিস্তানি\s*মুরগ[িী]|sonali)/i, emoji: "🐥", label: "সোনালি মুরগি", group: "chicken_specific" },
+  { id: "sonali_chicken", regex: /(সোনালি|সোনালী|পাকিস্তানি\s*মুরগ[িী]|sonali|shonali)/i, emoji: "🐥", label: "সোনালি মুরগি", group: "chicken_specific" },
   { id: "broiler_chicken", regex: /(ব্রয়লার|ব্রয়লার|বয়লার|বয়লার|broiler|boiler|broilar)/i, emoji: "🐔", label: "ব্রয়লার মুরগি", group: "chicken_specific" },
+  { id: "quail", regex: /(কোয়েল|কোয়েল|koel|koyel|quail)/i, emoji: "🐦", label: "কোয়েল", group: "chicken_specific" },
   { id: "chicken", regex: /(মুরগি|মুরগী|মুরগির|মুরগীর|চিকেন|chicken|murgi|morgi|deshi\s*murgi)/i, emoji: "🐔", label: "মুরগির মাংস", group: "chicken_generic" },
-  { id: "shrimp", regex: /(চিংড়ি|চিংড়ি|চিংড়ী|chingri|prawn|shrimp)/i, emoji: "🦐", label: "চিংড়ি মাছ", group: "fish_specific" },
-  { id: "shutki", regex: /(শুটকি|শুটকী|shutki|sutki|dry\s*fish|dried\s*fish)/i, emoji: "🐟", label: "শুটকি", group: "fish_specific" },
-  { id: "cauliflower", regex: /(ফুলকপি|ফুল\s*কপি|fulkopi|phulkopi|cauliflower)/i, emoji: "🥦", label: "ফুলকপি", group: "veg_specific" },
-  { id: "red_amaranth", regex: /(লালশাক|লাল\s*শাক|lalshak|lal\s*shak)/i, emoji: "🥬", label: "লালশাক", group: "veg_specific" },
+  { id: "shrimp", regex: /(চিংড়ি|চিংড়ি|চিংড়ী|chingri|chinri|prawn|shrimp)/i, emoji: "🦐", label: "চিংড়ি মাছ", group: "fish_specific" },
+  { id: "shutki", regex: /(শুটকি|শুটকী|শুঁটকি|shutki|sutki|dry\s*fish|dried\s*fish)/i, emoji: "🐟", label: "শুটকি", group: "fish_specific" },
+  { id: "fish", regex: /(মাছ|fish|mach|maach|rui|ilish|রুই|ইলিশ|কাতলা|পাঙ্গাস|তেলাপিয়া|তেলাপিয়া|পাবদা|ছোট\s*মাছ|টেংরা|শিং|মাগুর|বোয়াল|pabda|pangas|choto\s*mach|tengra|shing|magur|boal)/i, emoji: "🐟", label: "মাছ", group: "fish_generic" },
+  { id: "egg", regex: /(ডিম|egg|eggs|dim|deem|anda|আন্ডা)/i, emoji: "🥚", label: "ডিম" },
+  { id: "pui_shak", regex: /(পুঁইশাক|পুঁই\s*শাক|পুইশাক|পুই\s*শাক|puishak|pui\s*shak|pui\s*saag)/i, emoji: "🥬", label: "পুঁইশাক", group: "veg_specific" },
+  { id: "red_amaranth", regex: /(লালশাক|লাল\s*শাক|lalshak|lal\s*shak|lal\s*saag)/i, emoji: "🥬", label: "লালশাক", group: "veg_specific" },
+  { id: "palong_shak", regex: /(পালংশাক|পালং\s*শাক|পালং|palong|spinach)/i, emoji: "🥬", label: "পালংশাক", group: "veg_specific" },
+  { id: "kolmi_shak", regex: /(কলমিশাক|কলমি\s*শাক|কলমি|kolmi|water\s*spinach)/i, emoji: "🥬", label: "কলমিশাক", group: "veg_specific" },
+  { id: "cauliflower", regex: /(ফুলকপি|ফুল\s*কপি|কপি|fulkopi|phulkopi|ful\s*kopi|full\s*kopi|fullkopi|cauliflower)/i, emoji: "🥦", label: "ফুলকপি", group: "veg_specific" },
+  { id: "cabbage", regex: /(বাঁধাকপি|বাধাকপি|পাতাকপি|পাতা\s*কপি|badhakopi|badha\s*kopi|bandhakopi|cabbage)/i, emoji: "🥬", label: "বাঁধাকপি", group: "veg_specific" },
+  { id: "tomato", regex: /(টমেটো|টমেটু|tomato|tomatoes)/i, emoji: "🍅", label: "টমেটো", group: "veg_specific" },
+  { id: "bean", regex: /(শিম|সিম|শীম|shim|sim|seem|bean|beans)/i, emoji: "🫛", label: "শিম", group: "veg_specific" },
+  { id: "bottle_gourd", regex: /(লাউ|কদু|lau|law|bottle\s*gourd|gourd)/i, emoji: "🍈", label: "লাউ", group: "veg_specific" },
   { id: "eggplant", regex: /(বেগুন|begun|eggplant|brinjal)/i, emoji: "🍆", label: "বেগুন", group: "veg_specific" },
   { id: "chichinga", regex: /(চিচিঙ্গা|চিচিঙা|চিচিংগা|chichinga|chichingha|cicinga|snake\s*gourd)/i, emoji: "🥒", label: "চিচিঙ্গা", group: "veg_specific" },
-  { id: "peanut", regex: /(বাদাম|চিনাবাদাম|চিনা\s*বাদাম|কাজুবাদাম|কাঠবাদাম|badam|baadam|chinabadam|peanut|peanuts|almond|cashew)/i, emoji: "🥜", label: "বাদাম" },
-  { id: "fish", regex: /(মাছ|fish|mach|maach|rui|ilish|রুই|ইলিশ|কাতলা|পাঙ্গাস|তেলাপিয়া|তেলাপিয়া)/i, emoji: "🐟", label: "মাছ", group: "fish_generic" },
-  { id: "egg", regex: /(ডিম|egg|dim|anda|আন্ডা)/i, emoji: "🥚", label: "ডিম" },
+  { id: "pointed_gourd", regex: /(পটল|potol|patol|pointed\s*gourd)/i, emoji: "🥒", label: "পটল", group: "veg_specific" },
+  { id: "okra", regex: /(ঢেঁড়স|ঢেঁড়স|ঢেড়স|ভেন্ডি|dheros|dherosh|bhindi|okra)/i, emoji: "🫛", label: "ঢেঁড়স", group: "veg_specific" },
+  { id: "bitter_gourd", regex: /(করলা|উচ্ছে|korola|korolla|karela|bitter\s*gourd)/i, emoji: "🥒", label: "করলা", group: "veg_specific" },
+  { id: "cucumber", regex: /(শসা|shosha|sosa|cucumber)/i, emoji: "🥒", label: "শসা", group: "veg_specific" },
+  { id: "pumpkin", regex: /(মিষ্টি\s*কুমড়া|মিষ্টিকুমড়া|কুমড়া|কুমড়া|kumra|misti\s*kumra|mishti\s*kumra|pumpkin)/i, emoji: "🎃", label: "মিষ্টি কুমড়া", group: "veg_specific" },
+  { id: "carrot", regex: /(গাজর|gajor|carrot)/i, emoji: "🥕", label: "গাজর", group: "veg_specific" },
+  { id: "radish", regex: /(মুলা|মূলা|mula|radish)/i, emoji: "🥕", label: "মুলা", group: "veg_specific" },
+  { id: "taro", regex: /(কচু|কচুর\s*মুখি|কচুর\s*লতি|লতি|kochu|taro)/i, emoji: "🥔", label: "কচু", group: "veg_specific" },
   { id: "potato", regex: /(আলু|potato|alu|aloo)/i, emoji: "🥔", label: "আলু", group: "veg_specific" },
-  { id: "onion", regex: /(পেয়াজ|পিয়াজ|পেঁয়াজ|পিঁয়াজ|onion|peyaj|peaj|piyaj|pyaj|piaj|piaz)/i, emoji: "🧅", label: "পেঁয়াজ", group: "veg_specific" },
+  { id: "onion", regex: /(পেয়াজ|পিয়াজ|পেঁয়াজ|পিঁয়াজ|পিয়াজ|পেয়াজ|onion|peyaj|peaj|piyaj|pyaj|piaj|piaz|peyaz)/i, emoji: "🧅", label: "পেঁয়াজ", group: "veg_specific" },
   { id: "papaya", regex: /(পেপে|পেঁপে|papaya|pepe)/i, emoji: "🍈", label: "পেঁপে", group: "veg_specific" },
-  { id: "chili", regex: /(মরিচ|কাচামরিচ|কাঁচামরিচ|chili|morich)/i, emoji: "🌶️", label: "কাঁচামরিচ", group: "veg_specific" },
+  { id: "chili", regex: /(মরিচ|কাচামরিচ|কাঁচামরিচ|chili|chilli|morich|marich)/i, emoji: "🌶️", label: "কাঁচামরিচ", group: "veg_specific" },
+  { id: "peanut", regex: /(বাদাম|চিনাবাদাম|চিনা\s*বাদাম|কাজুবাদাম|কাঠবাদাম|badam|baadam|chinabadam|peanut|peanuts|almond|cashew)/i, emoji: "🥜", label: "বাদাম" },
   { id: "garlic", regex: /(রসুন|garlic|roshun|roson)/i, emoji: "🧄", label: "রসুন" },
   { id: "ginger", regex: /(আদা|ginger|ada)/i, emoji: "🫚", label: "আদা" },
   { id: "oil", regex: /(তেল|সয়াবিন|oil|tel|সরিষার)/i, emoji: "🛢️", label: "ভোজ্যতেল" },
-  { id: "lentil", regex: /(ডাল|dal|daal|lentil)/i, emoji: "🥣", label: "ডাল" },
+  { id: "lentil", regex: /(?:ডাল|মসুর|মুগ|বুটের|খেসারি|\bdal\b|\bdaal\b|lentil|\bmug\b|\bmoog\b|masoor|buter)/i, emoji: "🟡", label: "ডাল" },
   { id: "rice", regex: /(চাল|ভাত|rice|chal|bhat|মিনিকেট)/i, emoji: "🍚", label: "চাল" },
   { id: "spices", regex: /(মসলা|মশলা|spice|হলুদ|জিরা|লবণ|salt)/i, emoji: "🧂", label: "মসলাপাতি" },
-  { id: "vegetables", regex: /(শাকসবজি|শাক\s*সবজি|শাক|সবজি|sobji|shobji|shak|লাউ|পটল|ঢেড়স|ঢেঁড়স|টমেটো)/i, emoji: "🥬", label: "শাকসবজি", group: "veg_generic" },
-  { id: "fare", regex: /(ভাড়া|ভাড়া|রিকশা|rickshaw|vara|fare|গাড়ি|গাড়ি|ভ্যান)/i, emoji: "🛺", label: "যাতায়াত ভাড়া" },
+  { id: "vegetables", regex: /(শাকসবজি|শাক\s*সবজি|শাক-সবজি|শাক|সবজি|sobji|shobji|sabji|shaksobji|shak|saag|vegetable)/i, emoji: "🥬", label: "শাকসবজি", group: "veg_generic" },
+  { id: "fare", regex: /(ভাড়া|ভাড়া|রিকশা|rickshaw|vara|bhara|fare|গাড়ি|গাড়ি|ভ্যান)/i, emoji: "🛺", label: "যাতায়াত ভাড়া" },
   { id: "bread", regex: /(রুটি|বিস্কুট|bread|biscuit|পাউরুটি)/i, emoji: "🍞", label: "নাস্তা" },
   { id: "dairy", regex: /(দুধ|দই|milk|dudh)/i, emoji: "🥛", label: "দুধ/দুগ্ধজাত" }
 ];
@@ -105,6 +121,33 @@ const CLIENT_EMOJI_MAP: ClientEmojiRule[] = [
 function renderMarketItemIcon(item: ParsedItem, size: "sm" | "lg" = "sm") {
   const combined = `${item.name || ""} ${item.originalText || ""}`.normalize("NFC");
   const boxClass = size === "lg" ? "w-7 h-7" : "w-5 h-5";
+
+  // Custom Yellow Lentil Grains (Dal) icon
+  if (
+    item.emoji === "🟡" ||
+    item.emoji === "🥣" ||
+    /ডাল|\bdal\b|\bdaal\b|lentil|মুগ|মসুর|বুটের|খেসারি/i.test(combined)
+  ) {
+    return (
+      <span className={`inline-flex items-center justify-center shrink-0 select-none ${boxClass}`} title="ডাল">
+        <svg viewBox="0 0 36 36" className="w-full h-full drop-shadow-xs" aria-hidden="true">
+          {/* Cluster of golden-yellow lentil grains */}
+          <ellipse cx="18" cy="11" rx="4.4" ry="3.3" transform="rotate(-12 18 11)" fill="#FACC15" stroke="#B45309" strokeWidth="1" />
+          <ellipse cx="11.2" cy="16.5" rx="4.3" ry="3.2" transform="rotate(18 11.2 16.5)" fill="#FBBF24" stroke="#B45309" strokeWidth="1" />
+          <ellipse cx="24.5" cy="16.2" rx="4.4" ry="3.2" transform="rotate(-22 24.5 16.2)" fill="#FDE047" stroke="#B45309" strokeWidth="1" />
+          <ellipse cx="17.8" cy="19.2" rx="4.6" ry="3.5" transform="rotate(8 17.8 19.2)" fill="#F59E0B" stroke="#92400E" strokeWidth="1" />
+          <ellipse cx="12.5" cy="24.5" rx="4.2" ry="3.1" transform="rotate(-16 12.5 24.5)" fill="#FACC15" stroke="#B45309" strokeWidth="1" />
+          <ellipse cx="23.2" cy="24.3" rx="4.3" ry="3.1" transform="rotate(20 23.2 24.3)" fill="#FBBF24" stroke="#B45309" strokeWidth="1" />
+          <ellipse cx="18" cy="27.2" rx="4" ry="2.9" fill="#FDE047" stroke="#B45309" strokeWidth="1" />
+          {/* Subtle shine highlights */}
+          <circle cx="16.8" cy="10" r="0.9" fill="#FEF9C3" />
+          <circle cx="16.5" cy="18.1" r="1" fill="#FEF9C3" />
+          <circle cx="23.5" cy="15.1" r="0.85" fill="#FEF9C3" />
+          <circle cx="11.5" cy="23.5" r="0.8" fill="#FEF9C3" />
+        </svg>
+      </span>
+    );
+  }
 
   // Yellow Sonali Chicken logo
   if (item.emoji === "🐥" || /সোনাল[িী]|sonali/i.test(combined)) {
@@ -166,35 +209,96 @@ function quickClientParse(text: string): ParsedItem[] {
   const items: ParsedItem[] = [];
 
   for (const part of parts) {
-    // 1. Detect weight or quantity unit pattern (e.g. 1.08kg, 1.6kg, 800g, 2 কেজি, 3 হালি, 250gm, 1kg)
-    const qtyMatch = part.match(/(\d+(?:\.\d+)?)\s*(?:kg|k\.g\.?|কেজি|কে\.জি\.?|gm|g|গ্রাম|হালি|আঁটি|আটি|পিস|টি|লিটার|লটার|l|ltr|packet|প্যাকেট)/i);
-    let qtyStr = "";
-    let partWithoutQty = part;
-    if (qtyMatch) {
-      qtyStr = qtyMatch[0].trim();
-      partWithoutQty = part.replace(qtyMatch[0], " ");
-    }
+    const qtyParts: string[] = [];
+    let working = part.trim().replace(/[।.]+$/, "").trim();
 
-    // 2. Detect explicit price indicators (e.g. 600ট, 600 টাকা, 600 tk, 600/-)
-    const explicitPriceMatch = partWithoutQty.match(/(\d+(?:\.\d+)?)\s*(?:টাকা|ট|tk|taka|৳|\/-)/i) ||
-                               partWithoutQty.match(/(?:৳|tk|taka|টাকা)\s*(\d+(?:\.\d+)?)/i);
+    // 1. Extract explicit quantity + unit patterns (including attached units like ১পোয়া, ২আটি, ৩ হালি, 22 ta)
+    const qtyRegex = /(\d+(?:\.\d+)?)\s*(?:kg|k\.g\.?|কেজি|কে\.জি\.?|gm|g|গ্রাম|পোয়া|পোয়া|powa|poa|হালি|hali|ডজন|dozen|আঁটি|আটি|ati|পিস|pcs|pc|টি|ti|ta|টা(?!কা)|লিটার|লটার|ltr|ml|প্যাকেট|pkt|packet|বোতল|বস্তা)(?=\s|$|[=,\-:;+().])/gi;
+    working = working.replace(qtyRegex, (fullMatch) => {
+      qtyParts.push(fullMatch.trim());
+      return " ";
+    });
 
     let amount = 0;
-    let cleanWord = partWithoutQty;
+    let priceFound = false;
 
-    if (explicitPriceMatch) {
-      amount = parseFloat(explicitPriceMatch[1]);
-      cleanWord = cleanWord.replace(explicitPriceMatch[0], " ");
-    } else {
-      // 3. If no explicit indicator, check if there's any remaining standalone number
-      const remainingNum = partWithoutQty.match(/(\d+(?:\.\d+)?)/);
-      if (remainingNum) {
-        amount = parseFloat(remainingNum[1]);
-        cleanWord = cleanWord.replace(remainingNum[0], " ");
+    // 2. Explicit '=' price delimiter (e.g., "মুরগি 3.07=৫২৫", "রসুন ১পোয়া=২০")
+    const eqIdx = working.lastIndexOf("=");
+    if (eqIdx !== -1) {
+      const rhs = working.slice(eqIdx + 1).trim();
+      const lhs = working.slice(0, eqIdx).trim();
+      const rhsPriceMatch = rhs.match(/(\d+(?:\.\d+)?)/);
+      if (rhsPriceMatch) {
+        amount = parseFloat(rhsPriceMatch[1]);
+        priceFound = true;
+        working = lhs;
+        working = working.replace(/(\d+(?:\.\d+)?)/g, (numMatch) => {
+          qtyParts.push(numMatch.trim());
+          return " ";
+        });
       }
     }
 
-    cleanWord = cleanWord.replace(/(?:taka|tk\.?|টাকা|টা)/gi, "").replace(/[,\-:।+()=]/g, " ").trim();
+    // 3. Explicit currency indicators
+    if (!priceFound) {
+      const currencyAfter = working.match(/(\d+(?:\.\d+)?)\s*(?:টাকা|ট(?!া)|tk\.?|taka|৳|\/-|bdt)(?=\s|$|[=,\-:;+().])/i);
+      const currencyBefore = working.match(/(?<![a-zA-Z\u0980-\u09FF])(?:৳|tk\.?|taka|টাকা)\s*(\d+(?:\.\d+)?)/i);
+      const curMatch = currencyAfter || currencyBefore;
+      if (curMatch) {
+        amount = parseFloat(curMatch[1]);
+        priceFound = true;
+        working = working.replace(curMatch[0], " ");
+      }
+    }
+
+    // 4. Parenthesized trailing price
+    if (!priceFound) {
+      const parenMatch = working.match(/\((\d+(?:\.\d+)?)\)/);
+      if (parenMatch) {
+        amount = parseFloat(parenMatch[1]);
+        priceFound = true;
+        working = working.replace(parenMatch[0], " ");
+      }
+    }
+
+    // 5. Remaining standalone numbers
+    if (!priceFound) {
+      const nums = Array.from(working.matchAll(/(\d+(?:\.\d+)?)/g));
+      if (nums.length >= 2) {
+        const last = nums[nums.length - 1];
+        amount = parseFloat(last[1]);
+        for (let i = 0; i < nums.length - 1; i++) {
+          qtyParts.push(nums[i][1]);
+        }
+        working = working.replace(/(\d+(?:\.\d+)?)/g, " ");
+      } else if (nums.length === 1) {
+        const only = nums[0];
+        const numStr = only[1];
+        const numVal = parseFloat(numStr);
+        if (numStr.includes(".") && numVal > 0 && numVal < 25) {
+          qtyParts.push(`${numStr} kg`);
+          amount = 0;
+        } else {
+          amount = numVal;
+        }
+        working = working.replace(only[0], " ");
+      }
+    } else {
+      working = working.replace(/(\d+(?:\.\d+)?)/g, (m) => {
+        if (qtyParts.length === 0) qtyParts.push(m);
+        return " ";
+      });
+    }
+
+    const cleanWord = working
+      .replace(/(?<![a-zA-Z\u0980-\u09FF])(?:taka|tk\.?|টাকা)(?![a-zA-Z\u0980-\u09FF])/gi, " ")
+      .replace(/^(?:and|এবং)\s+/i, " ")
+      .replace(/[,\-:।+()=&.]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!cleanWord && amount === 0 && qtyParts.length === 0) continue;
+
     const matchTarget = cleanWord.normalize("NFC").replace(/[\u200B-\u200D\uFEFF\u0981]/g, "");
 
     // Check all matched categories while suppressing generic parent when specific variant matched
@@ -213,7 +317,7 @@ function quickClientParse(text: string): ParsedItem[] {
       if (r.group === "chicken_generic" && hasSpecificChicken) return false;
       if (r.group === "fish_generic" && hasSpecificFish) return false;
       if (r.group === "veg_generic" && hasSpecificVeg) {
-        return /(সবজি|শাকসবজি|sobji|shobji)/i.test(matchTarget);
+        return /(সবজি|শাকসবজি|শাক-সবজি|sobji|shobji|sabji|vegetable)/i.test(matchTarget);
       }
       return true;
     });
@@ -224,8 +328,8 @@ function quickClientParse(text: string): ParsedItem[] {
     items.push({
       name: matchedName,
       originalText: cleanWord,
-      amount,
-      quantity: qtyStr || undefined,
+      amount: Number.isFinite(amount) ? amount : 0,
+      quantity: qtyParts.join(", ").trim() || undefined,
       emoji: matchedEmoji
     });
   }
@@ -249,21 +353,27 @@ const VoucherDetailsCell: React.FC<{
   const openTimerRef = useRef<any>(null);
 
   const desc = entry.description || "Daily mess grocery";
+  const cacheKey = `v2::${desc}::${entry.amount}::${entry.quantity || ""}`;
 
   const fetchBreakdown = async () => {
-    if (clientVoucherCache.has(desc)) {
-      setBreakdown(clientVoucherCache.get(desc)!.items);
+    const cached = clientVoucherCache.get(cacheKey);
+    if (cached && cached.source !== "LOCAL") {
+      setBreakdown(cached.items);
       return;
     }
 
-    const localItems = quickClientParse(desc);
-    if (localItems.length > 0) {
-      setBreakdown(localItems);
-      clientVoucherCache.set(desc, {
-        items: localItems,
-        total: localItems.reduce((s, i) => s + i.amount, 0),
-        source: "LOCAL"
-      });
+    if (cached) {
+      setBreakdown(cached.items);
+    } else {
+      const localItems = quickClientParse(desc);
+      if (localItems.length > 0) {
+        setBreakdown(localItems);
+        clientVoucherCache.set(cacheKey, {
+          items: localItems,
+          total: localItems.reduce((s, i) => s + i.amount, 0),
+          source: "LOCAL"
+        });
+      }
     }
 
     try {
@@ -277,14 +387,15 @@ const VoucherDetailsCell: React.FC<{
         },
         body: JSON.stringify({
           text: desc,
-          totalAmount: entry.amount
+          totalAmount: entry.amount,
+          quantity: entry.quantity || undefined
         })
       });
       if (res.ok) {
         const data = await res.json();
         if (data.items && data.items.length > 0) {
           setBreakdown(data.items);
-          clientVoucherCache.set(desc, {
+          clientVoucherCache.set(cacheKey, {
             items: data.items,
             total: data.totalParsedAmount || entry.amount,
             source: data.source || "SERVER"
@@ -405,7 +516,7 @@ const VoucherDetailsCell: React.FC<{
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-mono font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            <span className="text-[11px] font-mono tabular-nums font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
               মোট: ৳ {entry.amount}
             </span>
             <button
@@ -437,7 +548,7 @@ const VoucherDetailsCell: React.FC<{
                       {item.name}
                     </span>
                     {item.quantity && (
-                      <span className={`inline-block text-[10px] font-medium ${isDarkMode ? "text-cyan-400/80" : "text-cyan-700"}`}>
+                      <span className={`inline-block text-[10px] font-medium ${isDarkMode ? "text-cyan-400/85" : "text-cyan-700"}`}>
                         পরিমাণ: {item.quantity}
                       </span>
                     )}
@@ -445,15 +556,11 @@ const VoucherDetailsCell: React.FC<{
                 </div>
                 <div className="shrink-0 text-right">
                   {item.amount > 0 ? (
-                    <span className={`font-mono font-extrabold text-xs ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>
+                    <span className={`font-mono tabular-nums font-extrabold text-xs ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>
                       ৳ {item.amount}
                     </span>
-                  ) : item.quantity ? (
-                    <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ${isDarkMode ? "bg-cyan-500/10 text-cyan-300" : "bg-cyan-50 text-cyan-800"}`}>
-                      {item.quantity}
-                    </span>
                   ) : (
-                    <span className="text-slate-400 text-[11px]">—</span>
+                    <span className="text-slate-400 text-[11px] font-mono">—</span>
                   )}
                 </div>
               </div>
@@ -551,7 +658,7 @@ const VoucherDetailsCell: React.FC<{
                       <div>
                         <div className="font-bold text-sm">{item.name}</div>
                         {item.quantity && (
-                          <div className="text-[10px] text-cyan-400">পরিমাণ: {item.quantity}</div>
+                          <div className={`text-[10px] ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`}>পরিমাণ: {item.quantity}</div>
                         )}
                         {item.originalText && item.originalText !== item.name && !item.quantity && (
                           <div className="text-[10px] text-slate-400">({item.originalText})</div>
@@ -559,15 +666,11 @@ const VoucherDetailsCell: React.FC<{
                       </div>
                     </div>
                     {item.amount > 0 ? (
-                      <span className="font-mono font-black text-sm text-emerald-400">
+                      <span className={`font-mono tabular-nums font-black text-sm ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>
                         ৳ {item.amount}
                       </span>
-                    ) : item.quantity ? (
-                      <span className="font-mono text-xs text-cyan-300 font-bold">
-                        {item.quantity}
-                      </span>
                     ) : (
-                      <span className="text-slate-400 text-xs">—</span>
+                      <span className="text-slate-400 text-xs font-mono">—</span>
                     )}
                   </div>
                 ))
@@ -582,7 +685,7 @@ const VoucherDetailsCell: React.FC<{
               <span className="text-xs font-bold text-slate-400">
                 {hasItemPrices ? "আইটেমভিত্তিক মোট:" : "ভাউচার মোট খরচ:"}
               </span>
-              <span className="font-mono font-black text-base text-cyan-400">
+              <span className="font-mono tabular-nums font-black text-base text-cyan-400">
                 ৳ {hasItemPrices ? totalParsedAmount : entry.amount}
               </span>
             </div>

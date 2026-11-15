@@ -212,9 +212,9 @@ Output strictly valid JSON with this schema:
     };
 
     const candidateModels = [
+      "gemini-4-hydrogen",
       "gemini-3.1-flash-lite",
-      "gemini-3.8-flash",
-      "gemini-flash-latest"
+      "gemini-2.5-flash"
     ];
 
     let lastError: any = null;

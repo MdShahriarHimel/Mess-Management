@@ -740,7 +740,7 @@ export async function initializeDbCache() {
   // Restore ONLY immediate startup configuration files from PostgreSQL to local disk
   try {
     const immediateFiles = await db.select().from(persistentFilesTable).where(
-      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json', 'active_sessions.json', 'session_versions.json', 'smtp_credentials.json', 'market_reminder_logs.json', 'user_active_messes.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'db_version_%'`
+      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json', 'active_sessions.json', 'session_versions.json', 'smtp_credentials.json', 'market_reminder_logs.json', 'user_active_messes.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'db_version_%' OR filename LIKE 'voucher_breakdowns_%'`
     );
     console.log(`[Persistent Files Startup] Restoring ${immediateFiles.length} immediate startup config files...`);
     adminControlsCache = null;

@@ -624,7 +624,7 @@ Return a strict JSON array conforming to the schema.`;
     let response;
     try {
       response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -664,7 +664,7 @@ Return a strict JSON array conforming to the schema.`;
     } catch (err: any) {
       console.info(`[Gemini Teacher] Primary model call failed (${err?.message}). Attempting fallback query...`);
       response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-3.1-flash-lite",
         contents: prompt
       });
     }
@@ -927,7 +927,7 @@ OR if it's a completely different food:
 
     console.log(`[Food Knowledge] Calling Gemini AI for semantic recognition of: "${rawName}"`);
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-4-hydrogen",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
