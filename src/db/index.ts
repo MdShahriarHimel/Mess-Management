@@ -13,7 +13,7 @@ export const createPool = () => {
     return new Pool({
       connectionString: process.env.DATABASE_URL,
       max: 5,
-      idleTimeoutMillis: 3000, // Close idle connections after 3 seconds of inactivity so Neon Postgres compute can sleep
+      idleTimeoutMillis: 30000, // Keep connections warm for 30s during active browsing, while still letting Neon Postgres compute sleep
       connectionTimeoutMillis: 10000,
       allowExitOnIdle: true,
       ssl: {
@@ -27,7 +27,7 @@ export const createPool = () => {
     password: process.env.SQL_PASSWORD,
     database: process.env.SQL_DB_NAME,
     max: 5,
-    idleTimeoutMillis: 3000,
+    idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
     allowExitOnIdle: true,
   });

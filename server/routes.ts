@@ -38,7 +38,11 @@ import { loadDB, saveDB, syncState,
   deduplicateMembers,
   deduplicateDeposits,
   deduplicateMarketEntries,
+  deduplicateDuties,
   deduplicateMeals,
+  loadAdminControls as dbLoadAdminControls,
+  saveAdminControls as dbSaveAdminControls,
+  isPostgresInitialized,
   DB_DIR
 } from "./db.js";
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
@@ -183,7 +187,10 @@ export {
 // ---------------------------------------------------------
 const MESSES_FILE = path.join(DB_DIR, "messes.json");
 
+let messesCache: { messes: Array<{ id: string; name: string; messCode?: string }> } | null = null;
+
 export function loadMesses(): { messes: Array<{ id: string; name: string; messCode?: string }> } {
+  if (messesCache) return messesCache;
   const defaultMesses = {
     messes: [
       { id: "default", name: "Ababil Mess (Main)", messCode: "ABAB1L" }
@@ -206,18 +213,21 @@ export function loadMesses(): { messes: Array<{ id: string; name: string; messCo
           if (modified) {
             saveMesses(parsed);
           }
-          return { ...defaultMesses, ...parsed };
+          messesCache = { ...defaultMesses, ...parsed };
+          return messesCache;
         }
       }
     }
   } catch (e) {
     console.error("Error loading messes:", e);
   }
-  return defaultMesses;
+  messesCache = defaultMesses;
+  return messesCache;
 }
 
 export function saveMesses(messes: any) {
   try {
+    messesCache = messes;
     writeAndPersistFile("messes.json", JSON.stringify(messes, null, 2));
   } catch (e) {
     console.error("Error saving messes:", e);
@@ -2363,25 +2373,30 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
 
 async function getMealsForCurrentCycle(monthId: string, targetMessId: string = "default") {
   const dbConfig = loadDB(targetMessId);
-  const messCondition = (targetMessId === "default")
-    ? or(eq(mealsTable.messId, "default"), sql`${mealsTable.messId} IS NULL`)
-    : eq(mealsTable.messId, targetMessId);
+  const cachedMeals = dbConfig.meals?.filter(m => m.monthId === monthId) || [];
 
-  let rawMeals: any[] = [];
-  try {
-    rawMeals = await drizzleDb.select().from(mealsTable).where(
-      and(
-        eq(mealsTable.monthId, monthId),
-        messCondition
-      )
-    );
-  } catch (err) {
-    rawMeals = [];
+  // Serve directly from version-synced RAM cache once PostgreSQL cache is initialized
+  // (all writes update dbConfig.meals + bump db_version in PG; checkAndSyncDbCacheIfNeeded refreshes on remote change)
+  let sourceMeals: any[] = cachedMeals;
+  if (!isPostgresInitialized || (cachedMeals.length === 0 && (!dbConfig.meals || dbConfig.meals.length === 0))) {
+    const messCondition = (targetMessId === "default")
+      ? or(eq(mealsTable.messId, "default"), sql`${mealsTable.messId} IS NULL`)
+      : eq(mealsTable.messId, targetMessId);
+
+    try {
+      const rawMeals = await drizzleDb.select().from(mealsTable).where(
+        and(
+          eq(mealsTable.monthId, monthId),
+          messCondition
+        )
+      );
+      if (rawMeals && rawMeals.length > 0) {
+        sourceMeals = rawMeals;
+      }
+    } catch (err) {
+      // keep cachedMeals fallback
+    }
   }
-
-  const sourceMeals = (rawMeals && rawMeals.length > 0)
-    ? rawMeals
-    : (dbConfig.meals?.filter(m => m.monthId === monthId) || []);
 
   const monthObj = dbConfig.months?.find((m: any) => m.id === monthId);
   if (!monthObj) {
@@ -3684,6 +3699,19 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
   }
 
   const db = loadDB();
+  const normName = name.trim().toLowerCase();
+  const normTask = (task || "").trim().toLowerCase();
+  const existingDuty = db.duties.find(d =>
+    d.monthId === monthId &&
+    d.memberId === memberId &&
+    (d.name || "").trim().toLowerCase() === normName &&
+    (d.task || "").trim().toLowerCase() === normTask
+  );
+  if (existingDuty) {
+    res.json({ success: true, duty: existingDuty, isDuplicateSkipped: true });
+    return;
+  }
+
   const newDuty: Duty = {
     id: generateUUID(),
     monthId,
@@ -3693,6 +3721,7 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
   };
 
   db.duties.push(newDuty);
+  db.duties = deduplicateDuties(db.duties);
   saveDB();
 
   logAudit(req.user!.id, req.user!.nickname, "ASSIGN_DUTY", "None", name, `Assigned duty ${name} to user ID ${memberId}`);
@@ -4870,9 +4899,12 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   let monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
   const monthBills = db.bills.filter(b => b.monthId === monthId);
 
-  // Directly query live holdings, markets, and deposits from PostgreSQL for default mess
-  // to ensure 100% real-time accuracy across Render and AI Studio without restarting servers
-  if (currentMessId === "default") {
+  // Only query PostgreSQL directly if RAM cache hasn't been populated yet;
+  // otherwise checkAndSyncDbCacheIfNeeded() already keeps RAM in sync with PG db_version.
+  if (
+    currentMessId === "default" &&
+    (!isPostgresInitialized || (db.managerHoldings.length === 0 && db.marketEntries.length === 0 && db.deposits.length === 0))
+  ) {
     try {
       const [liveHoldings, liveMarkets, liveDeposits] = await Promise.all([
         drizzleDb.select().from(managerHoldingsTable).where(eq(managerHoldingsTable.monthId, monthId)).catch(() => []),
@@ -5082,6 +5114,9 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
 // ---------------------------------------------------------
 const BRANDING_FILE = path.join(DB_DIR, "erp_branding.json");
 const USER_PREFS_FILE = path.join(DB_DIR, "user_preferences.json");
+let erpBrandingCache: any = null;
+const messAppearanceCache = new Map<string, any>();
+let allUserPrefsCache: Record<string, any> | null = null;
 
 export function loadErpBranding() {
   const defaultBranding = {
@@ -5136,12 +5171,17 @@ export function loadErpBranding() {
     }
   };
 
+  if (erpBrandingCache) {
+    return { ...defaultBranding, ...erpBrandingCache };
+  }
+
   try {
     if (fs.existsSync(BRANDING_FILE)) {
       const data = fs.readFileSync(BRANDING_FILE, "utf-8");
       if (data && data.trim()) {
         const parsed = JSON.parse(data);
         if (parsed && typeof parsed === "object") {
+          erpBrandingCache = parsed;
           return { ...defaultBranding, ...parsed };
         }
       }
@@ -5154,6 +5194,7 @@ export function loadErpBranding() {
 
 export function saveErpBranding(branding: any) {
   try {
+    erpBrandingCache = branding;
     writeAndPersistFile("erp_branding.json", JSON.stringify(branding, null, 2));
   } catch (e) {
     console.error("Error saving ERP branding:", e);
@@ -5197,12 +5238,18 @@ export function loadMessAppearance(messId: string) {
     defaultMode: "light"
   };
 
+  const cached = messAppearanceCache.get(messId);
+  if (cached) {
+    return { ...defaultAppearance, ...cached };
+  }
+
   try {
     if (fs.existsSync(file)) {
       const data = fs.readFileSync(file, "utf-8");
       if (data && data.trim()) {
         const parsed = JSON.parse(data);
         if (parsed && typeof parsed === "object") {
+          messAppearanceCache.set(messId, parsed);
           return { ...defaultAppearance, ...parsed };
         }
       }
@@ -5215,6 +5262,7 @@ export function loadMessAppearance(messId: string) {
 
 export function saveMessAppearance(messId: string, appearance: any) {
   try {
+    messAppearanceCache.set(messId, appearance);
     const filename = messId === "default"
       ? "mess_appearance.json"
       : `mess_appearance_${messId}.json`;
@@ -5222,6 +5270,26 @@ export function saveMessAppearance(messId: string, appearance: any) {
   } catch (e) {
     console.error(`Error saving Mess Appearance for ${messId}:`, e);
   }
+}
+
+function loadAllUserPrefsMap(): Record<string, any> {
+  if (allUserPrefsCache) return allUserPrefsCache;
+  try {
+    if (fs.existsSync(USER_PREFS_FILE)) {
+      const data = fs.readFileSync(USER_PREFS_FILE, "utf-8");
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          allUserPrefsCache = parsed;
+          return allUserPrefsCache;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error loading user_preferences.json:", e);
+  }
+  allUserPrefsCache = {};
+  return allUserPrefsCache;
 }
 
 export function loadUserPreferences(userId: string) {
@@ -5250,24 +5318,19 @@ export function loadUserPreferences(userId: string) {
   };
 
   try {
-    if (fs.existsSync(USER_PREFS_FILE)) {
-      const data = fs.readFileSync(USER_PREFS_FILE, "utf-8");
-      if (data && data.trim()) {
-        const allPrefs = JSON.parse(data);
-        if (allPrefs && allPrefs[userId]) {
-          const userPref = allPrefs[userId];
-          // If useMessDefault is true or not explicitly false, follow mess default
-          if (userPref.useMessDefault !== false) {
-            return { 
-              ...defaultPrefs, 
-              ...userPref, 
-              isDarkMode: messDefaultIsDark,
-              defaultMode: messDefaultIsDark ? "dark" : "light"
-            };
-          }
-          return { ...defaultPrefs, ...userPref };
-        }
+    const allPrefs = loadAllUserPrefsMap();
+    if (allPrefs && allPrefs[userId]) {
+      const userPref = allPrefs[userId];
+      // If useMessDefault is true or not explicitly false, follow mess default
+      if (userPref.useMessDefault !== false) {
+        return { 
+          ...defaultPrefs, 
+          ...userPref, 
+          isDarkMode: messDefaultIsDark,
+          defaultMode: messDefaultIsDark ? "dark" : "light"
+        };
       }
+      return { ...defaultPrefs, ...userPref };
     }
   } catch (e) {
     console.error(`Error loading User Preferences for ${userId}:`, e);
@@ -5281,13 +5344,7 @@ export function syncAppearanceToAllMembers(messId: string, updates: any) {
       ? updates.defaultMode === "dark"
       : (updates.isDarkMode ?? false);
 
-    let allPrefs: Record<string, any> = {};
-    if (fs.existsSync(USER_PREFS_FILE)) {
-      try {
-        allPrefs = JSON.parse(fs.readFileSync(USER_PREFS_FILE, "utf-8"));
-      } catch (e) {}
-    }
-
+    const allPrefs = { ...loadAllUserPrefsMap() };
     const activeDb = loadDB(messId);
     const memberList = Array.isArray(activeDb?.members) ? activeDb.members : [];
 
@@ -5304,6 +5361,7 @@ export function syncAppearanceToAllMembers(messId: string, updates: any) {
       }
     }
 
+    allUserPrefsCache = allPrefs;
     writeAndPersistFile("user_preferences.json", JSON.stringify(allPrefs, null, 2));
   } catch (err) {
     console.error(`Error syncing appearance to all members for mess ${messId}:`, err);
@@ -5312,14 +5370,9 @@ export function syncAppearanceToAllMembers(messId: string, updates: any) {
 
 export function saveUserPreferences(userId: string, prefs: any) {
   try {
-    let allPrefs: Record<string, any> = {};
-    if (fs.existsSync(USER_PREFS_FILE)) {
-      const data = fs.readFileSync(USER_PREFS_FILE, "utf-8");
-      try {
-        allPrefs = JSON.parse(data);
-      } catch (e) {}
-    }
+    const allPrefs = { ...loadAllUserPrefsMap() };
     allPrefs[userId] = prefs;
+    allUserPrefsCache = allPrefs;
     writeAndPersistFile("user_preferences.json", JSON.stringify(allPrefs, null, 2));
   } catch (e) {
     console.error(`Error saving User Preferences for ${userId}:`, e);
@@ -7262,32 +7315,12 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
 // ---------------------------------------------------------
 // ADMIN PERMISSION CONTROLS (ULTIMATE ADMIN OVERRIDES)
 // ---------------------------------------------------------
-const ADMIN_CONTROLS_FILE = path.join(DB_DIR, "admin_controls.json");
-
 export function loadAdminControls() {
-  const defaultControls = { controls: {} };
-  try {
-    if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
-      const data = fs.readFileSync(ADMIN_CONTROLS_FILE, "utf-8");
-      if (data && data.trim()) {
-        const parsed = JSON.parse(data);
-        if (parsed && typeof parsed === "object") {
-          return { ...defaultControls, ...parsed };
-        }
-      }
-    }
-  } catch (e) {
-    console.error("Error loading admin controls:", e);
-  }
-  return defaultControls;
+  return dbLoadAdminControls();
 }
 
 export function saveAdminControls(data: any) {
-  try {
-    writeAndPersistFile("admin_controls.json", JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.error("Error saving admin controls:", e);
-  }
+  dbSaveAdminControls(data);
 }
 
 function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boolean {

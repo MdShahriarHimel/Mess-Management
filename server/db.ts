@@ -147,8 +147,10 @@ let credentialsCache: CredentialsSchema | null = null;
 
 export function setDbCacheForMess(messId: string, data: DatabaseSchema) {
   dbCaches.set(messId, data);
+  lastMaintenanceCheckMap.delete(messId);
   if (messId === "default") {
     dbCache = data;
+    masterPostgresCache = data;
   }
 }
 
@@ -685,6 +687,7 @@ export async function refreshDbCache(targetMessId: string = "default") {
   masterPostgresCache = refreshedCache;
   const now = Date.now();
   lastCacheRefreshTimestamp.set("default", now);
+  lastMaintenanceCheckMap.delete("default");
   console.log("[Cache Sync] Cache refreshed successfully from PostgreSQL single source of truth!");
 
   ensureDBDir();
@@ -697,11 +700,11 @@ export async function refreshDbCache(targetMessId: string = "default") {
 }
 
 // Smart sync check: checks if PostgreSQL version is newer than in-memory cache across all servers (Render & AI Studio)
-export async function checkAndSyncDbCacheIfNeeded(targetMessId: string = "default", force: boolean = false) {
+export async function checkAndSyncDbCacheIfNeeded(targetMessId: string = "default", force: boolean = false, bypassThrottle: boolean = false) {
   const now = Date.now();
   const lastCheck = lastVersionCheckTimestamps.get(targetMessId) || 0;
-  // Throttle version check to at most once per 5000ms unless forced
-  if (!force && (now - lastCheck) < 5000) {
+  // Throttle version check to at most once per 5000ms on reads unless forced or mutating (bypassThrottle)
+  if (!force && !bypassThrottle && (now - lastCheck) < 5000) {
     return;
   }
   lastVersionCheckTimestamps.set(targetMessId, now);
@@ -737,9 +740,12 @@ export async function initializeDbCache() {
   // Restore ONLY immediate startup configuration files from PostgreSQL to local disk
   try {
     const immediateFiles = await db.select().from(persistentFilesTable).where(
-      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json', 'active_sessions.json', 'session_versions.json', 'smtp_credentials.json', 'market_reminder_logs.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%'`
+      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json', 'active_sessions.json', 'session_versions.json', 'smtp_credentials.json', 'market_reminder_logs.json', 'user_active_messes.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'db_version_%'`
     );
     console.log(`[Persistent Files Startup] Restoring ${immediateFiles.length} immediate startup config files...`);
+    adminControlsCache = null;
+    userActiveMessesCache = null;
+    const startupTs = Date.now();
     for (const file of immediateFiles) {
       const localPath = path.join(DB_DIR, file.filename);
       const fileDir = path.dirname(localPath);
@@ -747,6 +753,16 @@ export async function initializeDbCache() {
         fs.mkdirSync(fileDir, { recursive: true });
       }
       fs.writeFileSync(localPath, file.content, "utf-8");
+      if (file.filename.startsWith("db_version_") && file.filename.endsWith(".json")) {
+        try {
+          const mId = file.filename.slice("db_version_".length, -".json".length);
+          const parsedVer = JSON.parse(file.content);
+          if (mId && parsedVer?.v) {
+            lastKnownDbVersion.set(mId, Number(parsedVer.v) || 0);
+            lastVersionCheckTimestamps.set(mId, startupTs);
+          }
+        } catch {}
+      }
       console.log(`[Persistent Files Startup] Restored immediate config file: ${file.filename}`);
     }
 
@@ -1346,25 +1362,42 @@ export function getActiveMessId(): string {
 }
 
 const USER_MESSES_FILE = path.join(DB_DIR, "user_active_messes.json");
+let userActiveMessesCache: Record<string, string> | null = null;
+
+function loadUserActiveMessesCache(): Record<string, string> {
+  if (userActiveMessesCache) return userActiveMessesCache;
+  try {
+    if (fs.existsSync(USER_MESSES_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(USER_MESSES_FILE, "utf-8"));
+      if (parsed && typeof parsed === "object") {
+        userActiveMessesCache = parsed;
+        return userActiveMessesCache;
+      }
+    }
+  } catch (e) {}
+  userActiveMessesCache = {};
+  return userActiveMessesCache;
+}
 
 export function getUserActiveMessId(userId?: string, email?: string): string | null {
   try {
-    if (fs.existsSync(USER_MESSES_FILE)) {
-      const data = JSON.parse(fs.readFileSync(USER_MESSES_FILE, "utf-8"));
-      return (userId && data[userId]) || (email && data[email.toLowerCase()]) || null;
-    }
+    const data = loadUserActiveMessesCache();
+    return (userId && data[userId]) || (email && data[email.toLowerCase()]) || null;
   } catch (e) {}
   return null;
 }
 
 export function setUserActiveMessId(userId: string | undefined, email: string | undefined, messId: string) {
   try {
-    let data: Record<string, string> = {};
-    if (fs.existsSync(USER_MESSES_FILE)) {
-      data = JSON.parse(fs.readFileSync(USER_MESSES_FILE, "utf-8"));
+    const data = loadUserActiveMessesCache();
+    const normEmail = email ? email.toLowerCase() : "";
+    const sameUserId = !userId || data[userId] === messId;
+    const sameEmail = !normEmail || data[normEmail] === messId;
+    if (sameUserId && sameEmail) {
+      return; // Already matches; avoid unnecessary disk & PostgreSQL writes on GET requests
     }
     if (userId) data[userId] = messId;
-    if (email) data[email.toLowerCase()] = messId;
+    if (normEmail) data[normEmail] = messId;
     writeAndPersistFile("user_active_messes.json", JSON.stringify(data, null, 2));
   } catch (e) {}
 }
@@ -1373,6 +1406,7 @@ export function setActiveMessId(messId: string) {
   try {
     writeAndPersistFile("active_mess.json", JSON.stringify({ activeMessId: messId }, null, 2));
     dbCaches.delete(messId);
+    lastMaintenanceCheckMap.delete(messId);
     dbCache = null; // Clear cache to force reload on next loadDB
   } catch (e) {
     console.error(e);
@@ -1431,6 +1465,18 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
     }
   }
 
+  if (messId === "default") {
+    dbCache = target;
+  }
+
+  // Throttle heavy deduplication, month transition, and audit cleanup checks to once every 30s per mess
+  const maintNow = Date.now();
+  const lastMaint = lastMaintenanceCheckMap.get(messId) || 0;
+  if ((maintNow - lastMaint) < 30000 && target.messRules) {
+    return target;
+  }
+  lastMaintenanceCheckMap.set(messId, maintNow);
+
   if (target && !target.messRules) {
     target.messRules = getDefaultMessRules(messId);
   }
@@ -1453,10 +1499,6 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
   if (target && target.meals) {
     target.meals = deduplicateMeals(target.meals);
-  }
-
-  if (messId === "default") {
-    dbCache = target;
   }
 
   // Automatic Month Transition & Deduplication Check
@@ -2715,8 +2757,11 @@ export function generateUniqueMessCode(existingMesses: any[]): string {
 }
 
 const ADMIN_CONTROLS_FILE = path.join(DB_DIR, "admin_controls.json");
+let adminControlsCache: { controls: Record<string, any> } | null = null;
+const lastMaintenanceCheckMap = new Map<string, number>();
 
 export function loadAdminControls(): { controls: Record<string, any> } {
+  if (adminControlsCache) return adminControlsCache;
   const defaultControls = { controls: {} };
   try {
     if (fs.existsSync(ADMIN_CONTROLS_FILE)) {
@@ -2724,18 +2769,21 @@ export function loadAdminControls(): { controls: Record<string, any> } {
       if (data && data.trim()) {
         const parsed = JSON.parse(data);
         if (parsed && typeof parsed === "object") {
-          return { ...defaultControls, ...parsed };
+          adminControlsCache = { ...defaultControls, ...parsed };
+          return adminControlsCache;
         }
       }
     }
   } catch (e) {
     console.error("Error loading admin controls:", e);
   }
-  return defaultControls;
+  adminControlsCache = defaultControls;
+  return adminControlsCache;
 }
 
 export function saveAdminControls(data: any): void {
   try {
+    adminControlsCache = data && typeof data === "object" ? { controls: {}, ...data } : { controls: {} };
     writeAndPersistFile("admin_controls.json", JSON.stringify(data, null, 2));
   } catch (e) {
     console.error("Error saving admin controls:", e);

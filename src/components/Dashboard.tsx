@@ -367,12 +367,20 @@ export default function Dashboard({
   };
 
   useEffect(() => {
+    if (membersListProp && membersListProp.length > 0 && members.length === 0) {
+      setMembers(membersListProp);
+    }
+  }, [membersListProp]);
+
+  useEffect(() => {
     fetchNotices();
     fetchRatings();
     fetchMyMeals();
-    fetchMembers();
+    if (!membersListProp || membersListProp.length === 0 || refreshTriggers.dashboard > 0) {
+      fetchMembers();
+    }
     fetchMarkets();
-  }, [currentMonthId, currentUser, refreshTriggers.dashboard]);
+  }, [currentMonthId, currentUser?.id, refreshTriggers.dashboard]);
 
   useEffect(() => {
     const handleGlobalRefresh = () => {
@@ -384,7 +392,7 @@ export default function Dashboard({
     };
     window.addEventListener("app-global-refresh", handleGlobalRefresh);
     return () => window.removeEventListener("app-global-refresh", handleGlobalRefresh);
-  }, [currentMonthId, currentUser, authToken]);
+  }, [currentMonthId, currentUser?.id, authToken]);
 
   const handleRateManager = async (score: number) => {
     setRatingError(null);

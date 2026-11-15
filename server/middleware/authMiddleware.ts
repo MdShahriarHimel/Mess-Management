@@ -69,6 +69,10 @@ export interface VerifiedFirebaseClaims {
  * 5. Auth time (auth_time) MUST be in the past.
  * 6. Subject (sub) MUST be a non-empty string.
  */
+// In-memory revocation check cache (keyed by `${uid}:${authTime}`) to avoid calling Google Identity Toolkit on every API request
+const firebaseRevocationCache = new Map<string, number>();
+const FIREBASE_REVOCATION_CACHE_TTL_MS = 60 * 1000;
+
 export async function verifyFirebaseTokenStrict(token: string): Promise<VerifiedFirebaseClaims> {
   if (!token || typeof token !== "string" || !token.startsWith("ey")) {
     throw new Error("Invalid token format: Expected standard JWT string starting with 'ey'.");
@@ -80,8 +84,17 @@ export async function verifyFirebaseTokenStrict(token: string): Promise<Verified
   const clockSkewToleranceSec = 60; // 60s clock skew window
 
   try {
-    // 1. Cryptographic signature and revocation verification
-    const decodedToken = await adminAuth.verifyIdToken(token, true);
+    // 1. Cryptographic signature verification locally (<1ms via cached Google certs),
+    // and check remote revocation status at most once per 60 seconds per user session
+    const preDecoded = await adminAuth.verifyIdToken(token, false);
+    const revCacheKey = `${preDecoded.uid || preDecoded.sub}:${preDecoded.auth_time || 0}`;
+    const lastRevCheck = firebaseRevocationCache.get(revCacheKey) || 0;
+    const decodedToken = (Date.now() - lastRevCheck > FIREBASE_REVOCATION_CACHE_TTL_MS)
+      ? await adminAuth.verifyIdToken(token, true).then((dt) => {
+          firebaseRevocationCache.set(revCacheKey, Date.now());
+          return dt;
+        })
+      : preDecoded;
 
     // 2. Strict Issuer (iss) validation
     if (decodedToken.iss !== expectedIssuer) {
@@ -303,7 +316,10 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         token = candidate;
         if (sessionCheck.session) {
           req.activeSession = sessionCheck.session;
-          setSessionCookie(res, token, req);
+          const existingCookie = req.cookies?.[SESSION_COOKIE_NAME] || req.cookies?.mess_session;
+          if (!existingCookie || existingCookie !== token || req.path === "/auth/me") {
+            setSessionCookie(res, token, req);
+          }
         }
         authSuccess = true;
         break;
@@ -441,7 +457,8 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
 
   messContext.run({ messId: targetMessId }, async () => {
     try {
-      await checkAndSyncDbCacheIfNeeded(targetMessId);
+      const isMutating = req.method !== "GET" && req.method !== "HEAD";
+      await checkAndSyncDbCacheIfNeeded(targetMessId, false, isMutating);
       const db = loadDB(targetMessId);
       let member = db.members.find(m => 
         m.id === userId || 
@@ -548,7 +565,12 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
         ...(Array.isArray(userLookupPrevIds) ? userLookupPrevIds : []),
         ...prevIds
       ];
-      if (!token.startsWith("ey") && !isValidMemberSessionToken(token, member.id, allKnownIds)) {
+      const sessionAlreadyVerified = Boolean(
+        req.activeSession &&
+        req.activeSession.isValid &&
+        allKnownIds.includes(req.activeSession.userId)
+      );
+      if (!token.startsWith("ey") && !sessionAlreadyVerified && !isValidMemberSessionToken(token, member.id, allKnownIds)) {
         res.status(401).json({ error: "Unauthorized: Session invalidated due to password change. Please log in again." });
         return;
       }

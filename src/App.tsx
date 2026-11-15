@@ -1552,9 +1552,16 @@ export default function App() {
   const [marketSubTab, setMarketSubTab] = useState<"standard" | "managerial">("standard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // General Month states
+  // General Month states (pre-seed last known cycle per mess so report/duties fetch in parallel on refresh)
   const [months, setMonths] = useState<MessMonth[]>([]);
-  const [currentMonthId, setCurrentMonthId] = useState("");
+  const [currentMonthId, setCurrentMonthId] = useState(() => {
+    try {
+      const mid = localStorage.getItem("active_mess_id") || "default";
+      return localStorage.getItem(`last_month_id_${mid}`) || "";
+    } catch {
+      return "";
+    }
+  });
   const [cycleProposals, setCycleProposals] = useState<CycleProposal[]>([]);
   // Monthly Cycle Rollover Transition Showcase states
   const [showCycleTransition, setShowCycleTransition] = useState(false);
@@ -1681,7 +1688,7 @@ export default function App() {
 
   useEffect(() => {
     fetchPlatformStatus();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Real-time Socket.io listener for instant maintenance mode changes across all connected clients
   useEffect(() => {
@@ -1739,7 +1746,7 @@ export default function App() {
         setCurrentUser(prev => prev ? { ...prev, role: storedActingRole as UserRole } : null);
       }
     }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.role, isPlatformOwner]);
 
   // Safe mode state for Admins & Super Users (defaults to true)
   const [safeMode, setSafeMode] = useState<boolean>(() => {
@@ -2198,6 +2205,8 @@ export default function App() {
         setCurrentMonthId("");
         setMonths([]);
         setMembersList([]);
+        bootstrappedIdentityRef.current = "";
+        lastFetchedMonthKeyRef.current = "";
         await Promise.all([
           fetchMonthsAndMembers(sessionToken, true),
           fetchSettings(sessionToken),
@@ -2347,11 +2356,66 @@ export default function App() {
     }
   };
 
+  const fetchThreeLevelSettings = async (token: string) => {
+    try {
+      const headers = { "Authorization": `Bearer ${token}` };
+
+      const [resBranding, resAppearance, resPrefs] = await Promise.all([
+        fetch("/api/settings/branding", { headers }).catch(() => null),
+        fetch("/api/settings/appearance", { headers }).catch(() => null),
+        fetch("/api/settings/preferences", { headers }).catch(() => null)
+      ]);
+
+      // Level 1: Branding
+      if (resBranding && resBranding.ok) {
+        const data = await resBranding.json().catch(() => ({}));
+        if (data && (data.erpName !== undefined || data.backgroundAudio !== undefined || data.logoText !== undefined)) {
+          setErpBrandingState(data);
+        }
+      }
+
+      // Level 2: Mess Appearance
+      let resolvedMessDark: boolean | undefined = undefined;
+      if (resAppearance && resAppearance.ok) {
+        const data = await resAppearance.json().catch(() => ({}));
+        if (data) {
+          setMessAppearanceState(data);
+          resolvedMessDark = data.defaultMode !== undefined ? data.defaultMode === "dark" : data.isDarkMode;
+        }
+      }
+
+      // Level 3: User Preferences (takes precedence over mess default if present)
+      let hasUserDarkPref = false;
+      if (resPrefs && resPrefs.ok) {
+        const data = await resPrefs.json().catch(() => ({}));
+        if (data) {
+          setUserPreferencesState(data);
+          if (data.isDarkMode !== undefined) {
+            setIsDarkMode(data.isDarkMode);
+            hasUserDarkPref = true;
+          }
+          if (data.fontSize !== undefined) {
+            setFontSize(data.fontSize);
+          }
+        }
+      }
+
+      if (!hasUserDarkPref && resolvedMessDark !== undefined) {
+        setIsDarkMode(resolvedMessDark);
+      }
+    } catch (e) {
+      console.warn("Could not retrieve three-level settings on this attempt:", e);
+    }
+  };
+
   const fetchSettings = async (token: string) => {
     try {
-      const response = await fetch("/api/settings", {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
+      const [response] = await Promise.all([
+        fetch("/api/settings", {
+          headers: { "Authorization": `Bearer ${token}` }
+        }),
+        fetchThreeLevelSettings(token)
+      ]);
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
         if (data.messName) {
@@ -2387,56 +2451,9 @@ export default function App() {
         if (data.activeAudioSettings) setActiveAudioSettings(data.activeAudioSettings);
         if (data.systemWebsiteUrl) setSystemWebsiteUrl(data.systemWebsiteUrl);
         if (data.systemBrandingName) setSystemBrandingName(data.systemBrandingName);
-        // Load independent level-specific settings
-        await fetchThreeLevelSettings(token);
       }
     } catch (e) {
       console.warn("Could not retrieve settings on this attempt:", e);
-    }
-  };
-
-  const fetchThreeLevelSettings = async (token: string) => {
-    try {
-      const headers = { "Authorization": `Bearer ${token}` };
-      
-      // Level 1: Branding
-      const resBranding = await fetch("/api/settings/branding", { headers });
-      if (resBranding.ok) {
-        const data = await resBranding.json().catch(() => ({}));
-        if (data && (data.erpName !== undefined || data.backgroundAudio !== undefined || data.logoText !== undefined)) {
-          setErpBrandingState(data);
-        }
-      }
-      
-      // Level 2: Mess Appearance
-      const resAppearance = await fetch("/api/settings/appearance", { headers });
-      if (resAppearance.ok) {
-        const data = await resAppearance.json().catch(() => ({}));
-        if (data) {
-          setMessAppearanceState(data);
-          const messIsDark = data.defaultMode !== undefined ? data.defaultMode === "dark" : data.isDarkMode;
-          if (messIsDark !== undefined) {
-            setIsDarkMode(messIsDark);
-          }
-        }
-      }
-
-      // Level 3: User Preferences
-      const resPrefs = await fetch("/api/settings/preferences", { headers });
-      if (resPrefs.ok) {
-        const data = await resPrefs.json().catch(() => ({}));
-        if (data) {
-          setUserPreferencesState(data);
-          if (data.isDarkMode !== undefined) {
-            setIsDarkMode(data.isDarkMode);
-          }
-          if (data.fontSize !== undefined) {
-            setFontSize(data.fontSize);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Could not retrieve three-level settings on this attempt:", e);
     }
   };
 
@@ -2685,6 +2702,9 @@ export default function App() {
 
   const handleLogoutLocal = () => {
     clearStoredTokenSafely();
+    bootstrappedIdentityRef.current = "";
+    lastFetchedMonthKeyRef.current = "";
+    inFlightValidateRef.current = null;
     setSessionToken(null);
     setCurrentUser(null);
     setReportSummary(null);
@@ -2709,9 +2729,35 @@ export default function App() {
     }
   };
 
-  // Fetch session data
+  const extractTokenIdentity = (tok: string | null | undefined): string => {
+    if (!tok) return "";
+    if (tok.startsWith("ey")) {
+      try {
+        const parts = tok.split(".");
+        if (parts.length === 3) {
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const payload = JSON.parse(atob(base64));
+          if (payload?.sub) return `fb:${payload.sub}`;
+        }
+      } catch {}
+      return `fb:${tok.slice(0, 32)}`;
+    }
+    const colonParts = tok.split(":");
+    return colonParts.length >= 2 ? `sess:${colonParts[0]}:${colonParts[1]}` : tok;
+  };
+
+  const bootstrappedIdentityRef = React.useRef<string>("");
+  const lastFetchedMonthKeyRef = React.useRef<string>("");
+  const inFlightValidateRef = React.useRef<{ token: string; promise: Promise<void> } | null>(null);
+
+  // Fetch session data (deduplicated for concurrent calls with the same token)
   const validateSession = async (token?: string | null) => {
-    try {
+    const keyTok = token || "cookie-session";
+    if (inFlightValidateRef.current && inFlightValidateRef.current.token === keyTok) {
+      return inFlightValidateRef.current.promise;
+    }
+    const runPromise = (async () => {
+      try {
       const headers: Record<string, string> = {};
       if (token && token !== "cookie-session") {
         headers["Authorization"] = `Bearer ${token}`;
@@ -2751,7 +2797,14 @@ export default function App() {
       }
     } catch (e: any) {
       console.warn("Network notice during session verification. Preserving local session.", e);
+    } finally {
+      if (inFlightValidateRef.current?.token === keyTok) {
+        inFlightValidateRef.current = null;
+      }
     }
+    })();
+    inFlightValidateRef.current = { token: keyTok, promise: runPromise };
+    return runPromise;
   };
 
   const [hasSuperUserChangeDot, setHasSuperUserChangeDot] = useState(false);
@@ -2827,7 +2880,7 @@ export default function App() {
     });
   };
 
-  // Fetch core constants
+  // Fetch core constants in parallel (no sequential round-trip waterfalls)
   const fetchMonthsAndMembers = async (token: string, isInitialLoad = false) => {
     try {
       const authHeader = { 
@@ -2837,8 +2890,11 @@ export default function App() {
       };
       const ts = Date.now();
       
-      const monthsRes = await fetch(`/api/months?_t=${ts}`, { headers: authHeader });
-      const membersRes = await fetch(`/api/members?_t=${ts}`, { headers: authHeader });
+      const [monthsRes, membersRes, propRes] = await Promise.all([
+        fetch(`/api/months?_t=${ts}`, { headers: authHeader }),
+        fetch(`/api/members?_t=${ts}`, { headers: authHeader }),
+        fetch(`/api/cycle-proposals?_t=${ts}`, { headers: authHeader }).catch(() => null)
+      ]);
 
       if (monthsRes.ok) {
         const monthsData = await monthsRes.json().catch(() => ({}));
@@ -2901,18 +2957,13 @@ export default function App() {
             localStorage.setItem("user", JSON.stringify(freshUser));
           }
         }
-        await checkSuperUserRecentLogs(token, uniqueMembers, isInitialLoad);
+        // Check audit notification dot in background without blocking initial load completion
+        checkSuperUserRecentLogs(token, uniqueMembers, isInitialLoad);
       }
 
-      // Fetch dynamic cycle proposals
-      try {
-        const propRes = await fetch(`/api/cycle-proposals?_t=${ts}`, { headers: authHeader });
-        if (propRes.ok) {
-          const propData = await propRes.json().catch(() => ({}));
-          setCycleProposals(propData.proposals || []);
-        }
-      } catch (err) {
-        console.warn("Error fetching cycle proposals:", err);
+      if (propRes && propRes.ok) {
+        const propData = await propRes.json().catch(() => ({}));
+        setCycleProposals(propData.proposals || []);
       }
     } catch (e) {
       console.warn("Could not fetch months and members on this attempt:", e);
@@ -2988,6 +3039,11 @@ export default function App() {
 
   useEffect(() => {
     if (sessionToken) {
+      const identityKey = `${activeMessId}::${extractTokenIdentity(sessionToken)}`;
+      if (bootstrappedIdentityRef.current === identityKey) {
+        return; // Token rotation for the same already-bootstrapped user/mess does not need a duplicate full reload
+      }
+      bootstrappedIdentityRef.current = identityKey;
       validateSession(sessionToken);
       fetchMonthsAndMembers(sessionToken, true);
       fetchSettings(sessionToken);
@@ -3220,36 +3276,18 @@ export default function App() {
           const tokenChanged = setStoredTokenSafely(freshToken);
           setFirebaseAuthChecked(true);
 
-          if (tokenChanged || !sessionToken) {
+          const storedOrCurrentToken = localStorage.getItem("mess_token") || sessionStorage.getItem("mess_token");
+          const sameIdentityAlreadyBootstrapped =
+            Boolean(bootstrappedIdentityRef.current) &&
+            bootstrappedIdentityRef.current === `${activeMessId}::${extractTokenIdentity(freshToken)}`;
+
+          if (tokenChanged || !storedOrCurrentToken) {
             setSessionToken(freshToken);
           }
- 
-          // Validate against server database
-          const response = await fetch("/api/auth/me", {
-            headers: { "Authorization": `Bearer ${freshToken}` }
-          });
-          if (response.ok) {
-            const data = await response.json().catch(() => ({}));
-            if (isMounted) {
-              setCurrentUser(data.user);
-              try {
-                if (localStorage.getItem("mess_token")) {
-                  localStorage.setItem("mess_user", JSON.stringify(data.user));
-                  localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000));
-                }
-              } catch (storageErr) {
-                console.warn("Notice: Failed to update cached user:", storageErr);
-              }
-            }
-          } else if (response.status === 401) {
-            console.warn("Firebase authenticated but server returned 401 Unauthorized.");
-            if (isMounted) {
-              const { signOut } = await import("firebase/auth");
-              await signOut(auth);
-              handleLogoutLocal();
-            }
-          } else {
-            console.warn(`Server returned status ${response.status} during token check. Preserving active session.`);
+
+          // Skip duplicate /api/auth/me round-trip if the exact same token/identity was already validated on mount
+          if (!sameIdentityAlreadyBootstrapped || tokenChanged) {
+            await validateSession(freshToken);
           }
         } catch (e: any) {
           console.warn("Network notice during Firebase token refresh. Preserving local session:", e);
@@ -3259,8 +3297,12 @@ export default function App() {
         // No Firebase SDK user in active memory
         const localToken = localStorage.getItem("mess_token") || sessionStorage.getItem("mess_token");
         if (localToken) {
-          // Keep existing session alive and let validateSession verify with backend
-          if (isMounted) {
+          const sameIdentityAlreadyBootstrapped =
+            Boolean(bootstrappedIdentityRef.current) &&
+            bootstrappedIdentityRef.current === `${activeMessId}::${extractTokenIdentity(localToken)}`;
+          if (sameIdentityAlreadyBootstrapped) {
+            if (isMounted) setFirebaseAuthChecked(true);
+          } else if (isMounted) {
             validateSession(localToken).finally(() => {
               if (isMounted) setFirebaseAuthChecked(true);
             });
@@ -3283,7 +3325,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (currentMonthId) {
+      try {
+        localStorage.setItem(`last_month_id_${activeMessId}`, currentMonthId);
+      } catch {}
+    }
     if (sessionToken && currentMonthId) {
+      const monthKey = `${activeMessId}::${currentMonthId}::${extractTokenIdentity(sessionToken)}`;
+      if (lastFetchedMonthKeyRef.current === monthKey) {
+        return; // Prevent duplicate fetch when Firebase token rotates for the same user & month
+      }
+      lastFetchedMonthKeyRef.current = monthKey;
       fetchReportSummary();
       fetchDuties();
     }

@@ -464,9 +464,14 @@ export function validateActiveSession(
     }
 
     // Touch lastActivity and slide expiration window (sliding 30 days)
-    session.lastActivity = Date.now();
-    session.expiresAt = Date.now() + SESSION_LIFESPAN_MS;
-    saveActiveSessions();
+    // Throttle disk + PostgreSQL persistence to at most once every 5 minutes to keep GET requests zero-write & fast
+    const now = Date.now();
+    const shouldPersistTouch = !session.lastActivity || (now - session.lastActivity) > 5 * 60 * 1000;
+    session.lastActivity = now;
+    session.expiresAt = now + SESSION_LIFESPAN_MS;
+    if (shouldPersistTouch) {
+      saveActiveSessions();
+    }
     return { valid: true, session };
   }
 
