@@ -642,7 +642,7 @@ export default function Login({ onLoginSuccess, isDarkMode, erpBranding, customi
                   className={`inline-flex items-center justify-center w-20 h-20 rounded-2xl overflow-hidden border shadow-lg mb-4 bg-[#0d2645] ${animationClass}`}
                 >
                   <img
-                    src="/assets/aistudio/image_dcd21df2.png"
+                    src="/assets/my-mess-logo.png"
                     alt="My Mess Logo"
                     className="w-full h-full object-cover"
                   />

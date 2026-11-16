@@ -5931,7 +5931,7 @@ export function loadSettings(overrideMessId?: string) {
       backgroundColor: "#020617",
       backgroundImageUrl: "",
       logoType: "default-logo",
-      customLogoUrl: "/assets/aistudio/image_dcd21df2.png",
+      customLogoUrl: "/assets/my-mess-logo.png",
       showBrandingIcon: true,
       showGoogleLogin: true,
       cardBg: "rgba(15, 23, 42, 0.6)",

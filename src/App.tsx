@@ -1954,7 +1954,7 @@ export default function App() {
     backgroundColor: "#020617",
     backgroundImageUrl: "",
     logoType: "default-logo",
-    customLogoUrl: "/assets/aistudio/image_dcd21df2.png",
+    customLogoUrl: "/assets/my-mess-logo.png",
     showBrandingIcon: true,
     showGoogleLogin: true,
     cardBg: "rgba(15, 23, 42, 0.6)",
@@ -2072,7 +2072,7 @@ export default function App() {
       return messLogoIcon;
     }
     const globalIcon = erpBrandingState?.logoIcon;
-    if (globalIcon && globalIcon !== "MyMessLogo" && globalIcon !== "Sparkles") {
+    if (globalIcon && globalIcon !== "MyMessLogo" && globalIcon !== "Sparkles" && globalIcon !== "Building2") {
       return globalIcon;
     }
     return "MyMessLogo";
@@ -5896,13 +5896,13 @@ export default function App() {
             title="Refresh All Data & Return to Dashboard"
             className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all text-left min-w-0"
           >
-            <span className={`inline-flex items-center justify-center ${isUsingDefaultBrandLogo ? "w-8 h-8 bg-[#0d2645]" : "w-7 h-7"} rounded-lg border shrink-0 overflow-hidden ${
+            <span className={`inline-flex items-center justify-center ${isUsingDefaultBrandLogo ? "w-8 h-8 bg-[#0d2645] shadow-sm" : "w-7 h-7"} rounded-lg border shrink-0 overflow-hidden ${
               isRefreshingAll ? (isUsingDefaultBrandLogo ? "animate-pulse ring-2 ring-cyan-400 border-cyan-400" : "animate-spin border-cyan-400 text-cyan-300") : ""
             } ${
               activeIsDarkMode ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" : "bg-cyan-100 border-cyan-200 text-cyan-700"
             }`}>
               {isUsingDefaultBrandLogo ? (
-                <img src="/assets/aistudio/image_dcd21df2.png" alt="My Mess Logo" className="w-full h-full object-cover" />
+                <img src="/assets/my-mess-logo.png" alt="My Mess Logo" className="w-full h-full object-cover" />
               ) : (
                 <CurrentBrandIcon size={15} />
               )}
@@ -5986,7 +5986,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 {isUsingDefaultBrandLogo ? (
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg overflow-hidden border border-cyan-500/30 bg-[#0d2645] shrink-0">
-                    <img src="/assets/aistudio/image_dcd21df2.png" alt="My Mess Logo" className="w-full h-full object-cover" />
+                    <img src="/assets/my-mess-logo.png" alt="My Mess Logo" className="w-full h-full object-cover" />
                   </span>
                 ) : (
                   <CurrentBrandIcon size={16} className="text-cyan-400" />
@@ -6113,7 +6113,7 @@ export default function App() {
             title="Refresh All System Data & Return to Dashboard"
             className="w-full flex items-center gap-2.5 mb-2 text-left group cursor-pointer hover:opacity-90 active:scale-98 transition-all"
           >
-            <span className={`inline-flex items-center justify-center ${isUsingDefaultBrandLogo ? "w-9 h-9 bg-[#0d2645]" : "w-8 h-8"} rounded-xl border shrink-0 overflow-hidden transition-all ${
+            <span className={`inline-flex items-center justify-center ${isUsingDefaultBrandLogo ? "w-10 h-10 bg-[#0d2645] shadow-md" : "w-8 h-8"} rounded-xl border shrink-0 overflow-hidden transition-all ${
               isRefreshingAll ? (isUsingDefaultBrandLogo ? "animate-pulse ring-2 ring-cyan-400 border-cyan-400" : "animate-spin border-cyan-400 text-cyan-300") : ""
             } ${
               activeIsDarkMode 
@@ -6121,7 +6121,7 @@ export default function App() {
                 : "bg-cyan-100 border-cyan-200 text-cyan-600 group-hover:border-cyan-300"
             }`}>
               {isUsingDefaultBrandLogo ? (
-                <img src="/assets/aistudio/image_dcd21df2.png" alt="My Mess Logo" className="w-full h-full object-cover" />
+                <img src="/assets/my-mess-logo.png" alt="My Mess Logo" className="w-full h-full object-cover" />
               ) : (
                 <CurrentBrandIcon size={16} />
               )}
