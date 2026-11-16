@@ -623,36 +623,64 @@ export default function Login({ onLoginSuccess, isDarkMode, erpBranding, customi
         
         {/* Header branding */}
         <div className="text-center mb-8" id="login-header">
-          {showBrandingIcon && (
-            <div 
-              style={{ borderColor: `${accentColor}40`, color: accentColor }}
-              className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 border mb-4 ${animationClass}`}
-            >
-              {liveCustomization?.logoType === "shield" ? (
-                <Shield size={32} />
-              ) : liveCustomization?.logoType === "sparkles" ? (
-                <Sparkles size={32} />
-              ) : liveCustomization?.logoType === "coffee" ? (
-                <Coffee size={32} />
-              ) : liveCustomization?.logoType === "users" ? (
-                <Users size={32} />
-              ) : liveCustomization?.logoType === "trophy" ? (
-                <Trophy size={32} />
-              ) : liveCustomization?.logoType === "lock" ? (
-                <Lock size={32} />
-              ) : liveCustomization?.logoType === "image" && liveCustomization?.customLogoUrl && !logoError ? (
-                <img 
-                  src={liveCustomization.customLogoUrl} 
-                  alt="Logo" 
-                  className="w-12 h-12 object-contain rounded-lg" 
-                  referrerPolicy="no-referrer"
-                  onError={() => setLogoError(true)} 
-                />
-              ) : (
-                <KeyRound size={32} />
-              )}
-            </div>
-          )}
+          {showBrandingIcon && (() => {
+            const logoType = liveCustomization?.logoType;
+            const hasCustomImg = logoType === "image" && liveCustomization?.customLogoUrl && !logoError;
+            const isExplicitLucide =
+              logoType === "shield" ||
+              logoType === "sparkles" ||
+              logoType === "coffee" ||
+              logoType === "users" ||
+              logoType === "trophy" ||
+              logoType === "lock" ||
+              logoType === "keyround";
+
+            if (!hasCustomImg && !isExplicitLucide) {
+              return (
+                <div
+                  style={{ borderColor: `${accentColor}50` }}
+                  className={`inline-flex items-center justify-center w-20 h-20 rounded-2xl overflow-hidden border shadow-lg mb-4 bg-[#0d2645] ${animationClass}`}
+                >
+                  <img
+                    src="/assets/aistudio/image_dcd21df2.png"
+                    alt="My Mess Logo"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div
+                style={{ borderColor: `${accentColor}40`, color: accentColor }}
+                className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 border mb-4 ${animationClass}`}
+              >
+                {logoType === "shield" ? (
+                  <Shield size={32} />
+                ) : logoType === "sparkles" ? (
+                  <Sparkles size={32} />
+                ) : logoType === "coffee" ? (
+                  <Coffee size={32} />
+                ) : logoType === "users" ? (
+                  <Users size={32} />
+                ) : logoType === "trophy" ? (
+                  <Trophy size={32} />
+                ) : logoType === "lock" ? (
+                  <Lock size={32} />
+                ) : logoType === "keyround" ? (
+                  <KeyRound size={32} />
+                ) : (
+                  <img
+                    src={liveCustomization.customLogoUrl}
+                    alt="Logo"
+                    className="w-12 h-12 object-contain rounded-lg"
+                    referrerPolicy="no-referrer"
+                    onError={() => setLogoError(true)}
+                  />
+                )}
+              </div>
+            );
+          })()}
           <h1 
             style={{ 
               color: liveCustomization?.accentColor || undefined,

@@ -851,7 +851,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   // Level 1: Branding Local State
   const [localErpName, setLocalErpName] = useState(erpBrandingState?.erpName || "Mess ERP");
   const [localLogoText, setLocalLogoText] = useState(erpBrandingState?.logoText || "Mess ERP");
-  const [localLogoIcon, setLocalLogoIcon] = useState(erpBrandingState?.logoIcon || "Sparkles");
+  const [localLogoIcon, setLocalLogoIcon] = useState(erpBrandingState?.logoIcon || "MyMessLogo");
   const [localCopyright, setLocalCopyright] = useState(erpBrandingState?.copyright || "Copyright © 2026 Mess ERP");
   const [localSupportInfo, setLocalSupportInfo] = useState(erpBrandingState?.supportInfo || "Ababil support team");
   const [localDeveloperInfo, setLocalDeveloperInfo] = useState(erpBrandingState?.developerInfo || "Bengal Bachelor Developers");
@@ -870,7 +870,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     if (erpBrandingState) {
       setLocalErpName(erpBrandingState.erpName || "Mess ERP");
       setLocalLogoText(erpBrandingState.logoText || "Mess ERP");
-      setLocalLogoIcon(erpBrandingState.logoIcon || "Sparkles");
+      setLocalLogoIcon(erpBrandingState.logoIcon || "MyMessLogo");
       setLocalCopyright(erpBrandingState.copyright || "Copyright © 2026 Mess ERP");
       setLocalSupportInfo(erpBrandingState.supportInfo || "Ababil support team");
       setLocalDeveloperInfo(erpBrandingState.developerInfo || "Bengal Bachelor Developers");
@@ -889,7 +889,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
   const [localMessName, setLocalMessName] = useState(messName || "");
   const [localMessLocation, setLocalMessLocation] = useState("");
   const [localMessLogoText, setLocalMessLogoText] = useState(logoText || "");
-  const [localMessLogoIcon, setLocalMessLogoIcon] = useState("Building2");
+  const [localMessLogoIcon, setLocalMessLogoIcon] = useState("MyMessLogo");
   const [localMessWelcomeMessage, setLocalMessWelcomeMessage] = useState(homeCustomization?.welcomeTitle || "");
   const [localMessAnnouncement, setLocalMessAnnouncement] = useState("");
   const [isSavingMessIdentity, setIsSavingMessIdentity] = useState(false);
@@ -908,7 +908,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         if (s.messName) setLocalMessName(s.messName);
         if (s.location !== undefined) setLocalMessLocation(s.location);
         if (s.logoText) setLocalMessLogoText(s.logoText);
-        if (s.logoIcon) setLocalMessLogoIcon(s.logoIcon);
+        setLocalMessLogoIcon(s.logoIcon || "MyMessLogo");
         if (s.welcomeMessage) setLocalMessWelcomeMessage(s.welcomeMessage);
         else if (s.homeCustomization?.welcomeTitle) setLocalMessWelcomeMessage(s.homeCustomization.welcomeTitle);
         if (s.announcement !== undefined) setLocalMessAnnouncement(s.announcement);
@@ -1888,6 +1888,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                         onChange={(e) => setLocalMessLogoIcon(e.target.value)}
                         className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-cyan-400 focus:outline-none text-white"
                       >
+                        <option value="MyMessLogo">My Mess Official Emblem (Default)</option>
                         <option value="Building2">Apartment / Residence 🏬</option>
                         <option value="Building">Building 🏢</option>
                         <option value="Home">Home 🏠</option>

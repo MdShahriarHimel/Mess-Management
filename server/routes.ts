@@ -5128,7 +5128,7 @@ export function loadErpBranding() {
   const defaultBranding = {
     erpName: "Mess ERP",
     logoText: "Mess ERP",
-    logoIcon: "Sparkles",
+    logoIcon: "MyMessLogo",
     brandColors: {
       primary: "#22d3ee",
       secondary: "#0f172a"
@@ -5930,6 +5930,8 @@ export function loadSettings(overrideMessId?: string) {
       backgroundTheme: "neon-shallows",
       backgroundColor: "#020617",
       backgroundImageUrl: "",
+      logoType: "default-logo",
+      customLogoUrl: "/assets/aistudio/image_dcd21df2.png",
       showBrandingIcon: true,
       showGoogleLogin: true,
       cardBg: "rgba(15, 23, 42, 0.6)",

@@ -288,13 +288,14 @@ export function LoginEnginePanel({
             <div className="space-y-1.5">
               <label className={`text-[10px] font-bold uppercase tracking-wider block ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Logo Icon Type</label>
               <select
-                value={custom.logoType || "keyround"}
+                value={custom.logoType || "default-logo"}
                 onChange={(e) => handleUpdate({ logoType: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg border text-sm ${
                   isDarkMode ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
                 } focus:outline-none focus:ring-1 focus:ring-cyan-500`}
               >
-                <option value="keyround">Key / Lock (Default)</option>
+                <option value="default-logo">My Mess Emblem (Default Logo)</option>
+                <option value="keyround">Key / Lock</option>
                 <option value="shield">Security Shield</option>
                 <option value="sparkles">Sparkles AI</option>
                 <option value="coffee">Coffee / Bachelor</option>

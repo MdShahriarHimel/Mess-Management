@@ -1953,6 +1953,8 @@ export default function App() {
     backgroundTheme: "neon-shallows",
     backgroundColor: "#020617",
     backgroundImageUrl: "",
+    logoType: "default-logo",
+    customLogoUrl: "/assets/aistudio/image_dcd21df2.png",
     showBrandingIcon: true,
     showGoogleLogin: true,
     cardBg: "rgba(15, 23, 42, 0.6)",
@@ -2062,10 +2064,24 @@ export default function App() {
     }
   };
 
+  const [messLogoIcon, setMessLogoIcon] = useState<string>("MyMessLogo");
+
   // Branding Icon Helper
+  const effectiveBrandIconName = (() => {
+    if (messLogoIcon && messLogoIcon !== "MyMessLogo") {
+      return messLogoIcon;
+    }
+    const globalIcon = erpBrandingState?.logoIcon;
+    if (globalIcon && globalIcon !== "MyMessLogo" && globalIcon !== "Sparkles") {
+      return globalIcon;
+    }
+    return "MyMessLogo";
+  })();
+
+  const isUsingDefaultBrandLogo = effectiveBrandIconName === "MyMessLogo";
+
   const CurrentBrandIcon = (() => {
-    const iconName = erpBrandingState?.logoIcon;
-    switch (iconName) {
+    switch (effectiveBrandIconName) {
       case "Home": return Home;
       case "Building": return LucideIcons.Building;
       case "Building2":
@@ -2429,6 +2445,7 @@ export default function App() {
         if (data.fontSize) setFontSize(data.fontSize);
         if (data.fontStyle) setFontStyle(data.fontStyle);
         if (data.logoText) setLogoText(data.logoText);
+        setMessLogoIcon(data.logoIcon || "MyMessLogo");
         if (data.dropdownOptions) setDropdownOptions(data.dropdownOptions);
         if (data.translations) setTranslations(data.translations);
         if (data.mealTypes) setMealTypes(data.mealTypes);
@@ -2614,6 +2631,7 @@ export default function App() {
           if (s.fontSize) setFontSize(s.fontSize);
           if (s.fontStyle) setFontStyle(s.fontStyle);
           if (s.logoText) setLogoText(s.logoText);
+          if (s.logoIcon) setMessLogoIcon(s.logoIcon);
           if (s.dropdownOptions) setDropdownOptions(s.dropdownOptions);
           if (s.translations) setTranslations(s.translations);
           if (s.mealTypes) setMealTypes(s.mealTypes);
@@ -5878,12 +5896,16 @@ export default function App() {
             title="Refresh All Data & Return to Dashboard"
             className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all text-left min-w-0"
           >
-            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border shrink-0 ${
-              isRefreshingAll ? "animate-spin border-cyan-400 text-cyan-300" : ""
+            <span className={`inline-flex items-center justify-center ${isUsingDefaultBrandLogo ? "w-8 h-8 bg-[#0d2645]" : "w-7 h-7"} rounded-lg border shrink-0 overflow-hidden ${
+              isRefreshingAll ? (isUsingDefaultBrandLogo ? "animate-pulse ring-2 ring-cyan-400 border-cyan-400" : "animate-spin border-cyan-400 text-cyan-300") : ""
             } ${
               activeIsDarkMode ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" : "bg-cyan-100 border-cyan-200 text-cyan-700"
             }`}>
-              <CurrentBrandIcon size={15} />
+              {isUsingDefaultBrandLogo ? (
+                <img src="/assets/aistudio/image_dcd21df2.png" alt="My Mess Logo" className="w-full h-full object-cover" />
+              ) : (
+                <CurrentBrandIcon size={15} />
+              )}
             </span>
             <div className="min-w-0">
               <div className="flex items-center gap-1">
@@ -5962,7 +5984,13 @@ export default function App() {
             {/* Header */}
             <div className={`flex justify-between items-center p-4 pb-3 border-b shrink-0 ${activeIsDarkMode ? "border-slate-800/40" : "border-cyan-100"}`}>
               <div className="flex items-center gap-2">
-                <CurrentBrandIcon size={16} className="text-cyan-400" />
+                {isUsingDefaultBrandLogo ? (
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg overflow-hidden border border-cyan-500/30 bg-[#0d2645] shrink-0">
+                    <img src="/assets/aistudio/image_dcd21df2.png" alt="My Mess Logo" className="w-full h-full object-cover" />
+                  </span>
+                ) : (
+                  <CurrentBrandIcon size={16} className="text-cyan-400" />
+                )}
                 <span className={`font-black font-display text-sm tracking-wide ${activeIsDarkMode ? "text-cyan-400" : "text-cyan-800"}`}>
                   Mess Navigation
                 </span>
@@ -6085,14 +6113,18 @@ export default function App() {
             title="Refresh All System Data & Return to Dashboard"
             className="w-full flex items-center gap-2.5 mb-2 text-left group cursor-pointer hover:opacity-90 active:scale-98 transition-all"
           >
-            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border shrink-0 transition-all ${
-              isRefreshingAll ? "animate-spin border-cyan-400 text-cyan-300" : ""
+            <span className={`inline-flex items-center justify-center ${isUsingDefaultBrandLogo ? "w-9 h-9 bg-[#0d2645]" : "w-8 h-8"} rounded-xl border shrink-0 overflow-hidden transition-all ${
+              isRefreshingAll ? (isUsingDefaultBrandLogo ? "animate-pulse ring-2 ring-cyan-400 border-cyan-400" : "animate-spin border-cyan-400 text-cyan-300") : ""
             } ${
               activeIsDarkMode 
                 ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400 group-hover:border-cyan-500/40" 
                 : "bg-cyan-100 border-cyan-200 text-cyan-600 group-hover:border-cyan-300"
             }`}>
-              <CurrentBrandIcon size={16} />
+              {isUsingDefaultBrandLogo ? (
+                <img src="/assets/aistudio/image_dcd21df2.png" alt="My Mess Logo" className="w-full h-full object-cover" />
+              ) : (
+                <CurrentBrandIcon size={16} />
+              )}
             </span>
             <div className="min-w-0 flex-1">
               <h1 className={`font-extrabold text-sm tracking-tight font-display bg-gradient-to-r bg-clip-text text-transparent leading-tight uppercase truncate ${
