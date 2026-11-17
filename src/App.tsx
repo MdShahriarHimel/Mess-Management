@@ -4,8 +4,8 @@
  */
 
 import { SyncIndicator } from "./components/SyncIndicator";
-import React, { useState, useEffect, useMemo } from "react";
-import { io } from "socket.io-client";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { io, Socket } from "socket.io-client";
 import { onAuthStateChanged, onIdTokenChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { auth } from "./lib/firebase.ts";
 import { 
@@ -1497,25 +1497,39 @@ export default function App() {
     }
   });
   const [currentUser, setCurrentUser] = useState<Member | null>(() => {
+    const safeParseStoredUser = (storage: Storage): Member | null => {
+      try {
+        const raw = storage.getItem("mess_user");
+        if (!raw || raw === "undefined" || raw === "null") {
+          if (raw) storage.removeItem("mess_user");
+          return null;
+        }
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          return parsed as Member;
+        }
+        storage.removeItem("mess_user");
+      } catch {
+        try {
+          storage.removeItem("mess_user");
+        } catch {}
+      }
+      return null;
+    };
+
     try {
       const localToken = localStorage.getItem("mess_token");
       const expiryStr = localStorage.getItem("mess_token_expiry");
       if (localToken) {
-        if (expiryStr) {
-          const expiry = parseInt(expiryStr, 10);
-          if (Date.now() <= expiry) {
-            const savedUser = localStorage.getItem("mess_user");
-            if (savedUser) return JSON.parse(savedUser);
-          }
-        } else {
-          const savedUser = localStorage.getItem("mess_user");
-          if (savedUser) return JSON.parse(savedUser);
+        if (!expiryStr || Date.now() <= parseInt(expiryStr, 10)) {
+          const parsedLocal = safeParseStoredUser(localStorage);
+          if (parsedLocal) return parsedLocal;
         }
       }
-      const sessionUser = sessionStorage.getItem("mess_user");
-      if (sessionUser) return JSON.parse(sessionUser);
-    } catch (e) {
-      console.error("Failed to read user from storage", e);
+      const parsedSession = safeParseStoredUser(sessionStorage);
+      if (parsedSession) return parsedSession;
+    } catch {
+      // Ignore storage access errors in restricted contexts
     }
     return null;
   });
@@ -1690,53 +1704,7 @@ export default function App() {
     fetchPlatformStatus();
   }, [currentUser?.id]);
 
-  // Real-time Socket.io listener for instant maintenance mode changes across all connected clients
-  useEffect(() => {
-    const socket = io();
-
-    socket.on("maintenance-mode-change", (data: any) => {
-      if (data && data.maintenanceMode) {
-        setMaintenanceMode(data.maintenanceMode);
-        if (data.platformStatus) {
-          setPlatformStatus(data.platformStatus);
-        }
-        if (data.maintenanceDetails) {
-          setMaintenanceDetails(data.maintenanceDetails);
-        }
-      }
-    });
-
-    socket.on("appearance-updated", (data: any) => {
-      if (!data) return;
-      const currentMid = activeMessId || (typeof localStorage !== "undefined" ? localStorage.getItem("active_mess_id") : "") || "default";
-      if (!data.messId || data.messId === currentMid) {
-        if (data.appearance) {
-          setMessAppearanceState(data.appearance);
-          if (data.appearance.theme) {
-            setSiteColor(data.appearance.theme === "default-erp" ? "cyan" : data.appearance.theme);
-          }
-          if (data.appearance.accentColor) {
-            setCustomColors(prev => ({ ...prev, accentColor: data.appearance.accentColor }));
-          }
-          if (data.appearance.fontSize) {
-            setFontSize(data.appearance.fontSize);
-          }
-        }
-        if (data.siteColor) setSiteColor(data.siteColor);
-        if (data.customColors) setCustomColors(prev => ({ ...prev, ...data.customColors }));
-        if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
-        if (data.isDarkMode !== undefined) {
-          setIsDarkMode(data.isDarkMode);
-        } else if (data.defaultMode !== undefined) {
-          setIsDarkMode(data.defaultMode === "dark");
-        }
-      }
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+  // Socket.io connection & room synchronization are initialized below activeMessId declaration.
 
   // Synchronise acting role for ultimate admin
   useEffect(() => {
@@ -1904,6 +1872,85 @@ export default function App() {
       return "default";
     }
   });
+  const socketRef = useRef<Socket | null>(null);
+  const activeMessIdRef = useRef<string>(activeMessId);
+  activeMessIdRef.current = activeMessId;
+
+  // Real-time Socket.io listener with verified sessionToken & strict per-mess room scoping
+  useEffect(() => {
+    const socket = io({
+      auth: {
+        token: sessionToken || undefined,
+        messId: activeMessIdRef.current || undefined
+      }
+    });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      if (activeMessIdRef.current) {
+        socket.emit("switch-mess-room", {
+          messId: activeMessIdRef.current,
+          token: sessionToken || undefined
+        });
+      }
+    });
+
+    socket.on("maintenance-mode-change", (data: any) => {
+      if (data && data.maintenanceMode) {
+        setMaintenanceMode(data.maintenanceMode);
+        if (data.platformStatus) {
+          setPlatformStatus(data.platformStatus);
+        }
+        if (data.maintenanceDetails) {
+          setMaintenanceDetails(data.maintenanceDetails);
+        }
+      }
+    });
+
+    socket.on("appearance-updated", (data: any) => {
+      if (!data) return;
+      const currentMid = activeMessIdRef.current || (typeof localStorage !== "undefined" ? localStorage.getItem("active_mess_id") : "") || "default";
+      if (!data.messId || data.messId === currentMid) {
+        if (data.appearance) {
+          setMessAppearanceState(data.appearance);
+          if (data.appearance.theme) {
+            setSiteColor(data.appearance.theme === "default-erp" ? "cyan" : data.appearance.theme);
+          }
+          if (data.appearance.accentColor) {
+            setCustomColors(prev => ({ ...prev, accentColor: data.appearance.accentColor }));
+          }
+          if (data.appearance.fontSize) {
+            setFontSize(data.appearance.fontSize);
+          }
+        }
+        if (data.siteColor) setSiteColor(data.siteColor);
+        if (data.customColors) setCustomColors(prev => ({ ...prev, ...data.customColors }));
+        if (data.typographySettings) setTypographySettings(prev => ({ ...prev, ...data.typographySettings }));
+        if (data.isDarkMode !== undefined) {
+          setIsDarkMode(data.isDarkMode);
+        } else if (data.defaultMode !== undefined) {
+          setIsDarkMode(data.defaultMode === "dark");
+        }
+      }
+    });
+
+    return () => {
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+      socket.disconnect();
+    };
+  }, [sessionToken]);
+
+  useEffect(() => {
+    if (socketRef.current?.connected && activeMessId) {
+      socketRef.current.emit("switch-mess-room", {
+        messId: activeMessId,
+        token: sessionToken || undefined
+      });
+    }
+  }, [activeMessId, sessionToken]);
+
   const [messNotification, setMessNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
@@ -2216,11 +2263,22 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setActiveMessId(targetMessId);
+        activeMessIdRef.current = targetMessId;
         localStorage.setItem("active_mess_id", targetMessId);
-        // Clear previous mess cycle selection to prevent stale cross-mess queries
+        if (socketRef.current?.connected) {
+          socketRef.current.emit("switch-mess-room", {
+            messId: targetMessId,
+            token: sessionToken
+          });
+        }
+        // Clear previous mess state to prevent stale cross-mess display or queries
         setCurrentMonthId("");
         setMonths([]);
         setMembersList([]);
+        setCycleProposals([]);
+        setReportSummary(null);
+        setDutiesList([]);
+        setMessAppearanceState(null);
         bootstrappedIdentityRef.current = "";
         lastFetchedMonthKeyRef.current = "";
         await Promise.all([
@@ -2786,17 +2844,19 @@ export default function App() {
       });
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
-        setCurrentUser(data.user);
-        try {
-          if (localStorage.getItem("mess_token")) {
-            localStorage.setItem("mess_user", JSON.stringify(data.user));
-            // Extend token expiry window by 30 days on active app usage
-            localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000));
-          } else if (sessionStorage.getItem("mess_token")) {
-            sessionStorage.setItem("mess_user", JSON.stringify(data.user));
+        if (data && data.user && typeof data.user === "object") {
+          setCurrentUser(data.user);
+          try {
+            if (localStorage.getItem("mess_token")) {
+              localStorage.setItem("mess_user", JSON.stringify(data.user));
+              // Extend token expiry window by 30 days on active app usage
+              localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000));
+            } else if (sessionStorage.getItem("mess_token")) {
+              sessionStorage.setItem("mess_user", JSON.stringify(data.user));
+            }
+          } catch (storageErr) {
+            console.warn("Notice: Failed to update cached user:", storageErr);
           }
-        } catch (storageErr) {
-          console.warn("Notice: Failed to update cached user:", storageErr);
         }
         const effectiveTok = data.token || (token && token !== "cookie-session" ? token : "cookie-session");
         setSessionToken(effectiveTok);
@@ -3539,14 +3599,18 @@ export default function App() {
       if (shouldRemember) {
         setStoredTokenSafely(token);
         localStorage.setItem("mess_token_expiry", String(Date.now() + 30 * 24 * 60 * 60 * 1000)); // 30 days persistent session
-        localStorage.setItem("mess_user", JSON.stringify(user));
+        if (user && typeof user === "object") {
+          localStorage.setItem("mess_user", JSON.stringify(user));
+        }
         localStorage.setItem("mess_remember_me", "true");
         sessionStorage.removeItem("mess_token");
         sessionStorage.removeItem("mess_user");
       } else {
         clearStoredTokenSafely();
         sessionStorage.setItem("mess_token", token);
-        sessionStorage.setItem("mess_user", JSON.stringify(user));
+        if (user && typeof user === "object") {
+          sessionStorage.setItem("mess_user", JSON.stringify(user));
+        }
         localStorage.removeItem("mess_remember_me");
       }
       if ((user as any)?.messId) {

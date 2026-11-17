@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { pgTable, text, boolean, doublePrecision, index, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, doublePrecision, index, integer, real, primaryKey } from "drizzle-orm/pg-core";
 
 export const members = pgTable("members", {
-  id: text("id").primaryKey(), // Firebase Auth uid (or generated ID)
+  id: text("id").notNull(), // Firebase Auth uid (or generated ID)
+  messId: text("mess_id").notNull().default("default"),
   name: text("name").notNull(),
   nickname: text("nickname").notNull(),
   email: text("email").notNull(),
@@ -52,22 +53,28 @@ export const members = pgTable("members", {
   roomLabelId: text("room_label_id"),
   roomLabel: text("room_label"),
   roomRent: real("room_rent"),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("members_mess_id_idx").on(table.messId),
+}));
 
 export const months = pgTable("months", {
-  id: text("id").primaryKey(),
-  messId: text("mess_id").default("default"),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   name: text("name").notNull(),
   startDate: text("start_date").notNull(),
   endDate: text("end_date").notNull(),
   isLocked: boolean("is_locked").notNull().default(false),
   manuallyUnlocked: boolean("manually_unlocked").default(false),
   gracePeriodEnabled: boolean("grace_period_enabled").notNull().default(true),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("months_mess_id_idx").on(table.messId),
+}));
 
 export const meals = pgTable("meals", {
-  id: text("id").primaryKey(),
-  messId: text("mess_id").default("default"),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   date: text("date").notNull(),
@@ -76,22 +83,28 @@ export const meals = pgTable("meals", {
   breakfast: doublePrecision("breakfast").notNull().default(0),
 }, (table) => {
   return {
+    pk: primaryKey({ columns: [table.messId, table.id] }),
     uniqueMealIdx: index("meals_unique_member_date_idx").on(table.messId, table.monthId, table.memberId, table.date),
   };
 });
 
 export const foodMenus = pgTable("food_menus", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   date: text("date").notNull(),
   lunchVegetable: text("lunch_vegetable").notNull(),
   lunchMain: text("lunch_main").notNull(),
   dinnerVegetable: text("dinner_vegetable").notNull(),
   dinnerMain: text("dinner_main").notNull(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("food_menus_mess_id_idx").on(table.messId),
+}));
 
 export const marketEntries = pgTable("market_entries", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   date: text("date").notNull(),
@@ -101,53 +114,77 @@ export const marketEntries = pgTable("market_entries", {
   isExtra: boolean("is_extra").notNull().default(false),
   quantity: text("quantity"),
   coveredDates: text("covered_dates"),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("market_entries_mess_id_idx").on(table.messId),
+}));
 
 export const deposits = pgTable("deposits", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   amount: doublePrecision("amount").notNull(),
   date: text("date").notNull(),
   enteredBy: text("entered_by").notNull(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("deposits_mess_id_idx").on(table.messId),
+}));
 
 export const bills = pgTable("bills", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   name: text("name").notNull(),
   amount: doublePrecision("amount").notNull(),
   collectorId: text("collector_id").notNull(),
   status: text("status").notNull(), // BillStatus
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("bills_mess_id_idx").on(table.messId),
+}));
 
 export const duties = pgTable("duties", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   name: text("name").notNull(),
   task: text("task").notNull(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("duties_mess_id_idx").on(table.messId),
+}));
 
 export const managerHoldings = pgTable("manager_holdings", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   memberId: text("member_id").notNull(),
   amount: doublePrecision("amount").notNull(),
   marketSpent: doublePrecision("market_spent"),
   description: text("description"),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("manager_holdings_mess_id_idx").on(table.messId),
+}));
 
 export const managerRatings = pgTable("manager_ratings", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   rating: doublePrecision("rating").notNull(),
   raterId: text("rater_id").notNull(),
   date: text("date").notNull(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("manager_ratings_mess_id_idx").on(table.messId),
+}));
 
 export const notices = pgTable("notices", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   title: text("title").notNull(),
   content: text("content").notNull(),
   pinned: boolean("pinned").notNull().default(false),
@@ -155,7 +192,10 @@ export const notices = pgTable("notices", {
   authorId: text("author_id").notNull(),
   authorName: text("author_name").notNull(),
   date: text("date").notNull(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("notices_mess_id_idx").on(table.messId),
+}));
 
 export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),
@@ -191,7 +231,8 @@ export const auditLogs = pgTable("audit_logs", {
 });
 
 export const mealRequests = pgTable("meal_requests", {
-  id: text("id").primaryKey(),
+  id: text("id").notNull(),
+  messId: text("mess_id").notNull().default("default"),
   monthId: text("month_id").notNull(),
   date: text("date").notNull(),
   requesterId: text("requester_id").notNull(),
@@ -199,7 +240,10 @@ export const mealRequests = pgTable("meal_requests", {
   mealsData: text("meals_data").notNull(), // JSON string representing the updated meals for that date
   status: text("status").notNull(), // "PENDING", "APPROVED", "REJECTED"
   timestamp: text("timestamp").notNull(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.messId, table.id] }),
+  messIdIdx: index("meal_requests_mess_id_idx").on(table.messId),
+}));
 
 export const persistentFiles = pgTable("persistent_files", {
   filename: text("filename").primaryKey(),

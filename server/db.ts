@@ -10,16 +10,58 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export const messContext = new AsyncLocalStorage<{ messId: string }>();
 
 const lastSyncHashes = new Map<string, string>();
+const messWriteLocks = new Map<string, Promise<void>>();
 
-function isItemModified(tableName: string, id: string, mappedItem: any): boolean {
-  if (!id) return true;
-  const hashKey = `${tableName}:${id}`;
-  const hash = crypto.createHash('md5').update(JSON.stringify(mappedItem)).digest('hex');
-  if (lastSyncHashes.get(hashKey) !== hash) {
-    lastSyncHashes.set(hashKey, hash);
-    return true;
+export async function withMessWriteLock<T>(messId: string, fn: () => Promise<T>): Promise<T> {
+  const key = (messId || "default").trim() || "default";
+  const prev = messWriteLocks.get(key) || Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const chained = prev.catch(() => {}).then(() => next);
+  messWriteLocks.set(key, chained);
+  await prev.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (messWriteLocks.get(key) === chained) {
+      messWriteLocks.delete(key);
+    }
   }
-  return false;
+}
+
+function getItemHash(mappedItem: any): string {
+  return crypto.createHash('md5').update(JSON.stringify(mappedItem)).digest('hex');
+}
+
+function isItemModified(messId: string, tableName: string, id: string, mappedItem: any): boolean {
+  if (!id) return true;
+  const hashKey = `${messId || "default"}:${tableName}:${id}`;
+  const hash = getItemHash(mappedItem);
+  return lastSyncHashes.get(hashKey) !== hash;
+}
+
+function setItemHash(messId: string, tableName: string, id: string, mappedItem: any) {
+  if (!id) return;
+  const hashKey = `${messId || "default"}:${tableName}:${id}`;
+  lastSyncHashes.set(hashKey, getItemHash(mappedItem));
+}
+
+function clearTableSyncHashes(messId: string, tableName: string, deletedIds?: string[]) {
+  const prefix = `${messId || "default"}:${tableName}:`;
+  if (deletedIds) {
+    for (const id of deletedIds) {
+      lastSyncHashes.delete(`${prefix}${id}`);
+    }
+  } else {
+    for (const key of Array.from(lastSyncHashes.keys())) {
+      if (key.startsWith(prefix)) {
+        lastSyncHashes.delete(key);
+      }
+    }
+  }
 }
 
 export function parseCoveredDates(val: any): string[] {
@@ -35,7 +77,7 @@ export function parseCoveredDates(val: any): string[] {
 
 import path from "path";
 import { getClientMetadata } from "./context.js";
-import { db } from "../src/db/index.ts";
+import { db, pool } from "../src/db/index.ts";
 import { 
   members as membersTable,
   months as monthsTable,
@@ -53,7 +95,7 @@ import {
   persistentFiles as persistentFilesTable,
   userCredentials as userCredentialsTable
 } from "../src/db/schema.ts";
-import { sql, eq, inArray } from "drizzle-orm";
+import { sql, eq, inArray, and, or, isNull } from "drizzle-orm";
 import { 
   UserRole, 
   MemberStatus, 
@@ -145,6 +187,10 @@ const dbCaches = new Map<string, DatabaseSchema>();
 let dbCache: DatabaseSchema | null = null;
 let credentialsCache: CredentialsSchema | null = null;
 
+export function hasMessCache(messId: string): boolean {
+  return dbCaches.has(messId);
+}
+
 export function setDbCacheForMess(messId: string, data: DatabaseSchema) {
   dbCaches.set(messId, data);
   lastMaintenanceCheckMap.delete(messId);
@@ -161,260 +207,292 @@ function ensureDBDir() {
   }
 }
 
-// Write every table into PostgreSQL using ACID transactions
-export async function importBackupToPostgres(backupData: DatabaseSchema) {
-  console.log("[Backup] Database import started via transaction...");
-  await db.transaction(async (tx) => {
-    // Delete all records from all primary tables in the correct order
-    await tx.delete(membersTable);
-    await tx.delete(monthsTable);
-    await tx.delete(mealsTable);
-    await tx.delete(foodMenusTable);
-    await tx.delete(marketEntriesTable);
-    await tx.delete(depositsTable);
-    await tx.delete(billsTable);
-    await tx.delete(dutiesTable);
-    await tx.delete(managerHoldingsTable);
-    await tx.delete(managerRatingsTable);
-    await tx.delete(noticesTable);
-    await tx.delete(auditLogsTable);
-    try {
-      await tx.delete(mealRequestsTable);
-    } catch (e) {
-      console.warn("[Backup] mealRequestsTable delete bypassed/failed:", e);
-    }
+// Track explicitly purged/deleted non-default mess IDs so late async saveDB/logAudit/loadDB calls cannot resurrect them
+const purgedMessIds = new Set<string>();
 
-    // Insert records from the backup payload
-    if (backupData.members && backupData.members.length > 0) {
-      const membersToInsert = backupData.members.map(item => ({
-        id: item.id,
-        name: item.name,
-        nickname: item.nickname,
-        email: item.email,
-        phone: item.phone,
-        whatsapp: item.whatsapp,
-        bloodGroup: item.bloodGroup,
-        occupation: item.occupation,
-        joiningDate: item.joiningDate,
-        leavingDate: item.leavingDate || null,
-        role: item.role,
-        status: item.status,
-        notes: item.notes,
-        photo: item.photo || null,
-        assignedTask: item.assignedTask || null,
-        glow: item.glow ?? false,
-        glowStyle: item.glowStyle || null,
-        animation: item.animation || null,
-        splitProfile: item.splitProfile ?? false,
-        memberGlow: item.memberGlow ?? false,
-        memberGlowStyle: item.memberGlowStyle || null,
-        memberAnimation: item.memberAnimation || null,
-        gifEnabledByAdmin: item.gifEnabledByAdmin ?? true,
-        hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
-        glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
-        hideAdminRole: item.hideAdminRole ?? false,
-        hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
-        personalTheme: item.personalTheme || null,
-        personalFont: item.personalFont || null,
-        avatarFrame: item.avatarFrame || null,
-        badge: item.badge || null,
-        profileBackground: item.profileBackground || null,
-        dashboardLayout: item.dashboardLayout || null,
-        profileDecoration: item.profileDecoration || null,
-        dashboardStyle: item.dashboardStyle || null,
-        backgroundEffect: item.backgroundEffect || null,
-        institution: item.institution || null,
-        department: item.department || null,
-        educationType: item.educationType || null,
-        admissionSession: item.admissionSession || null,
-        seniorityYear: item.seniorityYear || null,
-        gender: item.gender || null,
-        manualTitle: item.manualTitle || null,
-        roomLabelId: item.roomLabelId || null,
-        roomLabel: item.roomLabel || null,
-        roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
-      }));
-      for (let i = 0; i < membersToInsert.length; i += 500) {
-        await tx.insert(membersTable).values(membersToInsert.slice(i, i + 500));
+function isRegisteredMessId(messId: string): boolean {
+  if (!messId || messId === "default") return true;
+  try {
+    const messesFile = path.join(DB_DIR, "messes.json");
+    if (!fs.existsSync(messesFile)) return true; // During early bootstrap before messes.json exists
+    const parsed = JSON.parse(fs.readFileSync(messesFile, "utf-8"));
+    if (parsed && Array.isArray(parsed.messes)) {
+      return parsed.messes.some((m: any) => m.id === messId);
+    }
+  } catch {}
+  return false;
+}
+
+// Write every table into PostgreSQL using ACID transactions (strictly scoped to targetMessId)
+export async function importBackupToPostgres(backupData: DatabaseSchema, explicitMessId?: string) {
+  const targetMessId = (explicitMessId || getActiveMessId() || "default").trim() || "default";
+  purgedMessIds.delete(targetMessId);
+  console.log(`[Backup] Database import started via transaction for mess: ${targetMessId}...`);
+  await withMessWriteLock(targetMessId, async () => {
+    purgedMessIds.delete(targetMessId);
+    await db.transaction(async (tx) => {
+      // Delete ONLY records belonging to targetMessId (never wipe other messes!)
+      await tx.delete(membersTable).where(eq(membersTable.messId, targetMessId));
+      await tx.delete(monthsTable).where(eq(monthsTable.messId, targetMessId));
+      await tx.delete(mealsTable).where(eq(mealsTable.messId, targetMessId));
+      await tx.delete(foodMenusTable).where(eq(foodMenusTable.messId, targetMessId));
+      await tx.delete(marketEntriesTable).where(eq(marketEntriesTable.messId, targetMessId));
+      await tx.delete(depositsTable).where(eq(depositsTable.messId, targetMessId));
+      await tx.delete(billsTable).where(eq(billsTable.messId, targetMessId));
+      await tx.delete(dutiesTable).where(eq(dutiesTable.messId, targetMessId));
+      await tx.delete(managerHoldingsTable).where(eq(managerHoldingsTable.messId, targetMessId));
+      await tx.delete(managerRatingsTable).where(eq(managerRatingsTable.messId, targetMessId));
+      await tx.delete(noticesTable).where(eq(noticesTable.messId, targetMessId));
+      if (targetMessId === "default") {
+        await tx.delete(auditLogsTable).where(or(eq(auditLogsTable.messId, "default"), isNull(auditLogsTable.messId)));
+      } else {
+        await tx.delete(auditLogsTable).where(eq(auditLogsTable.messId, targetMessId));
       }
-    }
+      await tx.delete(mealRequestsTable).where(eq(mealRequestsTable.messId, targetMessId));
 
-    if (backupData.months && backupData.months.length > 0) {
-      const monthsToInsert = backupData.months.map(item => ({
-        id: item.id,
-        name: item.name,
-        startDate: item.startDate,
-        endDate: item.endDate,
-        isLocked: item.isLocked ?? false,
-        gracePeriodEnabled: item.gracePeriodEnabled ?? true,
-      }));
-      for (let i = 0; i < monthsToInsert.length; i += 500) {
-        await tx.insert(monthsTable).values(monthsToInsert.slice(i, i + 500));
+      // Insert records tagged with targetMessId
+      if (backupData.members && backupData.members.length > 0) {
+        const membersToInsert = backupData.members.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          name: item.name,
+          nickname: item.nickname,
+          email: item.email,
+          phone: item.phone,
+          whatsapp: item.whatsapp,
+          bloodGroup: item.bloodGroup,
+          occupation: item.occupation,
+          joiningDate: item.joiningDate,
+          leavingDate: item.leavingDate || null,
+          role: item.role,
+          status: item.status,
+          notes: item.notes,
+          photo: item.photo || null,
+          assignedTask: item.assignedTask || null,
+          glow: item.glow ?? false,
+          glowStyle: item.glowStyle || null,
+          animation: item.animation || null,
+          splitProfile: item.splitProfile ?? false,
+          memberGlow: item.memberGlow ?? false,
+          memberGlowStyle: item.memberGlowStyle || null,
+          memberAnimation: item.memberAnimation || null,
+          gifEnabledByAdmin: item.gifEnabledByAdmin ?? true,
+          hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
+          glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
+          hideAdminRole: item.hideAdminRole ?? false,
+          hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
+          personalTheme: item.personalTheme || null,
+          personalFont: item.personalFont || null,
+          avatarFrame: item.avatarFrame || null,
+          badge: item.badge || null,
+          profileBackground: item.profileBackground || null,
+          dashboardLayout: item.dashboardLayout || null,
+          profileDecoration: item.profileDecoration || null,
+          dashboardStyle: item.dashboardStyle || null,
+          backgroundEffect: item.backgroundEffect || null,
+          institution: item.institution || null,
+          department: item.department || null,
+          educationType: item.educationType || null,
+          admissionSession: item.admissionSession || null,
+          seniorityYear: item.seniorityYear || null,
+          gender: item.gender || null,
+          manualTitle: item.manualTitle || null,
+          roomLabelId: item.roomLabelId || null,
+          roomLabel: item.roomLabel || null,
+          roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
+        }));
+        for (let i = 0; i < membersToInsert.length; i += 500) {
+          await tx.insert(membersTable).values(membersToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.meals && backupData.meals.length > 0) {
-      const mealsToInsert = backupData.meals.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        date: item.date,
-        lunch: item.lunch ?? 0,
-        dinner: item.dinner ?? 0,
-        breakfast: item.breakfast ?? 0,
-      }));
-      for (let i = 0; i < mealsToInsert.length; i += 500) {
-        await tx.insert(mealsTable).values(mealsToInsert.slice(i, i + 500));
+      if (backupData.months && backupData.months.length > 0) {
+        const monthsToInsert = backupData.months.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          name: item.name,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          isLocked: item.isLocked ?? false,
+          manuallyUnlocked: !!item.manuallyUnlocked,
+          gracePeriodEnabled: item.gracePeriodEnabled ?? true,
+        }));
+        for (let i = 0; i < monthsToInsert.length; i += 500) {
+          await tx.insert(monthsTable).values(monthsToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.foodMenus && backupData.foodMenus.length > 0) {
-      const foodMenusToInsert = backupData.foodMenus.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        date: item.date,
-        lunchVegetable: item.lunchVegetable,
-        lunchMain: item.lunchMain,
-        dinnerVegetable: item.dinnerVegetable,
-        dinnerMain: item.dinnerMain,
-      }));
-      for (let i = 0; i < foodMenusToInsert.length; i += 500) {
-        await tx.insert(foodMenusTable).values(foodMenusToInsert.slice(i, i + 500));
+      if (backupData.meals && backupData.meals.length > 0) {
+        const mealsToInsert = backupData.meals.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          date: item.date,
+          lunch: item.lunch ?? 0,
+          dinner: item.dinner ?? 0,
+          breakfast: item.breakfast ?? 0,
+        }));
+        for (let i = 0; i < mealsToInsert.length; i += 500) {
+          await tx.insert(mealsTable).values(mealsToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.marketEntries && backupData.marketEntries.length > 0) {
-      const marketEntriesToInsert = backupData.marketEntries.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        date: item.date,
-        amount: item.amount,
-        receiptUrl: item.receiptUrl || null,
-        description: item.description,
-        isExtra: item.isExtra ?? false,
-        quantity: item.quantity || null,
-        coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
-      }));
-      for (let i = 0; i < marketEntriesToInsert.length; i += 500) {
-        await tx.insert(marketEntriesTable).values(marketEntriesToInsert.slice(i, i + 500));
+      if (backupData.foodMenus && backupData.foodMenus.length > 0) {
+        const foodMenusToInsert = backupData.foodMenus.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          date: item.date,
+          lunchVegetable: item.lunchVegetable,
+          lunchMain: item.lunchMain,
+          dinnerVegetable: item.dinnerVegetable,
+          dinnerMain: item.dinnerMain,
+        }));
+        for (let i = 0; i < foodMenusToInsert.length; i += 500) {
+          await tx.insert(foodMenusTable).values(foodMenusToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.deposits && backupData.deposits.length > 0) {
-      const depositsToInsert = backupData.deposits.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        amount: item.amount,
-        date: item.date,
-        enteredBy: item.enteredBy,
-      }));
-      for (let i = 0; i < depositsToInsert.length; i += 500) {
-        await tx.insert(depositsTable).values(depositsToInsert.slice(i, i + 500));
+      if (backupData.marketEntries && backupData.marketEntries.length > 0) {
+        const marketEntriesToInsert = backupData.marketEntries.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          date: item.date,
+          amount: item.amount,
+          receiptUrl: item.receiptUrl || null,
+          description: item.description,
+          isExtra: item.isExtra ?? false,
+          quantity: item.quantity || null,
+          coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
+        }));
+        for (let i = 0; i < marketEntriesToInsert.length; i += 500) {
+          await tx.insert(marketEntriesTable).values(marketEntriesToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.bills && backupData.bills.length > 0) {
-      const billsToInsert = backupData.bills.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        name: item.name,
-        amount: item.amount,
-        collectorId: item.collectorId,
-        status: item.status,
-      }));
-      for (let i = 0; i < billsToInsert.length; i += 500) {
-        await tx.insert(billsTable).values(billsToInsert.slice(i, i + 500));
+      if (backupData.deposits && backupData.deposits.length > 0) {
+        const depositsToInsert = backupData.deposits.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          amount: item.amount,
+          date: item.date,
+          enteredBy: item.enteredBy,
+        }));
+        for (let i = 0; i < depositsToInsert.length; i += 500) {
+          await tx.insert(depositsTable).values(depositsToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.duties && backupData.duties.length > 0) {
-      const dutiesToInsert = backupData.duties.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        name: item.name,
-        task: item.task,
-      }));
-      for (let i = 0; i < dutiesToInsert.length; i += 500) {
-        await tx.insert(dutiesTable).values(dutiesToInsert.slice(i, i + 500));
+      if (backupData.bills && backupData.bills.length > 0) {
+        const billsToInsert = backupData.bills.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          name: item.name,
+          amount: item.amount,
+          collectorId: item.collectorId,
+          status: item.status,
+        }));
+        for (let i = 0; i < billsToInsert.length; i += 500) {
+          await tx.insert(billsTable).values(billsToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.managerHoldings && backupData.managerHoldings.length > 0) {
-      const managerHoldingsToInsert = backupData.managerHoldings.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        amount: item.amount,
-        marketSpent: item.marketSpent ?? 0,
-        description: item.description || null,
-      }));
-      for (let i = 0; i < managerHoldingsToInsert.length; i += 500) {
-        await tx.insert(managerHoldingsTable).values(managerHoldingsToInsert.slice(i, i + 500));
+      if (backupData.duties && backupData.duties.length > 0) {
+        const dutiesToInsert = backupData.duties.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          name: item.name,
+          task: item.task,
+        }));
+        for (let i = 0; i < dutiesToInsert.length; i += 500) {
+          await tx.insert(dutiesTable).values(dutiesToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.managerRatings && backupData.managerRatings.length > 0) {
-      const managerRatingsToInsert = backupData.managerRatings.map(item => ({
-        id: item.id,
-        monthId: item.monthId,
-        rating: item.rating,
-        raterId: item.raterId,
-        date: item.date,
-      }));
-      for (let i = 0; i < managerRatingsToInsert.length; i += 500) {
-        await tx.insert(managerRatingsTable).values(managerRatingsToInsert.slice(i, i + 500));
+      if (backupData.managerHoldings && backupData.managerHoldings.length > 0) {
+        const managerHoldingsToInsert = backupData.managerHoldings.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          amount: item.amount,
+          marketSpent: item.marketSpent ?? 0,
+          description: item.description || null,
+        }));
+        for (let i = 0; i < managerHoldingsToInsert.length; i += 500) {
+          await tx.insert(managerHoldingsTable).values(managerHoldingsToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.notices && backupData.notices.length > 0) {
-      const noticesToInsert = backupData.notices.map(item => ({
-        id: item.id,
-        title: item.title,
-        content: item.content,
-        pinned: item.pinned ?? false,
-        archived: item.archived ?? false,
-        authorId: item.authorId,
-        authorName: item.authorName,
-        date: item.date,
-      }));
-      for (let i = 0; i < noticesToInsert.length; i += 500) {
-        await tx.insert(noticesTable).values(noticesToInsert.slice(i, i + 500));
+      if (backupData.managerRatings && backupData.managerRatings.length > 0) {
+        const managerRatingsToInsert = backupData.managerRatings.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          monthId: item.monthId,
+          rating: item.rating,
+          raterId: item.raterId,
+          date: item.date,
+        }));
+        for (let i = 0; i < managerRatingsToInsert.length; i += 500) {
+          await tx.insert(managerRatingsTable).values(managerRatingsToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.auditLogs && backupData.auditLogs.length > 0) {
-      const auditLogsToInsert = backupData.auditLogs.map(item => ({
-        id: item.id,
-        userId: item.userId,
-        userName: item.userName,
-        action: item.action,
-        oldValue: item.oldValue,
-        newValue: item.newValue,
-        timestamp: item.timestamp,
-        reason: item.reason,
-        date: item.date || null,
-        time: item.time || null,
-        userRole: item.userRole || null,
-        superUserId: item.superUserId || null,
-        messId: item.messId || null,
-        module: item.module || null,
-        actionType: item.actionType || null,
-        description: item.description || null,
-        browser: item.browser || null,
-        ipAddress: item.ipAddress || null,
-      }));
-      for (let i = 0; i < auditLogsToInsert.length; i += 500) {
-        await tx.insert(auditLogsTable).values(auditLogsToInsert.slice(i, i + 500));
+      if (backupData.notices && backupData.notices.length > 0) {
+        const noticesToInsert = backupData.notices.map(item => ({
+          id: item.id,
+          messId: targetMessId,
+          title: item.title,
+          content: item.content,
+          pinned: item.pinned ?? false,
+          archived: item.archived ?? false,
+          authorId: item.authorId,
+          authorName: item.authorName,
+          date: item.date,
+        }));
+        for (let i = 0; i < noticesToInsert.length; i += 500) {
+          await tx.insert(noticesTable).values(noticesToInsert.slice(i, i + 500));
+        }
       }
-    }
 
-    if (backupData.mealRequests && backupData.mealRequests.length > 0) {
-      try {
+      if (backupData.auditLogs && backupData.auditLogs.length > 0) {
+        const auditLogsToInsert = backupData.auditLogs.map(item => ({
+          id: item.id,
+          userId: item.userId,
+          userName: item.userName,
+          action: item.action,
+          oldValue: item.oldValue,
+          newValue: item.newValue,
+          timestamp: item.timestamp,
+          reason: item.reason,
+          date: item.date || null,
+          time: item.time || null,
+          userRole: item.userRole || null,
+          superUserId: item.superUserId || null,
+          messId: targetMessId,
+          module: item.module || null,
+          actionType: item.actionType || null,
+          description: item.description || null,
+          browser: item.browser || null,
+          ipAddress: item.ipAddress || null,
+        }));
+        for (let i = 0; i < auditLogsToInsert.length; i += 500) {
+          await tx.insert(auditLogsTable).values(auditLogsToInsert.slice(i, i + 500)).onConflictDoNothing();
+        }
+      }
+
+      if (backupData.mealRequests && backupData.mealRequests.length > 0) {
         const mealRequestsToInsert = backupData.mealRequests.map(item => ({
           id: item.id,
+          messId: targetMessId,
           monthId: item.monthId,
           date: item.date,
           requesterId: item.requesterId,
@@ -426,12 +504,43 @@ export async function importBackupToPostgres(backupData: DatabaseSchema) {
         for (let i = 0; i < mealRequestsToInsert.length; i += 500) {
           await tx.insert(mealRequestsTable).values(mealRequestsToInsert.slice(i, i + 500));
         }
-      } catch (err) {
-        console.warn("[Backup] mealRequestsTable insert bypassed/failed:", err);
       }
+
+      const backupFilename = targetMessId === "default" ? "database_backup.json" : `database_backup_${targetMessId}.json`;
+      await tx.insert(persistentFilesTable).values({
+        filename: backupFilename,
+        content: JSON.stringify(backupData)
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content: JSON.stringify(backupData) }
+      });
+
+      const newVersion = Date.now();
+      await tx.insert(persistentFilesTable).values({
+        filename: `db_version_${targetMessId}.json`,
+        content: JSON.stringify({ v: newVersion, at: new Date().toISOString() })
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content: JSON.stringify({ v: newVersion, at: new Date().toISOString() }) }
+      });
+    });
+
+    // Clear sync hashes for this mess so subsequent partial updates re-evaluate cleanly
+    for (const t of ['members','months','meals','foodMenus','marketEntries','deposits','bills','duties','managerHoldings','managerRatings','notices','auditLogs','mealRequests']) {
+      clearTableSyncHashes(targetMessId, t);
     }
+
+    const newVer = Date.now();
+    lastKnownDbVersion.set(targetMessId, newVer);
+    lastCacheRefreshTimestamp.set(targetMessId, newVer);
+    setDbCacheForMess(targetMessId, backupData);
+    ensureDBDir();
+    const backupFilename = targetMessId === "default" ? "database_backup.json" : `database_backup_${targetMessId}.json`;
+    try {
+      fs.writeFileSync(path.join(DB_DIR, backupFilename), JSON.stringify(backupData), "utf-8");
+    } catch {}
   });
-  console.log("[Backup] Database import completed successfully!");
+  console.log(`[Backup] Database import completed successfully for mess: ${targetMessId}!`);
 }
 
 export function deduplicateMembers(members: Member[]): Member[] {
@@ -580,25 +689,11 @@ export const lastCacheRefreshTimestamp = new Map<string, number>();
 export const lastKnownDbVersion = new Map<string, number>();
 const lastVersionCheckTimestamps = new Map<string, number>();
 
-// Refresh the in-memory cache directly from the PostgreSQL single source of truth
+// Refresh the in-memory cache directly from the PostgreSQL single source of truth (partitioned strictly by targetMessId)
 export async function refreshDbCache(targetMessId: string = "default") {
-  console.log(`[Cache Sync] Refreshing cache from PostgreSQL single source of truth for mess: ${targetMessId}...`);
-  if (targetMessId !== "default") {
-    // For tenant mess, load the updated persistent backup file
-    const tenantFilename = `database_backup_${targetMessId}.json`;
-    try {
-      const tenantRow = await db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, tenantFilename)).limit(1);
-      if (tenantRow[0]?.content) {
-        const parsed = JSON.parse(tenantRow[0].content);
-        dbCaches.set(targetMessId, parsed);
-        lastCacheRefreshTimestamp.set(targetMessId, Date.now());
-        return parsed;
-      }
-    } catch (e) {
-      console.error(`[Cache Sync] Error refreshing tenant cache for ${targetMessId}:`, e);
-    }
-    return dbCaches.get(targetMessId) || loadDB(targetMessId);
-  }
+  const messId = (targetMessId || "default").trim() || "default";
+  console.log(`[Cache Sync] Refreshing cache from PostgreSQL single source of truth for mess: ${messId}...`);
+  const backupFilename = messId === "default" ? "database_backup.json" : `database_backup_${messId}.json`;
 
   const [
     membersList,
@@ -613,21 +708,25 @@ export async function refreshDbCache(targetMessId: string = "default") {
     managerRatingsList,
     noticesList,
     auditLogsList,
+    mealRequestsList,
     backupRow
   ] = await Promise.all([
-    db.select().from(membersTable),
-    db.select().from(monthsTable),
-    db.select().from(mealsTable),
-    db.select().from(foodMenusTable),
-    db.select().from(marketEntriesTable),
-    db.select().from(depositsTable),
-    db.select().from(billsTable),
-    db.select().from(dutiesTable),
-    db.select().from(managerHoldingsTable),
-    db.select().from(managerRatingsTable),
-    db.select().from(noticesTable),
-    db.select().from(auditLogsTable),
-    db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, "database_backup.json")).limit(1).catch(() => [])
+    db.select().from(membersTable).where(eq(membersTable.messId, messId)),
+    db.select().from(monthsTable).where(eq(monthsTable.messId, messId)),
+    db.select().from(mealsTable).where(eq(mealsTable.messId, messId)),
+    db.select().from(foodMenusTable).where(eq(foodMenusTable.messId, messId)),
+    db.select().from(marketEntriesTable).where(eq(marketEntriesTable.messId, messId)),
+    db.select().from(depositsTable).where(eq(depositsTable.messId, messId)),
+    db.select().from(billsTable).where(eq(billsTable.messId, messId)),
+    db.select().from(dutiesTable).where(eq(dutiesTable.messId, messId)),
+    db.select().from(managerHoldingsTable).where(eq(managerHoldingsTable.messId, messId)),
+    db.select().from(managerRatingsTable).where(eq(managerRatingsTable.messId, messId)),
+    db.select().from(noticesTable).where(eq(noticesTable.messId, messId)),
+    messId === "default"
+      ? db.select().from(auditLogsTable).where(or(eq(auditLogsTable.messId, "default"), isNull(auditLogsTable.messId)))
+      : db.select().from(auditLogsTable).where(eq(auditLogsTable.messId, messId)),
+    db.select().from(mealRequestsTable).where(eq(mealRequestsTable.messId, messId)).catch(() => []),
+    db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, backupFilename)).limit(1).catch(() => [])
   ]);
 
   let parsedBackup: any = null;
@@ -637,33 +736,56 @@ export async function refreshDbCache(targetMessId: string = "default") {
     } catch {}
   }
 
-  let mealRequestsList: any[] = [];
-  try {
-    mealRequestsList = await db.select().from(mealRequestsTable);
-  } catch (err) {
-    mealRequestsList = [];
+  // One-time hydration for legacy tenant messes whose records previously lived only in database_backup_<messId>.json
+  if (
+    messId !== "default" &&
+    membersList.length === 0 &&
+    monthsList.length === 0 &&
+    billsList.length === 0 &&
+    parsedBackup &&
+    ((parsedBackup.members?.length || 0) > 0 || (parsedBackup.months?.length || 0) > 0)
+  ) {
+    try {
+      await importBackupToPostgres(parsedBackup, messId);
+      const hydrated = dbCaches.get(messId);
+      if (hydrated) return hydrated;
+    } catch (e) {
+      console.warn(`[Cache Sync] Legacy tenant hydration fallback for ${messId}:`, e);
+    }
   }
 
+  // Preserve auxiliary per-member fields (e.g. previousIds) & per-mess metadata stored in persistent snapshot
+  const prevIdMap = new Map<string, string[]>();
+  if (parsedBackup?.members && Array.isArray(parsedBackup.members)) {
+    for (const bm of parsedBackup.members) {
+      if (bm?.id && Array.isArray(bm.previousIds) && bm.previousIds.length > 0) {
+        prevIdMap.set(bm.id, bm.previousIds);
+      }
+    }
+  }
+
+  const existingCache = dbCaches.get(messId);
   const refreshedCache: DatabaseSchema = {
-    members: deduplicateMembers(membersList as any[]),
-    months: monthsList
-      .filter((m: any) => !m.messId || m.messId === "default")
-      .map((m: any) => ({
-        ...m,
-        manuallyUnlocked: !!m.manuallyUnlocked
-      })) as any[],
-    meals: deduplicateMeals((mealsList || [])
-      .filter((m: any) => !m.messId || m.messId === "default")
-      .map((m: any) => ({
-        id: m.id,
-        messId: m.messId || "default",
-        monthId: m.monthId,
-        memberId: m.memberId,
-        date: m.date,
-        lunch: Number(m.lunch) || 0,
-        dinner: Number(m.dinner) || 0,
-        breakfast: Number(m.breakfast) || 0
-      }))),
+    members: deduplicateMembers(
+      (membersList as any[]).map((m: any) => {
+        const prevIds = prevIdMap.get(m.id);
+        return prevIds ? { ...m, previousIds: prevIds } : m;
+      })
+    ),
+    months: monthsList.map((m: any) => ({
+      ...m,
+      manuallyUnlocked: !!m.manuallyUnlocked
+    })) as any[],
+    meals: deduplicateMeals((mealsList || []).map((m: any) => ({
+      id: m.id,
+      messId: m.messId || messId,
+      monthId: m.monthId,
+      memberId: m.memberId,
+      date: m.date,
+      lunch: Number(m.lunch) || 0,
+      dinner: Number(m.dinner) || 0,
+      breakfast: Number(m.breakfast) || 0
+    }))),
     foodMenus: foodMenusList as any[],
     marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
       ...item,
@@ -677,21 +799,23 @@ export async function refreshDbCache(targetMessId: string = "default") {
     notices: noticesList as any[],
     auditLogs: auditLogsList as any[],
     mealRequests: mealRequestsList as any[],
-    cycleProposals: parsedBackup?.cycleProposals || dbCache?.cycleProposals || [],
-    messRules: parsedBackup?.messRules || dbCache?.messRules || [],
-    deletedMembers: parsedBackup?.deletedMembers || dbCache?.deletedMembers || []
+    cycleProposals: parsedBackup?.cycleProposals || existingCache?.cycleProposals || [],
+    messRules: parsedBackup?.messRules || existingCache?.messRules || getDefaultMessRules(messId),
+    deletedMembers: parsedBackup?.deletedMembers || existingCache?.deletedMembers || []
   };
 
-  dbCache = refreshedCache;
-  dbCaches.set("default", refreshedCache);
-  masterPostgresCache = refreshedCache;
+  dbCaches.set(messId, refreshedCache);
+  if (messId === "default") {
+    dbCache = refreshedCache;
+    masterPostgresCache = refreshedCache;
+  }
   const now = Date.now();
-  lastCacheRefreshTimestamp.set("default", now);
-  lastMaintenanceCheckMap.delete("default");
-  console.log("[Cache Sync] Cache refreshed successfully from PostgreSQL single source of truth!");
+  lastCacheRefreshTimestamp.set(messId, now);
+  lastMaintenanceCheckMap.delete(messId);
+  console.log(`[Cache Sync] Cache refreshed successfully from PostgreSQL single source of truth for mess: ${messId}!`);
 
   ensureDBDir();
-  const localBackupFile = path.join(DB_DIR, "database_backup.json");
+  const localBackupFile = path.join(DB_DIR, backupFilename);
   try {
     fs.writeFileSync(localBackupFile, JSON.stringify(refreshedCache), "utf-8");
   } catch {}
@@ -701,46 +825,150 @@ export async function refreshDbCache(targetMessId: string = "default") {
 
 // Smart sync check: checks if PostgreSQL version is newer than in-memory cache across all servers (Render & AI Studio)
 export async function checkAndSyncDbCacheIfNeeded(targetMessId: string = "default", force: boolean = false, bypassThrottle: boolean = false) {
-  const now = Date.now();
-  const lastCheck = lastVersionCheckTimestamps.get(targetMessId) || 0;
-  // Throttle version check to at most once per 5000ms on reads unless forced or mutating (bypassThrottle)
-  if (!force && !bypassThrottle && (now - lastCheck) < 5000) {
+  const messId = (targetMessId || "default").trim() || "default";
+  if (messId !== "default" && purgedMessIds.has(messId)) {
     return;
   }
-  lastVersionCheckTimestamps.set(targetMessId, now);
+  const cacheMissing = !dbCaches.has(messId);
+  const now = Date.now();
+  const lastCheck = lastVersionCheckTimestamps.get(messId) || 0;
+  // Throttle version check to at most once per 5000ms on reads unless forced, mutating, or RAM cache is not yet hydrated
+  if (!force && !bypassThrottle && !cacheMissing && (now - lastCheck) < 5000) {
+    return;
+  }
+  lastVersionCheckTimestamps.set(messId, now);
 
   try {
-    const versionFile = `db_version_${targetMessId}.json`;
+    const versionFile = `db_version_${messId}.json`;
     const rows = await db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, versionFile)).limit(1);
     if (rows && rows.length > 0 && rows[0]?.content) {
       try {
         const parsed = JSON.parse(rows[0].content);
         const remoteVersion = Number(parsed.v) || 0;
-        const localVersion = lastKnownDbVersion.get(targetMessId) || 0;
-        if (force || remoteVersion > localVersion) {
-          console.log(`[Cache Sync] Detected newer DB version (${remoteVersion} > ${localVersion}) for mess: ${targetMessId}. Refreshing cache...`);
-          await refreshDbCache(targetMessId);
-          lastKnownDbVersion.set(targetMessId, remoteVersion);
+        const localVersion = lastKnownDbVersion.get(messId) || 0;
+        if (force || cacheMissing || remoteVersion > localVersion) {
+          console.log(`[Cache Sync] Refreshing cache for mess '${messId}' (cacheMissing=${cacheMissing}, remote=${remoteVersion}, local=${localVersion})...`);
+          await refreshDbCache(messId);
+          lastKnownDbVersion.set(messId, remoteVersion);
         }
       } catch (pe) {
-        // ignore parse error
+        if (force || cacheMissing) {
+          await refreshDbCache(messId);
+        }
       }
-    } else if (force) {
-      await refreshDbCache(targetMessId);
+    } else if (force || cacheMissing) {
+      await refreshDbCache(messId);
     }
   } catch (err) {
     // Non-blocking catch
   }
 }
 
+export async function ensureAllMessesHydrated(messIds: string[]): Promise<void> {
+  await waitForDbReady();
+  for (const rawId of messIds || []) {
+    const messId = (rawId || "").trim();
+    if (!messId || (messId !== "default" && purgedMessIds.has(messId))) continue;
+    if (!dbCaches.has(messId)) {
+      await checkAndSyncDbCacheIfNeeded(messId, true, true);
+    }
+  }
+}
+
+// Idempotent startup migration ensuring all tenant-scoped tables have mess_id + composite (mess_id, id) PK on any PostgreSQL instance (Neon / Cloud SQL / Render)
+let multiTenantSchemaVerified = false;
+async function ensureMultiTenantSchema(): Promise<void> {
+  if (multiTenantSchemaVerified) return;
+  const scopedTables: Array<{ table: string; idxName: string; customIdxSql?: string }> = [
+    { table: "members", idxName: "members_mess_id_idx" },
+    { table: "months", idxName: "months_mess_id_idx" },
+    {
+      table: "meals",
+      idxName: "meals_unique_member_date_idx",
+      customIdxSql: `CREATE INDEX IF NOT EXISTS "meals_unique_member_date_idx" ON "meals" ("mess_id", "month_id", "member_id", "date");`
+    },
+    { table: "food_menus", idxName: "food_menus_mess_id_idx" },
+    { table: "market_entries", idxName: "market_entries_mess_id_idx" },
+    { table: "deposits", idxName: "deposits_mess_id_idx" },
+    { table: "bills", idxName: "bills_mess_id_idx" },
+    { table: "duties", idxName: "duties_mess_id_idx" },
+    { table: "manager_holdings", idxName: "manager_holdings_mess_id_idx" },
+    { table: "manager_ratings", idxName: "manager_ratings_mess_id_idx" },
+    { table: "notices", idxName: "notices_mess_id_idx" },
+    { table: "meal_requests", idxName: "meal_requests_mess_id_idx" }
+  ];
+
+  // Fast single-query check: see if every table already has mess_id and composite PK (mess_id, id)
+  const pkCheck = await pool.query(`
+    SELECT c.relname AS table_name,
+           array_agg(a.attname::text ORDER BY k.ord) AS pk_cols
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_index i ON i.indrelid = c.oid AND i.indisprimary
+    LEFT JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+    LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+    WHERE n.nspname = 'public'
+      AND c.relname = ANY($1::text[])
+    GROUP BY c.relname;
+  `, [scopedTables.map(t => t.table)]);
+
+  const existingPkMap = new Map<string, string[]>();
+  for (const row of pkCheck.rows) {
+    existingPkMap.set(row.table_name, (row.pk_cols || []).filter(Boolean));
+  }
+
+  for (const item of scopedTables) {
+    const pkCols = existingPkMap.get(item.table);
+    if (!pkCols) continue; // table not created yet
+    const hasCompositePk = pkCols.length === 2 && pkCols[0] === "mess_id" && pkCols[1] === "id";
+    if (hasCompositePk) continue;
+
+    console.log(`[Schema Migration] Upgrading '${item.table}' to multi-tenant composite PK (mess_id, id)...`);
+    await pool.query(`ALTER TABLE "${item.table}" ADD COLUMN IF NOT EXISTS "mess_id" text NOT NULL DEFAULT 'default';`);
+    const conRes = await pool.query(`
+      SELECT conname
+      FROM pg_constraint
+      WHERE conrelid = $1::regclass AND contype = 'p'
+      LIMIT 1;
+    `, [`public."${item.table}"`]);
+    const pkName = conRes.rows[0]?.conname;
+    if (pkName) {
+      await pool.query(`ALTER TABLE "${item.table}" DROP CONSTRAINT "${pkName}";`);
+    }
+    await pool.query(`ALTER TABLE "${item.table}" ADD PRIMARY KEY ("mess_id", "id");`);
+    if (item.customIdxSql) {
+      await pool.query(item.customIdxSql);
+    } else {
+      await pool.query(`CREATE INDEX IF NOT EXISTS "${item.idxName}" ON "${item.table}" ("mess_id");`);
+    }
+  }
+
+  // Ensure audit_logs also has mess_id column and index
+  await pool.query(`ALTER TABLE "audit_logs" ADD COLUMN IF NOT EXISTS "mess_id" text;`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS "audit_logs_mess_id_idx" ON "audit_logs" ("mess_id");`).catch(() => {});
+
+  multiTenantSchemaVerified = true;
+}
+
 // Asynchronous Cache Initialization from PostgreSQL with robust retry mechanism
 export async function initializeDbCache() {
   ensureDBDir();
+  for (let sAttempt = 1; sAttempt <= 5; sAttempt++) {
+    try {
+      await ensureMultiTenantSchema();
+      break;
+    } catch (schemaErr: any) {
+      console.warn(`[Schema Migration] Attempt ${sAttempt} notice:`, schemaErr?.message || schemaErr);
+      if (sAttempt < 5) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
   
   // Restore ONLY immediate startup configuration files from PostgreSQL to local disk
   try {
     const immediateFiles = await db.select().from(persistentFilesTable).where(
-      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json', 'active_sessions.json', 'session_versions.json', 'smtp_credentials.json', 'market_reminder_logs.json', 'user_active_messes.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'db_version_%' OR filename LIKE 'voucher_breakdowns_%'`
+      sql`filename IN ('settings.json', 'admin_controls.json', 'erp_branding.json', 'platform_controls.json', 'active_mess.json', 'messes.json', 'credentials.json', 'active_sessions.json', 'session_versions.json', 'smtp_credentials.json', 'market_reminder_logs.json', 'user_active_messes.json', 'user_preferences.json') OR filename LIKE 'settings_%' OR filename LIKE 'admin_controls_%' OR filename LIKE 'db_version_%' OR filename LIKE 'voucher_breakdowns_%' OR filename LIKE 'elections_%' OR filename LIKE 'market_planner_%'`
     );
     console.log(`[Persistent Files Startup] Restoring ${immediateFiles.length} immediate startup config files...`);
     adminControlsCache = null;
@@ -753,13 +981,12 @@ export async function initializeDbCache() {
         fs.mkdirSync(fileDir, { recursive: true });
       }
       fs.writeFileSync(localPath, file.content, "utf-8");
-      if (file.filename.startsWith("db_version_") && file.filename.endsWith(".json")) {
+      if (file.filename === "db_version_default.json") {
         try {
-          const mId = file.filename.slice("db_version_".length, -".json".length);
           const parsedVer = JSON.parse(file.content);
-          if (mId && parsedVer?.v) {
-            lastKnownDbVersion.set(mId, Number(parsedVer.v) || 0);
-            lastVersionCheckTimestamps.set(mId, startupTs);
+          if (parsedVer?.v) {
+            lastKnownDbVersion.set("default", Number(parsedVer.v) || 0);
+            lastVersionCheckTimestamps.set("default", startupTs);
           }
         } catch {}
       }
@@ -807,13 +1034,14 @@ export async function initializeDbCache() {
   let noticesList: any[] = [];
   let auditLogsList: any[] = [];
   let mealRequestsList: any[] = [];
+  let defaultBackupRow: any[] = [];
 
   let connected = false;
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[Database Connection] Attempt ${attempt} of ${maxRetries} to connect to PostgreSQL Cloud SQL...`);
+      console.log(`[Database Connection] Attempt ${attempt} of ${maxRetries} to connect to PostgreSQL...`);
       [
         membersList,
         monthsList,
@@ -827,32 +1055,35 @@ export async function initializeDbCache() {
         managerRatingsList,
         noticesList,
         auditLogsList,
-        mealRequestsList
+        mealRequestsList,
+        defaultBackupRow
       ] = await Promise.all([
-        db.select().from(membersTable),
-        db.select().from(monthsTable),
-        db.select().from(mealsTable),
-        db.select().from(foodMenusTable),
-        db.select().from(marketEntriesTable),
-        db.select().from(depositsTable),
-        db.select().from(billsTable),
-        db.select().from(dutiesTable),
-        db.select().from(managerHoldingsTable),
-        db.select().from(managerRatingsTable),
-        db.select().from(noticesTable),
-        db.select().from(auditLogsTable),
-        db.select().from(mealRequestsTable).catch(err => {
+        db.select().from(membersTable).where(eq(membersTable.messId, "default")),
+        db.select().from(monthsTable).where(eq(monthsTable.messId, "default")),
+        db.select().from(mealsTable).where(eq(mealsTable.messId, "default")),
+        db.select().from(foodMenusTable).where(eq(foodMenusTable.messId, "default")),
+        db.select().from(marketEntriesTable).where(eq(marketEntriesTable.messId, "default")),
+        db.select().from(depositsTable).where(eq(depositsTable.messId, "default")),
+        db.select().from(billsTable).where(eq(billsTable.messId, "default")),
+        db.select().from(dutiesTable).where(eq(dutiesTable.messId, "default")),
+        db.select().from(managerHoldingsTable).where(eq(managerHoldingsTable.messId, "default")),
+        db.select().from(managerRatingsTable).where(eq(managerRatingsTable.messId, "default")),
+        db.select().from(noticesTable).where(eq(noticesTable.messId, "default")),
+        db.select().from(auditLogsTable).where(or(eq(auditLogsTable.messId, "default"), isNull(auditLogsTable.messId))),
+        db.select().from(mealRequestsTable).where(eq(mealRequestsTable.messId, "default")).catch(err => {
           console.warn("meal_requests table not accessible yet. It will be created via migration.", err);
           return [];
-        })
+        }),
+        db.select().from(persistentFilesTable).where(eq(persistentFilesTable.filename, "database_backup.json")).limit(1).catch(() => [])
       ]);
       
       connected = true;
-      console.log("[Database Connection] Successfully connected and retrieved data from PostgreSQL Cloud SQL!");
+      console.log("[Database Connection] Successfully connected and retrieved data from PostgreSQL!");
       break;
     } catch (err: any) {
       lastError = err;
-      console.warn(`[Database Connection] Attempt ${attempt} failed. Error: ${err.message || err}`);
+      const causeMsg = err?.cause?.message || err?.message || String(err);
+      console.warn(`[Database Connection] Attempt ${attempt} failed. Error: ${causeMsg}`);
       if (attempt < maxRetries) {
         console.log(`Waiting ${retryDelayMs / 1000} seconds before next attempt...`);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
@@ -862,67 +1093,129 @@ export async function initializeDbCache() {
 
   if (!connected) {
     console.error("========================================================================");
-    console.error("FATAL: Could not connect to PostgreSQL Cloud SQL after multiple retries.");
+    console.error("FATAL: Could not connect to PostgreSQL after multiple retries.");
     console.error("To protect your permanent data from being accidentally wiped out, we");
     console.error("cannot run the server in a fallback seed state.");
     console.error("Original connection error:", lastError);
     console.error("========================================================================");
-    throw new Error(`Cloud SQL database connection failed: ${lastError?.message || lastError}`);
+    const rootCause = lastError?.cause?.message || lastError?.message || String(lastError);
+    throw new Error(`Database connection failed: ${rootCause}`);
   }
 
   try {
     if (membersList.length === 0 && monthsList.length === 0) {
-      ensureDBDir();
-      const BACKUP_FILE = path.join(DB_DIR, "database_backup.json");
-      if (fs.existsSync(BACKUP_FILE)) {
-        console.log("PostgreSQL is empty, but local JSON backup exists. Restoring from backup...");
+      let recoveredFromBackup = false;
+
+      // 1. First check PostgreSQL persistent_files snapshot (database_backup.json) before touching disk or seeding
+      if (defaultBackupRow && defaultBackupRow.length > 0 && defaultBackupRow[0]?.content) {
         try {
-          const data = fs.readFileSync(BACKUP_FILE, "utf-8");
-          dbCache = JSON.parse(data);
-          if (dbCache) {
-            console.log("Local backup parsed. Syncing to PostgreSQL...");
-            await importBackupToPostgres(dbCache);
-            console.log("Sync completed.");
-          } else {
-            throw new Error("Parsed backup is empty/invalid");
+          const parsedPgBackup = JSON.parse(defaultBackupRow[0].content);
+          const hasSubstantialData =
+            (Array.isArray(parsedPgBackup?.members) && parsedPgBackup.members.length > 1) ||
+            (Array.isArray(parsedPgBackup?.months) && parsedPgBackup.months.length > 2) ||
+            (Array.isArray(parsedPgBackup?.meals) && parsedPgBackup.meals.length > 0) ||
+            (Array.isArray(parsedPgBackup?.deposits) && parsedPgBackup.deposits.length > 0);
+          if (hasSubstantialData) {
+            console.warn("[Recovery] Default SQL tables were empty, restoring from PostgreSQL persistent_files database_backup.json...");
+            dbCache = parsedPgBackup;
+            await importBackupToPostgres(dbCache, "default");
+            recoveredFromBackup = true;
           }
         } catch (e) {
-          console.error("Failed to parse/restore local backup JSON:", e);
-          dbCache = getInitialSeedData();
-          await importBackupToPostgres(dbCache);
+          console.error("[Recovery] Failed parsing PG persistent_files backup:", e);
         }
-      } else {
-        console.log("Database empty and no local backup found. Seeding default records...");
-        dbCache = getInitialSeedData();
-        await importBackupToPostgres(dbCache);
-      }
-    } else {
-      // Local backup duty and data merge safeguard: ensure no duties or entries are lost on startup
-      const localBackupFile = path.join(DB_DIR, "database_backup.json");
-      let localDuties: any[] = [];
-      if (fs.existsSync(localBackupFile)) {
-        try {
-          const parsed = JSON.parse(fs.readFileSync(localBackupFile, "utf-8"));
-          if (Array.isArray(parsed.duties)) localDuties = parsed.duties;
-        } catch (e) {}
       }
 
+      // 2. Next check PostgreSQL daily_backups table (survives Render ephemeral restarts & accidental truncations)
+      if (!recoveredFromBackup) {
+        try {
+          const dailyRes = await pool.query(
+            `SELECT id, data, backup_date FROM daily_backups WHERE mess_id = 'default' ORDER BY created_at DESC LIMIT 1;`
+          );
+          if (dailyRes.rows && dailyRes.rows.length > 0 && dailyRes.rows[0]?.data) {
+            const parsedDaily = JSON.parse(dailyRes.rows[0].data);
+            const candidateDb = parsedDaily?.db || parsedDaily;
+            if (candidateDb && Array.isArray(candidateDb.members) && candidateDb.members.length > 0) {
+              console.warn(`[Recovery] Default SQL tables empty; auto-recovering from daily_backups (${dailyRes.rows[0].id})...`);
+              dbCache = candidateDb;
+              await importBackupToPostgres(dbCache, "default");
+              recoveredFromBackup = true;
+            }
+          }
+        } catch (dailyErr) {
+          console.warn("[Recovery] daily_backups check skipped:", dailyErr);
+        }
+      }
+
+      // 3. Check local disk backup if available
+      if (!recoveredFromBackup) {
+        ensureDBDir();
+        const BACKUP_FILE = path.join(DB_DIR, "database_backup.json");
+        if (fs.existsSync(BACKUP_FILE)) {
+          console.log("PostgreSQL is empty, but local JSON backup exists. Restoring from backup...");
+          try {
+            const data = fs.readFileSync(BACKUP_FILE, "utf-8");
+            const parsedLocal = JSON.parse(data);
+            if (parsedLocal && Array.isArray(parsedLocal.members) && parsedLocal.members.length > 0) {
+              dbCache = parsedLocal;
+              console.log("Local backup parsed. Syncing to PostgreSQL...");
+              await importBackupToPostgres(dbCache, "default");
+              recoveredFromBackup = true;
+              console.log("Sync completed.");
+            }
+          } catch (e) {
+            console.error("Failed to parse/restore local backup JSON:", e);
+          }
+        }
+      }
+
+      // 4. Only seed if brand-new database with zero backups anywhere
+      if (!recoveredFromBackup) {
+        console.log("Database empty and no backup found anywhere. Seeding default records...");
+        dbCache = getInitialSeedData();
+        await importBackupToPostgres(dbCache, "default");
+      }
+
+      dbCaches.set("default", dbCache);
+      masterPostgresCache = dbCache;
+      isPostgresInitialized = true;
+    } else {
+      let parsedDefaultBackup: any = null;
+      if (defaultBackupRow && defaultBackupRow.length > 0 && defaultBackupRow[0]?.content) {
+        try {
+          parsedDefaultBackup = JSON.parse(defaultBackupRow[0].content);
+        } catch {}
+      }
+      const prevIdMap = new Map<string, string[]>();
+      if (parsedDefaultBackup?.members && Array.isArray(parsedDefaultBackup.members)) {
+        for (const bm of parsedDefaultBackup.members) {
+          if (bm?.id && Array.isArray(bm.previousIds) && bm.previousIds.length > 0) {
+            prevIdMap.set(bm.id, bm.previousIds);
+          }
+        }
+      }
+
+      // PostgreSQL is authoritative on startup: NEVER re-merge deleted duties from stale local disk JSON
       dbCache = {
-        members: deduplicateMembers(membersList as any[]),
-        months: monthsList
-          .filter((m: any) => !m.messId || m.messId === "default")
-          .map((m: any) => ({
-            ...m,
-            manuallyUnlocked: !!m.manuallyUnlocked
-          })) as any[],
+        members: deduplicateMembers(
+          (membersList as any[]).map((m: any) => {
+            const prevIds = prevIdMap.get(m.id);
+            return prevIds ? { ...m, previousIds: prevIds } : m;
+          })
+        ),
+        months: monthsList.map((m: any) => ({
+          ...m,
+          manuallyUnlocked: !!m.manuallyUnlocked
+        })) as any[],
         meals: deduplicateMeals((mealsList || []).map((m: any) => ({
           id: m.id,
+          messId: m.messId || "default",
           monthId: m.monthId,
           memberId: m.memberId,
           date: m.date,
-          lunch: m.lunch,
-          dinner: m.dinner,
-          breakfast: m.breakfast || 0
+          lunch: Number(m.lunch) || 0,
+          dinner: Number(m.dinner) || 0,
+          breakfast: Number(m.breakfast) || 0
         }))),
         foodMenus: foodMenusList as any[],
         marketEntries: deduplicateMarketEntries(marketEntriesList.map(item => ({
@@ -931,20 +1224,22 @@ export async function initializeDbCache() {
         })) as any[]),
         deposits: deduplicateDeposits(depositsList as any[]),
         bills: billsList as any[],
-        duties: deduplicateDuties([...(dutiesList || []), ...localDuties]),
+        duties: deduplicateDuties(dutiesList as any[]),
         managerHoldings: managerHoldingsList as any[],
         managerRatings: managerRatingsList as any[],
         notices: noticesList as any[],
         auditLogs: auditLogsList as any[],
         mealRequests: (mealRequestsList || []) as any[],
+        cycleProposals: parsedDefaultBackup?.cycleProposals || [],
+        messRules: parsedDefaultBackup?.messRules || getDefaultMessRules("default"),
+        deletedMembers: parsedDefaultBackup?.deletedMembers || []
       };
       dbCaches.set("default", dbCache);
       isPostgresInitialized = true;
       masterPostgresCache = dbCache;
       console.log("[TRACE E - initializeDbCache()] Loaded members from PostgreSQL. Total:", membersList.length, "Sample members:", membersList.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
       console.log("Cache loaded successfully from PostgreSQL.");
-      // Trigger loadDB to run auto-transition check immediately on startup
-      loadDB();
+      loadDB("default");
     }
   } catch (error) {
     console.error("Failed to parse database records:", error);
@@ -958,75 +1253,103 @@ export let lastSyncTime: string | null = null;
 export let lastWriteTime: string | null = null;
 export let syncState: "Idle" | "Syncing" | "Pending" = "Idle";
 
-let isSyncing = false;
-const pendingSyncCaches = new Map<string, DatabaseSchema>();
-let syncTimer: NodeJS.Timeout | null = null;
+let dbReadyWaiterFn: (() => Promise<void>) | null = null;
+export function setDbReadyWaiter(fn: () => Promise<void>) {
+  dbReadyWaiterFn = fn;
+}
+export async function waitForDbReady(): Promise<void> {
+  if (isPostgresInitialized) return;
+  if (dbReadyWaiterFn) {
+    await dbReadyWaiterFn();
+  }
+}
 
-// Background sync function
-export async function syncCacheToPostgresDirectly(cache: DatabaseSchema, targetMessId?: string) {
-  const messId = targetMessId || getActiveMessId() || "default";
-  pendingSyncCaches.set(messId, cache);
-  syncState = "Pending";
-  
-  if (syncTimer) return;
-  
-  syncTimer = setTimeout(async () => {
-    syncTimer = null;
-    if (isSyncing || pendingSyncCaches.size === 0) return;
-    
-    isSyncing = true;
-    syncState = "Syncing";
+// Compatibility wrapper for callers passing a snapshot: executes locked PG-first sync
+export async function syncCacheToPostgresDirectly(cache: DatabaseSchema, targetMessId?: string): Promise<void> {
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
+  const p = commitMessStateSnapshot(messId, cache);
+  trackPromise(p);
+  await p;
+}
 
-    // Grab all queued messes snapshots
-    const queueToProcess = Array.from(pendingSyncCaches.entries());
-    pendingSyncCaches.clear();
-    
-    const syncPromise = (async () => {
-      try {
-        for (const [syncingMessId, cacheToSync] of queueToProcess) {
-          await doActualSync(cacheToSync, syncingMessId);
-        }
-        lastSyncTime = new Date().toISOString();
-        lastWriteTime = new Date().toISOString();
-      } catch(err) {
-        console.error("Background sync failed:", err);
-      } finally {
-        isSyncing = false;
-        syncState = "Idle";
-        if (pendingSyncCaches.size > 0) {
-          syncTimer = setTimeout(() => {
-            const first = pendingSyncCaches.entries().next().value;
-            if (first) syncCacheToPostgresDirectly(first[1], first[0]);
-          }, 500);
-        }
-      }
-    })();
-    trackPromise(syncPromise);
-  }, 300);
-  return Promise.resolve();
+async function reconcileDeletedRowsTx(tx: any, table: any, messId: string, keepIds: Set<string>, tableName: string) {
+  const existingRows: Array<{ id: string }> = await tx.select({ id: table.id }).from(table).where(eq(table.messId, messId));
+  const toDelete = existingRows.map(r => r.id).filter(id => id && !keepIds.has(id));
+  if (toDelete.length === 0) return;
+  for (let i = 0; i < toDelete.length; i += 500) {
+    const chunk = toDelete.slice(i, i + 500);
+    await tx.delete(table).where(and(eq(table.messId, messId), inArray(table.id, chunk)));
+  }
+  clearTableSyncHashes(messId, tableName, toDelete);
 }
 
 async function doActualSync(cache: DatabaseSchema, targetMessId: string = "default") {
   const startTime = Date.now();
-  console.log(`[TRACE D - doActualSync()] started for mess: ${targetMessId}`);
-  try {
-    // CRITICAL MULTI-TENANT ISOLATION SAFEGUARD:
-    // If this is a separate tenant mess branch (not "default"), persist its state strictly to its own
-    // dedicated database_backup_${targetMessId}.json file (which is also stored permanently in PostgreSQL
-    // via persistent_files table). DO NOT insert into the unpartitioned flat tables, as that would pollute
-    // or overwrite the main mess's database!
-    if (targetMessId !== "default") {
-      const tenantFilename = `database_backup_${targetMessId}.json`;
-      writeAndPersistFile(tenantFilename, JSON.stringify(cache));
-      console.log(`[TRACE D - doActualSync()] Persisted tenant mess ${targetMessId} safely and completely to ${tenantFilename} (elapsed: ${Date.now() - startTime} ms)`);
-      return;
-    }
+  const messId = (targetMessId || "default").trim() || "default";
+  if (messId !== "default" && purgedMessIds.has(messId)) {
+    console.warn(`[PG-First Commit] Skipped sync for purged mess '${messId}'.`);
+    return;
+  }
 
-    if (cache.members.length > 0) {
+  // Mass-wipe circuit breaker: NEVER allow an uninitialized/seed/empty snapshot to wipe populated mess data in PG
+  if (messId === "default") {
+    const looksLikeSeedSnapshot =
+      (cache.members?.length || 0) <= 1 &&
+      (cache.meals?.length || 0) === 0 &&
+      (cache.deposits?.length || 0) === 0 &&
+      (cache.marketEntries?.length || 0) === 0 &&
+      (cache.auditLogs || []).some(a => a?.action === "SEED_DATABASE");
+    const looksTotallyEmpty =
+      (cache.members?.length || 0) === 0 &&
+      (cache.months?.length || 0) <= 1 &&
+      (cache.meals?.length || 0) === 0 &&
+      (cache.deposits?.length || 0) === 0;
+    if (looksLikeSeedSnapshot || looksTotallyEmpty) {
+      const existingCheck = await pool.query(`SELECT COUNT(*)::int AS cnt FROM members WHERE mess_id = 'default'`).catch(() => ({ rows: [{ cnt: 0 }] }));
+      const existingMembersCount = Number(existingCheck.rows?.[0]?.cnt || 0);
+      if (existingMembersCount > 1 || (looksTotallyEmpty && existingMembersCount > 0)) {
+        throw new Error(`[Safety Block] Refusing to overwrite ${existingMembersCount} existing PostgreSQL members in 'default' with a seed/empty snapshot.`);
+      }
+    }
+  } else {
+    const looksEmptyTenantSnapshot =
+      (cache.members?.length || 0) === 0 &&
+      (cache.meals?.length || 0) === 0 &&
+      (cache.deposits?.length || 0) === 0 &&
+      (cache.marketEntries?.length || 0) === 0;
+    if (looksEmptyTenantSnapshot) {
+      const existingCheck = await pool.query(`SELECT COUNT(*)::int AS cnt FROM members WHERE mess_id = $1`, [messId]).catch(() => ({ rows: [{ cnt: 0 }] }));
+      const existingMembersCount = Number(existingCheck.rows?.[0]?.cnt || 0);
+      if (existingMembersCount > 0) {
+        throw new Error(`[Safety Block] Refusing to overwrite ${existingMembersCount} existing PostgreSQL members in '${messId}' with an empty snapshot.`);
+      }
+    }
+  }
+
+  syncState = "Syncing";
+  const stagedHashes: Array<{ table: string; id: string; mapped: any }> = [];
+
+  try {
+    // Normalize arrays before transactional commit
+    cache.members = deduplicateMembers(cache.members || []);
+    cache.meals = deduplicateMeals(cache.meals || []);
+    cache.marketEntries = deduplicateMarketEntries(cache.marketEntries || []);
+    cache.deposits = deduplicateDeposits(cache.deposits || []);
+    cache.duties = deduplicateDuties(cache.duties || []);
+
+    const newVersion = Date.now();
+    const backupFilename = messId === "default" ? "database_backup.json" : `database_backup_${messId}.json`;
+    const serializedBackup = JSON.stringify(cache);
+
+    await db.transaction(async (tx) => {
+      // 1. Members (upsert modified + reconcile deletes)
+      const memberKeepIds = new Set<string>();
       for (const item of cache.members) {
+        if (!item?.id) continue;
+        memberKeepIds.add(item.id);
         const mapped = {
           id: item.id,
-          messId: (item as any).messId || targetMessId,
+          messId,
           name: item.name,
           nickname: item.nickname,
           email: item.email,
@@ -1073,19 +1396,24 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
           roomLabel: item.roomLabel || null,
           roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
         };
-        if (!isItemModified('members', item.id, mapped)) continue;
-        await db.insert(membersTable).values(mapped).onConflictDoUpdate({
-          target: membersTable.id,
-          set: mapped
-        });
+        if (isItemModified(messId, 'members', item.id, mapped)) {
+          await tx.insert(membersTable).values(mapped).onConflictDoUpdate({
+            target: [membersTable.messId, membersTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'members', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, membersTable, messId, memberKeepIds, 'members');
 
-    if (cache.months.length > 0) {
-      for (const item of cache.months) {
+      // 2. Months
+      const monthKeepIds = new Set<string>();
+      for (const item of cache.months || []) {
+        if (!item?.id) continue;
+        monthKeepIds.add(item.id);
         const mapped = {
           id: item.id,
-          messId: (item as any).messId || targetMessId,
+          messId,
           name: item.name,
           startDate: item.startDate,
           endDate: item.endDate,
@@ -1093,48 +1421,67 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
           manuallyUnlocked: item.manuallyUnlocked ?? false,
           gracePeriodEnabled: item.gracePeriodEnabled,
         };
-        if (!isItemModified('months', item.id, mapped)) continue;
-        await db.insert(monthsTable).values(mapped).onConflictDoUpdate({
-          target: monthsTable.id,
-          set: mapped
-        });
+        if (isItemModified(messId, 'months', item.id, mapped)) {
+          await tx.insert(monthsTable).values(mapped).onConflictDoUpdate({
+            target: [monthsTable.messId, monthsTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'months', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, monthsTable, messId, monthKeepIds, 'months');
 
-    // Upsert dynamic tables
-    if (cache.foodMenus.length > 0) {
-      for (const item of cache.foodMenus) {
+      // 3. Food Menus
+      const foodMenuKeepIds = new Set<string>();
+      for (const item of cache.foodMenus || []) {
+        if (!item?.id) continue;
+        foodMenuKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        date: item.date,
-        lunchVegetable: item.lunchVegetable,
-        lunchMain: item.lunchMain,
-        dinnerVegetable: item.dinnerVegetable,
-        dinnerMain: item.dinnerMain,
-      };
-        if (!isItemModified('foodMenus', item.id, mapped)) continue;
-        await db.insert(foodMenusTable).values(mapped).onConflictDoUpdate({ target: foodMenusTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          date: item.date,
+          lunchVegetable: item.lunchVegetable,
+          lunchMain: item.lunchMain,
+          dinnerVegetable: item.dinnerVegetable,
+          dinnerMain: item.dinnerMain,
+        };
+        if (isItemModified(messId, 'foodMenus', item.id, mapped)) {
+          await tx.insert(foodMenusTable).values(mapped).onConflictDoUpdate({
+            target: [foodMenusTable.messId, foodMenusTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'foodMenus', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, foodMenusTable, messId, foodMenuKeepIds, 'foodMenus');
 
-    if (cache.meals && cache.meals.length > 0) {
-      cache.meals = deduplicateMeals(cache.meals);
-      const mealsToInsert = cache.meals.map(item => ({
-        id: item.id || generateUUID(),
-        messId: targetMessId || "default",
-        monthId: item.monthId,
-        memberId: item.memberId,
-        date: item.date,
-        lunch: Number(item.lunch) || 0,
-        dinner: Number(item.dinner) || 0,
-        breakfast: Number(item.breakfast) || 0,
-      }));
-      const modifiedMeals = mealsToInsert.filter(m => isItemModified('meals', m.id, m));
+      // 4. Meals
+      const mealKeepIds = new Set<string>();
+      const modifiedMeals: any[] = [];
+      for (const item of cache.meals) {
+        const mId = item.id || generateUUID();
+        item.id = mId;
+        mealKeepIds.add(mId);
+        const mapped = {
+          id: mId,
+          messId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          date: item.date,
+          lunch: Number(item.lunch) || 0,
+          dinner: Number(item.dinner) || 0,
+          breakfast: Number(item.breakfast) || 0,
+        };
+        if (isItemModified(messId, 'meals', mId, mapped)) {
+          modifiedMeals.push(mapped);
+          stagedHashes.push({ table: 'meals', id: mId, mapped });
+        }
+      }
       for (let i = 0; i < modifiedMeals.length; i += 500) {
         const chunk = modifiedMeals.slice(i, i + 500);
-        await db.insert(mealsTable).values(chunk).onConflictDoUpdate({
-          target: mealsTable.id,
+        await tx.insert(mealsTable).values(chunk).onConflictDoUpdate({
+          target: [mealsTable.messId, mealsTable.id],
           set: {
             lunch: sql`excluded.lunch`,
             dinner: sql`excluded.dinner`,
@@ -1146,123 +1493,186 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
           }
         });
       }
-    }
+      await reconcileDeletedRowsTx(tx, mealsTable, messId, mealKeepIds, 'meals');
 
-    if (cache.marketEntries.length > 0) {
-      cache.marketEntries = deduplicateMarketEntries(cache.marketEntries);
+      // 5. Market Entries
+      const marketKeepIds = new Set<string>();
       for (const item of cache.marketEntries) {
+        if (!item?.id) continue;
+        marketKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        date: item.date,
-        amount: item.amount,
-        receiptUrl: item.receiptUrl,
-        description: item.description,
-        isExtra: item.isExtra,
-        quantity: item.quantity || "",
-        coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
-      };
-        if (!isItemModified('marketEntries', item.id, mapped)) continue;
-        await db.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({ target: marketEntriesTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          date: item.date,
+          amount: item.amount,
+          receiptUrl: item.receiptUrl || null,
+          description: item.description,
+          isExtra: item.isExtra,
+          quantity: item.quantity || "",
+          coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
+        };
+        if (isItemModified(messId, 'marketEntries', item.id, mapped)) {
+          await tx.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({
+            target: [marketEntriesTable.messId, marketEntriesTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'marketEntries', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, marketEntriesTable, messId, marketKeepIds, 'marketEntries');
 
-    if (cache.deposits.length > 0) {
-      cache.deposits = deduplicateDeposits(cache.deposits);
+      // 6. Deposits
+      const depositKeepIds = new Set<string>();
       for (const item of cache.deposits) {
+        if (!item?.id) continue;
+        depositKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        amount: item.amount,
-        date: item.date,
-        enteredBy: item.enteredBy,
-      };
-        if (!isItemModified('deposits', item.id, mapped)) continue;
-        await db.insert(depositsTable).values(mapped).onConflictDoUpdate({ target: depositsTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          amount: item.amount,
+          date: item.date,
+          enteredBy: item.enteredBy,
+        };
+        if (isItemModified(messId, 'deposits', item.id, mapped)) {
+          await tx.insert(depositsTable).values(mapped).onConflictDoUpdate({
+            target: [depositsTable.messId, depositsTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'deposits', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, depositsTable, messId, depositKeepIds, 'deposits');
 
-    if (cache.bills.length > 0) {
-      for (const item of cache.bills) {
+      // 7. Bills
+      const billKeepIds = new Set<string>();
+      for (const item of cache.bills || []) {
+        if (!item?.id) continue;
+        billKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        name: item.name,
-        amount: item.amount,
-        collectorId: item.collectorId,
-        status: item.status,
-      };
-        if (!isItemModified('bills', item.id, mapped)) continue;
-        await db.insert(billsTable).values(mapped).onConflictDoUpdate({ target: billsTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          name: item.name,
+          amount: item.amount,
+          collectorId: item.collectorId,
+          status: item.status,
+        };
+        if (isItemModified(messId, 'bills', item.id, mapped)) {
+          await tx.insert(billsTable).values(mapped).onConflictDoUpdate({
+            target: [billsTable.messId, billsTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'bills', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, billsTable, messId, billKeepIds, 'bills');
 
-    if (cache.duties.length > 0) {
-      cache.duties = deduplicateDuties(cache.duties);
+      // 8. Duties
+      const dutyKeepIds = new Set<string>();
       for (const item of cache.duties) {
+        if (!item?.id) continue;
+        dutyKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        name: item.name,
-        task: item.task,
-      };
-        if (!isItemModified('duties', item.id, mapped)) continue;
-        await db.insert(dutiesTable).values(mapped).onConflictDoUpdate({ target: dutiesTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          name: item.name,
+          task: item.task,
+        };
+        if (isItemModified(messId, 'duties', item.id, mapped)) {
+          await tx.insert(dutiesTable).values(mapped).onConflictDoUpdate({
+            target: [dutiesTable.messId, dutiesTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'duties', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, dutiesTable, messId, dutyKeepIds, 'duties');
 
-    if (cache.managerHoldings.length > 0) {
-      for (const item of cache.managerHoldings) {
+      // 9. Manager Holdings
+      const holdingKeepIds = new Set<string>();
+      for (const item of cache.managerHoldings || []) {
+        if (!item?.id) continue;
+        holdingKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        memberId: item.memberId,
-        amount: item.amount,
-        marketSpent: item.marketSpent || 0,
-        description: item.description || "",
-      };
-        if (!isItemModified('managerHoldings', item.id, mapped)) continue;
-        await db.insert(managerHoldingsTable).values(mapped).onConflictDoUpdate({ target: managerHoldingsTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          memberId: item.memberId,
+          amount: item.amount,
+          marketSpent: item.marketSpent || 0,
+          description: item.description || "",
+        };
+        if (isItemModified(messId, 'managerHoldings', item.id, mapped)) {
+          await tx.insert(managerHoldingsTable).values(mapped).onConflictDoUpdate({
+            target: [managerHoldingsTable.messId, managerHoldingsTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'managerHoldings', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, managerHoldingsTable, messId, holdingKeepIds, 'managerHoldings');
 
-    if (cache.managerRatings.length > 0) {
-      for (const item of cache.managerRatings) {
+      // 10. Manager Ratings
+      const ratingKeepIds = new Set<string>();
+      for (const item of cache.managerRatings || []) {
+        if (!item?.id) continue;
+        ratingKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        monthId: item.monthId,
-        rating: item.rating,
-        raterId: item.raterId,
-        date: item.date,
-      };
-        if (!isItemModified('managerRatings', item.id, mapped)) continue;
-        await db.insert(managerRatingsTable).values(mapped).onConflictDoUpdate({ target: managerRatingsTable.id, set: mapped });
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          rating: item.rating,
+          raterId: item.raterId,
+          date: item.date,
+        };
+        if (isItemModified(messId, 'managerRatings', item.id, mapped)) {
+          await tx.insert(managerRatingsTable).values(mapped).onConflictDoUpdate({
+            target: [managerRatingsTable.messId, managerRatingsTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'managerRatings', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, managerRatingsTable, messId, ratingKeepIds, 'managerRatings');
 
-    if (cache.notices.length > 0) {
-      for (const item of cache.notices) {
+      // 11. Notices (strictly scoped to messId)
+      const noticeKeepIds = new Set<string>();
+      for (const item of cache.notices || []) {
+        if (!item?.id) continue;
+        noticeKeepIds.add(item.id);
         const mapped = {
-        id: item.id,
-        title: item.title,
-        content: item.content,
-        pinned: item.pinned,
-        archived: item.archived,
-        authorId: item.authorId,
-        authorName: item.authorName,
-        date: item.date,
-      };
-        if (!isItemModified('notices', item.id, mapped)) continue;
-        await db.insert(noticesTable).values(mapped).onConflictDoUpdate({ target: noticesTable.id, set: mapped });
+          id: item.id,
+          messId,
+          title: item.title,
+          content: item.content,
+          pinned: item.pinned,
+          archived: item.archived,
+          authorId: item.authorId,
+          authorName: item.authorName,
+          date: item.date,
+        };
+        if (isItemModified(messId, 'notices', item.id, mapped)) {
+          await tx.insert(noticesTable).values(mapped).onConflictDoUpdate({
+            target: [noticesTable.messId, noticesTable.id],
+            set: mapped
+          });
+          stagedHashes.push({ table: 'notices', id: item.id, mapped });
+        }
       }
-    }
+      await reconcileDeletedRowsTx(tx, noticesTable, messId, noticeKeepIds, 'notices');
 
-    if (cache.auditLogs.length > 0) {
+      // 12. Audit Logs
+      const auditKeepIds = new Set<string>();
       const modifiedAuditLogs: any[] = [];
-      for (const item of cache.auditLogs) {
+      for (const item of cache.auditLogs || []) {
+        if (!item?.id) continue;
+        auditKeepIds.add(item.id);
         const mapped = {
           id: item.id,
           userId: item.userId,
@@ -1276,72 +1686,158 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
           time: item.time || null,
           userRole: item.userRole || null,
           superUserId: item.superUserId || null,
-          messId: item.messId || null,
+          messId,
           module: item.module || null,
           actionType: item.actionType || null,
           description: item.description || null,
           browser: item.browser || null,
           ipAddress: item.ipAddress || null,
         };
-        if (isItemModified('auditLogs', item.id, mapped)) {
+        if (isItemModified(messId, 'auditLogs', item.id, mapped)) {
           modifiedAuditLogs.push(mapped);
+          stagedHashes.push({ table: 'auditLogs', id: item.id, mapped });
         }
       }
+      for (let i = 0; i < modifiedAuditLogs.length; i += 500) {
+        const chunk = modifiedAuditLogs.slice(i, i + 500);
+        await tx.insert(auditLogsTable).values(chunk).onConflictDoUpdate({
+          target: auditLogsTable.id,
+          set: {
+            userId: sql`excluded.user_id`,
+            userName: sql`excluded.user_name`,
+            action: sql`excluded.action`,
+            oldValue: sql`excluded.old_value`,
+            newValue: sql`excluded.new_value`,
+            timestamp: sql`excluded.timestamp`,
+            reason: sql`excluded.reason`,
+            date: sql`excluded.date`,
+            time: sql`excluded.time`,
+            userRole: sql`excluded.user_role`,
+            superUserId: sql`excluded.super_user_id`,
+            messId: sql`excluded.mess_id`,
+            module: sql`excluded.module`,
+            actionType: sql`excluded.action_type`,
+            description: sql`excluded.description`,
+            browser: sql`excluded.browser`,
+            ipAddress: sql`excluded.ip_address`
+          }
+        });
+      }
+      const existingAuditRows: Array<{ id: string }> = messId === "default"
+        ? await tx.select({ id: auditLogsTable.id }).from(auditLogsTable).where(or(eq(auditLogsTable.messId, "default"), isNull(auditLogsTable.messId)))
+        : await tx.select({ id: auditLogsTable.id }).from(auditLogsTable).where(eq(auditLogsTable.messId, messId));
+      const auditsToDelete = existingAuditRows.map(r => r.id).filter(id => id && !auditKeepIds.has(id));
+      if (auditsToDelete.length > 0) {
+        for (let i = 0; i < auditsToDelete.length; i += 500) {
+          await tx.delete(auditLogsTable).where(inArray(auditLogsTable.id, auditsToDelete.slice(i, i + 500)));
+        }
+        clearTableSyncHashes(messId, 'auditLogs', auditsToDelete);
+      }
 
-      if (modifiedAuditLogs.length > 0) {
-        for (let i = 0; i < modifiedAuditLogs.length; i += 500) {
-          const chunk = modifiedAuditLogs.slice(i, i + 500);
-          await db.insert(auditLogsTable).values(chunk).onConflictDoUpdate({
-            target: auditLogsTable.id,
-            set: {
-              userId: sql`excluded.user_id`,
-              userName: sql`excluded.user_name`,
-              action: sql`excluded.action`,
-              oldValue: sql`excluded.old_value`,
-              newValue: sql`excluded.new_value`,
-              timestamp: sql`excluded.timestamp`,
-              reason: sql`excluded.reason`,
-              date: sql`excluded.date`,
-              time: sql`excluded.time`,
-              userRole: sql`excluded.user_role`,
-              superUserId: sql`excluded.super_user_id`,
-              messId: sql`excluded.mess_id`,
-              module: sql`excluded.module`,
-              actionType: sql`excluded.action_type`,
-              description: sql`excluded.description`,
-              browser: sql`excluded.browser`,
-              ipAddress: sql`excluded.ip_address`
-            }
+      // 13. Meal Requests
+      const reqKeepIds = new Set<string>();
+      for (const item of cache.mealRequests || []) {
+        if (!item?.id) continue;
+        reqKeepIds.add(item.id);
+        const mapped = {
+          id: item.id,
+          messId,
+          monthId: item.monthId,
+          date: item.date,
+          requesterId: item.requesterId,
+          requesterName: item.requesterName,
+          mealsData: item.mealsData,
+          status: item.status,
+          timestamp: item.timestamp,
+        };
+        if (isItemModified(messId, 'mealRequests', item.id, mapped)) {
+          await tx.insert(mealRequestsTable).values(mapped).onConflictDoUpdate({
+            target: [mealRequestsTable.messId, mealRequestsTable.id],
+            set: mapped
           });
+          stagedHashes.push({ table: 'mealRequests', id: item.id, mapped });
         }
       }
-    }
+      await reconcileDeletedRowsTx(tx, mealRequestsTable, messId, reqKeepIds, 'mealRequests');
 
-    if (cache.mealRequests && cache.mealRequests.length > 0) {
-      try {
-        for (const item of cache.mealRequests) {
-          const mapped = {
-            id: item.id,
-            messId: (item as any).messId || "default",
-            monthId: item.monthId,
-            date: item.date,
-            requesterId: item.requesterId,
-            requesterName: item.requesterName,
-            mealsData: item.mealsData,
-            status: item.status,
-            timestamp: item.timestamp,
-          };
-          if (!isItemModified('mealRequests', item.id, mapped)) continue;
-          await db.insert(mealRequestsTable).values(mapped).onConflictDoUpdate({ target: mealRequestsTable.id, set: mapped });
-        }
-      } catch (err) {
-        console.warn("Could not insert into meal_requests table during sync:", err);
-      }
+      // 14. Persist full per-mess snapshot (for auxiliary data like messRules, cycleProposals, deletedMembers) + version bump inside SAME PG transaction
+      await tx.insert(persistentFilesTable).values({
+        filename: backupFilename,
+        content: serializedBackup
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content: serializedBackup }
+      });
+
+      const versionContent = JSON.stringify({ v: newVersion, at: new Date().toISOString() });
+      await tx.insert(persistentFilesTable).values({
+        filename: `db_version_${messId}.json`,
+        content: versionContent
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content: versionContent }
+      });
+    });
+
+    // Transaction succeeded! Now update sync hashes, RAM, version markers, and local disk backup.
+    for (const h of stagedHashes) {
+      setItemHash(messId, h.table, h.id, h.mapped);
     }
+    setDbCacheForMess(messId, cache);
+    lastKnownDbVersion.set(messId, newVersion);
+    lastCacheRefreshTimestamp.set(messId, newVersion);
+    lastSyncTime = new Date().toISOString();
+    lastWriteTime = new Date().toISOString();
+    syncState = "Idle";
+
+    try {
+      ensureDBDir();
+      fs.writeFileSync(path.join(DB_DIR, backupFilename), serializedBackup, "utf-8");
+      fs.writeFileSync(path.join(DB_DIR, `db_version_${messId}.json`), JSON.stringify({ v: newVersion, at: new Date().toISOString() }), "utf-8");
+    } catch {}
+    console.log(`[PG-First Commit] Mess '${messId}' committed to PostgreSQL (${Date.now() - startTime} ms).`);
   } catch (error) {
-    console.error("Error in background PostgreSQL sync:", error);
+    syncState = "Idle";
+    console.error(`[PG-First Commit ERROR] PostgreSQL commit failed for mess '${messId}':`, error);
+    throw error;
   }
-  console.log(`[TRACE D - doActualSync()] finished (${Date.now() - startTime} ms)`);
+}
+
+export async function commitMessStateSnapshot(targetMessId: string, nextState: DatabaseSchema): Promise<DatabaseSchema> {
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
+  return withMessWriteLock(messId, async () => {
+    if (messId !== "default" && purgedMessIds.has(messId)) {
+      return nextState;
+    }
+    await doActualSync(nextState, messId);
+    return nextState;
+  });
+}
+
+// PG-First atomic mutation helper: clones state into a draft, runs mutator, commits to PG FIRST, and ONLY updates RAM after PG succeeds.
+export async function commitMessDB(
+  targetMessId: string | undefined,
+  mutator: (draft: DatabaseSchema) => void | Promise<void>
+): Promise<DatabaseSchema> {
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
+  return withMessWriteLock(messId, async () => {
+    if (messId !== "default" && purgedMessIds.has(messId)) {
+      throw new Error(`Mess '${messId}' has been deleted.`);
+    }
+    await checkAndSyncDbCacheIfNeeded(messId, false, true);
+    const current = loadDB(messId);
+    const draft: DatabaseSchema = JSON.parse(JSON.stringify(current));
+    await mutator(draft);
+    await doActualSync(draft, messId);
+    return draft;
+  });
+}
+
+export async function saveDBAsync(explicitMessId?: string): Promise<void> {
+  const messId = (explicitMessId || getActiveMessId() || "default").trim() || "default";
+  const current = dbCaches.get(messId) || loadDB(messId);
+  if (!current) return;
+  await commitMessStateSnapshot(messId, current);
 }
 
 export function getActiveMessId(): string {
@@ -1405,17 +1901,49 @@ export function setUserActiveMessId(userId: string | undefined, email: string | 
 export function setActiveMessId(messId: string) {
   try {
     writeAndPersistFile("active_mess.json", JSON.stringify({ activeMessId: messId }, null, 2));
-    dbCaches.delete(messId);
+    // Never clear dbCache or delete dbCaches globally when switching mess scope; each mess maintains its isolated cache.
     lastMaintenanceCheckMap.delete(messId);
-    dbCache = null; // Clear cache to force reload on next loadDB
   } catch (e) {
     console.error(e);
+  }
+}
+
+export async function resetDeletedMessReferencesAsync(deletedMessId: string): Promise<void> {
+  if (!deletedMessId || deletedMessId === "default") return;
+  try {
+    const store = messContext.getStore();
+    if (store && store.messId === deletedMessId) {
+      store.messId = "default";
+    }
+    const ACTIVE_MESS_FILE = path.join(DB_DIR, "active_mess.json");
+    if (fs.existsSync(ACTIVE_MESS_FILE)) {
+      const currentActive = JSON.parse(fs.readFileSync(ACTIVE_MESS_FILE, "utf-8"))?.activeMessId;
+      if (currentActive === deletedMessId) {
+        await writeAndPersistFileAsync("active_mess.json", JSON.stringify({ activeMessId: "default" }, null, 2));
+      }
+    }
+    const userMap = loadUserActiveMessesCache();
+    let changed = false;
+    for (const key of Object.keys(userMap)) {
+      if (userMap[key] === deletedMessId) {
+        userMap[key] = "default";
+        changed = true;
+      }
+    }
+    if (changed) {
+      await writeAndPersistFileAsync("user_active_messes.json", JSON.stringify(userMap, null, 2));
+    }
+  } catch (e) {
+    console.warn(`[Cleanup] Failed resetting references for deleted mess '${deletedMessId}':`, e);
   }
 }
 
 // Load database from file/memory
 export function loadDB(explicitMessId?: string): DatabaseSchema {
   const messId = (typeof explicitMessId === "string" && explicitMessId.trim()) ? explicitMessId.trim() : (getActiveMessId() || "default");
+  if (messId !== "default" && purgedMessIds.has(messId)) {
+    return getCleanMessData(messId);
+  }
   let target = dbCaches.get(messId);
 
   // If messId is default and masterPostgresCache exists in memory from PostgreSQL, prioritize it!
@@ -1447,19 +1975,17 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
     if (!target) {
       if (messId === "default") {
-        target = getInitialSeedData();
+        // NEVER auto-seed or persist default mess inside read-only loadDB() (prevents ephemeral-disk Render wipe!)
+        console.warn("[loadDB] Default mess cache unavailable; returning transient non-persisted structure.");
+        return getCleanMessData("default");
       } else {
         target = getCleanMessData(messId);
       }
-      dbCaches.set(messId, target);
-      try {
-        const backupFilename = messId === "default"
-          ? "database_backup.json"
-          : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(target, null, 2));
-      } catch (e) {
-        console.error("Error writing initial backup file for mess " + messId, e);
+      // Do NOT cache or persist fallback snapshots for unregistered/deleted mess IDs
+      if (!isRegisteredMessId(messId)) {
+        return target;
       }
+      dbCaches.set(messId, target);
     } else {
       dbCaches.set(messId, target);
     }
@@ -1467,6 +1993,11 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
   if (messId === "default") {
     dbCache = target;
+  }
+
+  // Never trigger auto-month-transition or commitMessStateSnapshot before PostgreSQL initialization completes
+  if (!isPostgresInitialized) {
+    return target;
   }
 
   // Throttle heavy deduplication, month transition, and audit cleanup checks to once every 30s per mess
@@ -1525,10 +2056,16 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
         // Prefer the month that has associated meals, deposits, market entries, or is currently unlocked
         const existingHasData = (target.meals?.some(x => x.monthId === existing.id) ||
           target.marketEntries?.some(x => x.monthId === existing.id) ||
-          target.deposits?.some(x => x.monthId === existing.id));
+          target.deposits?.some(x => x.monthId === existing.id) ||
+          target.bills?.some(x => x.monthId === existing.id) ||
+          target.duties?.some(x => x.monthId === existing.id) ||
+          target.managerHoldings?.some(x => x.monthId === existing.id));
         const mHasData = (target.meals?.some(x => x.monthId === m.id) ||
           target.marketEntries?.some(x => x.monthId === m.id) ||
-          target.deposits?.some(x => x.monthId === m.id));
+          target.deposits?.some(x => x.monthId === m.id) ||
+          target.bills?.some(x => x.monthId === m.id) ||
+          target.duties?.some(x => x.monthId === m.id) ||
+          target.managerHoldings?.some(x => x.monthId === m.id));
 
         if (!existingHasData && mHasData) {
           const idx = cleanMonths.indexOf(existing);
@@ -1588,9 +2125,11 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
       const nextYear = nowParts.monthIdx === 11 ? nowParts.year + 1 : nowParts.year;
       // Monthly cycle closes on the 1st of the next calendar month at 14:00:00 (2:00 PM)
       const endIso = `${nextYear}-${pad(nextMonthIdx + 1)}-01T14:00:00`;
+      // Use deterministic month ID per mess/year/month so restarts never create conflicting IDs
+      const deterministicId = `month_${messId}_${nowParts.year}_${pad(nowParts.monthIdx + 1)}`;
 
       const newMonth: MessMonth = {
-        id: generateUUID(),
+        id: deterministicId,
         name: currentCalMonthName,
         startDate: startIso,
         endDate: endIso,
@@ -1639,14 +2178,12 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
 
     if (wasMonthModified) {
-      try {
-        const backupFilename = messId === "default"
-          ? "database_backup.json"
-          : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(target));
-      } catch (err) {
-        console.error("Error committing auto-transition month changes:", err);
-      }
+      const snap = JSON.parse(JSON.stringify(target));
+      trackPromise(
+        commitMessStateSnapshot(messId, snap).catch(err => {
+          console.error("Error committing auto-transition month changes:", err);
+        })
+      );
     }
   }
 
@@ -1685,228 +2222,299 @@ export function loadDB(explicitMessId?: string): DatabaseSchema {
 
     if (wasAuditModified) {
       console.log(`[Auto-Cleanup] Mess ${messId}: Deleted ${initialAuditCount - target.auditLogs.length} audit logs older than ${retentionDays} days.`);
-      try {
-        const backupFilename = messId === "default"
-          ? "database_backup.json"
-          : `database_backup_${messId}.json`;
-        writeAndPersistFile(backupFilename, JSON.stringify(target));
-      } catch (err) {
-        console.error("Error committing auto-deleted audit logs:", err);
-      }
+      const snap = JSON.parse(JSON.stringify(target));
+      trackPromise(
+        commitMessStateSnapshot(messId, snap).catch(err => {
+          console.error("Error committing auto-deleted audit logs:", err);
+        })
+      );
     }
   }
 
   return target;
 }
 
-// Save database and trigger async background sync to Postgres
-let backupTimer: NodeJS.Timeout | null = null;
-let lastBackupCacheContent = "";
-
+// Save database using locked PG-first pipeline (prefers saveDBAsync/commitMessDB in async routes)
 export function saveDB(explicitMessId?: string) {
-  const messId = explicitMessId || getActiveMessId() || "default";
+  const messId = (explicitMessId || getActiveMessId() || "default").trim() || "default";
+  if (messId !== "default" && purgedMessIds.has(messId)) return;
   let target = dbCaches.get(messId);
   if (!target) {
     target = loadDB(messId);
   }
   if (!target) return;
-  
+
+  // Snapshot the target state and queue on per-mess lock without advancing db_version ahead of PG
+  const snapshot: DatabaseSchema = JSON.parse(JSON.stringify(target));
+  trackPromise(
+    commitMessStateSnapshot(messId, snapshot).catch(err => {
+      console.error(`[saveDB] Failed PG commit for mess ${messId}:`, err);
+    })
+  );
+}
+
+async function persistDeletedCollectionSnapshotTx(
+  tx: any,
+  messId: string,
+  collectionKey: keyof DatabaseSchema,
+  idsToRemove: string[],
+  tableName: string
+): Promise<DatabaseSchema | null> {
+  const current = dbCaches.get(messId) || loadDB(messId);
+  if (!current) return null;
+  const next: DatabaseSchema = JSON.parse(JSON.stringify(current));
+  const list = next[collectionKey];
+  if (Array.isArray(list)) {
+    (next[collectionKey] as any[]) = (list as any[]).filter((item: any) => !idsToRemove.includes(item.id));
+  }
+  const backupFilename = messId === "default" ? "database_backup.json" : `database_backup_${messId}.json`;
+  const serialized = JSON.stringify(next);
+  await tx.insert(persistentFilesTable).values({
+    filename: backupFilename,
+    content: serialized
+  }).onConflictDoUpdate({
+    target: persistentFilesTable.filename,
+    set: { content: serialized }
+  });
   const newVersion = Date.now();
-  lastKnownDbVersion.set(messId, newVersion);
-  lastCacheRefreshTimestamp.set(messId, newVersion);
+  await tx.insert(persistentFilesTable).values({
+    filename: `db_version_${messId}.json`,
+    content: JSON.stringify({ v: newVersion, at: new Date().toISOString() })
+  }).onConflictDoUpdate({
+    target: persistentFilesTable.filename,
+    set: { content: JSON.stringify({ v: newVersion, at: new Date().toISOString() }) }
+  });
+  return next;
+}
 
-  // Trigger non-blocking async synchronization in the background for this specific mess
-  syncCacheToPostgresDirectly(target, messId);
-
-  try {
-    const backupFilename = messId === "default"
-      ? "database_backup.json"
-      : `database_backup_${messId}.json`;
-      
-    const content = JSON.stringify(target);
-    // Write to local disk immediately (100% free, 0 network bandwidth egress)
-    ensureDBDir();
-    fs.writeFileSync(path.join(DB_DIR, backupFilename), content, "utf8");
-
-    // Bump lightweight 40-byte version in PostgreSQL so instances detect update (microscopic bandwidth)
-    writeAndPersistFile(`db_version_${messId}.json`, JSON.stringify({ v: newVersion, at: new Date().toISOString() }));
-  } catch (e) {
-    console.error("Error writing dynamic backup file for mess " + messId, e);
+function finalizeDeletedCollectionRAM(
+  messId: string,
+  next: DatabaseSchema | null,
+  tableName: string,
+  ids: string[]
+) {
+  clearTableSyncHashes(messId, tableName, ids);
+  if (next) {
+    setDbCacheForMess(messId, next);
+    const ver = Date.now();
+    lastKnownDbVersion.set(messId, ver);
+    lastCacheRefreshTimestamp.set(messId, ver);
+    const backupFilename = messId === "default" ? "database_backup.json" : `database_backup_${messId}.json`;
+    try {
+      ensureDBDir();
+      fs.writeFileSync(path.join(DB_DIR, backupFilename), JSON.stringify(next), "utf-8");
+    } catch {}
   }
 }
 
-// Permanently delete notice(s) from PostgreSQL database and all in-memory caches
-export async function deleteNoticeFromPostgres(noticeIdOrIds: string | string[]) {
-  try {
-    const rawIds = Array.isArray(noticeIdOrIds) ? noticeIdOrIds : [noticeIdOrIds];
-    const ids = rawIds.filter(Boolean);
-    if (ids.length === 0) return;
+// Permanently delete notice(s) from PostgreSQL database and target mess cache ONLY
+export async function deleteNoticeFromPostgres(noticeIdOrIds: string | string[], targetMessId?: string) {
+  const rawIds = Array.isArray(noticeIdOrIds) ? noticeIdOrIds : [noticeIdOrIds];
+  const ids = rawIds.filter(Boolean);
+  if (ids.length === 0) return;
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
 
-    if (db) {
-      await db.delete(noticesTable).where(inArray(noticesTable.id, ids));
-      console.log(`[Database] Permanently deleted ${ids.length} notice(s) from PostgreSQL:`, ids);
-    }
-
-    if (masterPostgresCache && masterPostgresCache.notices) {
-      masterPostgresCache.notices = masterPostgresCache.notices.filter(n => !ids.includes(n.id));
-    }
-
-    for (const [_, cacheObj] of dbCaches.entries()) {
-      if (cacheObj && cacheObj.notices) {
-        cacheObj.notices = cacheObj.notices.filter(n => !ids.includes(n.id));
-      }
-    }
-    if (dbCache && dbCache.notices) {
-      dbCache.notices = dbCache.notices.filter(n => !ids.includes(n.id));
-    }
-  } catch (err) {
-    console.warn("Failed to delete notice(s) from PostgreSQL:", err);
-  }
+  await withMessWriteLock(messId, async () => {
+    let nextSnapshot: DatabaseSchema | null = null;
+    await db.transaction(async (tx) => {
+      await tx.delete(noticesTable).where(and(eq(noticesTable.messId, messId), inArray(noticesTable.id, ids)));
+      nextSnapshot = await persistDeletedCollectionSnapshotTx(tx, messId, "notices", ids, "notices");
+    });
+    finalizeDeletedCollectionRAM(messId, nextSnapshot, "notices", ids);
+    console.log(`[Database] Permanently deleted ${ids.length} notice(s) for mess '${messId}' from PostgreSQL:`, ids);
+  });
 }
 
-// Permanently delete duty/duties from PostgreSQL database and all in-memory caches
-export async function deleteDutyFromPostgres(dutyIdOrIds: string | string[]) {
-  try {
-    const rawIds = Array.isArray(dutyIdOrIds) ? dutyIdOrIds : [dutyIdOrIds];
-    const ids = rawIds.filter(Boolean);
-    if (ids.length === 0) return;
+// Permanently delete duty/duties from PostgreSQL database and target mess cache ONLY
+export async function deleteDutyFromPostgres(dutyIdOrIds: string | string[], targetMessId?: string) {
+  const rawIds = Array.isArray(dutyIdOrIds) ? dutyIdOrIds : [dutyIdOrIds];
+  const ids = rawIds.filter(Boolean);
+  if (ids.length === 0) return;
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
 
-    if (db) {
-      await db.delete(dutiesTable).where(inArray(dutiesTable.id, ids));
-      console.log(`[Database] Permanently deleted ${ids.length} duty/duties from PostgreSQL:`, ids);
-    }
-
-    if (masterPostgresCache && masterPostgresCache.duties) {
-      masterPostgresCache.duties = masterPostgresCache.duties.filter(d => !ids.includes(d.id));
-    }
-
-    for (const [_, cacheObj] of dbCaches.entries()) {
-      if (cacheObj && cacheObj.duties) {
-        cacheObj.duties = cacheObj.duties.filter(d => !ids.includes(d.id));
-      }
-    }
-    if (dbCache && dbCache.duties) {
-      dbCache.duties = dbCache.duties.filter(d => !ids.includes(d.id));
-    }
-  } catch (err) {
-    console.warn("Failed to delete duty/duties from PostgreSQL:", err);
-  }
+  await withMessWriteLock(messId, async () => {
+    let nextSnapshot: DatabaseSchema | null = null;
+    await db.transaction(async (tx) => {
+      await tx.delete(dutiesTable).where(and(eq(dutiesTable.messId, messId), inArray(dutiesTable.id, ids)));
+      nextSnapshot = await persistDeletedCollectionSnapshotTx(tx, messId, "duties", ids, "duties");
+    });
+    finalizeDeletedCollectionRAM(messId, nextSnapshot, "duties", ids);
+    console.log(`[Database] Permanently deleted ${ids.length} duty/duties for mess '${messId}' from PostgreSQL:`, ids);
+  });
 }
 
-// Permanently delete market entry/entries from PostgreSQL database and all in-memory caches
-export async function deleteMarketFromPostgres(marketIdOrIds: string | string[]) {
-  try {
-    const rawIds = Array.isArray(marketIdOrIds) ? marketIdOrIds : [marketIdOrIds];
-    const ids = rawIds.filter(Boolean);
-    if (ids.length === 0) return;
+// Permanently delete market entry/entries from PostgreSQL database and target mess cache ONLY
+export async function deleteMarketFromPostgres(marketIdOrIds: string | string[], targetMessId?: string) {
+  const rawIds = Array.isArray(marketIdOrIds) ? marketIdOrIds : [marketIdOrIds];
+  const ids = rawIds.filter(Boolean);
+  if (ids.length === 0) return;
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
 
-    if (db) {
-      await db.delete(marketEntriesTable).where(inArray(marketEntriesTable.id, ids));
-      console.log(`[Database] Permanently deleted ${ids.length} market entry/entries from PostgreSQL:`, ids);
-    }
-
-    if (masterPostgresCache && masterPostgresCache.marketEntries) {
-      masterPostgresCache.marketEntries = masterPostgresCache.marketEntries.filter(m => !ids.includes(m.id));
-    }
-
-    for (const [_, cacheObj] of dbCaches.entries()) {
-      if (cacheObj && cacheObj.marketEntries) {
-        cacheObj.marketEntries = cacheObj.marketEntries.filter(m => !ids.includes(m.id));
-      }
-    }
-    if (dbCache && dbCache.marketEntries) {
-      dbCache.marketEntries = dbCache.marketEntries.filter(m => !ids.includes(m.id));
-    }
-  } catch (err) {
-    console.warn("Failed to delete market entry/entries from PostgreSQL:", err);
-  }
+  await withMessWriteLock(messId, async () => {
+    let nextSnapshot: DatabaseSchema | null = null;
+    await db.transaction(async (tx) => {
+      await tx.delete(marketEntriesTable).where(and(eq(marketEntriesTable.messId, messId), inArray(marketEntriesTable.id, ids)));
+      nextSnapshot = await persistDeletedCollectionSnapshotTx(tx, messId, "marketEntries", ids, "marketEntries");
+    });
+    finalizeDeletedCollectionRAM(messId, nextSnapshot, "marketEntries", ids);
+    console.log(`[Database] Permanently deleted ${ids.length} market entry/entries for mess '${messId}' from PostgreSQL:`, ids);
+  });
 }
 
-// Permanently delete deposit(s) from PostgreSQL database and all in-memory caches
-export async function deleteDepositFromPostgres(depositIdOrIds: string | string[]) {
-  try {
-    const rawIds = Array.isArray(depositIdOrIds) ? depositIdOrIds : [depositIdOrIds];
-    const ids = rawIds.filter(Boolean);
-    if (ids.length === 0) return;
+// Permanently delete deposit(s) from PostgreSQL database and target mess cache ONLY
+export async function deleteDepositFromPostgres(depositIdOrIds: string | string[], targetMessId?: string) {
+  const rawIds = Array.isArray(depositIdOrIds) ? depositIdOrIds : [depositIdOrIds];
+  const ids = rawIds.filter(Boolean);
+  if (ids.length === 0) return;
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
 
-    if (db) {
-      await db.delete(depositsTable).where(inArray(depositsTable.id, ids));
-      console.log(`[Database] Permanently deleted ${ids.length} deposit(s) from PostgreSQL:`, ids);
-    }
-
-    if (masterPostgresCache && masterPostgresCache.deposits) {
-      masterPostgresCache.deposits = masterPostgresCache.deposits.filter(d => !ids.includes(d.id));
-    }
-
-    for (const [_, cacheObj] of dbCaches.entries()) {
-      if (cacheObj && cacheObj.deposits) {
-        cacheObj.deposits = cacheObj.deposits.filter(d => !ids.includes(d.id));
-      }
-    }
-    if (dbCache && dbCache.deposits) {
-      dbCache.deposits = dbCache.deposits.filter(d => !ids.includes(d.id));
-    }
-  } catch (err) {
-    console.warn("Failed to delete deposit(s) from PostgreSQL:", err);
-  }
+  await withMessWriteLock(messId, async () => {
+    let nextSnapshot: DatabaseSchema | null = null;
+    await db.transaction(async (tx) => {
+      await tx.delete(depositsTable).where(and(eq(depositsTable.messId, messId), inArray(depositsTable.id, ids)));
+      nextSnapshot = await persistDeletedCollectionSnapshotTx(tx, messId, "deposits", ids, "deposits");
+    });
+    finalizeDeletedCollectionRAM(messId, nextSnapshot, "deposits", ids);
+    console.log(`[Database] Permanently deleted ${ids.length} deposit(s) for mess '${messId}' from PostgreSQL:`, ids);
+  });
 }
 
-// Permanently delete manager holding(s) from PostgreSQL database and all in-memory caches
-export async function deleteHoldingFromPostgres(holdingIdOrIds: string | string[]) {
-  try {
-    const rawIds = Array.isArray(holdingIdOrIds) ? holdingIdOrIds : [holdingIdOrIds];
-    const ids = rawIds.filter(Boolean);
-    if (ids.length === 0) return;
+// Permanently delete manager holding(s) from PostgreSQL database and target mess cache ONLY
+export async function deleteHoldingFromPostgres(holdingIdOrIds: string | string[], targetMessId?: string) {
+  const rawIds = Array.isArray(holdingIdOrIds) ? holdingIdOrIds : [holdingIdOrIds];
+  const ids = rawIds.filter(Boolean);
+  if (ids.length === 0) return;
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
 
-    if (db) {
-      await db.delete(managerHoldingsTable).where(inArray(managerHoldingsTable.id, ids));
-      console.log(`[Database] Permanently deleted ${ids.length} manager holding(s) from PostgreSQL:`, ids);
-    }
-
-    if (masterPostgresCache && masterPostgresCache.managerHoldings) {
-      masterPostgresCache.managerHoldings = masterPostgresCache.managerHoldings.filter(h => !ids.includes(h.id));
-    }
-
-    for (const [_, cacheObj] of dbCaches.entries()) {
-      if (cacheObj && cacheObj.managerHoldings) {
-        cacheObj.managerHoldings = cacheObj.managerHoldings.filter(h => !ids.includes(h.id));
-      }
-    }
-    if (dbCache && dbCache.managerHoldings) {
-      dbCache.managerHoldings = dbCache.managerHoldings.filter(h => !ids.includes(h.id));
-    }
-  } catch (err) {
-    console.warn("Failed to delete manager holding(s) from PostgreSQL:", err);
-  }
+  await withMessWriteLock(messId, async () => {
+    let nextSnapshot: DatabaseSchema | null = null;
+    await db.transaction(async (tx) => {
+      await tx.delete(managerHoldingsTable).where(and(eq(managerHoldingsTable.messId, messId), inArray(managerHoldingsTable.id, ids)));
+      nextSnapshot = await persistDeletedCollectionSnapshotTx(tx, messId, "managerHoldings", ids, "managerHoldings");
+    });
+    finalizeDeletedCollectionRAM(messId, nextSnapshot, "managerHoldings", ids);
+    console.log(`[Database] Permanently deleted ${ids.length} manager holding(s) for mess '${messId}' from PostgreSQL:`, ids);
+  });
 }
 
-// Permanently delete bill(s) from PostgreSQL database and all in-memory caches
-export async function deleteBillFromPostgres(billIdOrIds: string | string[]) {
-  try {
-    const rawIds = Array.isArray(billIdOrIds) ? billIdOrIds : [billIdOrIds];
-    const ids = rawIds.filter(Boolean);
-    if (ids.length === 0) return;
+// Immediately upsert a bill directly to PostgreSQL (partitioned strictly by messId)
+export async function upsertBillToPostgres(bill: Bill, targetMessId: string = "default") {
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
+  const mapped = {
+    id: bill.id,
+    messId,
+    monthId: bill.monthId,
+    name: bill.name,
+    amount: Number(bill.amount),
+    collectorId: bill.collectorId,
+    status: bill.status,
+  };
 
-    if (db) {
-      await db.delete(billsTable).where(inArray(billsTable.id, ids));
-      console.log(`[Database] Permanently deleted ${ids.length} bill(s) from PostgreSQL:`, ids);
+  await withMessWriteLock(messId, async () => {
+    const current = dbCaches.get(messId) || loadDB(messId);
+    const next: DatabaseSchema = JSON.parse(JSON.stringify(current));
+    const idx = next.bills.findIndex(b => b.id === bill.id);
+    if (idx !== -1) {
+      next.bills[idx] = { ...bill };
+    } else {
+      next.bills.push({ ...bill });
     }
+    const backupFilename = messId === "default" ? "database_backup.json" : `database_backup_${messId}.json`;
+    const serialized = JSON.stringify(next);
+    const newVersion = Date.now();
 
-    if (masterPostgresCache && masterPostgresCache.bills) {
-      masterPostgresCache.bills = masterPostgresCache.bills.filter(b => !ids.includes(b.id));
-    }
+    await db.transaction(async (tx) => {
+      await tx.insert(billsTable).values(mapped).onConflictDoUpdate({
+        target: [billsTable.messId, billsTable.id],
+        set: mapped
+      });
+      await tx.insert(persistentFilesTable).values({
+        filename: backupFilename,
+        content: serialized
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content: serialized }
+      });
+      await tx.insert(persistentFilesTable).values({
+        filename: `db_version_${messId}.json`,
+        content: JSON.stringify({ v: newVersion, at: new Date().toISOString() })
+      }).onConflictDoUpdate({
+        target: persistentFilesTable.filename,
+        set: { content: JSON.stringify({ v: newVersion, at: new Date().toISOString() }) }
+      });
+    });
 
-    for (const [_, cacheObj] of dbCaches.entries()) {
-      if (cacheObj && cacheObj.bills) {
-        cacheObj.bills = cacheObj.bills.filter(b => !ids.includes(b.id));
-      }
+    setItemHash(messId, 'bills', bill.id, mapped);
+    setDbCacheForMess(messId, next);
+    lastKnownDbVersion.set(messId, newVersion);
+    lastCacheRefreshTimestamp.set(messId, newVersion);
+    try {
+      ensureDBDir();
+      fs.writeFileSync(path.join(DB_DIR, backupFilename), serialized, "utf-8");
+    } catch {}
+  });
+}
+
+// Permanently delete bill(s) from PostgreSQL database and target mess cache ONLY
+export async function deleteBillFromPostgres(billIdOrIds: string | string[], targetMessId?: string) {
+  const rawIds = Array.isArray(billIdOrIds) ? billIdOrIds : [billIdOrIds];
+  const ids = rawIds.filter(Boolean);
+  if (ids.length === 0) return;
+  const messId = (targetMessId || getActiveMessId() || "default").trim() || "default";
+
+  await withMessWriteLock(messId, async () => {
+    let nextSnapshot: DatabaseSchema | null = null;
+    await db.transaction(async (tx) => {
+      await tx.delete(billsTable).where(and(eq(billsTable.messId, messId), inArray(billsTable.id, ids)));
+      nextSnapshot = await persistDeletedCollectionSnapshotTx(tx, messId, "bills", ids, "bills");
+    });
+    finalizeDeletedCollectionRAM(messId, nextSnapshot, "bills", ids);
+    console.log(`[Database] Permanently deleted ${ids.length} bill(s) for mess '${messId}' from PostgreSQL:`, ids);
+  });
+}
+
+// Purge all rows belonging to a deleted non-default mess from PostgreSQL and RAM caches
+export async function purgeMessFromPostgres(targetMessId: string) {
+  const messId = (targetMessId || "").trim();
+  if (!messId || messId === "default") return;
+  purgedMessIds.add(messId);
+  await withMessWriteLock(messId, async () => {
+    purgedMessIds.add(messId);
+    await db.transaction(async (tx) => {
+      await tx.delete(membersTable).where(eq(membersTable.messId, messId));
+      await tx.delete(monthsTable).where(eq(monthsTable.messId, messId));
+      await tx.delete(mealsTable).where(eq(mealsTable.messId, messId));
+      await tx.delete(foodMenusTable).where(eq(foodMenusTable.messId, messId));
+      await tx.delete(marketEntriesTable).where(eq(marketEntriesTable.messId, messId));
+      await tx.delete(depositsTable).where(eq(depositsTable.messId, messId));
+      await tx.delete(billsTable).where(eq(billsTable.messId, messId));
+      await tx.delete(dutiesTable).where(eq(dutiesTable.messId, messId));
+      await tx.delete(managerHoldingsTable).where(eq(managerHoldingsTable.messId, messId));
+      await tx.delete(managerRatingsTable).where(eq(managerRatingsTable.messId, messId));
+      await tx.delete(noticesTable).where(eq(noticesTable.messId, messId));
+      await tx.delete(mealRequestsTable).where(eq(mealRequestsTable.messId, messId));
+      await tx.delete(auditLogsTable).where(eq(auditLogsTable.messId, messId));
+      await tx.delete(persistentFilesTable).where(inArray(persistentFilesTable.filename, [
+        `database_backup_${messId}.json`,
+        `settings_${messId}.json`,
+        `db_version_${messId}.json`,
+        `mess_appearance_${messId}.json`,
+        `elections_${messId}.json`,
+        `market_planner_${messId}.json`,
+        `duties_${messId}.json`,
+        `audit_logs_${messId}.json`,
+        `notifications_${messId}.json`
+      ]));
+    });
+    dbCaches.delete(messId);
+    lastKnownDbVersion.delete(messId);
+    lastCacheRefreshTimestamp.delete(messId);
+    lastVersionCheckTimestamps.delete(messId);
+    lastMaintenanceCheckMap.delete(messId);
+    for (const t of ['members','months','meals','foodMenus','marketEntries','deposits','bills','duties','managerHoldings','managerRatings','notices','auditLogs','mealRequests']) {
+      clearTableSyncHashes(messId, t);
     }
-    if (dbCache && dbCache.bills) {
-      dbCache.bills = dbCache.bills.filter(b => !ids.includes(b.id));
-    }
-  } catch (err) {
-    console.warn("Failed to delete bill(s) from PostgreSQL:", err);
-  }
+  });
 }
 
 // Load credentials safely without destroying database on empty read
@@ -2562,10 +3170,13 @@ function shouldLogAudit(action: string, reason: string = "", extra?: any): boole
   // - Founder actions
   const isFounder = act.includes("FOUNDER") || act.includes("PLATFORM_OWNER") || mod === "FOUNDER";
 
+  // - Bills & Settlements
+  const isBill = act.includes("BILL") || mod === "BILLS";
+
   // - Cycle / Lock / Unlock actions
   const isCycleAction = act.includes("LOCK") || act.includes("UNLOCK") || act.includes("CYCLE") || act.includes("TRANSITION") || mod === "CYCLE";
 
-  return isDeposit || isMarket || isMealEdit || isSettlement || isPermission || isPassword || isMemberDelete || isFounder || isCycleAction;
+  return isDeposit || isMarket || isMealEdit || isSettlement || isPermission || isPassword || isMemberDelete || isFounder || isCycleAction || isBill;
 }
 
 // Log an action to Audit Log with optional metadata parameters for rich hierarchical indexing
@@ -2591,15 +3202,17 @@ export function logAudit(
     return;
   }
 
-  const db = loadDB();
+  // Extract client metadata from active request context
+  const clientMeta = getClientMetadata();
+  const mId = extra?.messId || clientMeta.messId || getActiveMessId() || "default";
+  if (mId !== "default" && purgedMessIds.has(mId)) {
+    return;
+  }
+
+  const messDb = loadDB(mId);
   const timestampStr = new Date().toISOString();
   const dateStr = timestampStr.split("T")[0];
   const timeStr = new Date().toTimeString().split(" ")[0];
-  
-  // Extract client metadata from active request context
-  const clientMeta = getClientMetadata();
-
-  const mId = extra?.messId || clientMeta.messId || getActiveMessId() || "default";
   const suId = extra?.superUserId || getSuperUserForMess(mId);
   const desc = extra?.description || reason || `Action ${action} performed.`;
   
@@ -2608,7 +3221,7 @@ export function logAudit(
   // Automatically determine real user role instead of UNKNOWN
   let resolvedRole = extra?.userRole || clientMeta.userRole;
   if (!resolvedRole || resolvedRole === "UNKNOWN") {
-    const matched = db.members?.find((m: any) => m.id === userId || m.email === userId || m.name === userName || m.nickname === userName);
+    const matched = messDb.members?.find((m: any) => m.id === userId || m.email === userId || m.name === userName || m.nickname === userName);
     resolvedRole = matched?.role || "MEMBER";
   }
 
@@ -2641,8 +3254,40 @@ export function logAudit(
     ipAddress: resolvedIp
   };
 
-  db.auditLogs.unshift(newAudit);
-  saveDB();
+  // Update in-memory audit list if already loaded (NEVER call full 13-table saveDB from logAudit!)
+  if (dbCaches.has(mId)) {
+    const cached = dbCaches.get(mId)!;
+    if (!cached.auditLogs) cached.auditLogs = [];
+    cached.auditLogs.unshift(newAudit);
+  }
+
+  // Insert ONLY this single audit log row directly into PostgreSQL so concurrent requests never race
+  const mappedAudit = {
+    id: newAudit.id,
+    userId: newAudit.userId,
+    userName: newAudit.userName,
+    action: newAudit.action,
+    oldValue: newAudit.oldValue,
+    newValue: newAudit.newValue,
+    timestamp: newAudit.timestamp,
+    reason: newAudit.reason,
+    date: newAudit.date || null,
+    time: newAudit.time || null,
+    userRole: newAudit.userRole || null,
+    superUserId: newAudit.superUserId || null,
+    messId: mId,
+    module: newAudit.module || null,
+    actionType: newAudit.actionType || null,
+    description: newAudit.description || null,
+    browser: newAudit.browser || null,
+    ipAddress: newAudit.ipAddress || null,
+  };
+  const auditInsertPromise = db.insert(auditLogsTable).values(mappedAudit).onConflictDoNothing().then(() => {
+    setItemHash(mId, 'auditLogs', newAudit.id, mappedAudit);
+  }).catch((err) => {
+    console.error(`[logAudit] Failed PG insert for mess '${mId}':`, err);
+  });
+  trackPromise(auditInsertPromise);
 }
 
 // Helper to ensure a persistent file is restored from PostgreSQL to local disk on demand
@@ -2726,6 +3371,15 @@ export function writeAndPersistFile(filename: string, content: string) {
   }
 }
 
+// Helper to delete file both locally and remove it from PostgreSQL (awaited)
+export async function deletePersistentFileAsync(filename: string): Promise<void> {
+  const localPath = path.join(DB_DIR, filename);
+  if (fs.existsSync(localPath)) {
+    fs.unlinkSync(localPath);
+  }
+  await db.delete(persistentFilesTable).where(eq(persistentFilesTable.filename, filename));
+}
+
 // Helper to delete file both locally and remove it from PostgreSQL
 export function deletePersistentFile(filename: string) {
   try {
@@ -2733,7 +3387,6 @@ export function deletePersistentFile(filename: string) {
     if (fs.existsSync(localPath)) {
       fs.unlinkSync(localPath);
     }
-    // Delete from Postgres
     const deletePromise = db.delete(persistentFilesTable).where(eq(persistentFilesTable.filename, filename))
       .then(() => {
         console.log(`[Persistent Files] Deleted ${filename} from PostgreSQL.`);
@@ -2790,4 +3443,8 @@ export function saveAdminControls(data: any): void {
   }
 }
 
-
+export async function saveAdminControlsAsync(data: any): Promise<void> {
+  const normalized = data && typeof data === "object" ? { controls: {}, ...data } : { controls: {} };
+  await writeAndPersistFileAsync("admin_controls.json", JSON.stringify(normalized, null, 2));
+  adminControlsCache = normalized;
+}

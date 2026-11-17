@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { DB_DIR, loadDB, writeAndPersistFile } from "./db.js";
+import { DB_DIR, loadDB, writeAndPersistFile, waitForDbReady, checkAndSyncDbCacheIfNeeded, hasMessCache } from "./db.js";
 import { loadMesses } from "./routes.js";
 import { sendEmailWithFallback } from "./emailService.js";
 import { Duty, Member, MemberStatus } from "../src/types.js";
@@ -399,8 +399,10 @@ export async function checkAndSendMarketReminders(options?: {
   const errors: string[] = [];
   const newLogEntries: MarketReminderLogEntry[] = [];
 
+  await waitForDbReady();
   for (const mess of messesToProcess) {
     try {
+      await checkAndSyncDbCacheIfNeeded(mess.id, !hasMessCache(mess.id), true);
       const messDb = loadDB(mess.id);
       if (!messDb || !Array.isArray(messDb.duties) || !Array.isArray(messDb.members)) {
         continue;

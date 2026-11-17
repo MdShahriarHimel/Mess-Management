@@ -5,9 +5,8 @@ import fs from "fs";
 import { pool, db } from "../src/db/index.js";
 import { dailyBackups } from "../src/db/schema.js";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { loadDB } from "./db.js";
-import { loadSettings } from "./routes.js";
-import { loadMesses } from "./routes.js";
+import { loadDB, waitForDbReady, checkAndSyncDbCacheIfNeeded, hasMessCache } from "./db.js";
+import { loadSettings, loadMesses, ensureSettingsLoaded } from "./routes.js";
 
 const BACKUP_SIGNATURE_SALT = "MESS_ERP_SECURE_BACKUP_INTEGRITY_SALT_2026";
 const BACKUP_DIR = path.join(process.cwd(), "data", "daily_backups");
@@ -161,11 +160,27 @@ export async function saveDailyBackupToDatabase(record: {
  */
 export async function runDailyAutomatedBackups(triggerType: "CRON_AUTOMATED" | "MANUAL_SNAPSHOT" = "CRON_AUTOMATED") {
   console.log(`[Backup Cron] Executing daily automated database backup job (${triggerType})...`);
+  await waitForDbReady();
   const messes = loadMesses().messes || [];
   const results = [];
 
   for (const m of messes) {
     try {
+      await checkAndSyncDbCacheIfNeeded(m.id, !hasMessCache(m.id), true);
+      await ensureSettingsLoaded(m.id);
+      const messDbCheck = loadDB(m.id);
+      if (
+        m.id === "default" &&
+        (messDbCheck?.members?.length || 0) <= 1 &&
+        (messDbCheck?.meals?.length || 0) === 0 &&
+        (messDbCheck?.deposits?.length || 0) === 0
+      ) {
+        const pgCnt = await pool.query(`SELECT COUNT(*)::int AS cnt FROM members WHERE mess_id = 'default'`).catch(() => ({ rows: [{ cnt: 0 }] }));
+        if (Number(pgCnt.rows?.[0]?.cnt || 0) > 1) {
+          console.warn(`[Backup Cron] Refusing to create empty daily backup for 'default'; refreshing cache from PG first.`);
+          await checkAndSyncDbCacheIfNeeded("default", true, true);
+        }
+      }
       const backupRecord = generateDailyBackupPayload(m.id, triggerType);
       const saved = await saveDailyBackupToDatabase(backupRecord);
       results.push({ messId: m.id, success: saved, filename: backupRecord.filename, size: backupRecord.fileSize });
@@ -264,7 +279,10 @@ export async function getTodayBackupForMess(messId: string) {
     console.error(`[Today Backup] Error fetching existing backup for '${messId}' from Postgres:`, dbErr);
   }
 
-  // Not found in DB yet -> generate and save today's backup on demand!
+  // Not found in DB yet -> ensure PG is initialized & mess cache/settings are loaded before generating backup!
+  await waitForDbReady();
+  await checkAndSyncDbCacheIfNeeded(messId, !hasMessCache(messId), true);
+  await ensureSettingsLoaded(messId);
   console.log(`[Today Backup] No existing backup found for today (${todayStr}) for mess '${messId}'. Generating fresh backup...`);
   const freshRecord = generateDailyBackupPayload(messId, "CRON_AUTOMATED");
   await saveDailyBackupToDatabase(freshRecord);
@@ -360,9 +378,10 @@ export function startDailyBackupCron() {
     await runDailyAutomatedBackups("CRON_AUTOMATED");
   });
 
-  // Eager boot check: if today's backup does not exist in the database, run it after 8 seconds
+  // Eager boot check: wait for DB initialization before checking/running today's backup
   setTimeout(async () => {
     try {
+      await waitForDbReady();
       const todayStr = new Date().toISOString().split("T")[0];
       const checkRes = await pool.query(
         `SELECT COUNT(*) as count FROM daily_backups WHERE backup_date = $1;`,

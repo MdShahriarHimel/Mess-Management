@@ -7,7 +7,7 @@ import express, { Router, Request, Response, NextFunction } from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { loadDB, saveDB, syncState, 
+import { loadDB, saveDB, saveDBAsync, commitMessDB, commitMessStateSnapshot, withMessWriteLock, purgeMessFromPostgres, syncState, 
   loadCredentials, 
   saveCredentials, 
   generateUUID, 
@@ -17,10 +17,13 @@ import { loadDB, saveDB, syncState,
   setActiveMessId,
   getUserActiveMessId,
   setUserActiveMessId,
+  resetDeletedMessReferencesAsync,
   messContext,
   writeAndPersistFile,
+  writeAndPersistFileAsync,
   ensurePersistentFile,
   deletePersistentFile,
+  deletePersistentFileAsync,
   importBackupToPostgres,
   refreshDbCache,
   setDbCacheForMess,
@@ -30,8 +33,12 @@ import { loadDB, saveDB, syncState,
   deleteMarketFromPostgres,
   deleteDepositFromPostgres,
   deleteHoldingFromPostgres,
+  upsertBillToPostgres,
   deleteBillFromPostgres,
   checkAndSyncDbCacheIfNeeded,
+  ensureAllMessesHydrated,
+  waitForDbReady,
+  hasMessCache,
   parseCoveredDates,
   getDefaultMessRules,
   getCleanMessData,
@@ -42,6 +49,7 @@ import { loadDB, saveDB, syncState,
   deduplicateMeals,
   loadAdminControls as dbLoadAdminControls,
   saveAdminControls as dbSaveAdminControls,
+  saveAdminControlsAsync as dbSaveAdminControlsAsync,
   isPostgresInitialized,
   DB_DIR
 } from "./db.js";
@@ -55,7 +63,7 @@ import {
   saveDailyBackupToDatabase, 
   generateDailyBackupPayload 
 } from "./backupCron.js";
-import { loadPlatformControls, savePlatformControls, isPlatformOwner } from "./founder.js";
+import { loadPlatformControls, savePlatformControls, savePlatformControlsAsync, isPlatformOwner } from "./founder.js";
 import { sanitizeMemberUpdatePayload } from "../src/schemas/apiValidationSchemas.js";
 import { db as drizzleDb, pool } from "../src/db/index.js";
 import { 
@@ -75,9 +83,10 @@ import {
   foodMenus as foodMenusTable,
   managerHoldings as managerHoldingsTable,
   marketEntries as marketEntriesTable,
-  deposits as depositsTable
+  deposits as depositsTable,
+  bills as billsTable
 } from "../src/db/schema.js";
-import { eq, sql, and, or } from "drizzle-orm";
+import { eq, sql, and, or, inArray } from "drizzle-orm";
 import { adminAuth } from "../src/lib/firebase-admin.ts";
 import nodemailer from "nodemailer";
 import { sendEmailWithFallback, getSmtpCredentials, saveSmtpCredentials } from "./emailService.js";
@@ -232,6 +241,11 @@ export function saveMesses(messes: any) {
   } catch (e) {
     console.error("Error saving messes:", e);
   }
+}
+
+export async function saveMessesAsync(messes: any): Promise<void> {
+  await writeAndPersistFileAsync("messes.json", JSON.stringify(messes, null, 2));
+  messesCache = messes;
 }
 
 export interface MemberLookupResult {
@@ -513,9 +527,12 @@ router.post("/auth/google-native", async (req: Request, res: Response): Promise<
         notes: isPlatformOwner(normalizedEmail) ? "Platform Owner" : "Verified Google Login",
         photo: verifiedPhoto || null,
       };
-      db.members.push(newMember);
-      saveDB(targetMessId);
-      member = newMember;
+      const committedDb = await commitMessDB(targetMessId, (draft) => {
+        if (!draft.members.some(m => m.id === newMember.id || m.email?.toLowerCase() === normalizedEmail)) {
+          draft.members.push(newMember);
+        }
+      });
+      member = committedDb.members.find(m => m.id === newMember.id || m.email?.toLowerCase() === normalizedEmail) || newMember;
     } else {
       res.status(403).json({ error: "Your email has not been invited to this Mess. Please ask your Admin to invite you." });
       return;
@@ -528,10 +545,16 @@ router.post("/auth/google-native", async (req: Request, res: Response): Promise<
   }
 
   if (member.status === MemberStatus.PENDING) {
-    member.status = MemberStatus.ACTIVE;
-    if (verifiedName && !member.name) member.name = verifiedName;
-    if (verifiedPhoto && !member.photo) member.photo = verifiedPhoto;
-    saveDB(targetMessId);
+    const memberIdToActivate = member.id;
+    const updatedDb = await commitMessDB(targetMessId, (draft) => {
+      const m = draft.members.find(x => x.id === memberIdToActivate);
+      if (m) {
+        m.status = MemberStatus.ACTIVE;
+        if (verifiedName && !m.name) m.name = verifiedName;
+        if (verifiedPhoto && !m.photo) m.photo = verifiedPhoto;
+      }
+    });
+    member = updatedDb.members.find(x => x.id === memberIdToActivate) || member;
   }
 
   if (isPlatformOwner(normalizedEmail)) {
@@ -555,7 +578,7 @@ router.get("/sync-status", (req: Request, res: Response) => {
   res.json({ status: syncState });
 });
 
-router.post("/auth/login", (req: Request, res: Response): void => {
+router.post("/auth/login", async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
   if (!email || !password) {
     res.status(400).json({ error: "Email and password are required" });
@@ -572,6 +595,7 @@ router.post("/auth/login", (req: Request, res: Response): void => {
     return;
   }
 
+  await ensureAllMessesHydrated((loadMesses().messes || []).map((m: any) => m.id));
   const normalizedEmail = String(email).trim().toLowerCase();
   const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
@@ -702,7 +726,7 @@ router.post("/auth/login", (req: Request, res: Response): void => {
 });
 
 // Activation / Registration (Set password for invited email)
-router.post("/auth/register", (req: Request, res: Response): void => {
+router.post("/auth/register", async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;
   if (!email || !password) {
     res.status(400).json({ error: "Email and password are required" });
@@ -716,6 +740,7 @@ router.post("/auth/register", (req: Request, res: Response): void => {
     return;
   }
 
+  await ensureAllMessesHydrated((loadMesses().messes || []).map((m: any) => m.id));
   const normalizedEmail = String(email).trim().toLowerCase();
   const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
@@ -724,7 +749,7 @@ router.post("/auth/register", (req: Request, res: Response): void => {
     return;
   }
 
-  const { member, memberIndex, messId, db } = lookup;
+  const { member, messId } = lookup;
   
   // Check if member is already activated or credentials already exist
   const creds = loadCredentials();
@@ -745,11 +770,15 @@ router.post("/auth/register", (req: Request, res: Response): void => {
   saveCredentials();
   addPasswordToHistory(member.id, password);
 
-  // Activate member
-  member.status = MemberStatus.ACTIVE;
-  (member as any).messId = messId;
-  db.members[memberIndex] = member;
-  saveDB(messId);
+  // Activate member atomically in PostgreSQL first
+  const activatedMember: Member = { ...member, status: MemberStatus.ACTIVE };
+  (activatedMember as any).messId = messId;
+  await commitMessDB(messId, (draft) => {
+    const idx = draft.members.findIndex(m => m.id === member.id);
+    if (idx !== -1) {
+      draft.members[idx] = { ...draft.members[idx], status: MemberStatus.ACTIVE };
+    }
+  });
   setUserActiveMessId(member.id, member.email, messId);
 
   // Invalidate old sessions and create fresh session token
@@ -795,6 +824,7 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
     return;
   }
 
+  await ensureAllMessesHydrated((loadMesses().messes || []).map((m: any) => m.id));
   const normalizedEmail = String(email).trim().toLowerCase();
   const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
@@ -862,7 +892,7 @@ router.post("/auth/forgot-password", async (req: Request, res: Response): Promis
 });
 
 // Verify OTP and reset password (Unauthenticated)
-router.post("/auth/verify-forgot-password", (req: Request, res: Response): void => {
+router.post("/auth/verify-forgot-password", async (req: Request, res: Response): Promise<void> => {
   const { email, otp, newPassword } = req.body;
   if (!email || !otp || !newPassword) {
     res.status(400).json({ error: "Email, OTP, and new password are required" });
@@ -896,6 +926,7 @@ router.post("/auth/verify-forgot-password", (req: Request, res: Response): void 
   const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
   const userAgent = (req.headers["user-agent"] as string) || "Unknown";
 
+  await ensureAllMessesHydrated((loadMesses().messes || []).map((m: any) => m.id));
   const normalizedEmail = String(email).trim().toLowerCase();
   const lookup = findMemberAcrossAllMesses({ email: normalizedEmail });
 
@@ -1151,7 +1182,7 @@ router.get("/members", authMiddleware, (req: AuthenticatedRequest, res: Response
 });
 
 // Create member (Admin, Super User, Assistant Super User, and Manager)
-router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const memberData: Partial<Member> = req.body;
   if (!memberData.email || !memberData.name || !memberData.nickname) {
     res.status(400).json({ error: "Email, Name, and Nickname are required" });
@@ -1161,7 +1192,7 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
   const targetEmail = memberData.email.trim().toLowerCase();
 
   // 1. Strict check in current active mess first
-  const currentMessId = getActiveMessId();
+  const currentMessId = getActiveMessId() || "default";
   const db = loadDB(currentMessId);
   const existsInCurrent = db.members.find(m => m.email.toLowerCase() === targetEmail);
   if (existsInCurrent) {
@@ -1229,12 +1260,13 @@ router.post("/members", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.
   if (newMember.photo && newMember.photo.startsWith("data:")) {
     const ext = newMember.photo.startsWith("data:image/webp") ? "webp" : "jpg";
     const filename = `profile_pic_${newId}_${Date.now()}.${ext}`;
-    writeAndPersistFile(filename, newMember.photo);
+    await writeAndPersistFileAsync(filename, newMember.photo);
     newMember.photo = `/api/files/${filename}`;
   }
 
-  db.members.push(newMember);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    draft.members.push(newMember);
+  });
 
   logAudit(
     req.user!.id, 
@@ -1390,20 +1422,21 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
     if (updates.photo && updates.photo.startsWith("data:")) {
       if (original.photo && original.photo.startsWith("/api/files/")) {
         const prevFilename = original.photo.replace("/api/files/", "");
-        deletePersistentFile(prevFilename);
+        await deletePersistentFileAsync(prevFilename).catch(() => {});
       }
       const ext = updates.photo.startsWith("data:image/webp") ? "webp" : "jpg";
       const filename = `profile_pic_${id}_${Date.now()}.${ext}`;
-      writeAndPersistFile(filename, updates.photo);
+      await writeAndPersistFileAsync(filename, updates.photo);
       updates.photo = `/api/files/${filename}`;
     } else if (!updates.photo && original.photo) {
       if (original.photo.startsWith("/api/files/")) {
         const prevFilename = original.photo.replace("/api/files/", "");
-        deletePersistentFile(prevFilename);
+        await deletePersistentFileAsync(prevFilename).catch(() => {});
       }
     }
   }
 
+  const currentMessId = getActiveMessId() || "default";
   const updatedMember: Member = {
     ...original,
     ...updates,
@@ -1416,7 +1449,6 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
 
   // If reactivating/restoring an inactive or left member, ensure they are not actively registered in another mess
   if (updates.status && !isInactiveNow && wasInactiveBefore) {
-    const currentMessId = getActiveMessId();
     const activeCheck = isMemberActiveInAnotherMess(original.email, currentMessId);
     if (activeCheck.isActive) {
       res.status(400).json({
@@ -1434,109 +1466,52 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
     updatedMember.leavingDate = null;
   }
 
-  // Update memory cache
-  db.members[index] = updatedMember;
-  saveDB();
+  // Commit to PostgreSQL FIRST, then update RAM & db_version atomically
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.members.findIndex(m => m.id === id);
+    if (idx !== -1) {
+      draft.members[idx] = updatedMember;
+    }
+  });
 
   // If this is the Ultimate Admin or self-profile update, sync their name, nickname, phone, photo across all messes
   if (isSelf || isActorUltimateAdmin) {
     try {
-      const thisMessId = getActiveMessId();
       const messesList = loadMesses().messes || [];
       for (const m of messesList) {
-        if (m.id === thisMessId) continue;
+        if (m.id === currentMessId) continue;
         try {
           const otherDb = loadDB(m.id);
-          const otherMem = otherDb.members?.find(mem => 
-            mem.id === updatedMember.id || 
+          const hasMatch = otherDb.members?.some(mem =>
+            mem.id === updatedMember.id ||
             (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
           );
-          if (otherMem) {
-            otherMem.name = updatedMember.name;
-            otherMem.nickname = updatedMember.nickname;
-            otherMem.phone = updatedMember.phone;
-            otherMem.whatsapp = updatedMember.whatsapp;
-            otherMem.photo = updatedMember.photo;
-            otherMem.occupation = updatedMember.occupation;
-            otherMem.bloodGroup = updatedMember.bloodGroup;
-            if (isActorUltimateAdmin && isPlatformOwner(otherMem.email)) {
-              otherMem.status = MemberStatus.ACTIVE;
-              otherMem.hideAdminRole = updatedMember.hideAdminRole;
-            }
-            saveDB(m.id);
+          if (hasMatch) {
+            await commitMessDB(m.id, (otherDraft) => {
+              const otherMem = otherDraft.members?.find(mem =>
+                mem.id === updatedMember.id ||
+                (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
+              );
+              if (otherMem) {
+                otherMem.name = updatedMember.name;
+                otherMem.nickname = updatedMember.nickname;
+                otherMem.phone = updatedMember.phone;
+                otherMem.whatsapp = updatedMember.whatsapp;
+                otherMem.photo = updatedMember.photo;
+                otherMem.occupation = updatedMember.occupation;
+                otherMem.bloodGroup = updatedMember.bloodGroup;
+                if (isActorUltimateAdmin && isPlatformOwner(otherMem.email)) {
+                  otherMem.status = MemberStatus.ACTIVE;
+                  otherMem.hideAdminRole = updatedMember.hideAdminRole;
+                }
+              }
+            });
           }
         } catch (e) {}
       }
     } catch (e) {
       console.error("Cross-mess profile sync error:", e);
     }
-  }
-
-  // Directly update PostgreSQL table for instant DB synchronization
-  try {
-    const dbUpdateObj: any = {
-      name: updatedMember.name,
-      nickname: updatedMember.nickname,
-      email: updatedMember.email,
-      phone: updatedMember.phone,
-      whatsapp: updatedMember.whatsapp,
-      bloodGroup: updatedMember.bloodGroup,
-      occupation: updatedMember.occupation,
-      joiningDate: updatedMember.joiningDate,
-      leavingDate: updatedMember.leavingDate || null,
-      role: updatedMember.role,
-      status: updatedMember.status,
-      notes: updatedMember.notes,
-      photo: updatedMember.photo || null,
-      assignedTask: updatedMember.assignedTask || null,
-      glow: updatedMember.glow ?? false,
-      glowStyle: updatedMember.glowStyle || null,
-      animation: updatedMember.animation || null,
-      splitProfile: updatedMember.splitProfile ?? false,
-      memberGlow: updatedMember.memberGlow ?? false,
-      memberGlowStyle: updatedMember.memberGlowStyle || null,
-      memberAnimation: updatedMember.memberAnimation || null,
-      gifEnabledByAdmin: updatedMember.gifEnabledByAdmin !== false,
-      hideContactInfoByAdmin: updatedMember.hideContactInfoByAdmin ?? false,
-      glowEnabledByAdmin: updatedMember.glowEnabledByAdmin ?? false,
-      hideAdminRole: updatedMember.hideAdminRole ?? false,
-      hideCardFromDirectoryByAdmin: updatedMember.hideCardFromDirectoryByAdmin ?? false,
-      personalTheme: updatedMember.personalTheme || null,
-      personalFont: updatedMember.personalFont || null,
-      avatarFrame: updatedMember.avatarFrame || null,
-      badge: updatedMember.badge || null,
-      profileBackground: updatedMember.profileBackground || null,
-      dashboardLayout: updatedMember.dashboardLayout || null,
-      profileDecoration: updatedMember.profileDecoration || null,
-      dashboardStyle: updatedMember.dashboardStyle || null,
-      backgroundEffect: updatedMember.backgroundEffect || null,
-      institution: updatedMember.institution || null,
-      department: updatedMember.department || null,
-      educationType: updatedMember.educationType || null,
-      admissionSession: updatedMember.admissionSession || null,
-      seniorityYear: updatedMember.seniorityYear || null,
-      gender: updatedMember.gender || null,
-      manualTitle: updatedMember.manualTitle || null,
-      roomLabelId: updatedMember.roomLabelId || null,
-      roomLabel: updatedMember.roomLabel || null,
-      roomRent: updatedMember.roomRent !== undefined && updatedMember.roomRent !== null ? Number(updatedMember.roomRent) : null,
-    };
-    
-    console.log("[TRACE A - Immediately before Postgres UPDATE]", {
-      memberId: id,
-      previousMember: { nickname: original.nickname, glow: original.glow, personalTheme: original.personalTheme, profileBackground: original.profileBackground },
-      newMemberPayload: { nickname: updatedMember.nickname, glow: updatedMember.glow, personalTheme: updatedMember.personalTheme, profileBackground: updatedMember.profileBackground }
-    });
-
-    await drizzleDb.update(members).set(dbUpdateObj).where(eq(members.id, id));
-
-    const [readBack] = await drizzleDb.select().from(members).where(eq(members.id, id));
-    console.log("[TRACE B - Immediately after Postgres UPDATE (read back row)]", {
-      memberId: id,
-      readBackRow: readBack ? { nickname: readBack.nickname, glow: readBack.glow, personalTheme: readBack.personalTheme, profileBackground: readBack.profileBackground } : null
-    });
-  } catch (err) {
-    console.warn("Direct Drizzle sync fallback in PUT /members/:id:", err);
   }
 
   // Member Notification: Automated dashboard notice when Admin modifies member profile is disabled per user request
@@ -1617,23 +1592,20 @@ router.post("/members/:id/archive", authMiddleware, checkRole([UserRole.SUPERUSE
     return;
   }
 
-  original.status = MemberStatus.ARCHIVED;
-  original.leavingDate = new Date().toISOString().split("T")[0];
-  db.members[index] = original;
-  saveDB();
-
-  // Instant PostgreSQL table synchronization
-  try {
-    await drizzleDb.update(members).set({
-      status: MemberStatus.ARCHIVED,
-      leavingDate: original.leavingDate
-    }).where(eq(members.id, id));
-  } catch (err) {
-    console.warn("Direct Drizzle sync fallback in /members/:id/archive:", err);
-  }
+  const currentMessId = getActiveMessId() || "default";
+  const leavingDate = new Date().toISOString().split("T")[0];
+  let archivedMember: Member = { ...original, status: MemberStatus.ARCHIVED, leavingDate };
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.members.findIndex(m => m.id === id);
+    if (idx !== -1) {
+      draft.members[idx].status = MemberStatus.ARCHIVED;
+      draft.members[idx].leavingDate = leavingDate;
+      archivedMember = draft.members[idx];
+    }
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "ARCHIVE_MEMBER", "ACTIVE/SUSPENDED", "ARCHIVED", `Archived member ${original.nickname}`);
-  res.json({ success: true, member: original });
+  res.json({ success: true, member: archivedMember });
 });
 
 // Restore from Archive
@@ -1647,7 +1619,8 @@ router.post("/members/:id/restore", authMiddleware, async (req: AuthenticatedReq
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.members.findIndex(m => m.id === id);
 
   if (index === -1) {
@@ -1658,7 +1631,6 @@ router.post("/members/:id/restore", authMiddleware, async (req: AuthenticatedReq
   const original = db.members[index];
 
   // Prevent restoring if the member is currently active in another mess
-  const currentMessId = getActiveMessId();
   const activeCheck = isMemberActiveInAnotherMess(original.email, currentMessId);
   if (activeCheck.isActive) {
     res.status(400).json({
@@ -1667,29 +1639,25 @@ router.post("/members/:id/restore", authMiddleware, async (req: AuthenticatedReq
     return;
   }
 
-  original.status = MemberStatus.ACTIVE;
-  original.leavingDate = null;
-  db.members[index] = original;
-  saveDB();
-
-  // Instant PostgreSQL table synchronization
-  try {
-    await drizzleDb.update(members).set({
-      status: MemberStatus.ACTIVE,
-      leavingDate: null
-    }).where(eq(members.id, id));
-  } catch (err) {
-    console.warn("Direct Drizzle sync fallback in /members/:id/restore:", err);
-  }
+  let restoredMember: Member = { ...original, status: MemberStatus.ACTIVE, leavingDate: null };
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.members.findIndex(m => m.id === id);
+    if (idx !== -1) {
+      draft.members[idx].status = MemberStatus.ACTIVE;
+      draft.members[idx].leavingDate = null;
+      restoredMember = draft.members[idx];
+    }
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "RESTORE_MEMBER", "ARCHIVED", "ACTIVE", `Restored member ${original.nickname}`);
-  res.json({ success: true, member: original });
+  res.json({ success: true, member: restoredMember });
 });
 
 // Permanent Delete (Admin Only)
 router.delete("/members/:id", authMiddleware, checkRole([]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.members.findIndex(m => m.id === id);
 
   if (index === -1) {
@@ -1703,31 +1671,21 @@ router.delete("/members/:id", authMiddleware, checkRole([]), async (req: Authent
     return;
   }
 
-  // Backup member before deleting
-  if (!db.deletedMembers) {
-    db.deletedMembers = [];
-  }
-  db.deletedMembers.push({
-    member: original,
-    deletedAt: new Date().toISOString(),
-    deletedBy: req.user!.nickname
-  });
-  
-  // Cap at 50 recently deleted members
-  if (db.deletedMembers.length > 50) {
-    db.deletedMembers.shift();
-  }
-
-  db.members.splice(index, 1);
-  saveDB();
-
-  try {
-    if (drizzleDb) {
-      await drizzleDb.delete(members).where(eq(members.id, id));
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.members.findIndex(m => m.id === id);
+    if (idx === -1) return;
+    const target = draft.members[idx];
+    if (!draft.deletedMembers) draft.deletedMembers = [];
+    draft.deletedMembers.push({
+      member: target,
+      deletedAt: new Date().toISOString(),
+      deletedBy: req.user!.nickname
+    });
+    if (draft.deletedMembers.length > 50) {
+      draft.deletedMembers.shift();
     }
-  } catch (err) {
-    console.warn("Could not delete member from PostgreSQL:", err);
-  }
+    draft.members.splice(idx, 1);
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "PERMANENT_DELETE_MEMBER", original.nickname, "Deleted", `Permanently deleted user: ${original.nickname}`);
   res.json({ success: true });
@@ -1740,9 +1698,10 @@ router.get("/members/deleted-list", authMiddleware, checkRole([UserRole.SUPERUSE
 });
 
 // Restore a Deleted Member (Admin & Super User only)
-router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   if (!db.deletedMembers) {
     res.status(404).json({ error: "No deleted members history found" });
     return;
@@ -1757,7 +1716,6 @@ router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.
   const { member } = db.deletedMembers[index];
 
   // Prevent restoring if the member is active in another mess
-  const currentMessId = getActiveMessId();
   const activeCheck = isMemberActiveInAnotherMess(member.email, currentMessId);
   if (activeCheck.isActive) {
     res.status(400).json({
@@ -1773,10 +1731,17 @@ router.post("/members/restore-deleted/:id", authMiddleware, checkRole([UserRole.
     return;
   }
 
-  // Restore member
-  db.members.push(member);
-  db.deletedMembers.splice(index, 1);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.deletedMembers) draft.deletedMembers = [];
+    const idx = draft.deletedMembers.findIndex(entry => entry.member.id === id);
+    if (idx !== -1) {
+      const { member: m } = draft.deletedMembers[idx];
+      if (!draft.members.some(x => x.id === m.id || x.email?.toLowerCase() === m.email?.toLowerCase())) {
+        draft.members.push(m);
+      }
+      draft.deletedMembers.splice(idx, 1);
+    }
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "RESTORE_DELETED_MEMBER", "Deleted", member.nickname, `Restored deleted member: ${member.nickname}`);
   res.json({ success: true, member });
@@ -1800,10 +1765,16 @@ router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response)
       const existing = seenNames.get(normName)!;
       const existingHasData = (db.meals?.some(x => x.monthId === existing.id) ||
         db.marketEntries?.some(x => x.monthId === existing.id) ||
-        db.deposits?.some(x => x.monthId === existing.id));
+        db.deposits?.some(x => x.monthId === existing.id) ||
+        db.bills?.some(x => x.monthId === existing.id) ||
+        db.duties?.some(x => x.monthId === existing.id) ||
+        db.managerHoldings?.some(x => x.monthId === existing.id));
       const mHasData = (db.meals?.some(x => x.monthId === m.id) ||
         db.marketEntries?.some(x => x.monthId === m.id) ||
-        db.deposits?.some(x => x.monthId === m.id));
+        db.deposits?.some(x => x.monthId === m.id) ||
+        db.bills?.some(x => x.monthId === m.id) ||
+        db.duties?.some(x => x.monthId === m.id) ||
+        db.managerHoldings?.some(x => x.monthId === m.id));
 
       if (!existingHasData && mHasData) {
         const idx = uniqueMonths.indexOf(existing);
@@ -1841,14 +1812,14 @@ router.get("/months", authMiddleware, (req: AuthenticatedRequest, res: Response)
 });
 
 // Create new month (Admin, Super User, Manager, and Partial Manager)
-router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
     return;
   }
 
   // If this mess belongs to a tenant admin on SUSPENDED or HOLD, block starting new month cycle
-  const currentMessId = getActiveMessId();
+  const currentMessId = getActiveMessId() || "default";
   if (currentMessId && currentMessId !== "default") {
     const platformControls = loadPlatformControls();
     const tenantAdminEntry = (platformControls.authorizedTenantAdmins || []).find((t: any) =>
@@ -1868,7 +1839,6 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     return;
   }
 
-  const db = loadDB();
   const newMonth: MessMonth = {
     id: generateUUID(),
     name,
@@ -1880,18 +1850,20 @@ router.post("/months", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     ...(managerName ? { managerName } : {})
   };
 
-  db.months.push(newMonth);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    draft.months.push(newMonth);
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "CREATE_MONTH", "None", name, `Created new month cycle ${name}`);
   res.json({ success: true, month: newMonth });
 });
 
 // Update Month config (lock, unlock, dates)
-router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const updates: Partial<MessMonth> = req.body;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.months.findIndex(m => m.id === id);
 
   if (index === -1) {
@@ -1902,12 +1874,11 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
   const original = db.months[index];
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
   const isSuperUser = req.user!.role === UserRole.SUPERUSER;
-  const settings = loadSettings();
+  const settings = loadSettings(currentMessId);
   const allowSuperUserUnlock = settings.allowSuperUserUnlock === true;
 
   // 1. If original month is LOCKED:
   if (original.isLocked) {
-    // Is user attempting to UNLOCK?
     if (updates.isLocked === false) {
       const isAdminOrManager = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
       const canUnlock = isUltimateAdmin || isAdminOrManager || (isSuperUser && allowSuperUserUnlock);
@@ -1916,10 +1887,15 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
         return;
       }
 
-      original.isLocked = false;
-      original.manuallyUnlocked = true;
-      db.months[index] = original;
-      saveDB();
+      let unlockedMonth: MessMonth = { ...original, isLocked: false, manuallyUnlocked: true };
+      await commitMessDB(currentMessId, (draft) => {
+        const idx = draft.months.findIndex(m => m.id === id);
+        if (idx !== -1) {
+          draft.months[idx].isLocked = false;
+          draft.months[idx].manuallyUnlocked = true;
+          unlockedMonth = draft.months[idx];
+        }
+      });
 
       const auditAction = isUltimateAdmin ? "MANUAL_UNLOCK" : "SUPER_USER_UNLOCK";
       const auditMsg = isUltimateAdmin
@@ -1941,10 +1917,9 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
         }
       );
 
-      res.json({ success: true, month: original, message: auditMsg });
+      res.json({ success: true, month: unlockedMonth, message: auditMsg });
       return;
     } else {
-      // Trying to edit content on a locked month. Must unlock first!
       res.status(403).json({ error: "🔒 This cycle is locked and read-only. You must unlock it first to make changes." });
       return;
     }
@@ -1957,10 +1932,15 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
       res.status(403).json({ error: "Access denied. You cannot lock this cycle." });
       return;
     }
-    original.isLocked = true;
-    original.manuallyUnlocked = false;
-    db.months[index] = original;
-    saveDB();
+    let lockedMonth: MessMonth = { ...original, isLocked: true, manuallyUnlocked: false };
+    await commitMessDB(currentMessId, (draft) => {
+      const idx = draft.months.findIndex(m => m.id === id);
+      if (idx !== -1) {
+        draft.months[idx].isLocked = true;
+        draft.months[idx].manuallyUnlocked = false;
+        lockedMonth = draft.months[idx];
+      }
+    });
 
     const lockUserType = isUltimateAdmin
       ? "Ultimate Admin"
@@ -1982,23 +1962,28 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
       }
     );
 
-    res.json({ success: true, month: original, message: auditMsg });
+    res.json({ success: true, month: lockedMonth, message: auditMsg });
     return;
   }
 
-  // 3. Normal updates to unlocked month (or Ultimate Admin editing locked month)
+  // 3. Normal updates to unlocked month
   if (req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER) {
     delete updates.isLocked;
   }
 
-  const updatedMonth = {
+  let updatedMonth: MessMonth = {
     ...original,
     ...updates,
     id: original.id
   };
 
-  db.months[index] = updatedMonth;
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.months.findIndex(m => m.id === id);
+    if (idx !== -1) {
+      updatedMonth = { ...draft.months[idx], ...updates, id: draft.months[idx].id };
+      draft.months[idx] = updatedMonth;
+    }
+  });
 
   logAudit(
     req.user!.id,
@@ -2013,13 +1998,14 @@ router.put("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRol
 });
 
 // Delete Month (Admin and Super User only)
-router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit, create, or manage cycles." });
     return;
   }
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.months.findIndex(m => m.id === id);
 
   if (index === -1) {
@@ -2028,7 +2014,6 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
   }
 
   const targetMonth = db.months[index];
-  const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
   if (targetMonth.isLocked) {
     const auditMsg = `Attempt by ${req.user!.nickname} (${req.user!.role}) to delete locked cycle "${targetMonth.name}" was rejected. Cycle must be unlocked first.`;
@@ -2051,8 +2036,9 @@ router.delete("/months/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
   }
 
   const name = targetMonth.name;
-  db.months.splice(index, 1);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    draft.months = draft.months.filter(m => m.id !== id);
+  });
 
   logAudit(
     req.user!.id,
@@ -2082,7 +2068,7 @@ router.get("/cycle-proposals", authMiddleware, (req: AuthenticatedRequest, res: 
   res.json({ proposals: db.cycleProposals });
 });
 
-router.post("/cycle-proposals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/cycle-proposals", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to propose cycle changes." });
     return;
@@ -2094,18 +2080,14 @@ router.post("/cycle-proposals", authMiddleware, checkRole([UserRole.SUPERUSER, U
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const activeMembers = db.members.filter(m => m.status === MemberStatus.ACTIVE);
   
-  // Initialize votes
   const votes: { [memberId: string]: "APPROVED" | "REJECTED" | "PENDING" } = {};
   activeMembers.forEach(m => {
     votes[m.id] = m.id === req.user!.id ? "APPROVED" : "PENDING";
   });
-
-  if (!db.cycleProposals) {
-    db.cycleProposals = [];
-  }
 
   const isOnlyProposer = activeMembers.length <= 1;
 
@@ -2127,8 +2109,10 @@ router.post("/cycle-proposals", authMiddleware, checkRole([UserRole.SUPERUSER, U
     status: isOnlyProposer ? "APPROVED" : "PENDING"
   };
 
-  db.cycleProposals.push(newProposal);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.cycleProposals) draft.cycleProposals = [];
+    draft.cycleProposals.push(newProposal);
+  });
 
   logAudit(
     req.user!.id,
@@ -2142,7 +2126,7 @@ router.post("/cycle-proposals", authMiddleware, checkRole([UserRole.SUPERUSER, U
   res.json({ success: true, proposal: newProposal });
 });
 
-router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/cycle-proposals/:id/vote", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { vote } = req.body;
 
@@ -2151,7 +2135,8 @@ router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequ
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   if (!db.cycleProposals) {
     db.cycleProposals = [];
   }
@@ -2167,9 +2152,7 @@ router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequ
     return;
   }
 
-  // Ensure user is registered to vote in this proposal
   if (!proposal.votes || !(req.user!.id in proposal.votes)) {
-    // If they became an active member recently, add them to vote
     const member = db.members.find(m => m.id === req.user!.id);
     if (!member || member.status !== MemberStatus.ACTIVE) {
       res.status(403).json({ error: "Access denied. Only active members of this mess can vote." });
@@ -2177,23 +2160,26 @@ router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequ
     }
   }
 
-  proposal.votes[req.user!.id] = vote;
-
-  // Recalculate proposal status
-  const voteValues = Object.values(proposal.votes);
-  const totalVotes = voteValues.length;
-  const approvedCount = voteValues.filter(v => v === "APPROVED").length;
-  const rejectedCount = voteValues.filter(v => v === "REJECTED").length;
-
-  if (rejectedCount > 0) {
-    proposal.status = "REJECTED";
-  } else if (approvedCount === totalVotes) {
-    proposal.status = "APPROVED";
-  } else {
-    proposal.status = "PENDING";
-  }
-
-  saveDB();
+  let updatedProposal = proposal;
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.cycleProposals) draft.cycleProposals = [];
+    const target = draft.cycleProposals.find(p => p.id === id);
+    if (!target) return;
+    if (!target.votes) target.votes = {};
+    target.votes[req.user!.id] = vote;
+    const voteValues = Object.values(target.votes);
+    const totalVotes = voteValues.length;
+    const approvedCount = voteValues.filter(v => v === "APPROVED").length;
+    const rejectedCount = voteValues.filter(v => v === "REJECTED").length;
+    if (rejectedCount > 0) {
+      target.status = "REJECTED";
+    } else if (approvedCount === totalVotes) {
+      target.status = "APPROVED";
+    } else {
+      target.status = "PENDING";
+    }
+    updatedProposal = target;
+  });
 
   logAudit(
     req.user!.id,
@@ -2201,20 +2187,21 @@ router.post("/cycle-proposals/:id/vote", authMiddleware, (req: AuthenticatedRequ
     "CAST_CYCLE_VOTE",
     "None",
     vote,
-    `Voted ${vote} on cycle change proposal for ${proposal.name}`
+    `Voted ${vote} on cycle change proposal for ${updatedProposal.name}`
   );
 
-  res.json({ success: true, proposal });
+  res.json({ success: true, proposal: updatedProposal });
 });
 
-router.post("/cycle-proposals/:id/apply", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/cycle-proposals/:id/apply", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to apply cycle changes." });
     return;
   }
 
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   if (!db.cycleProposals) {
     db.cycleProposals = [];
   }
@@ -2230,34 +2217,43 @@ router.post("/cycle-proposals/:id/apply", authMiddleware, checkRole([UserRole.SU
     return;
   }
 
-  if (proposal.type === "CREATE") {
-    const newMonth: MessMonth = {
-      id: generateUUID(),
-      name: proposal.name,
-      startDate: proposal.startDate,
-      endDate: proposal.endDate,
-      isLocked: false,
-      gracePeriodEnabled: proposal.gracePeriodEnabled
-    };
-    db.months.push(newMonth);
-  } else {
-    const index = db.months.findIndex(m => m.id === proposal.monthId);
-    if (index === -1) {
+  if (proposal.type !== "CREATE") {
+    const idxCheck = db.months.findIndex(m => m.id === proposal.monthId);
+    if (idxCheck === -1) {
       res.status(404).json({ error: "Original month cycle not found." });
       return;
     }
-    const original = db.months[index];
-    db.months[index] = {
-      ...original,
-      name: proposal.name,
-      startDate: proposal.startDate,
-      endDate: proposal.endDate,
-      gracePeriodEnabled: proposal.gracePeriodEnabled
-    };
   }
 
-  proposal.status = "APPLIED";
-  saveDB();
+  let appliedProposal = proposal;
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.cycleProposals) draft.cycleProposals = [];
+    const target = draft.cycleProposals.find(p => p.id === id);
+    if (!target) return;
+    if (target.type === "CREATE") {
+      draft.months.push({
+        id: generateUUID(),
+        name: target.name,
+        startDate: target.startDate,
+        endDate: target.endDate,
+        isLocked: false,
+        gracePeriodEnabled: target.gracePeriodEnabled
+      });
+    } else {
+      const idx = draft.months.findIndex(m => m.id === target.monthId);
+      if (idx !== -1) {
+        draft.months[idx] = {
+          ...draft.months[idx],
+          name: target.name,
+          startDate: target.startDate,
+          endDate: target.endDate,
+          gracePeriodEnabled: target.gracePeriodEnabled
+        };
+      }
+    }
+    target.status = "APPLIED";
+    appliedProposal = target;
+  });
 
   logAudit(
     req.user!.id,
@@ -2265,20 +2261,21 @@ router.post("/cycle-proposals/:id/apply", authMiddleware, checkRole([UserRole.SU
     "APPLY_CYCLE_CHANGE",
     "APPROVED",
     "APPLIED",
-    `Applied democratic cycle change for ${proposal.name} (${proposal.startDate} to ${proposal.endDate})`
+    `Applied democratic cycle change for ${appliedProposal.name} (${appliedProposal.startDate} to ${appliedProposal.endDate})`
   );
 
-  res.json({ success: true, proposal });
+  res.json({ success: true, proposal: appliedProposal });
 });
 
-router.delete("/cycle-proposals/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/cycle-proposals/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.ADMIN]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditCycles")) {
     res.status(403).json({ error: "Access denied. You do not have permission to delete proposals." });
     return;
   }
 
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   if (!db.cycleProposals) {
     db.cycleProposals = [];
   }
@@ -2290,8 +2287,11 @@ router.delete("/cycle-proposals/:id", authMiddleware, checkRole([UserRole.SUPERU
   }
 
   const proposal = db.cycleProposals[index];
-  db.cycleProposals.splice(index, 1);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    if (draft.cycleProposals) {
+      draft.cycleProposals = draft.cycleProposals.filter(p => p.id !== id);
+    }
+  });
 
   logAudit(
     req.user!.id,
@@ -2343,12 +2343,12 @@ async function upsertMealsTx(tx: any, monthId: string, meals: any[], mealTypes: 
       mealDebugLogs.push(`[upsertMealsTx] Updating row ${existing[0].id} to ${JSON.stringify(updatedMeal)}`);
       await tx.update(mealsTable)
         .set(updatedMeal)
-        .where(eq(mealsTable.id, existing[0].id));
+        .where(and(eq(mealsTable.id, existing[0].id), messCondition));
 
       // If any duplicate records previously existed in Postgres, purge them immediately
       if (existing.length > 1) {
         for (let i = 1; i < existing.length; i++) {
-          await tx.delete(mealsTable).where(eq(mealsTable.id, existing[i].id));
+          await tx.delete(mealsTable).where(and(eq(mealsTable.id, existing[i].id), messCondition));
         }
       }
     } else {
@@ -2493,7 +2493,8 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
     return;
   }
 
-  const dbConfig = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const dbConfig = loadDB(currentMessId);
   const targetMonth = dbConfig.months.find(m => m.id === monthId);
   if (!targetMonth) {
     res.status(404).json({ error: "Month not found" });
@@ -2513,7 +2514,6 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
   ].includes(req.user!.role) || isPlatformOwner(req.user!.email)) && hasManageMealsPermission;
 
   if (!isDirectEdit) {
-    if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
     const newRequest = {
       id: generateUUID(),
       monthId,
@@ -2524,8 +2524,10 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
       status: "PENDING",
       timestamp: new Date().toISOString()
     };
-    dbConfig.mealRequests.push(newRequest);
-    saveDB();
+    await commitMessDB(currentMessId, (draft) => {
+      if (!draft.mealRequests) draft.mealRequests = [];
+      draft.mealRequests.push(newRequest);
+    });
     logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_REQUESTED", "None", `Requested meal logs for ${newRequest.date}`, `Super User meal changes submitted for manager approval`);
     res.json({ 
       pendingApproval: true, 
@@ -2534,8 +2536,9 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
     return;
   }
 
-  // Upsert meal logs directly for Manager / Admin
-  const settings = loadSettings();
+  // Upsert meal logs directly for Manager / Admin (PG-first inside mess write lock)
+  await ensureSettingsLoaded(currentMessId);
+  const settings = loadSettings(currentMessId);
   const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true },
@@ -2543,39 +2546,36 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
   ];
 
   mealDebugLogs.length = 0; // clear previous
-  const currentMessId = getActiveMessId() || "default";
-  await drizzleDb.transaction(async (tx) => {
-    await upsertMealsTx(tx, monthId, meals, mealTypes, currentMessId);
-  });
-
-  // Keep in-memory cache and persistent backup synchronized across all running instances
-  try {
-    const dbConfig = loadDB(currentMessId);
-    if (!dbConfig.meals) dbConfig.meals = [];
+  mealDebugLogs.push(`[commitMessDB] Starting upsert with ${meals.length} meals, types: ${mealTypes.map((t: any) => t.id).join(",")}`);
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.meals) draft.meals = [];
     for (const m of meals) {
-      const lunch = Number(m.lunch) || 0;
-      const dinner = Number(m.dinner) || 0;
-      const breakfast = Number(m.breakfast) || 0;
-      // Remove any existing records for this member and date to keep it 100% strictly unique
-      dbConfig.meals = dbConfig.meals.filter(
-        x => !(x.monthId === monthId && x.memberId === m.memberId && x.date === m.date)
+      if (!m.memberId || !m.date) continue;
+      const existingMeal = draft.meals.find(
+        x => x.monthId === monthId && x.memberId === m.memberId && x.date === m.date
       );
-      dbConfig.meals.push({
-        id: generateUUID(),
+      const nextMeal: any = {
+        id: existingMeal?.id || generateUUID(),
         messId: currentMessId,
         monthId,
         memberId: m.memberId,
         date: m.date,
-        lunch,
-        dinner,
-        breakfast
+        lunch: existingMeal ? Number((existingMeal as any).lunch || 0) : 0,
+        dinner: existingMeal ? Number((existingMeal as any).dinner || 0) : 0,
+        breakfast: existingMeal ? Number((existingMeal as any).breakfast || 0) : 0
+      };
+      mealTypes.forEach((t: any) => {
+        const parsed = Number((m as any)[t.id]);
+        nextMeal[t.id] = isNaN(parsed) ? 0 : parsed;
       });
+      draft.meals = draft.meals.filter(
+        x => !(x.monthId === monthId && x.memberId === m.memberId && x.date === m.date)
+      );
+      draft.meals.push(nextMeal);
+      mealDebugLogs.push(`[commitMessDB] Saved meal for ${m.memberId} on ${m.date}`);
     }
-    dbConfig.meals = deduplicateMeals(dbConfig.meals);
-    saveDB(currentMessId);
-  } catch (syncErr) {
-    console.warn("Failed to synchronize meal cache:", syncErr);
-  }
+    draft.meals = deduplicateMeals(draft.meals);
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "MEAL_LOG_BULK", "Multiple", "Updated", `Logged meals for current cycle`);
   res.json({ 
@@ -2588,24 +2588,25 @@ router.post("/meals", authMiddleware, checkRole([UserRole.ADMIN, UserRole.MANAGE
 // Get all meal requests for a month
 router.get("/meal-requests/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
-  if (!db.mealRequests) db.mealRequests = [];
-  const reqs = db.mealRequests.filter(r => r.monthId === monthId);
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
+  const reqs = (db.mealRequests || []).filter(r => r.monthId === monthId);
   res.json({ requests: reqs });
 });
 
 // Approve a meal request (Manager, Partial Manager & Admins)
 router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.SUPERUSER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const dbConfig = loadDB();
-  if (!dbConfig.mealRequests) dbConfig.mealRequests = [];
-  const requestIndex = dbConfig.mealRequests.findIndex(r => r.id === id);
+  const currentMessId = getActiveMessId() || "default";
+  const dbConfig = loadDB(currentMessId);
+  const mealReqs = dbConfig.mealRequests || [];
+  const requestIndex = mealReqs.findIndex(r => r.id === id);
   if (requestIndex === -1) {
     res.status(404).json({ error: "Meal request not found" });
     return;
   }
 
-  const request = dbConfig.mealRequests[requestIndex];
+  const request = mealReqs[requestIndex];
   if (request.status !== "PENDING") {
     res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}` });
     return;
@@ -2625,42 +2626,80 @@ router.post("/meal-requests/:id/approve", authMiddleware, checkRole([UserRole.MA
     return;
   }
 
-  const settings = loadSettings();
+  await ensureSettingsLoaded(currentMessId);
+  const settings = loadSettings(currentMessId);
   const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true },
     { id: "breakfast", name: "Breakfast", enabled: false }
   ];
 
-  await drizzleDb.transaction(async (tx) => {
-    await upsertMealsTx(tx, request.monthId, mealsToSave, mealTypes);
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.meals) draft.meals = [];
+    for (const m of mealsToSave) {
+      if (!m.memberId || !m.date) continue;
+      const existingMeal = draft.meals.find(
+        x => x.monthId === request.monthId && x.memberId === m.memberId && x.date === m.date
+      );
+      const nextMeal: any = {
+        id: existingMeal?.id || generateUUID(),
+        messId: currentMessId,
+        monthId: request.monthId,
+        memberId: m.memberId,
+        date: m.date,
+        lunch: existingMeal ? Number((existingMeal as any).lunch || 0) : 0,
+        dinner: existingMeal ? Number((existingMeal as any).dinner || 0) : 0,
+        breakfast: existingMeal ? Number((existingMeal as any).breakfast || 0) : 0
+      };
+      mealTypes.forEach((t: any) => {
+        const parsed = Number((m as any)[t.id]);
+        nextMeal[t.id] = isNaN(parsed) ? 0 : parsed;
+      });
+      draft.meals = draft.meals.filter(
+        x => !(x.monthId === request.monthId && x.memberId === m.memberId && x.date === m.date)
+      );
+      draft.meals.push(nextMeal);
+    }
+    draft.meals = deduplicateMeals(draft.meals);
+
+    if (draft.mealRequests) {
+      const idx = draft.mealRequests.findIndex(r => r.id === id);
+      if (idx !== -1) {
+        draft.mealRequests[idx].status = "APPROVED";
+      }
+    }
   });
 
-  request.status = "APPROVED";
-  saveDB(); // save the approved status
   logAudit(req.user!.id, req.user!.nickname, "MEAL_REQUEST_APPROVE", request.requesterName, "APPROVED", `Approved meal log changes from ${request.requesterName} for date ${request.date}`);
   res.json({ success: true, message: "Meal request approved and changes successfully applied!" });
 });
 
 // Reject a meal request (Manager & Admins)
-router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
-  if (!db.mealRequests) db.mealRequests = [];
-  const requestIndex = db.mealRequests.findIndex(r => r.id === id);
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
+  const mealReqs = db.mealRequests || [];
+  const requestIndex = mealReqs.findIndex(r => r.id === id);
   if (requestIndex === -1) {
     res.status(404).json({ error: "Meal request not found" });
     return;
   }
 
-  const request = db.mealRequests[requestIndex];
+  const request = mealReqs[requestIndex];
   if (request.status !== "PENDING") {
     res.status(400).json({ error: `Request has already been ${request.status.toLowerCase()}` });
     return;
   }
 
-  request.status = "REJECTED";
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    if (draft.mealRequests) {
+      const idx = draft.mealRequests.findIndex(r => r.id === id);
+      if (idx !== -1) {
+        draft.mealRequests[idx].status = "REJECTED";
+      }
+    }
+  });
   logAudit(req.user!.id, req.user!.nickname, "MEAL_REQUEST_REJECT", request.requesterName, "REJECTED", `Rejected meal log changes from ${request.requesterName} for date ${request.date}`);
   res.json({ success: true, message: "Meal request successfully rejected." });
 });
@@ -2670,35 +2709,41 @@ router.post("/meal-requests/:id/reject", authMiddleware, checkRole([UserRole.MAN
 // ---------------------------------------------------------
 router.get("/foodmenu/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
-  
-  // Merge in-memory and PostgreSQL database rows to ensure 100% persistence
+  const currentMessId = getActiveMessId() || "default";
+  await checkAndSyncDbCacheIfNeeded(currentMessId);
+  const db = loadDB(currentMessId);
+
   let menu = (db.foodMenus || []).filter(m => m.monthId === monthId);
-  try {
-    const pgRows = await drizzleDb.select().from(foodMenusTable).where(eq(foodMenusTable.monthId, monthId));
-    if (pgRows && pgRows.length > 0) {
-      const map = new Map<string, any>();
-      menu.forEach(m => map.set(m.date, m));
-      pgRows.forEach((r: any) => {
-        if (!map.has(r.date)) {
-          const item = {
-            id: r.id,
-            monthId: r.monthId,
-            date: r.date,
-            lunchVegetable: r.lunchVegetable || "",
-            lunchMain: r.lunchMain || "",
-            dinnerVegetable: r.dinnerVegetable || "",
-            dinnerMain: r.dinnerMain || ""
-          };
-          map.set(r.date, item);
-          // Sync into memory cache as well
-          db.foodMenus.push(item);
-        }
-      });
-      menu = Array.from(map.values());
+  if (!isPostgresInitialized || menu.length === 0) {
+    try {
+      const messCondition = currentMessId === "default"
+        ? or(eq(foodMenusTable.messId, "default"), sql`${foodMenusTable.messId} IS NULL`)
+        : eq(foodMenusTable.messId, currentMessId);
+      const pgRows = await drizzleDb.select().from(foodMenusTable).where(
+        and(eq(foodMenusTable.monthId, monthId), messCondition)
+      );
+      if (pgRows && pgRows.length > 0) {
+        const map = new Map<string, any>();
+        menu.forEach(m => map.set(m.date, m));
+        pgRows.forEach((r: any) => {
+          if (!map.has(r.date)) {
+            map.set(r.date, {
+              id: r.id,
+              messId: r.messId || currentMessId,
+              monthId: r.monthId,
+              date: r.date,
+              lunchVegetable: r.lunchVegetable || "",
+              lunchMain: r.lunchMain || "",
+              dinnerVegetable: r.dinnerVegetable || "",
+              dinnerMain: r.dinnerMain || ""
+            });
+          }
+        });
+        menu = Array.from(map.values());
+      }
+    } catch (err) {
+      console.error("Failed to query foodMenus from Postgres:", err);
     }
-  } catch (err) {
-    console.error("Failed to query foodMenus from Postgres:", err);
   }
 
   menu.sort((a, b) => b.date.localeCompare(a.date));
@@ -2712,19 +2757,17 @@ router.post("/foodmenu", authMiddleware, async (req: AuthenticatedRequest, res: 
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const targetMonth = db.months.find(m => m.id === monthId);
   if (targetMonth?.isLocked) {
     res.status(403).json({ error: "Month is locked" });
     return;
   }
 
-  // Every user can edit the food menu
-  const authorized = true;
-
-  const existingIndex = db.foodMenus.findIndex(m => m.monthId === monthId && m.date === date);
+  const existingItem = (db.foodMenus || []).find(m => m.monthId === monthId && m.date === date);
   const newMenu: FoodMenu = {
-    id: existingIndex !== -1 ? db.foodMenus[existingIndex].id : generateUUID(),
+    id: existingItem ? existingItem.id : generateUUID(),
     monthId,
     date,
     lunchVegetable: lunchVegetable || "",
@@ -2733,41 +2776,19 @@ router.post("/foodmenu", authMiddleware, async (req: AuthenticatedRequest, res: 
     dinnerMain: dinnerMain || ""
   };
 
-  if (existingIndex !== -1) {
-    db.foodMenus[existingIndex] = newMenu;
-  } else {
-    db.foodMenus.push(newMenu);
-  }
-
-  // Save to persistent file backup and memory
-  saveDB();
-
-  // Commit immediately and synchronously to PostgreSQL Cloud SQL
-  try {
-    await drizzleDb.insert(foodMenusTable).values({
-      id: newMenu.id,
-      monthId: newMenu.monthId,
-      date: newMenu.date,
-      lunchVegetable: newMenu.lunchVegetable,
-      lunchMain: newMenu.lunchMain,
-      dinnerVegetable: newMenu.dinnerVegetable,
-      dinnerMain: newMenu.dinnerMain
-    }).onConflictDoUpdate({
-      target: foodMenusTable.id,
-      set: {
-        lunchVegetable: newMenu.lunchVegetable,
-        lunchMain: newMenu.lunchMain,
-        dinnerVegetable: newMenu.dinnerVegetable,
-        dinnerMain: newMenu.dinnerMain
-      }
-    });
-  } catch (pgErr) {
-    console.error("Direct Postgres insert for foodMenu failed:", pgErr);
-  }
+  await commitMessDB(currentMessId, (draft) => {
+    if (!draft.foodMenus) draft.foodMenus = [];
+    const idx = draft.foodMenus.findIndex(m => m.monthId === monthId && m.date === date);
+    if (idx !== -1) {
+      draft.foodMenus[idx] = { ...newMenu, id: draft.foodMenus[idx].id };
+    } else {
+      draft.foodMenus.push(newMenu);
+    }
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "UPDATE_FOOD_MENU", "Menu Draft", JSON.stringify(newMenu), `Updated food menu for ${date}`);
 
-  // Trigger Food Knowledge learning pipeline in background
+  // Trigger Food Knowledge learning pipeline
   try {
     await processMenuFoods(lunchVegetable || "", lunchMain || "", dinnerVegetable || "", dinnerMain || "");
   } catch (err) {
@@ -3252,16 +3273,13 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const targetMonth = db.months.find(m => m.id === monthId);
   if (targetMonth?.isLocked) {
     res.status(403).json({ error: "Month is locked" });
     return;
   }
-
-  // Determine role permissions
-  const isAdminOrSuper = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || req.user!.role === UserRole.ASSISTANT_SUPERUSER;
-  const isManager = req.user!.role === UserRole.MANAGER || req.user!.role === UserRole.PARTIAL_MANAGER;
 
   // Normal members or restricted Admins acting as members must be strictly checked
   const actsAsMember = (req.user!.role === UserRole.MEMBER) || (req.user!.role === UserRole.ADMIN && !hasMarketPermission);
@@ -3309,8 +3327,9 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
     }
   }
 
-  const newEntry: MarketEntry = {
+  const newEntry: MarketEntry & { messId?: string } = {
     id: id || generateUUID(),
+    messId: currentMessId,
     monthId,
     memberId,
     date,
@@ -3341,38 +3360,17 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
         }
       }
     }
-    db.marketEntries[existingIndex] = newEntry;
-  } else {
-    db.marketEntries.push(newEntry);
   }
 
-  db.marketEntries = deduplicateMarketEntries(db.marketEntries);
-  saveDB();
-  try {
-    const mapped = {
-      id: newEntry.id,
-      monthId: newEntry.monthId,
-      memberId: newEntry.memberId,
-      date: newEntry.date,
-      amount: newEntry.amount,
-      receiptUrl: newEntry.receiptUrl,
-      description: newEntry.description,
-      isExtra: newEntry.isExtra,
-      quantity: newEntry.quantity,
-      coveredDates: JSON.stringify(newEntry.coveredDates)
-    };
-    await drizzleDb.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({
-      target: marketEntriesTable.id,
-      set: mapped
-    });
-  } catch (err: any) {
-    if (err?.code === "23505") {
-      console.warn("PostgreSQL unique duplicate caught:", err.detail);
-      res.json({ success: true, entry: newEntry, isDuplicateSkipped: true });
-      return;
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.marketEntries.findIndex(e => e.id === newEntry.id);
+    if (idx !== -1) {
+      draft.marketEntries[idx] = newEntry;
+    } else {
+      draft.marketEntries.push(newEntry);
     }
-    console.warn("Direct PostgreSQL market entry upsert error:", err);
-  }
+    draft.marketEntries = deduplicateMarketEntries(draft.marketEntries);
+  });
 
   logAudit(
     req.user!.id,
@@ -3387,9 +3385,10 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
 });
 
 // Delete Market Entry
-router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.MEMBER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.MEMBER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.marketEntries.findIndex(e => e.id === id);
 
   if (index === -1) {
@@ -3427,9 +3426,7 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
     }
   }
 
-  db.marketEntries.splice(index, 1);
-  saveDB();
-  deleteMarketFromPostgres(id).catch(() => {});
+  await deleteMarketFromPostgres(id, currentMessId);
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_MARKET_ENTRY", JSON.stringify(original), "Deleted", `Deleted market expense of Taka ${original.amount}`);
   res.json({ success: true });
@@ -3440,7 +3437,8 @@ router.delete("/markets/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Use
 // ---------------------------------------------------------
 router.get("/deposits/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const rawDeposits = db.deposits.filter(d => d.monthId === monthId);
   const deposits = deduplicateDeposits(rawDeposits)
     .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id || "").localeCompare(a.id || ""));
@@ -3454,7 +3452,8 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const targetMonth = db.months.find(m => m.id === monthId);
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
@@ -3488,8 +3487,9 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
     return;
   }
 
-  const newDeposit: Deposit = {
+  const newDeposit: Deposit & { messId?: string } = {
     id: generateUUID(),
+    messId: currentMessId,
     monthId,
     memberId,
     amount: numAmount,
@@ -3497,34 +3497,20 @@ router.post("/deposits", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole
     enteredBy: req.user!.id
   };
 
-  db.deposits.push(newDeposit);
-  db.deposits = deduplicateDeposits(db.deposits);
-  saveDB();
-  try {
-    const mapped = {
-      id: newDeposit.id,
-      monthId: newDeposit.monthId,
-      memberId: newDeposit.memberId,
-      amount: newDeposit.amount,
-      date: newDeposit.date,
-      enteredBy: newDeposit.enteredBy
-    };
-    await drizzleDb.insert(depositsTable).values(mapped).onConflictDoUpdate({
-      target: depositsTable.id,
-      set: mapped
-    });
-  } catch (err) {
-    console.warn("Direct PostgreSQL deposit upsert error:", err);
-  }
+  await commitMessDB(currentMessId, (draft) => {
+    draft.deposits.push(newDeposit);
+    draft.deposits = deduplicateDeposits(draft.deposits);
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "ENTER_DEPOSIT", "None", JSON.stringify(newDeposit), `Recorded deposit of Taka ${amount} for member ID ${memberId}`);
   res.json({ success: true, deposit: newDeposit });
 });
 
 // Delete Deposit
-router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.deposits.findIndex(d => d.id === id);
 
   if (index === -1) {
@@ -3550,9 +3536,7 @@ router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Us
     return;
   }
 
-  db.deposits.splice(index, 1);
-  saveDB();
-  deleteDepositFromPostgres(id).catch(() => {});
+  await deleteDepositFromPostgres(id, currentMessId);
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_DEPOSIT", JSON.stringify(original), "Deleted", `Deleted deposit record of Taka ${original.amount}`);
   res.json({ success: true });
@@ -3561,14 +3545,16 @@ router.delete("/deposits/:id", authMiddleware, checkRole([UserRole.SUPERUSER, Us
 // ---------------------------------------------------------
 // BILLS API
 // ---------------------------------------------------------
-router.get("/bills/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/bills/:monthId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
+  const messId = getActiveMessId() || "default";
+  await checkAndSyncDbCacheIfNeeded(messId);
+  const db = loadDB(messId);
   const bills = db.bills.filter(b => b.monthId === monthId);
   res.json({ bills });
 });
 
-router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditBills")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
     return;
@@ -3579,15 +3565,17 @@ router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MA
     return;
   }
 
-  const db = loadDB();
+  const messId = getActiveMessId() || "default";
+  const db = loadDB(messId);
   const targetMonth = db.months.find(m => m.id === monthId);
   if (targetMonth?.isLocked) {
     res.status(403).json({ error: "Month is locked" });
     return;
   }
 
-  const newBill: Bill = {
+  const newBill: Bill & { messId?: string } = {
     id: generateUUID(),
+    messId,
     monthId,
     name,
     amount: Number(amount),
@@ -3595,22 +3583,28 @@ router.post("/bills", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MA
     status: status || BillStatus.UNPAID
   };
 
-  db.bills.push(newBill);
-  saveDB();
+  try {
+    await upsertBillToPostgres(newBill, messId);
+  } catch (err) {
+    console.error(`[Bills] Failed immediate PostgreSQL upsert on POST /bills for mess ${messId}:`, err);
+    res.status(500).json({ error: "Failed to persist bill to database. Please try again." });
+    return;
+  }
 
   logAudit(req.user!.id, req.user!.nickname, "CREATE_BILL", "None", JSON.stringify(newBill), `Created bill ${name} of Taka ${amount}`);
   res.json({ success: true, bill: newBill });
 });
 
 // Update Bill status (Collector, Manager, Admin, Super User)
-router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.put("/bills/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditBills")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
     return;
   }
   const { id } = req.params;
   const { status, amount, collectorId, name } = req.body;
-  const db = loadDB();
+  const messId = getActiveMessId() || "default";
+  const db = loadDB(messId);
   const index = db.bills.findIndex(b => b.id === id);
 
   if (index === -1) {
@@ -3621,7 +3615,8 @@ router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
   const original = db.bills[index];
 
   // Auth: Only Assigned Collector, Manager, Super User, Admin
-  const isCollector = original.collectorId === req.user!.id;
+  const previousIds: string[] = Array.isArray((req.user as any)?.previousIds) ? (req.user as any).previousIds : [];
+  const isCollector = original.collectorId === req.user!.id || previousIds.includes(original.collectorId);
   const isManagerOrAdmin = req.user!.role !== UserRole.MEMBER;
   if (!isCollector && !isManagerOrAdmin) {
     res.status(403).json({ error: "Only assigned collector or manager can modify this bill" });
@@ -3629,37 +3624,46 @@ router.put("/bills/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
   }
 
   const originalStatus = original.status;
-  original.status = status !== undefined ? status : original.status;
-  
-  if (isManagerOrAdmin) {
-    if (amount !== undefined) original.amount = Number(amount);
-    if (collectorId !== undefined) original.collectorId = collectorId;
-    if (name !== undefined) original.name = name;
-  }
+  const updatedBill: Bill & { messId?: string } = {
+    ...original,
+    messId,
+    status: status !== undefined ? status : original.status,
+    ...(isManagerOrAdmin ? {
+      ...(amount !== undefined ? { amount: Number(amount) } : {}),
+      ...(collectorId !== undefined ? { collectorId } : {}),
+      ...(name !== undefined ? { name } : {})
+    } : {})
+  };
 
-  db.bills[index] = original;
-  saveDB();
+  try {
+    await upsertBillToPostgres(updatedBill, messId);
+  } catch (err) {
+    console.error(`[Bills] Failed immediate PostgreSQL upsert on PUT /bills/${id} for mess ${messId}:`, err);
+    res.status(500).json({ error: "Failed to persist bill update to database. Please try again." });
+    return;
+  }
 
   logAudit(
     req.user!.id, 
     req.user!.nickname, 
     "UPDATE_BILL", 
     originalStatus, 
-    original.status, 
-    `Updated bill status for ${original.name}`
+    updatedBill.status, 
+    `Updated bill status for ${updatedBill.name}`
   );
 
-  res.json({ success: true, bill: original });
+  res.json({ success: true, bill: updatedBill });
 });
 
 // Delete Bill
-router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!checkAdminPermission(req, "canEditBills")) {
     res.status(403).json({ error: "Access denied. You do not have permission to edit utility bills." });
     return;
   }
   const { id } = req.params;
-  const db = loadDB();
+  const messId = getActiveMessId() || "default";
+  const db = loadDB(messId);
   const index = db.bills.findIndex(b => b.id === id);
 
   if (index === -1) {
@@ -3668,9 +3672,7 @@ router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserR
   }
 
   const original = db.bills[index];
-  db.bills.splice(index, 1);
-  saveDB();
-  deleteBillFromPostgres(id).catch(() => {});
+  await deleteBillFromPostgres(id, messId);
 
   logAudit(req.user!.id, req.user!.nickname, "DELETE_BILL", JSON.stringify(original), "Deleted", `Deleted bill ${original.name}`);
   res.json({ success: true });
@@ -3681,13 +3683,13 @@ router.delete("/bills/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserR
 // ---------------------------------------------------------
 router.get("/duties/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const messId = (req as any).messId || (req.user as any)?.messId || "default";
+  const messId = getActiveMessId() || "default";
   const db = loadDB(messId);
   const duties = db.duties.filter(d => d.monthId === monthId);
   res.json({ duties });
 });
 
-router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, memberId, name, task } = req.body;
   if (!monthId || !memberId || !name) {
     res.status(400).json({ error: "Month ID, Member ID, and Duty Name are required" });
@@ -3704,7 +3706,8 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     }
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const normName = name.trim().toLowerCase();
   const normTask = (task || "").trim().toLowerCase();
   const existingDuty = db.duties.find(d =>
@@ -3718,127 +3721,148 @@ router.post("/duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.M
     return;
   }
 
-  const newDuty: Duty = {
+  const newDuty: Duty & { messId?: string } = {
     id: generateUUID(),
+    messId: currentMessId,
     monthId,
     memberId,
     name,
     task: task || ""
   };
 
-  db.duties.push(newDuty);
-  db.duties = deduplicateDuties(db.duties);
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    draft.duties.push(newDuty);
+    draft.duties = deduplicateDuties(draft.duties);
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "ASSIGN_DUTY", "None", name, `Assigned duty ${name} to user ID ${memberId}`);
   res.json({ success: true, duty: newDuty });
 });
 
 // Single work duty assignment (e.g. Rent, Electricity, WiFi, Maid, or custom)
-router.post("/duties/work-duty", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/duties/work-duty", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, memberId, name, task } = req.body;
   if (!monthId || !memberId) {
     res.status(400).json({ error: "Month ID and Member ID are required" });
     return;
   }
 
-  const db = loadDB();
-  // Find any existing work duty (non-market duty) for this member in this month
-  const existingIdx = db.duties.findIndex(d => 
-    d.monthId === monthId && 
-    d.memberId === memberId && 
-    !d.name.toLowerCase().startsWith("market duty:")
-  );
-
+  const currentMessId = getActiveMessId() || "default";
   const cleanName = (name || "").trim();
 
   if (!cleanName || cleanName === "-- No Work Assigned --" || cleanName === "No Work Assigned") {
-    // If empty or explicitly cleared, remove existing work duty
-    if (existingIdx !== -1) {
-      const removed = db.duties.splice(existingIdx, 1)[0];
-      saveDB();
-      logAudit(req.user!.id, req.user!.nickname, "REMOVE_WORK_DUTY", JSON.stringify(removed), "None", `Cleared work duty for member ID ${memberId} in month ${monthId}`);
+    let removedDuty: Duty | null = null;
+    await commitMessDB(currentMessId, (draft) => {
+      const idx = draft.duties.findIndex(d =>
+        d.monthId === monthId &&
+        d.memberId === memberId &&
+        !d.name.toLowerCase().startsWith("market duty:")
+      );
+      if (idx !== -1) {
+        removedDuty = draft.duties.splice(idx, 1)[0];
+      }
+    });
+    if (removedDuty) {
+      logAudit(req.user!.id, req.user!.nickname, "REMOVE_WORK_DUTY", JSON.stringify(removedDuty), "None", `Cleared work duty for member ID ${memberId} in month ${monthId}`);
     }
     res.json({ success: true, cleared: true });
     return;
   }
 
-  if (existingIdx !== -1) {
-    db.duties[existingIdx].name = cleanName;
-    db.duties[existingIdx].task = task || "";
-    saveDB();
-    logAudit(req.user!.id, req.user!.nickname, "UPDATE_WORK_DUTY", "None", cleanName, `Updated work duty to ${cleanName} for member ID ${memberId} in month ${monthId}`);
-    res.json({ success: true, duty: db.duties[existingIdx] });
-  } else {
-    const newDuty: Duty = {
-      id: generateUUID(),
-      monthId,
-      memberId,
-      name: cleanName,
-      task: task || ""
-    };
-    db.duties.push(newDuty);
-    saveDB();
-    logAudit(req.user!.id, req.user!.nickname, "ASSIGN_WORK_DUTY", "None", cleanName, `Assigned work duty ${cleanName} to member ID ${memberId} in month ${monthId}`);
-    res.json({ success: true, duty: newDuty });
-  }
+  let savedDuty: Duty | null = null;
+  let wasUpdate = false;
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.duties.findIndex(d =>
+      d.monthId === monthId &&
+      d.memberId === memberId &&
+      !d.name.toLowerCase().startsWith("market duty:")
+    );
+    if (idx !== -1) {
+      wasUpdate = true;
+      draft.duties[idx].name = cleanName;
+      draft.duties[idx].task = task || "";
+      savedDuty = draft.duties[idx];
+    } else {
+      savedDuty = {
+        id: generateUUID(),
+        messId: currentMessId,
+        monthId,
+        memberId,
+        name: cleanName,
+        task: task || ""
+      } as Duty;
+      draft.duties.push(savedDuty);
+    }
+  });
+
+  logAudit(
+    req.user!.id,
+    req.user!.nickname,
+    wasUpdate ? "UPDATE_WORK_DUTY" : "ASSIGN_WORK_DUTY",
+    "None",
+    cleanName,
+    `${wasUpdate ? "Updated" : "Assigned"} work duty ${cleanName} for member ID ${memberId} in month ${monthId}`
+  );
+  res.json({ success: true, duty: savedDuty });
 });
 
 // Batch work duty assignment for a month
-router.post("/duties/batch-work-duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/duties/batch-work-duties", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, assignments } = req.body;
   if (!monthId || !Array.isArray(assignments)) {
     res.status(400).json({ error: "Month ID and assignments array are required" });
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  let monthDuties: Duty[] = [];
+  await commitMessDB(currentMessId, (draft) => {
+    for (const item of assignments) {
+      if (!item.memberId) continue;
+      const cleanName = (item.name || "").trim();
+      const existingIdx = draft.duties.findIndex(d =>
+        d.monthId === monthId &&
+        d.memberId === item.memberId &&
+        !d.name.toLowerCase().startsWith("market duty:")
+      );
 
-  for (const item of assignments) {
-    if (!item.memberId) continue;
-    const cleanName = (item.name || "").trim();
-    const existingIdx = db.duties.findIndex(d => 
-      d.monthId === monthId && 
-      d.memberId === item.memberId && 
-      !d.name.toLowerCase().startsWith("market duty:")
-    );
-
-    if (!cleanName || cleanName === "-- No Work Assigned --" || cleanName === "No Work Assigned") {
-      if (existingIdx !== -1) {
-        db.duties.splice(existingIdx, 1);
-      }
-    } else {
-      if (existingIdx !== -1) {
-        db.duties[existingIdx].name = cleanName;
-        db.duties[existingIdx].task = item.task || "";
+      if (!cleanName || cleanName === "-- No Work Assigned --" || cleanName === "No Work Assigned") {
+        if (existingIdx !== -1) {
+          draft.duties.splice(existingIdx, 1);
+        }
       } else {
-        db.duties.push({
-          id: generateUUID(),
-          monthId,
-          memberId: item.memberId,
-          name: cleanName,
-          task: item.task || ""
-        });
+        if (existingIdx !== -1) {
+          draft.duties[existingIdx].name = cleanName;
+          draft.duties[existingIdx].task = item.task || "";
+        } else {
+          draft.duties.push({
+            id: generateUUID(),
+            messId: currentMessId,
+            monthId,
+            memberId: item.memberId,
+            name: cleanName,
+            task: item.task || ""
+          } as Duty);
+        }
       }
     }
-  }
+    monthDuties = draft.duties.filter(d => d.monthId === monthId);
+  });
 
-  saveDB();
   logAudit(req.user!.id, req.user!.nickname, "BATCH_UPDATE_WORK_DUTIES", "Multiple", "Batch", `Updated work duties roster for month ID ${monthId}`);
-  
-  const monthDuties = db.duties.filter(d => d.monthId === monthId);
   res.json({ success: true, duties: monthDuties });
 });
 
 // Copy work duties from previous month
-router.post("/duties/copy-previous", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.post("/duties/copy-previous", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { targetMonthId, sourceMonthId } = req.body;
   if (!targetMonthId) {
     res.status(400).json({ error: "Target Month ID is required" });
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
 
   // Find source month
   let effectiveSourceId = sourceMonthId;
@@ -3859,8 +3883,8 @@ router.post("/duties/copy-previous", authMiddleware, checkRole([UserRole.SUPERUS
     return;
   }
 
-  const sourceWorkDuties = db.duties.filter(d => 
-    d.monthId === effectiveSourceId && 
+  const sourceWorkDuties = db.duties.filter(d =>
+    d.monthId === effectiveSourceId &&
     !d.name.toLowerCase().startsWith("market duty:")
   );
 
@@ -3870,38 +3894,41 @@ router.post("/duties/copy-previous", authMiddleware, checkRole([UserRole.SUPERUS
   }
 
   let copiedCount = 0;
-  for (const src of sourceWorkDuties) {
-    const existingIdx = db.duties.findIndex(d => 
-      d.monthId === targetMonthId && 
-      d.memberId === src.memberId && 
-      !d.name.toLowerCase().startsWith("market duty:")
-    );
+  let updatedDuties: Duty[] = [];
+  await commitMessDB(currentMessId, (draft) => {
+    for (const src of sourceWorkDuties) {
+      const existingIdx = draft.duties.findIndex(d =>
+        d.monthId === targetMonthId &&
+        d.memberId === src.memberId &&
+        !d.name.toLowerCase().startsWith("market duty:")
+      );
 
-    if (existingIdx !== -1) {
-      db.duties[existingIdx].name = src.name;
-      db.duties[existingIdx].task = src.task || "";
-    } else {
-      db.duties.push({
-        id: generateUUID(),
-        monthId: targetMonthId,
-        memberId: src.memberId,
-        name: src.name,
-        task: src.task || ""
-      });
+      if (existingIdx !== -1) {
+        draft.duties[existingIdx].name = src.name;
+        draft.duties[existingIdx].task = src.task || "";
+      } else {
+        draft.duties.push({
+          id: generateUUID(),
+          messId: currentMessId,
+          monthId: targetMonthId,
+          memberId: src.memberId,
+          name: src.name,
+          task: src.task || ""
+        } as Duty);
+      }
+      copiedCount++;
     }
-    copiedCount++;
-  }
+    updatedDuties = draft.duties.filter(d => d.monthId === targetMonthId);
+  });
 
-  saveDB();
   logAudit(req.user!.id, req.user!.nickname, "COPY_PREVIOUS_DUTIES", effectiveSourceId, targetMonthId, `Copied ${copiedCount} work duties from month ${effectiveSourceId} to ${targetMonthId}`);
-
-  const updatedDuties = db.duties.filter(d => d.monthId === targetMonthId);
   res.json({ success: true, copiedCount, duties: updatedDuties });
 });
 
-router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN, UserRole.ASSISTANT_SUPERUSER]), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const index = db.duties.findIndex(d => d.id === id);
 
   if (index === -1) {
@@ -3920,9 +3947,7 @@ router.delete("/duties/:id", authMiddleware, checkRole([UserRole.SUPERUSER, User
     }
   }
 
-  db.duties.splice(index, 1);
-  saveDB();
-  deleteDutyFromPostgres(id).catch(() => {});
+  await deleteDutyFromPostgres(id, currentMessId);
 
   logAudit(req.user!.id, req.user!.nickname, "REMOVE_DUTY", JSON.stringify(original), "Removed", `Removed duty ${original.name}`);
   res.json({ success: true });
@@ -4160,25 +4185,23 @@ router.post("/holdings", authMiddleware, async (req: AuthenticatedRequest, res: 
     return;
   }
 
-  const db = loadDB();
-  
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
+
   let existingIndex = -1;
   if (id) {
     existingIndex = db.managerHoldings.findIndex(h => h.id === id);
   } else if (amount !== undefined && marketSpent === undefined) {
-    // This is a cash advance holding paid update. Keep it singular per user per month.
     existingIndex = db.managerHoldings.findIndex(h => h.monthId === monthId && h.memberId === memberId && (h.amount > 0 || h.marketSpent === undefined || h.marketSpent === 0));
-  } else {
-    // This is a new manager market log entry with description & value. Always append as a new record so previous entries are not overwritten/deleted!
-    existingIndex = -1;
   }
-  
+
   const currentAmount = amount !== undefined ? Number(amount) : (existingIndex !== -1 ? db.managerHoldings[existingIndex].amount : 0);
   const currentMarketSpent = marketSpent !== undefined ? Number(marketSpent) : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].marketSpent || 0) : 0);
   const currentDescription = description !== undefined ? description : (existingIndex !== -1 ? (db.managerHoldings[existingIndex].description || "") : "");
 
-  const newHolding: ManagerHolding = {
+  const newHolding: ManagerHolding & { messId?: string } = {
     id: existingIndex !== -1 ? db.managerHoldings[existingIndex].id : (id || generateUUID()),
+    messId: currentMessId,
     monthId,
     memberId,
     amount: currentAmount,
@@ -4186,35 +4209,20 @@ router.post("/holdings", authMiddleware, async (req: AuthenticatedRequest, res: 
     description: currentDescription
   };
 
-  if (existingIndex !== -1) {
-    db.managerHoldings[existingIndex] = newHolding;
-  } else {
-    db.managerHoldings.push(newHolding);
-  }
-
-  saveDB();
-  try {
-    const mapped = {
-      id: newHolding.id,
-      monthId: newHolding.monthId,
-      memberId: newHolding.memberId,
-      amount: newHolding.amount,
-      marketSpent: newHolding.marketSpent,
-      description: newHolding.description
-    };
-    await drizzleDb.insert(managerHoldingsTable).values(mapped).onConflictDoUpdate({
-      target: managerHoldingsTable.id,
-      set: mapped
-    });
-  } catch (err) {
-    console.warn("Direct PostgreSQL manager holding upsert error:", err);
-  }
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.managerHoldings.findIndex(h => h.id === newHolding.id);
+    if (idx !== -1) {
+      draft.managerHoldings[idx] = newHolding;
+    } else {
+      draft.managerHoldings.push(newHolding);
+    }
+  });
 
   logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING", "None", JSON.stringify(newHolding), `Recorded manager holding/market spent of Taka ${currentAmount} / ${currentMarketSpent}`);
   res.json({ success: true, holding: newHolding });
 });
 
-router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/holdings/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
   const isManagerOrAdmin = [UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER, UserRole.ADMIN].includes(req.user!.role);
   if (!isUltimateAdmin && !isManagerOrAdmin) {
@@ -4223,16 +4231,16 @@ router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: 
   }
 
   const { id } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const existingIndex = db.managerHoldings.findIndex(h => h.id === id);
   if (existingIndex === -1) {
     res.status(404).json({ error: "Holding entry not found" });
     return;
   }
 
-  const deleted = db.managerHoldings.splice(existingIndex, 1)[0];
-  saveDB();
-  deleteHoldingFromPostgres(id).catch(() => {});
+  const deleted = db.managerHoldings[existingIndex];
+  await deleteHoldingFromPostgres(id, currentMessId);
   logAudit(req.user!.id, req.user!.nickname, "MANAGER_HOLDING_DELETE", "None", JSON.stringify(deleted), "Deleted manager market spent/holding entry");
   res.json({ success: true });
 });
@@ -4241,42 +4249,37 @@ router.delete("/holdings/:id", authMiddleware, (req: AuthenticatedRequest, res: 
 // ---------------------------------------------------------
 // NOTICES API
 // ---------------------------------------------------------
-router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const db = loadDB();
-  const activeMessId = getActiveMessId();
+router.get("/notices", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
   const user = req.user!;
   
   // Clean up any existing legacy automated profile update and security notices in db.notices
   if (db.notices && db.notices.length > 0) {
-    const prevCount = db.notices.length;
     const autoDeletedIds: string[] = [];
-    db.notices = db.notices.filter(n => {
+    for (const n of db.notices) {
       const titleLower = (n.title || "").toLowerCase();
       const contentLower = (n.content || "").toLowerCase();
-      const isAutoNotice = titleLower.startsWith("profile updated by") || 
-                           titleLower.includes("profile updated") || 
-                           contentLower.includes("updated your profile") ||
-                           contentLower.includes("[security event]") ||
-                           titleLower.includes("security alert:") ||
-                           titleLower.includes("account activated successfully") ||
-                           n.authorId === "SECURITY_SYSTEM" ||
-                           n.authorName === "Security System";
+      const isAutoNotice = titleLower.startsWith("profile updated by") ||
+        titleLower.includes("profile updated") ||
+        contentLower.includes("updated your profile") ||
+        contentLower.includes("[security event]") ||
+        titleLower.includes("security alert:") ||
+        titleLower.includes("account activated successfully") ||
+        n.authorId === "SECURITY_SYSTEM" ||
+        n.authorName === "Security System";
       if (isAutoNotice) {
         autoDeletedIds.push(n.id);
-        return false;
       }
-      return true;
-    });
-    if (db.notices.length !== prevCount) {
-      saveDB();
-      if (autoDeletedIds.length > 0) {
-        deleteNoticeFromPostgres(autoDeletedIds).catch(() => {});
-      }
+    }
+    if (autoDeletedIds.length > 0) {
+      await deleteNoticeFromPostgres(autoDeletedIds, activeMessId);
     }
   }
 
+  const freshDb = loadDB(activeMessId);
   // Filter out notice-uuid-1 and any automated notices
-  const rawNotices = (db.notices || []).filter(n => {
+  const rawNotices = (freshDb.notices || []).filter(n => {
     if (n.id === "notice-uuid-1") return false;
     const titleLower = (n.title || "").toLowerCase();
     const contentLower = (n.content || "").toLowerCase();
@@ -4288,8 +4291,8 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
   });
 
   const scopedNotices = rawNotices.filter(n => {
-    const isGlobal = !!n.isGlobal || n.messId === "global" || (!!n.pinned && (!n.messId || n.messId === "global"));
-    const isCurrentMess = !n.messId || n.messId === activeMessId;
+    const isGlobal = !!n.isGlobal && n.messId === "global";
+    const isCurrentMess = n.messId === activeMessId || (!n.messId && activeMessId === "default");
     const isAuthor = n.authorId === user.id;
 
     if (n.isDirectToManager) {
@@ -4297,7 +4300,7 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
       if (!isManagerOrAdmin && !isAuthor) return false;
     }
 
-    return isGlobal || isCurrentMess || isAuthor;
+    return isGlobal || isCurrentMess;
   });
 
   const sortedNotices = scopedNotices.sort((a, b) => {
@@ -4323,7 +4326,7 @@ router.get("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response
   });
 });
 
-router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/notices", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title, content, pinned, isDirectToManager, isGlobal } = req.body;
   if (!title || !content) {
     res.status(400).json({ error: "Title and content are required" });
@@ -4340,11 +4343,11 @@ router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Respons
     return;
   }
 
-  const activeMessId = getActiveMessId();
+  const activeMessId = getActiveMessId() || "default";
   const shouldPin = isAdminOrSuper ? !!pinned : false;
-  const shouldGlobal = isAdminOrSuper ? (!!isGlobal || shouldPin) : false;
+  // Never auto-promote a pinned notice to global across tenants; only Platform Owner explicitly setting isGlobal creates global notices
+  const shouldGlobal = isUltimateAdmin ? !!isGlobal : false;
 
-  const db = loadDB();
   const newNotice: Notice = {
     id: generateUUID(),
     title,
@@ -4359,17 +4362,19 @@ router.post("/notices", authMiddleware, (req: AuthenticatedRequest, res: Respons
     isGlobal: shouldGlobal
   };
 
-  db.notices.push(newNotice);
-  saveDB();
+  await commitMessDB(activeMessId, (draft) => {
+    draft.notices.push(newNotice);
+  });
 
   logAudit(user.id, user.nickname, "CREATE_NOTICE", "None", title, `Published notice: ${title} (Mess: ${newNotice.messId}, Global: ${shouldGlobal}, Pinned: ${shouldPin})`);
   res.json({ success: true, notice: newNotice });
 });
 
-router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.put("/notices/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
+  const activeMessId = getActiveMessId() || "default";
   const updates: Partial<Notice> = req.body;
-  const db = loadDB();
+  const db = loadDB(activeMessId);
   const index = db.notices.findIndex(n => n.id === id);
 
   if (index === -1) {
@@ -4378,6 +4383,13 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
   }
 
   const original = db.notices[index];
+  const isCurrentMessNotice = original.messId === activeMessId || (!original.messId && activeMessId === "default");
+  const isGlobalNotice = !!original.isGlobal && original.messId === "global";
+  if (!isCurrentMessNotice && !isGlobalNotice) {
+    res.status(403).json({ error: "Forbidden: Notice belongs to another mess." });
+    return;
+  }
+
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
@@ -4389,34 +4401,40 @@ router.put("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Resp
     return;
   }
 
-  let finalUpdates = { ...updates };
+  const finalUpdates: Partial<Notice> = { ...updates };
+  delete (finalUpdates as any).messId;
   if (!isAdminOrSuper) {
     delete finalUpdates.pinned;
+  }
+  if (!isUltimateAdmin) {
     delete finalUpdates.isGlobal;
-  } else if (finalUpdates.pinned !== undefined) {
-    if (finalUpdates.pinned) {
-      finalUpdates.isGlobal = true;
-      finalUpdates.messId = "global";
-    } else {
-      finalUpdates.isGlobal = false;
-      finalUpdates.messId = getActiveMessId();
-    }
+  } else if (finalUpdates.isGlobal !== undefined) {
+    finalUpdates.messId = finalUpdates.isGlobal ? "global" : activeMessId;
   }
 
-  const updatedNotice = {
+  let updatedNotice: Notice = {
     ...original,
     ...finalUpdates,
     id: original.id
   };
 
-  db.notices[index] = updatedNotice;
-  saveDB();
+  await commitMessDB(activeMessId, (draft) => {
+    const idx = draft.notices.findIndex(n => n.id === id);
+    if (idx !== -1) {
+      updatedNotice = {
+        ...draft.notices[idx],
+        ...finalUpdates,
+        id: draft.notices[idx].id
+      };
+      draft.notices[idx] = updatedNotice;
+    }
+  });
 
   logAudit(user.id, user.nickname, "UPDATE_NOTICE", original.title, updatedNotice.title, `Updated notice state`);
   res.json({ success: true, notice: updatedNotice });
 });
 
-router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/notices/bulk-delete", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
@@ -4427,43 +4445,31 @@ router.delete("/notices/bulk-delete", authMiddleware, (req: AuthenticatedRequest
     return;
   }
 
-  const activeMessId = getActiveMessId();
-  const db = loadDB();
-  if (!db.notices) db.notices = [];
-
-  const initialCount = db.notices.length;
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
   const idsToDelete: string[] = [];
 
-  // Preserve ALL pinned and global notices. Only delete unpinned notices in current mess/scope.
-  db.notices = db.notices.filter(n => {
-    if (n.pinned || n.isGlobal) return true; // Pinned messages are preserved!
-
-    const isCurrentMess = !n.messId || n.messId === activeMessId;
-    const isAuthor = n.authorId === user.id;
-
-    if (isAdminOrSuper || isManager) {
-      if (isCurrentMess || isAuthor) {
-        idsToDelete.push(n.id);
-        return false; // Remove unpinned notice
-      }
+  for (const n of (db.notices || [])) {
+    if (n.pinned || n.isGlobal) continue;
+    const isCurrentMess = n.messId === activeMessId || (!n.messId && activeMessId === "default");
+    if (isCurrentMess) {
+      idsToDelete.push(n.id);
     }
-
-    return true;
-  });
-
-  const deletedCount = initialCount - db.notices.length;
-  saveDB();
-  if (idsToDelete.length > 0) {
-    deleteNoticeFromPostgres(idsToDelete).catch(() => {});
   }
 
+  if (idsToDelete.length > 0) {
+    await deleteNoticeFromPostgres(idsToDelete, activeMessId);
+  }
+
+  const deletedCount = idsToDelete.length;
   logAudit(user.id, user.nickname, "BULK_DELETE_NOTICES", "Bulk Delete", `${deletedCount} notices`, `Bulk deleted ${deletedCount} unpinned notices (pinned notices preserved)`);
   res.json({ success: true, count: deletedCount });
 });
 
-router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/notices/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const db = loadDB();
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
   const index = db.notices.findIndex(n => n.id === id);
 
   if (index === -1) {
@@ -4472,8 +4478,14 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
   }
 
   const notice = db.notices[index];
+  const isCurrentMess = notice.messId === activeMessId || (!notice.messId && activeMessId === "default");
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
+  if (!isCurrentMess && !(isUltimateAdmin && notice.isGlobal)) {
+    res.status(403).json({ error: "Forbidden: Notice belongs to another mess." });
+    return;
+  }
+
   const isAdminOrSuper = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
   const isAuthor = notice.authorId === user.id;
 
@@ -4482,9 +4494,7 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
     return;
   }
 
-  db.notices.splice(index, 1);
-  saveDB();
-  deleteNoticeFromPostgres(id).catch(() => {});
+  await deleteNoticeFromPostgres(id, activeMessId);
 
   res.json({ success: true });
 });
@@ -4492,16 +4502,22 @@ router.delete("/notices/:id", authMiddleware, (req: AuthenticatedRequest, res: R
 // ---------------------------------------------------------
 // MESS & PERSONAL RULES API
 // ---------------------------------------------------------
-router.get("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const db = loadDB();
-  const activeMessId = getActiveMessId();
+router.get("/rules", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
   if (!db.messRules || db.messRules.length === 0) {
-    db.messRules = getDefaultMessRules(activeMessId);
-    saveDB();
+    await commitMessDB(activeMessId, (draft) => {
+      if (!draft.messRules || draft.messRules.length === 0) {
+        draft.messRules = getDefaultMessRules(activeMessId);
+      }
+    });
   }
-  
-  // Filter scoped to this active mess or global
-  const messRules = (db.messRules || []).filter(r => !r.messId || r.messId === "default" || r.messId === activeMessId);
+
+  const freshDb = loadDB(activeMessId);
+  // Filter strictly scoped to this active mess (no cross-mess default leak)
+  const messRules = (freshDb.messRules || []).filter(
+    r => r.messId === activeMessId || (!r.messId && activeMessId === "default")
+  );
   
   // Sort rules: pinned first, then order, then createdAt
   messRules.sort((a, b) => {
@@ -4514,7 +4530,7 @@ router.get("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response) 
   res.json({ rules: messRules });
 });
 
-router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/rules", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
@@ -4530,9 +4546,8 @@ router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response)
     return;
   }
 
-  const activeMessId = getActiveMessId();
-  const db = loadDB();
-  if (!db.messRules) db.messRules = [];
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
 
   const newRule: MessRule = {
     id: generateUUID(),
@@ -4547,7 +4562,7 @@ router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response)
     penalty: penalty ? penalty.trim() : undefined,
     pinned: !!pinned,
     isActive: isActive !== undefined ? !!isActive : true,
-    order: Number(order) || (db.messRules.length + 1),
+    order: Number(order) || ((db.messRules?.length || 0) + 1),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     createdBy: {
@@ -4558,14 +4573,16 @@ router.post("/rules", authMiddleware, (req: AuthenticatedRequest, res: Response)
     agreedMembers: []
   };
 
-  db.messRules.push(newRule);
-  saveDB();
+  await commitMessDB(activeMessId, (draft) => {
+    if (!draft.messRules) draft.messRules = [];
+    draft.messRules.push(newRule);
+  });
 
   logAudit(user.id, user.nickname, "CREATE_RULE", "None", JSON.stringify(newRule), `Created new ${newRule.type} rule: "${newRule.title}"`);
   res.json({ success: true, rule: newRule });
 });
 
-router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.put("/rules/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
@@ -4576,20 +4593,25 @@ router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
   }
 
   const { id } = req.params;
-  const db = loadDB();
-  if (!db.messRules) db.messRules = [];
-
-  const index = db.messRules.findIndex(r => r.id === id);
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
+  const index = (db.messRules || []).findIndex(r => r.id === id);
   if (index === -1) {
     res.status(404).json({ error: "Rule not found." });
     return;
   }
 
   const existing = db.messRules[index];
+  if (existing.messId && existing.messId !== activeMessId) {
+    res.status(403).json({ error: "Forbidden: Rule belongs to another mess." });
+    return;
+  }
+
   const { title, titleBn, description, descriptionBn, type, category, severity, penalty, pinned, isActive, order } = req.body;
 
-  const updated: MessRule = {
+  let updated: MessRule = {
     ...existing,
+    messId: activeMessId,
     title: title !== undefined ? title.trim() : existing.title,
     titleBn: titleBn !== undefined ? (titleBn ? titleBn.trim() : undefined) : existing.titleBn,
     description: description !== undefined ? description.trim() : existing.description,
@@ -4604,14 +4626,19 @@ router.put("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Respon
     updatedAt: new Date().toISOString()
   };
 
-  db.messRules[index] = updated;
-  saveDB();
+  await commitMessDB(activeMessId, (draft) => {
+    if (!draft.messRules) draft.messRules = [];
+    const idx = draft.messRules.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      draft.messRules[idx] = updated;
+    }
+  });
 
   logAudit(user.id, user.nickname, "UPDATE_RULE", JSON.stringify(existing), JSON.stringify(updated), `Updated ${updated.type} rule: "${updated.title}"`);
   res.json({ success: true, rule: updated });
 });
 
-router.delete("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.delete("/rules/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const canDelete = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
@@ -4622,48 +4649,69 @@ router.delete("/rules/:id", authMiddleware, (req: AuthenticatedRequest, res: Res
   }
 
   const { id } = req.params;
-  const db = loadDB();
-  if (!db.messRules) db.messRules = [];
-
-  const index = db.messRules.findIndex(r => r.id === id);
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
+  const index = (db.messRules || []).findIndex(r => r.id === id);
   if (index === -1) {
     res.status(404).json({ error: "Rule not found." });
     return;
   }
 
-  const deleted = db.messRules.splice(index, 1)[0];
-  saveDB();
+  const targetRule = db.messRules[index];
+  if (targetRule.messId && targetRule.messId !== activeMessId) {
+    res.status(403).json({ error: "Forbidden: Rule belongs to another mess." });
+    return;
+  }
 
-  logAudit(user.id, user.nickname, "DELETE_RULE", JSON.stringify(deleted), "None", `Deleted ${deleted.type} rule: "${deleted.title}"`);
+  let deleted: MessRule | null = null;
+  await commitMessDB(activeMessId, (draft) => {
+    if (!draft.messRules) draft.messRules = [];
+    const idx = draft.messRules.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      deleted = draft.messRules.splice(idx, 1)[0];
+    }
+  });
+
+  logAudit(user.id, user.nickname, "DELETE_RULE", JSON.stringify(deleted || targetRule), "None", `Deleted ${(deleted || targetRule).type} rule: "${(deleted || targetRule).title}"`);
   res.json({ success: true });
 });
 
-router.post("/rules/:id/agree", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/rules/:id/agree", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const user = req.user!;
   const { id } = req.params;
-  const db = loadDB();
-  if (!db.messRules) db.messRules = [];
-
-  const rule = db.messRules.find(r => r.id === id);
+  const activeMessId = getActiveMessId() || "default";
+  const db = loadDB(activeMessId);
+  const rule = (db.messRules || []).find(r => r.id === id);
   if (!rule) {
     res.status(404).json({ error: "Rule not found." });
     return;
   }
-
-  if (!rule.agreedMembers) rule.agreedMembers = [];
-
-  const alreadyAgreed = rule.agreedMembers.includes(user.id);
-  if (alreadyAgreed) {
-    rule.agreedMembers = rule.agreedMembers.filter(uid => uid !== user.id);
-  } else {
-    rule.agreedMembers.push(user.id);
+  if (rule.messId && rule.messId !== activeMessId) {
+    res.status(403).json({ error: "Forbidden: Rule belongs to another mess." });
+    return;
   }
 
-  saveDB();
-  res.json({ success: true, agreed: !alreadyAgreed, agreedMembers: rule.agreedMembers });
+  let nextAgreed = false;
+  let nextAgreedMembers: string[] = [];
+  await commitMessDB(activeMessId, (draft) => {
+    if (!draft.messRules) draft.messRules = [];
+    const r = draft.messRules.find(item => item.id === id);
+    if (!r) return;
+    if (!r.agreedMembers) r.agreedMembers = [];
+    const alreadyAgreed = r.agreedMembers.includes(user.id);
+    if (alreadyAgreed) {
+      r.agreedMembers = r.agreedMembers.filter(uid => uid !== user.id);
+    } else {
+      r.agreedMembers.push(user.id);
+    }
+    nextAgreed = !alreadyAgreed;
+    nextAgreedMembers = [...r.agreedMembers];
+  });
+
+  res.json({ success: true, agreed: nextAgreed, agreedMembers: nextAgreedMembers });
 });
 
-router.post("/rules/seed-defaults", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/rules/seed-defaults", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const canManage = user.role === UserRole.ADMIN || user.role === UserRole.SUPERUSER || user.role === UserRole.ASSISTANT_SUPERUSER || isUltimateAdmin;
@@ -4673,13 +4721,14 @@ router.post("/rules/seed-defaults", authMiddleware, (req: AuthenticatedRequest, 
     return;
   }
 
-  const activeMessId = getActiveMessId();
-  const db = loadDB();
-  db.messRules = getDefaultMessRules(activeMessId);
-  saveDB();
+  const activeMessId = getActiveMessId() || "default";
+  const seeded = getDefaultMessRules(activeMessId);
+  await commitMessDB(activeMessId, (draft) => {
+    draft.messRules = seeded;
+  });
 
-  logAudit(user.id, user.nickname, "SEED_DEFAULT_RULES", "None", `${db.messRules.length} rules`, "Seeded default mess & personal rules package");
-  res.json({ success: true, rules: db.messRules });
+  logAudit(user.id, user.nickname, "SEED_DEFAULT_RULES", "None", `${seeded.length} rules`, "Seeded default mess & personal rules package");
+  res.json({ success: true, rules: seeded });
 });
 
 // ---------------------------------------------------------
@@ -4687,12 +4736,13 @@ router.post("/rules/seed-defaults", authMiddleware, (req: AuthenticatedRequest, 
 // ---------------------------------------------------------
 router.get("/ratings/:monthId", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { monthId } = req.params;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const ratings = db.managerRatings.filter(r => r.monthId === monthId);
   res.json({ ratings });
 });
 
-router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+router.post("/ratings", authMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { monthId, rating } = req.body;
   if (!monthId || rating === undefined) {
     res.status(400).json({ error: "Month ID and Rating value are required" });
@@ -4713,7 +4763,8 @@ router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     return;
   }
 
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
   const existingIndex = db.managerRatings.findIndex(r => r.monthId === monthId && r.raterId === req.user!.id);
   const newRating: ManagerRating = {
     id: existingIndex !== -1 ? db.managerRatings[existingIndex].id : generateUUID(),
@@ -4723,13 +4774,14 @@ router.post("/ratings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     date: new Date().toISOString().split("T")[0]
   };
 
-  if (existingIndex !== -1) {
-    db.managerRatings[existingIndex] = newRating;
-  } else {
-    db.managerRatings.push(newRating);
-  }
-
-  saveDB();
+  await commitMessDB(currentMessId, (draft) => {
+    const idx = draft.managerRatings.findIndex(r => r.monthId === monthId && r.raterId === req.user!.id);
+    if (idx !== -1) {
+      draft.managerRatings[idx] = { ...newRating, id: draft.managerRatings[idx].id };
+    } else {
+      draft.managerRatings.push(newRating);
+    }
+  });
   res.json({ success: true, rating: newRating });
 });
 
@@ -4903,19 +4955,30 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   let monthMarkets = deduplicateMarketEntries(db.marketEntries.filter(m => m.monthId === monthId));
   const monthMeals = await getMealsForCurrentCycle(monthId, currentMessId);
   let monthHoldings = db.managerHoldings.filter(h => h.monthId === monthId);
-  const monthBills = db.bills.filter(b => b.monthId === monthId);
+  let monthBills = db.bills.filter(b => b.monthId === monthId);
 
   // Only query PostgreSQL directly if RAM cache hasn't been populated yet;
   // otherwise checkAndSyncDbCacheIfNeeded() already keeps RAM in sync with PG db_version.
-  if (
-    currentMessId === "default" &&
-    (!isPostgresInitialized || (db.managerHoldings.length === 0 && db.marketEntries.length === 0 && db.deposits.length === 0))
-  ) {
+  if (!isPostgresInitialized || (db.managerHoldings.length === 0 && db.marketEntries.length === 0 && db.deposits.length === 0 && db.bills.length === 0)) {
     try {
-      const [liveHoldings, liveMarkets, liveDeposits] = await Promise.all([
-        drizzleDb.select().from(managerHoldingsTable).where(eq(managerHoldingsTable.monthId, monthId)).catch(() => []),
-        drizzleDb.select().from(marketEntriesTable).where(eq(marketEntriesTable.monthId, monthId)).catch(() => []),
-        drizzleDb.select().from(depositsTable).where(eq(depositsTable.monthId, monthId)).catch(() => [])
+      const holdingsMessCond = currentMessId === "default"
+        ? or(eq(managerHoldingsTable.messId, "default"), sql`${managerHoldingsTable.messId} IS NULL`)
+        : eq(managerHoldingsTable.messId, currentMessId);
+      const marketsMessCond = currentMessId === "default"
+        ? or(eq(marketEntriesTable.messId, "default"), sql`${marketEntriesTable.messId} IS NULL`)
+        : eq(marketEntriesTable.messId, currentMessId);
+      const depositsMessCond = currentMessId === "default"
+        ? or(eq(depositsTable.messId, "default"), sql`${depositsTable.messId} IS NULL`)
+        : eq(depositsTable.messId, currentMessId);
+      const billsMessCond = currentMessId === "default"
+        ? or(eq(billsTable.messId, "default"), sql`${billsTable.messId} IS NULL`)
+        : eq(billsTable.messId, currentMessId);
+
+      const [liveHoldings, liveMarkets, liveDeposits, liveBills] = await Promise.all([
+        drizzleDb.select().from(managerHoldingsTable).where(and(eq(managerHoldingsTable.monthId, monthId), holdingsMessCond)).catch(() => []),
+        drizzleDb.select().from(marketEntriesTable).where(and(eq(marketEntriesTable.monthId, monthId), marketsMessCond)).catch(() => []),
+        drizzleDb.select().from(depositsTable).where(and(eq(depositsTable.monthId, monthId), depositsMessCond)).catch(() => []),
+        drizzleDb.select().from(billsTable).where(and(eq(billsTable.monthId, monthId), billsMessCond)).catch(() => [])
       ]);
       if (liveHoldings && liveHoldings.length > 0) {
         monthHoldings = liveHoldings as any[];
@@ -4928,6 +4991,9 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
       }
       if (liveDeposits && liveDeposits.length > 0) {
         monthDeposits = deduplicateDeposits(liveDeposits as any[]);
+      }
+      if (liveBills && liveBills.length > 0) {
+        monthBills = liveBills as any[];
       }
     } catch (dbErr) {
       // Fallback safely to in-memory db.*
@@ -5023,7 +5089,8 @@ router.get("/reports/summary/:monthId", authMiddleware, async (req: Authenticate
   const effectiveCost = totalCost;
 
   // Sum total meals in the month dynamically based on configured meal types
-  const settings = loadSettings();
+  await ensureSettingsLoaded(currentMessId);
+  const settings = loadSettings(currentMessId);
   const mealTypes = (settings.mealTypes && settings.mealTypes.length > 0) ? settings.mealTypes : [
     { id: "lunch", name: "Lunch", enabled: true },
     { id: "dinner", name: "Dinner", enabled: true },
@@ -5207,6 +5274,11 @@ export function saveErpBranding(branding: any) {
   }
 }
 
+export async function saveErpBrandingAsync(branding: any): Promise<void> {
+  await writeAndPersistFileAsync("erp_branding.json", JSON.stringify(branding, null, 2));
+  erpBrandingCache = branding;
+}
+
 export function loadMessAppearance(messId: string) {
   const file = messId === "default"
     ? path.join(DB_DIR, "mess_appearance.json")
@@ -5278,6 +5350,14 @@ export function saveMessAppearance(messId: string, appearance: any) {
   }
 }
 
+export async function saveMessAppearanceAsync(messId: string, appearance: any): Promise<void> {
+  const filename = messId === "default"
+    ? "mess_appearance.json"
+    : `mess_appearance_${messId}.json`;
+  await writeAndPersistFileAsync(filename, JSON.stringify(appearance, null, 2));
+  messAppearanceCache.set(messId, appearance);
+}
+
 function loadAllUserPrefsMap(): Record<string, any> {
   if (allUserPrefsCache) return allUserPrefsCache;
   try {
@@ -5298,10 +5378,10 @@ function loadAllUserPrefsMap(): Record<string, any> {
   return allUserPrefsCache;
 }
 
-export function loadUserPreferences(userId: string) {
-  const messId = getActiveMessId();
+export function loadUserPreferences(userId: string, overrideMessId?: string) {
+  const messId = (overrideMessId || getActiveMessId() || "default").trim();
   const messAppearance = loadMessAppearance(messId);
-  const messSettings = loadSettings();
+  const messSettings = loadSettings(messId);
   
   // Resolve mess default mode (Level 2)
   const messDefaultIsDark = messAppearance.defaultMode !== undefined
@@ -5325,8 +5405,9 @@ export function loadUserPreferences(userId: string) {
 
   try {
     const allPrefs = loadAllUserPrefsMap();
-    if (allPrefs && allPrefs[userId]) {
-      const userPref = allPrefs[userId];
+    const scopedKey = `${messId}::${userId}`;
+    const userPref = (allPrefs && (allPrefs[scopedKey] || (messId === "default" ? allPrefs[userId] : undefined)));
+    if (userPref) {
       // If useMessDefault is true or not explicitly false, follow mess default
       if (userPref.useMessDefault !== false) {
         return { 
@@ -5344,7 +5425,7 @@ export function loadUserPreferences(userId: string) {
   return defaultPrefs;
 }
 
-export function syncAppearanceToAllMembers(messId: string, updates: any) {
+export async function syncAppearanceToAllMembersAsync(messId: string, updates: any): Promise<void> {
   try {
     const isDark = updates.defaultMode !== undefined
       ? updates.defaultMode === "dark"
@@ -5357,27 +5438,34 @@ export function syncAppearanceToAllMembers(messId: string, updates: any) {
     for (const m of memberList) {
       const uId = m.id || (m as any).userId;
       if (uId) {
-        allPrefs[uId] = {
-          ...(allPrefs[uId] || {}),
+        const scopedKey = `${messId}::${uId}`;
+        allPrefs[scopedKey] = {
+          ...(allPrefs[scopedKey] || (messId === "default" ? allPrefs[uId] : undefined) || {}),
           isDarkMode: isDark,
           defaultMode: isDark ? "dark" : "light",
           useMessDefault: true,
-          accentColor: updates.accentColor || allPrefs[uId]?.accentColor || "#22d3ee"
+          accentColor: updates.accentColor || allPrefs[scopedKey]?.accentColor || "#22d3ee"
         };
       }
     }
 
+    await writeAndPersistFileAsync("user_preferences.json", JSON.stringify(allPrefs, null, 2));
     allUserPrefsCache = allPrefs;
-    writeAndPersistFile("user_preferences.json", JSON.stringify(allPrefs, null, 2));
   } catch (err) {
     console.error(`Error syncing appearance to all members for mess ${messId}:`, err);
   }
 }
 
-export function saveUserPreferences(userId: string, prefs: any) {
+export function syncAppearanceToAllMembers(messId: string, updates: any) {
+  syncAppearanceToAllMembersAsync(messId, updates).catch(() => {});
+}
+
+export function saveUserPreferences(userId: string, prefs: any, overrideMessId?: string) {
   try {
+    const messId = (overrideMessId || getActiveMessId() || "default").trim();
+    const scopedKey = `${messId}::${userId}`;
     const allPrefs = { ...loadAllUserPrefsMap() };
-    allPrefs[userId] = prefs;
+    allPrefs[scopedKey] = prefs;
     allUserPrefsCache = allPrefs;
     writeAndPersistFile("user_preferences.json", JSON.stringify(allPrefs, null, 2));
   } catch (e) {
@@ -5385,8 +5473,111 @@ export function saveUserPreferences(userId: string, prefs: any) {
   }
 }
 
-// Global cache for tenant settings
+export async function saveUserPreferencesAsync(userId: string, prefs: any, overrideMessId?: string): Promise<void> {
+  const messId = (overrideMessId || getActiveMessId() || "default").trim();
+  const scopedKey = `${messId}::${userId}`;
+  const allPrefs = { ...loadAllUserPrefsMap() };
+  allPrefs[scopedKey] = prefs;
+  await writeAndPersistFileAsync("user_preferences.json", JSON.stringify(allPrefs, null, 2));
+  allUserPrefsCache = allPrefs;
+}
+
+// Global cache for tenant settings (authoritatively hydrated from PostgreSQL)
 const settingsCache: Record<string, any> = {};
+const settingsLoadedFromPg = new Set<string>();
+const messSettingsLocks = new Map<string, Promise<void>>();
+
+export async function withMessSettingsLock<T>(messId: string, fn: () => Promise<T>): Promise<T> {
+  const key = (messId || "default").trim();
+  const prev = messSettingsLocks.get(key) || Promise.resolve();
+  let releaseLock!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  messSettingsLocks.set(key, prev.then(() => gate, () => gate));
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    releaseLock();
+  }
+}
+
+function invalidateSettingsCache(messId?: string) {
+  if (messId) {
+    delete settingsCache[messId];
+    settingsLoadedFromPg.delete(messId);
+  } else {
+    Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
+    settingsLoadedFromPg.clear();
+  }
+}
+
+export function mergeCustomBillOverrides(
+  existingRaw: any,
+  incomingRaw: any
+): Record<string, Record<string, Record<string, any>>> {
+  const result: Record<string, Record<string, Record<string, any>>> = {};
+  if (existingRaw && typeof existingRaw === "object" && !Array.isArray(existingRaw)) {
+    for (const [mId, mData] of Object.entries(existingRaw)) {
+      if (mData && typeof mData === "object" && !Array.isArray(mData)) {
+        result[mId] = {};
+        for (const [memId, memData] of Object.entries(mData as Record<string, any>)) {
+          if (memData && typeof memData === "object" && !Array.isArray(memData)) {
+            result[mId][memId] = { ...memData };
+          }
+        }
+      }
+    }
+  }
+  if (incomingRaw && typeof incomingRaw === "object" && !Array.isArray(incomingRaw)) {
+    for (const [mId, mData] of Object.entries(incomingRaw)) {
+      if (mData === null || mData === undefined) {
+        // Never wipe a whole month implicitly
+        continue;
+      }
+      if (typeof mData === "object" && !Array.isArray(mData)) {
+        if (!result[mId]) result[mId] = {};
+        for (const [memId, memData] of Object.entries(mData as Record<string, any>)) {
+          if (memData && typeof memData === "object" && !Array.isArray(memData)) {
+            const nextMemberMap = { ...(result[mId][memId] || {}) };
+            for (const [k, v] of Object.entries(memData as Record<string, any>)) {
+              if (v === null || v === undefined || v === "") {
+                delete nextMemberMap[k];
+              } else {
+                nextMemberMap[k] = v;
+              }
+            }
+            if (Object.keys(nextMemberMap).length > 0) {
+              result[mId][memId] = nextMemberMap;
+            } else {
+              delete result[mId][memId];
+            }
+          }
+        }
+        if (Object.keys(result[mId]).length === 0) {
+          delete result[mId];
+        }
+      }
+    }
+  }
+  return result;
+}
+
+async function fetchLatestCustomBillOverridesFromPg(messId: string): Promise<Record<string, any>> {
+  try {
+    const rows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
+    if (rows && rows.length > 0) {
+      const mapped = mapRowToSettings(rows[0]);
+      if (mapped && mapped.customBillOverrides && typeof mapped.customBillOverrides === "object") {
+        return mapped.customBillOverrides;
+      }
+    }
+  } catch (err) {
+    console.warn(`[Settings] Could not fetch latest customBillOverrides from PG for mess ${messId}:`, err);
+  }
+  return {};
+}
 
 // Single global constant for settings schema version
 export const CURRENT_SETTINGS_SCHEMA_VERSION = 2;
@@ -5676,11 +5867,16 @@ async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings:
       if (rows.length > 0) {
         if (validatedSettings._hasMigrated) {
           delete validatedSettings._hasMigrated;
-          writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
+          await writeAndPersistFileAsync(filename, JSON.stringify(validatedSettings, null, 2));
           await saveSettingsToPostgres(messId, validatedSettings);
           console.log(`[Settings] Successfully migrated and persisted settings for mess: ${messId}`);
+        } else {
+          try {
+            await writeAndPersistFileAsync(filename, JSON.stringify(validatedSettings, null, 2));
+          } catch {}
         }
         settingsCache[messId] = validatedSettings;
+        settingsLoadedFromPg.add(messId);
         console.log(`[Settings] Successfully loaded settings from PostgreSQL for mess: ${messId}`);
         return;
       }
@@ -5753,21 +5949,25 @@ async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings:
         delete validatedSettings._hasMigrated;
       }
 
-      writeAndPersistFile(filename, JSON.stringify(validatedSettings, null, 2));
+      await writeAndPersistFileAsync(filename, JSON.stringify(validatedSettings, null, 2));
 
       if (isMatch) {
         settingsCache[messId] = {
           ...validatedSettings,
           ...pgSettingsLoaded
         };
+        settingsLoadedFromPg.add(messId);
         console.log(`[Settings] Migration verified and completed successfully for mess: ${messId}`);
       } else {
         console.error(`[Settings] Migration validation mismatch for mess ${messId}. Aborting migration and falling back to JSON.`);
         settingsCache[messId] = validatedSettings;
+        settingsLoadedFromPg.add(messId);
       }
     } catch (error) {
-      console.error(`[Settings] Error migrating settings for mess ${messId}:`, error);
-      settingsCache[messId] = localJsonSettings;
+      // Do NOT poison settingsCache[messId] with empty localJsonSettings on PG connection failure
+      // (otherwise subsequent saves before a restart will overwrite PG with empty _customBillOverrides).
+      console.error(`[Settings] Error migrating/loading settings for mess ${messId}:`, error);
+      settingsLoadedFromPg.delete(messId);
     } finally {
       inFlightSettingsSyncs.delete(messId);
     }
@@ -5779,9 +5979,11 @@ async function syncSettingsToPostgresAndCache(messId: string, localJsonSettings:
 
 export async function preloadSettings(messId: string) {
   try {
-    const file = messId === "default"
-      ? path.join(DB_DIR, "settings.json")
-      : path.join(DB_DIR, `settings_${messId}.json`);
+    const filename = messId === "default"
+      ? "settings.json"
+      : `settings_${messId}.json`;
+    await ensurePersistentFile(filename);
+    const file = path.join(DB_DIR, filename);
 
     let localJsonSettings: any = {};
     if (fs.existsSync(file)) {
@@ -5799,7 +6001,34 @@ export async function preloadSettings(messId: string) {
   }
 }
 
-async function saveSettingsToPostgres(messId: string, settings: any) {
+async function hydrateLatestSettingsIntoCache(messId: string): Promise<void> {
+  await ensureSettingsLoaded(messId);
+  try {
+    const rows = await drizzleDb.select().from(tenantSettings).where(eq(tenantSettings.messId, messId)).limit(1);
+    if (rows && rows.length > 0) {
+      const pgMapped = mapRowToSettings(rows[0]);
+      const existing = settingsCache[messId] || {};
+      settingsCache[messId] = {
+        ...existing,
+        ...pgMapped,
+        customBillOverrides: mergeCustomBillOverrides(existing.customBillOverrides || {}, pgMapped.customBillOverrides || {})
+      };
+      settingsLoadedFromPg.add(messId);
+    }
+  } catch (err) {
+    console.warn(`[Settings] Could not refresh latest PG row for mess ${messId}:`, err);
+  }
+}
+
+export async function ensureSettingsLoaded(overrideMessId?: string): Promise<void> {
+  const messId = (overrideMessId || getActiveMessId() || "default").trim();
+  if (settingsLoadedFromPg.has(messId) && settingsCache[messId]) {
+    return;
+  }
+  await preloadSettings(messId);
+}
+
+async function saveSettingsToPostgres(messId: string, settings: any, throwError: boolean = false) {
   try {
     const rowToSave = mapSettingsToRow(messId, settings);
     await drizzleDb
@@ -5837,9 +6066,13 @@ async function saveSettingsToPostgres(messId: string, settings: any) {
           respectSenioritySettings: rowToSave.respectSenioritySettings,
         }
       });
+    settingsLoadedFromPg.add(messId);
     console.log(`[Settings] Successfully persisted settings to PostgreSQL for mess: ${messId}`);
   } catch (error) {
     console.error(`[Settings] Error persisting settings to PostgreSQL for mess ${messId}:`, error);
+    if (throwError) {
+      throw error;
+    }
   }
 }
 
@@ -6095,9 +6328,9 @@ function loadSettingsForMess(targetMessId: string) {
   return loadSettings(targetMessId);
 }
 
-function saveSettings(settings: any) {
+function saveSettings(settings: any, overrideMessId?: string) {
   try {
-    const messId = getActiveMessId();
+    const messId = (overrideMessId || getActiveMessId() || "default").trim();
     
     // Refresh updatedAt and ensure version/createdAt metadata exist on save
     const updatedSettings = {
@@ -6119,6 +6352,27 @@ function saveSettings(settings: any) {
   }
 }
 
+async function saveSettingsAsync(settings: any, overrideMessId?: string): Promise<void> {
+  const messId = (overrideMessId || getActiveMessId() || "default").trim();
+  const updatedSettings = {
+    ...settings,
+    schemaVersion: settings.schemaVersion || CURRENT_SETTINGS_SCHEMA_VERSION,
+    createdAt: settings.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const filename = messId === "default"
+    ? "settings.json"
+    : `settings_${messId}.json`;
+
+  // PG-first: wait for PostgreSQL table + persistent_files writes BEFORE updating RAM cache
+  await saveSettingsToPostgres(messId, updatedSettings, true);
+  await writeAndPersistFileAsync(filename, JSON.stringify(updatedSettings, null, 2));
+
+  settingsCache[messId] = updatedSettings;
+  settingsLoadedFromPg.add(messId);
+}
+
 // ---------------------------------------------------------
 // NEW THREE-LEVEL SPECIFIC ENDPOINTS
 // ---------------------------------------------------------
@@ -6129,7 +6383,7 @@ router.get("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res
 });
 
 // PUT branding (Level 1) - ONLY Ultimate Admin
-router.put("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.put("/settings/branding", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
   if (!isUltimateAdmin) {
     res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify central ERP Branding identity" });
@@ -6138,13 +6392,17 @@ router.put("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res
 
   const oldBranding = loadErpBranding();
   const newBranding = { ...oldBranding, ...req.body };
-  saveErpBranding(newBranding);
+  await saveErpBrandingAsync(newBranding);
 
   // Sync back to merged logo text if modified
-  const currentSettings = loadSettings();
+  const messId = getActiveMessId() || "default";
   if (req.body.logoText !== undefined) {
-    currentSettings.logoText = req.body.logoText;
-    saveSettings(currentSettings);
+    await withMessSettingsLock(messId, async () => {
+      await hydrateLatestSettingsIntoCache(messId);
+      const currentSettings = loadSettings(messId);
+      currentSettings.logoText = req.body.logoText;
+      await saveSettingsAsync(currentSettings, messId);
+    });
   }
 
   logAudit(
@@ -6166,13 +6424,14 @@ router.put("/settings/branding", authMiddleware, (req: AuthenticatedRequest, res
 
 // GET mess appearance (Level 2)
 router.get("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const messId = getActiveMessId();
+  const messId = getActiveMessId() || "default";
   res.json(loadMessAppearance(messId));
 });
 
 // PUT mess appearance (Level 2)
-router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const messId = getActiveMessId();
+router.put("/settings/appearance", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId() || "default";
+  await ensureSettingsLoaded(messId);
   const branding = loadErpBranding();
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
 
@@ -6199,7 +6458,7 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
 
   // Validate granular matrix permission if not Ultimate Admin
   if (!isUltimateAdmin) {
-    const currentSettings = loadSettings();
+    const currentSettings = loadSettings(messId);
     const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
     
     const modifiedTheme = req.body.theme !== undefined;
@@ -6221,7 +6480,6 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
     if (modifiedWidgets && !userPermissions.includes("Widgets")) isPermitted = false;
     if (modifiedTables && !userPermissions.includes("Tables")) isPermitted = false;
 
-    // Enforce permissions only if some permission rules exist for this user, or if standard Admin without rule
     const hasAnyAppearancePermission = userPermissions.some(p => [
       "Theme", "Accent Color", "Background Color", "Card Style", "Glass Effect", 
       "Glow Effect", "Gradient", "Rounded Corners", "Shadow", "Animations", 
@@ -6235,54 +6493,59 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
     }
   }
 
-  const oldAppearance = loadMessAppearance(messId);
-  const newAppearance = { ...oldAppearance, ...req.body };
+  let oldAppearance: any = null;
+  let newAppearance: any = null;
+  let updatedSettingsForBroadcast: any = null;
 
-  // Explicitly ensure isDarkMode and defaultMode stay strictly synchronized
-  if (req.body.defaultMode !== undefined) {
-    newAppearance.defaultMode = req.body.defaultMode;
-    newAppearance.isDarkMode = req.body.defaultMode === "dark";
-  } else if (req.body.isDarkMode !== undefined) {
-    newAppearance.isDarkMode = Boolean(req.body.isDarkMode);
-    newAppearance.defaultMode = req.body.isDarkMode ? "dark" : "light";
-  }
+  await withMessSettingsLock(messId, async () => {
+    await hydrateLatestSettingsIntoCache(messId);
+    oldAppearance = loadMessAppearance(messId);
+    newAppearance = { ...oldAppearance, ...req.body };
 
-  saveMessAppearance(messId, newAppearance);
+    // Explicitly ensure isDarkMode and defaultMode stay strictly synchronized
+    if (req.body.defaultMode !== undefined) {
+      newAppearance.defaultMode = req.body.defaultMode;
+      newAppearance.isDarkMode = req.body.defaultMode === "dark";
+    } else if (req.body.isDarkMode !== undefined) {
+      newAppearance.isDarkMode = Boolean(req.body.isDarkMode);
+      newAppearance.defaultMode = req.body.isDarkMode ? "dark" : "light";
+    }
 
-  // Sync to legacy settings color and fonts if appropriate
-  const currentSettings = loadSettings();
-  if (req.body.theme !== undefined && req.body.theme !== "default-erp") {
-    currentSettings.siteColor = req.body.theme;
-  }
-  if (req.body.accentColor !== undefined) {
-    currentSettings.customColors.accentColor = req.body.accentColor;
-  }
-  if (req.body.fontSize !== undefined) {
-    currentSettings.fontSize = req.body.fontSize;
-  }
-  if (newAppearance.isDarkMode !== undefined) {
-    currentSettings.isDarkMode = newAppearance.isDarkMode;
-  }
-  if (newAppearance.defaultMode !== undefined) {
-    currentSettings.defaultMode = newAppearance.defaultMode;
-  }
-  saveSettings(currentSettings);
+    const currentSettings = loadSettings(messId);
+    if (req.body.theme !== undefined && req.body.theme !== "default-erp") {
+      currentSettings.siteColor = req.body.theme;
+    }
+    if (req.body.accentColor !== undefined) {
+      currentSettings.customColors.accentColor = req.body.accentColor;
+    }
+    if (req.body.fontSize !== undefined) {
+      currentSettings.fontSize = req.body.fontSize;
+    }
+    if (newAppearance.isDarkMode !== undefined) {
+      currentSettings.isDarkMode = newAppearance.isDarkMode;
+    }
+    if (newAppearance.defaultMode !== undefined) {
+      currentSettings.defaultMode = newAppearance.defaultMode;
+    }
 
-  // Always sync default appearance and UI mode to all members of this mess
-  syncAppearanceToAllMembers(messId, newAppearance);
+    await saveSettingsAsync(currentSettings, messId);
+    await saveMessAppearanceAsync(messId, newAppearance);
+    await syncAppearanceToAllMembersAsync(messId, newAppearance);
+    updatedSettingsForBroadcast = currentSettings;
+  });
 
-  // Real-time broadcast to all connected clients
+  // Real-time broadcast scoped strictly to clients in this mess room
   try {
     const io = getIO();
-    if (io) {
-      io.emit("appearance-updated", {
+    if (io && updatedSettingsForBroadcast) {
+      io.to(`mess:${messId}`).emit("appearance-updated", {
         messId,
         appearance: newAppearance,
         isDarkMode: newAppearance.isDarkMode,
         defaultMode: newAppearance.defaultMode,
-        siteColor: currentSettings.siteColor,
-        customColors: currentSettings.customColors,
-        typographySettings: currentSettings.typographySettings
+        siteColor: updatedSettingsForBroadcast.siteColor,
+        customColors: updatedSettingsForBroadcast.customColors,
+        typographySettings: updatedSettingsForBroadcast.typographySettings
       });
     }
   } catch (ioErr) {
@@ -6308,12 +6571,14 @@ router.put("/settings/appearance", authMiddleware, (req: AuthenticatedRequest, r
 
 // GET user personal preferences (Level 3)
 router.get("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  res.json(loadUserPreferences(req.user!.id));
+  const messId = getActiveMessId() || "default";
+  res.json(loadUserPreferences(req.user!.id, messId));
 });
 
 // PUT user personal preferences (Level 3)
-router.put("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const oldPrefs = loadUserPreferences(req.user!.id);
+router.put("/settings/preferences", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId() || "default";
+  const oldPrefs = loadUserPreferences(req.user!.id, messId);
   const newPrefs = { ...oldPrefs, ...req.body };
   if (req.body.useMessDefault === true) {
     delete newPrefs.isDarkMode;
@@ -6321,7 +6586,7 @@ router.put("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, 
   } else if (req.body.isDarkMode !== undefined) {
     newPrefs.useMessDefault = false;
   }
-  saveUserPreferences(req.user!.id, newPrefs);
+  await saveUserPreferencesAsync(req.user!.id, newPrefs, messId);
 
   logAudit(
     req.user!.id,
@@ -6341,7 +6606,7 @@ router.put("/settings/preferences", authMiddleware, (req: AuthenticatedRequest, 
 });
 
 // POST lock/unlock mess appearance (Ultimate Admin exclusive)
-router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/settings/appearance/lock", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
   if (!isUltimateAdmin) {
     res.status(403).json({ error: "Only the Ultimate Admin can lock or unlock appearance features" });
@@ -6357,7 +6622,7 @@ router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequ
   const branding = loadErpBranding();
   if (!branding.locks) branding.locks = {};
   branding.locks[targetMessId] = !!locked;
-  saveErpBranding(branding);
+  await saveErpBrandingAsync(branding);
 
   logAudit(
     req.user!.id,
@@ -6377,8 +6642,10 @@ router.post("/settings/appearance/lock", authMiddleware, (req: AuthenticatedRequ
 });
 
 // Public settings (Unauthenticated) for customizing login page
-router.get("/settings/public", (req: Request, res: Response) => {
-  const s = loadSettings();
+router.get("/settings/public", async (req: Request, res: Response) => {
+  const messId = getActiveMessId() || "default";
+  await ensureSettingsLoaded(messId);
+  const s = loadSettings(messId);
   const pc = loadPlatformControls();
   const branding = loadErpBranding();
   res.json({
@@ -6406,8 +6673,10 @@ router.get("/settings/public", (req: Request, res: Response) => {
   });
 });
 
-router.get("/settings", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const s = loadSettings();
+router.get("/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId() || "default";
+  await ensureSettingsLoaded(messId);
+  const s = loadSettings(messId);
   const pc = loadPlatformControls();
   res.json({
     ...s,
@@ -6416,7 +6685,10 @@ router.get("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   });
 });
 
-router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.put("/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId() || "default";
+  await ensureSettingsLoaded(messId);
+
   const role = req.user!.role;
   const isAuthority = [
     UserRole.ADMIN,
@@ -6426,14 +6698,17 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   ].includes(role);
 
   const userId = req.user!.id;
+  const previousIds: string[] = Array.isArray((req.user as any)?.previousIds) ? (req.user as any).previousIds : [];
   const userNick = (req.user!.nickname || "").trim().toLowerCase();
   const userName = (req.user!.name || "").trim().toLowerCase();
 
-  const db = loadDB();
+  const db = loadDB(messId);
   const isBillCollectorOrDuty = 
+    role === UserRole.PARTIAL_MANAGER ||
     db.bills.some((b: any) => {
       const colId = (b.collectorId || "").trim().toLowerCase();
       return colId === userId.toLowerCase() || 
+             previousIds.some(pid => pid.toLowerCase() === colId) ||
              (userNick && colId === userNick) || 
              (userName && colId === userName) ||
              (colId.includes("কুরাইশ") && (userNick.includes("কুরাইশ") || userName.includes("কুরাইশ"))) ||
@@ -6444,23 +6719,19 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
 
   if (!isAuthority) {
     if (isBillCollectorOrDuty && req.body.customBillOverrides !== undefined) {
-      const currentSettings = loadSettings();
-      const existingOverrides = currentSettings.customBillOverrides || {};
-      const incomingOverrides = req.body.customBillOverrides || {};
-
-      // Merge month-by-month to safely preserve all existing month data
-      const mergedOverrides: Record<string, any> = { ...existingOverrides };
-      for (const [monthKey, monthData] of Object.entries(incomingOverrides)) {
-        if (typeof monthData === "object" && monthData !== null) {
-          mergedOverrides[monthKey] = {
-            ...(mergedOverrides[monthKey] || {}),
-            ...(monthData as any)
-          };
-        }
+      try {
+        await withMessSettingsLock(messId, async () => {
+          await hydrateLatestSettingsIntoCache(messId);
+          const currentSettings = loadSettings(messId);
+          const pgOverrides = await fetchLatestCustomBillOverridesFromPg(messId);
+          const baseOverrides = mergeCustomBillOverrides(currentSettings.customBillOverrides || {}, pgOverrides);
+          currentSettings.customBillOverrides = mergeCustomBillOverrides(baseOverrides, req.body.customBillOverrides);
+          await saveSettingsAsync(currentSettings, messId);
+        });
+      } catch (err) {
+        res.status(500).json({ error: "Failed to persist bill payment statuses to PostgreSQL." });
+        return;
       }
-
-      currentSettings.customBillOverrides = mergedOverrides;
-      saveSettings(currentSettings);
 
       logAudit(
         req.user!.id,
@@ -6477,7 +6748,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
         }
       );
 
-      res.json({ success: true, settings: loadSettings() });
+      res.json({ success: true, settings: loadSettings(messId) });
       return;
     }
 
@@ -6486,40 +6757,16 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   }
 
   const isUltimateAdmin = isPlatformOwner(req.user!.email);
-  const currentSettings = loadSettings();
+  const initialSettingsSnapshot = loadSettings(messId);
 
   // Allow Super User Unlock setting restriction - STRICTLY Ultimate Admin only
-  if (req.body.allowSuperUserUnlock !== undefined) {
-    if (!isUltimateAdmin) {
-      res.status(403).json({ error: "Only the Ultimate Admin can modify cycle unlock permissions" });
-      return;
-    }
-    const oldVal = currentSettings.allowSuperUserUnlock === true;
-    const newVal = req.body.allowSuperUserUnlock === true;
-    currentSettings.allowSuperUserUnlock = newVal;
-    if (oldVal !== newVal) {
-      const statusStr = newVal ? "enabled" : "disabled";
-      const auditMsg = `Ultimate Admin ${statusStr}: Allow Super User to Unlock Locked Cycles.`;
-      logAudit(
-        req.user!.id,
-        req.user!.nickname,
-        "PERMISSION_TOGGLE_CHANGED",
-        String(oldVal),
-        String(newVal),
-        auditMsg,
-        {
-          module: "PERMISSIONS",
-          actionType: "PERMISSION_TOGGLE_CHANGED",
-          description: auditMsg,
-          userRole: req.user!.role
-        }
-      );
-    }
+  if (req.body.allowSuperUserUnlock !== undefined && !isUltimateAdmin) {
+    res.status(403).json({ error: "Only the Ultimate Admin can modify cycle unlock permissions" });
+    return;
   }
 
   // If NOT Ultimate Admin, check explicit appearance/branding permissions:
   if (!isUltimateAdmin) {
-    const messId = getActiveMessId();
     const branding = loadErpBranding();
     
     // Check lock
@@ -6536,27 +6783,21 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       }
     }
 
-    // Check Credit panel updates - STRICTLY Ultimate Admin only
     if (req.body.creditConfig !== undefined) {
       res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify Credit & Branding settings" });
       return;
     }
 
-    // Check Respect & Seniority settings - Normal Admin cannot access, Super User may configure their mess, Ultimate Admin global
-    if (req.body.respectSenioritySettings !== undefined) {
-      if (role === UserRole.ADMIN) {
-        res.status(403).json({ error: "Normal Admins cannot access or modify Respect & Seniority settings" });
-        return;
-      }
+    if (req.body.respectSenioritySettings !== undefined && role === UserRole.ADMIN) {
+      res.status(403).json({ error: "Normal Admins cannot access or modify Respect & Seniority settings" });
+      return;
     }
 
-    // Check branding / logo text updates - STRICTLY Ultimate Admin only for central platform ERP name
     if (req.body.erpName !== undefined) {
       res.status(403).json({ error: "Only the Ultimate Admin (Owner) can modify central ERP platform name" });
       return;
     }
 
-    // Check Mess Identity & Branding permission for Admins
     if (role === UserRole.ADMIN) {
       const isModifyingIdentity = [
         'messName', 'logoText', 'location', 'welcomeMessage', 'announcement', 'logoIcon'
@@ -6568,9 +6809,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       }
     }
 
-    const userPermissions: string[] = currentSettings.appearancePermissions?.[req.user!.id] || [];
-
-    // Check general appearance & branding updates
+    const userPermissions: string[] = initialSettingsSnapshot.appearancePermissions?.[req.user!.id] || [];
     const adminOnlyFields = [
       'siteColor', 'fontSize', 'fontStyle', 'logoText',
       'isDarkMode', 'defaultMode',
@@ -6580,7 +6819,6 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     const modifiesGeneralAppearance = adminOnlyFields.some(field => req.body[field] !== undefined);
 
     if (modifiesGeneralAppearance) {
-      // Check feature permissions
       const modifiedTheme = req.body.siteColor !== undefined || (req.body.messAnimations && req.body.messAnimations.themeTemplate !== undefined);
       const modifiedAccent = req.body.siteColor !== undefined || (req.body.customColors && req.body.customColors.accentColor !== undefined);
       const modifiedBg = req.body.customColors && (req.body.customColors.sidebarBg !== undefined || req.body.customColors.headerBg !== undefined || req.body.customColors.cardBg !== undefined);
@@ -6593,7 +6831,6 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       const modifiedWelcome = req.body.homeCustomization && (req.body.homeCustomization.welcomeTitle !== undefined || req.body.homeCustomization.welcomeSubtitle !== undefined);
 
       let hasRequiredFeature = true;
-
       if (modifiedTheme && !userPermissions.includes("Theme")) hasRequiredFeature = false;
       if (modifiedAccent && !userPermissions.includes("Accent Color")) hasRequiredFeature = false;
       if (modifiedBg && !userPermissions.includes("Background Color")) hasRequiredFeature = false;
@@ -6605,7 +6842,6 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
       if (modifiedBranding && !userPermissions.includes("Branding") && !userPermissions.includes("Logo")) hasRequiredFeature = false;
       if (modifiedWelcome && !userPermissions.includes("Welcome Message")) hasRequiredFeature = false;
 
-      // Allow the default of Role check if no custom permissions configured yet or explicitly bypass if they have no permissions at all
       const hasAnyAppearancePermission = userPermissions.some(p => [
         "Theme", "Accent Color", "Background Color", "Card Style", "Glass Effect", 
         "Glow Effect", "Gradient", "Rounded Corners", "Shadow", "Animations", 
@@ -6613,7 +6849,6 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
         "Tables", "Buttons", "Branding", "Credit", "Logo", "Banner", "Welcome Message"
       ].includes(p));
 
-      // Standard Admins have administrative appearance authority over their assigned mess
       if (role !== UserRole.ADMIN && (hasAnyAppearancePermission || role !== UserRole.SUPERUSER)) {
         if (!hasRequiredFeature) {
           res.status(403).json({ error: "You do not have explicit permissions granted by the Ultimate Admin to perform this appearance action" });
@@ -6623,15 +6858,11 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     }
   }
 
-  // Check appearancePermissions modification - only Ultimate Admin
-  if (req.body.appearancePermissions !== undefined) {
-    if (!isUltimateAdmin) {
-      res.status(403).json({ error: "Only the Ultimate Admin can grant, revoke, or modify appearance permissions" });
-      return;
-    }
+  if (req.body.appearancePermissions !== undefined && !isUltimateAdmin) {
+    res.status(403).json({ error: "Only the Ultimate Admin can grant, revoke, or modify appearance permissions" });
+    return;
   }
 
-  // Dashboard visibility setting check (restricted to Higher Authorities: Admin, Super User, Ultimate Admin)
   if (req.body.dashboardVisibility !== undefined) {
     const isHigherAuthority = role === UserRole.ADMIN || role === UserRole.SUPERUSER || isUltimateAdmin;
     if (!isHigherAuthority) {
@@ -6673,257 +6904,278 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
     roomLabels
   } = req.body;
 
-  if (disableBackgroundAudio !== undefined) {
-    currentSettings.disableBackgroundAudio = disableBackgroundAudio;
-    if (!currentSettings.messAnimations) {
-      currentSettings.messAnimations = {};
-    }
-    currentSettings.messAnimations.disableBackgroundAudio = disableBackgroundAudio;
+  if (auditRetentionDays !== undefined && role !== UserRole.ADMIN && !isUltimateAdmin) {
+    res.status(403).json({ error: "Only the main Admin can configure audit log retention period" });
+    return;
+  }
+  if (messName !== undefined && role !== UserRole.ADMIN && !isUltimateAdmin) {
+    res.status(403).json({ error: "Only the main Admin can modify the mess name" });
+    return;
+  }
+  if (translations !== undefined && role !== UserRole.ADMIN && !isUltimateAdmin) {
+    res.status(403).json({ error: "Only the main Admin can translate or customize sentences" });
+    return;
   }
 
-  if (auditRetentionDays !== undefined) {
-    if (role !== UserRole.ADMIN && !isUltimateAdmin) {
-      res.status(403).json({ error: "Only the main Admin can configure audit log retention period" });
-      return;
-    }
-    currentSettings.auditRetentionDays = Number(auditRetentionDays);
-  }
+  const pendingAudits: Array<{ action: string; oldVal: string; newVal: string; desc: string; meta?: any }> = [];
 
-  if (siteColor !== undefined) currentSettings.siteColor = siteColor;
-  if (fontSize !== undefined) currentSettings.fontSize = fontSize;
-  if (fontStyle !== undefined) currentSettings.fontStyle = fontStyle;
-  if (req.body.isDarkMode !== undefined) currentSettings.isDarkMode = req.body.isDarkMode;
-  if (req.body.defaultMode !== undefined) currentSettings.defaultMode = req.body.defaultMode;
-  if (logoText !== undefined) currentSettings.logoText = logoText;
-  if (req.body.messName !== undefined && req.body.messName.trim()) {
-    const trimmedName = req.body.messName.trim();
-    currentSettings.messName = trimmedName;
-    try {
-      const activeMid = getActiveMessId();
-      const messesData = loadMesses();
-      const target = messesData.messes.find((m: any) => m.id === activeMid);
-      if (target) {
-        target.name = trimmedName;
-        saveMesses(messesData);
-      }
-    } catch (err) {
-      console.error("Failed to sync messes.json with new messName:", err);
-    }
-  }
-  if (req.body.location !== undefined) currentSettings.location = req.body.location.trim();
-  if (req.body.welcomeMessage !== undefined) currentSettings.welcomeMessage = req.body.welcomeMessage;
-  if (req.body.announcement !== undefined) currentSettings.announcement = req.body.announcement;
-  if (req.body.logoIcon !== undefined) currentSettings.logoIcon = req.body.logoIcon;
-  if (dropdownOptions !== undefined) currentSettings.dropdownOptions = dropdownOptions;
-  if (superUserCanEditBills !== undefined) currentSettings.superUserCanEditBills = superUserCanEditBills;
-  if (superUserCanInviteMembers !== undefined) currentSettings.superUserCanInviteMembers = superUserCanInviteMembers;
-  if (superUserCanArchiveMembers !== undefined) currentSettings.superUserCanArchiveMembers = superUserCanArchiveMembers;
-  if (superUserCanEditMeals !== undefined) currentSettings.superUserCanEditMeals = superUserCanEditMeals;
-  if (mealTypes !== undefined && Array.isArray(mealTypes)) {
-    currentSettings.mealTypes = mealTypes;
-    logAudit(
-      req.user!.id,
-      req.user!.nickname || req.user!.name,
-      "UPDATE_MEAL_TYPES",
-      "",
-      JSON.stringify(mealTypes),
-      `Updated meal types configuration for mess (Breakfast toggled: ${mealTypes.find((t: any) => t.id === "breakfast")?.enabled ? "ON" : "OFF"})`,
-      {
-        userRole: role,
-        browser: req.headers["user-agent"] as string,
-        ipAddress: req.ip as string
-      }
-    );
-  }
-  if (roleAnimations !== undefined) currentSettings.roleAnimations = roleAnimations;
-  if (currencySymbol !== undefined) currentSettings.currencySymbol = currencySymbol;
-  if (customColors !== undefined) currentSettings.customColors = { ...currentSettings.customColors, ...customColors };
-  if (messAnimations !== undefined) currentSettings.messAnimations = { ...currentSettings.messAnimations, ...messAnimations };
-  if (dashboardVisibility !== undefined) currentSettings.dashboardVisibility = { ...currentSettings.dashboardVisibility, ...dashboardVisibility };
-  if (dateRestrictions !== undefined) currentSettings.dateRestrictions = { ...currentSettings.dateRestrictions, ...dateRestrictions };
-  if (loginCustomization !== undefined) currentSettings.loginCustomization = { ...currentSettings.loginCustomization, ...loginCustomization };
-  if (homeCustomization !== undefined) currentSettings.homeCustomization = { ...currentSettings.homeCustomization, ...homeCustomization };
-  if (enableManagerRating !== undefined) currentSettings.enableManagerRating = enableManagerRating;
-  if (balanceSheetGlow !== undefined) currentSettings.balanceSheetGlow = balanceSheetGlow;
-  if (adminVisibility !== undefined) currentSettings.adminVisibility = { ...currentSettings.adminVisibility, ...adminVisibility };
-  if (typographySettings !== undefined) currentSettings.typographySettings = { ...currentSettings.typographySettings, ...typographySettings };
-  if (respectSenioritySettings !== undefined) {
-    currentSettings.respectSenioritySettings = {
-      ...(currentSettings.respectSenioritySettings || {}),
-      ...respectSenioritySettings
-    };
-  }
-  if (req.body.memberHistoryWindowMonths !== undefined) {
-    const oldVal = currentSettings.memberHistoryWindowMonths !== undefined ? currentSettings.memberHistoryWindowMonths : 0;
-    const newVal = Math.max(0, parseInt(String(req.body.memberHistoryWindowMonths), 10) || 0);
-    currentSettings.memberHistoryWindowMonths = newVal;
-    if (oldVal !== newVal) {
-      const desc = `Updated member historical cycle visible window to: ${newVal === 0 ? "Unlimited (All Past Months)" : `Last ${newVal} month(s)`}`;
-      logAudit(
-        req.user!.id,
-        req.user!.nickname,
-        "SETTINGS_UPDATED",
-        String(oldVal),
-        String(newVal),
-        desc,
-        {
-          module: "CYCLES",
-          actionType: "HISTORY_WINDOW_UPDATED",
-          description: desc,
-          userRole: req.user!.role
+  try {
+    await withMessSettingsLock(messId, async () => {
+      await hydrateLatestSettingsIntoCache(messId);
+      const currentSettings = loadSettings(messId);
+
+      if (req.body.allowSuperUserUnlock !== undefined) {
+        const oldVal = currentSettings.allowSuperUserUnlock === true;
+        const newVal = req.body.allowSuperUserUnlock === true;
+        currentSettings.allowSuperUserUnlock = newVal;
+        if (oldVal !== newVal) {
+          const statusStr = newVal ? "enabled" : "disabled";
+          const auditMsg = `Ultimate Admin ${statusStr}: Allow Super User to Unlock Locked Cycles.`;
+          pendingAudits.push({
+            action: "PERMISSION_TOGGLE_CHANGED",
+            oldVal: String(oldVal),
+            newVal: String(newVal),
+            desc: auditMsg,
+            meta: {
+              module: "PERMISSIONS",
+              actionType: "PERMISSION_TOGGLE_CHANGED",
+              description: auditMsg,
+              userRole: req.user!.role
+            }
+          });
         }
-      );
-    }
-  }
-
-  if (roomLabels !== undefined) {
-    currentSettings.roomLabels = roomLabels;
-  }
-  if (req.body.customBillOverrides !== undefined) {
-    currentSettings.customBillOverrides = req.body.customBillOverrides;
-  }
-
-  // Write Credit & Branding
-  if (creditConfig !== undefined) {
-    const oldCredit = JSON.stringify(currentSettings.creditConfig);
-    // Sanitize link to prevent javascript: URL injections
-    const sanitizedLink = creditConfig.link ? creditConfig.link.trim() : "";
-    const isSafeLink = !sanitizedLink.toLowerCase().startsWith("javascript:");
-    
-    currentSettings.creditConfig = {
-      ...currentSettings.creditConfig,
-      ...creditConfig,
-      link: isSafeLink ? sanitizedLink : ""
-    };
-    const newCredit = JSON.stringify(currentSettings.creditConfig);
-
-    logAudit(
-      req.user!.id,
-      req.user!.nickname,
-      "UPDATE_CREDIT_CONFIG",
-      oldCredit,
-      newCredit,
-      "Modified Credit & Branding content configuration.",
-      {
-        userRole: role,
-        browser: req.headers["user-agent"] as string,
-        ipAddress: req.ip as string
       }
-    );
-  }
 
-  // Write Appearance Permissions
-  if (appearancePermissions !== undefined) {
-    const oldPerms = JSON.stringify(currentSettings.appearancePermissions);
-    currentSettings.appearancePermissions = appearancePermissions;
-    const newPerms = JSON.stringify(currentSettings.appearancePermissions);
-
-    logAudit(
-      req.user!.id,
-      req.user!.nickname,
-      "UPDATE_APPEARANCE_PERMISSIONS",
-      oldPerms,
-      newPerms,
-      "Modified granular appearance and credit permissions.",
-      {
-        userRole: role,
-        browser: req.headers["user-agent"] as string,
-        ipAddress: req.ip as string
+      if (disableBackgroundAudio !== undefined) {
+        currentSettings.disableBackgroundAudio = disableBackgroundAudio;
+        if (!currentSettings.messAnimations) {
+          currentSettings.messAnimations = {};
+        }
+        currentSettings.messAnimations.disableBackgroundAudio = disableBackgroundAudio;
       }
-    );
-  }
 
-  if (messName !== undefined) {
-    if (role !== UserRole.ADMIN && !isUltimateAdmin) {
-      res.status(403).json({ error: "Only the main Admin can modify the mess name" });
-      return;
-    }
-    currentSettings.messName = messName;
-  }
-
-  if (translations !== undefined) {
-    if (role !== UserRole.ADMIN && !isUltimateAdmin) {
-      res.status(403).json({ error: "Only the main Admin can translate or customize sentences" });
-      return;
-    }
-    currentSettings.translations = translations;
-  }
-
-  if (req.body.ledgerHeaderTitle !== undefined) {
-    currentSettings.ledgerHeaderTitle = req.body.ledgerHeaderTitle;
-  }
-
-  if (req.body.ledgerHeaderSubtitle !== undefined) {
-    currentSettings.ledgerHeaderSubtitle = req.body.ledgerHeaderSubtitle;
-  }
-
-  if (req.body.ledgerFooterText !== undefined) {
-    currentSettings.ledgerFooterText = req.body.ledgerFooterText;
-  }
-
-  if (req.body.auditMode !== undefined) {
-    if (req.body.auditMode) {
-      currentSettings.auditMode = true;
-      currentSettings.auditModeExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-    } else {
-      currentSettings.auditMode = false;
-      currentSettings.auditModeExpiresAt = null;
-    }
-  }
-
-  if (isUltimateAdmin) {
-    if (req.body.systemWebsiteUrl !== undefined || req.body.systemBrandingName !== undefined) {
-      const pc = loadPlatformControls();
-      if (req.body.systemWebsiteUrl !== undefined) {
-        pc.systemWebsiteUrl = String(req.body.systemWebsiteUrl).trim();
+      if (auditRetentionDays !== undefined) {
+        currentSettings.auditRetentionDays = Number(auditRetentionDays);
       }
-      if (req.body.systemBrandingName !== undefined) {
-        pc.systemBrandingName = String(req.body.systemBrandingName).trim();
+
+      if (siteColor !== undefined) currentSettings.siteColor = siteColor;
+      if (fontSize !== undefined) currentSettings.fontSize = fontSize;
+      if (fontStyle !== undefined) currentSettings.fontStyle = fontStyle;
+      if (req.body.isDarkMode !== undefined) currentSettings.isDarkMode = req.body.isDarkMode;
+      if (req.body.defaultMode !== undefined) currentSettings.defaultMode = req.body.defaultMode;
+      if (logoText !== undefined) currentSettings.logoText = logoText;
+      if (req.body.messName !== undefined && String(req.body.messName).trim()) {
+        const trimmedName = String(req.body.messName).trim();
+        currentSettings.messName = trimmedName;
+        try {
+          const messesData = loadMesses();
+          const target = messesData.messes.find((m: any) => m.id === messId);
+          if (target) {
+            target.name = trimmedName;
+            await saveMessesAsync(messesData);
+          }
+        } catch (err) {
+          console.error("Failed to sync messes.json with new messName:", err);
+        }
       }
-      savePlatformControls(pc);
-    }
-  }
-
-  // Ensure isDarkMode and defaultMode stay strictly synchronized
-  if (req.body.defaultMode !== undefined) {
-    currentSettings.defaultMode = req.body.defaultMode;
-    currentSettings.isDarkMode = req.body.defaultMode === "dark";
-  } else if (req.body.isDarkMode !== undefined) {
-    currentSettings.isDarkMode = Boolean(req.body.isDarkMode);
-    currentSettings.defaultMode = req.body.isDarkMode ? "dark" : "light";
-  }
-
-  saveSettings(currentSettings);
-
-  if (req.body.isDarkMode !== undefined || req.body.defaultMode !== undefined) {
-    const messId = getActiveMessId();
-    const app = loadMessAppearance(messId);
-    if (req.body.defaultMode !== undefined) {
-      app.defaultMode = req.body.defaultMode;
-      app.isDarkMode = req.body.defaultMode === "dark";
-    } else if (req.body.isDarkMode !== undefined) {
-      app.isDarkMode = Boolean(req.body.isDarkMode);
-      app.defaultMode = req.body.isDarkMode ? "dark" : "light";
-    }
-    saveMessAppearance(messId, app);
-    syncAppearanceToAllMembers(messId, app);
-
-    try {
-      const io = getIO();
-      if (io) {
-        io.emit("appearance-updated", {
-          messId,
-          appearance: app,
-          isDarkMode: app.isDarkMode,
-          defaultMode: app.defaultMode,
-          siteColor: currentSettings.siteColor,
-          customColors: currentSettings.customColors,
-          typographySettings: currentSettings.typographySettings
+      if (req.body.location !== undefined) currentSettings.location = String(req.body.location).trim();
+      if (req.body.welcomeMessage !== undefined) currentSettings.welcomeMessage = req.body.welcomeMessage;
+      if (req.body.announcement !== undefined) currentSettings.announcement = req.body.announcement;
+      if (req.body.logoIcon !== undefined) currentSettings.logoIcon = req.body.logoIcon;
+      if (dropdownOptions !== undefined) currentSettings.dropdownOptions = dropdownOptions;
+      if (superUserCanEditBills !== undefined) currentSettings.superUserCanEditBills = superUserCanEditBills;
+      if (superUserCanInviteMembers !== undefined) currentSettings.superUserCanInviteMembers = superUserCanInviteMembers;
+      if (superUserCanArchiveMembers !== undefined) currentSettings.superUserCanArchiveMembers = superUserCanArchiveMembers;
+      if (superUserCanEditMeals !== undefined) currentSettings.superUserCanEditMeals = superUserCanEditMeals;
+      if (mealTypes !== undefined && Array.isArray(mealTypes)) {
+        currentSettings.mealTypes = mealTypes;
+        pendingAudits.push({
+          action: "UPDATE_MEAL_TYPES",
+          oldVal: "",
+          newVal: JSON.stringify(mealTypes),
+          desc: `Updated meal types configuration for mess (Breakfast toggled: ${mealTypes.find((t: any) => t.id === "breakfast")?.enabled ? "ON" : "OFF"})`,
+          meta: {
+            userRole: role,
+            browser: req.headers["user-agent"] as string,
+            ipAddress: req.ip as string
+          }
         });
       }
-    } catch (e) {}
+      if (roleAnimations !== undefined) currentSettings.roleAnimations = roleAnimations;
+      if (currencySymbol !== undefined) currentSettings.currencySymbol = currencySymbol;
+      if (customColors !== undefined) currentSettings.customColors = { ...currentSettings.customColors, ...customColors };
+      if (messAnimations !== undefined) currentSettings.messAnimations = { ...currentSettings.messAnimations, ...messAnimations };
+      if (dashboardVisibility !== undefined) currentSettings.dashboardVisibility = { ...currentSettings.dashboardVisibility, ...dashboardVisibility };
+      if (dateRestrictions !== undefined) currentSettings.dateRestrictions = { ...currentSettings.dateRestrictions, ...dateRestrictions };
+      if (loginCustomization !== undefined) currentSettings.loginCustomization = { ...currentSettings.loginCustomization, ...loginCustomization };
+      if (homeCustomization !== undefined) currentSettings.homeCustomization = { ...currentSettings.homeCustomization, ...homeCustomization };
+      if (enableManagerRating !== undefined) currentSettings.enableManagerRating = enableManagerRating;
+      if (balanceSheetGlow !== undefined) currentSettings.balanceSheetGlow = balanceSheetGlow;
+      if (adminVisibility !== undefined) currentSettings.adminVisibility = { ...currentSettings.adminVisibility, ...adminVisibility };
+      if (typographySettings !== undefined) currentSettings.typographySettings = { ...currentSettings.typographySettings, ...typographySettings };
+      if (respectSenioritySettings !== undefined) {
+        currentSettings.respectSenioritySettings = {
+          ...(currentSettings.respectSenioritySettings || {}),
+          ...respectSenioritySettings
+        };
+      }
+      if (req.body.memberHistoryWindowMonths !== undefined) {
+        const oldVal = currentSettings.memberHistoryWindowMonths !== undefined ? currentSettings.memberHistoryWindowMonths : 0;
+        const newVal = Math.max(0, parseInt(String(req.body.memberHistoryWindowMonths), 10) || 0);
+        currentSettings.memberHistoryWindowMonths = newVal;
+        if (oldVal !== newVal) {
+          const desc = `Updated member historical cycle visible window to: ${newVal === 0 ? "Unlimited (All Past Months)" : `Last ${newVal} month(s)`}`;
+          pendingAudits.push({
+            action: "SETTINGS_UPDATED",
+            oldVal: String(oldVal),
+            newVal: String(newVal),
+            desc,
+            meta: {
+              module: "CYCLES",
+              actionType: "HISTORY_WINDOW_UPDATED",
+              description: desc,
+              userRole: req.user!.role
+            }
+          });
+        }
+      }
+
+      if (roomLabels !== undefined) {
+        currentSettings.roomLabels = roomLabels;
+      }
+      if (req.body.customBillOverrides !== undefined) {
+        const pgOverrides = await fetchLatestCustomBillOverridesFromPg(messId);
+        const baseOverrides = mergeCustomBillOverrides(currentSettings.customBillOverrides || {}, pgOverrides);
+        currentSettings.customBillOverrides = mergeCustomBillOverrides(baseOverrides, req.body.customBillOverrides);
+      }
+
+      if (creditConfig !== undefined) {
+        const oldCredit = JSON.stringify(currentSettings.creditConfig);
+        const sanitizedLink = creditConfig.link ? creditConfig.link.trim() : "";
+        const isSafeLink = !sanitizedLink.toLowerCase().startsWith("javascript:");
+        currentSettings.creditConfig = {
+          ...currentSettings.creditConfig,
+          ...creditConfig,
+          link: isSafeLink ? sanitizedLink : ""
+        };
+        pendingAudits.push({
+          action: "UPDATE_CREDIT_CONFIG",
+          oldVal: oldCredit,
+          newVal: JSON.stringify(currentSettings.creditConfig),
+          desc: "Modified Credit & Branding content configuration.",
+          meta: {
+            userRole: role,
+            browser: req.headers["user-agent"] as string,
+            ipAddress: req.ip as string
+          }
+        });
+      }
+
+      if (appearancePermissions !== undefined) {
+        const oldPerms = JSON.stringify(currentSettings.appearancePermissions);
+        currentSettings.appearancePermissions = appearancePermissions;
+        pendingAudits.push({
+          action: "UPDATE_APPEARANCE_PERMISSIONS",
+          oldVal: oldPerms,
+          newVal: JSON.stringify(currentSettings.appearancePermissions),
+          desc: "Modified granular appearance and credit permissions.",
+          meta: {
+            userRole: role,
+            browser: req.headers["user-agent"] as string,
+            ipAddress: req.ip as string
+          }
+        });
+      }
+
+      if (messName !== undefined) {
+        currentSettings.messName = messName;
+      }
+
+      if (translations !== undefined) {
+        currentSettings.translations = translations;
+      }
+
+      if (req.body.ledgerHeaderTitle !== undefined) {
+        currentSettings.ledgerHeaderTitle = req.body.ledgerHeaderTitle;
+      }
+
+      if (req.body.ledgerHeaderSubtitle !== undefined) {
+        currentSettings.ledgerHeaderSubtitle = req.body.ledgerHeaderSubtitle;
+      }
+
+      if (req.body.ledgerFooterText !== undefined) {
+        currentSettings.ledgerFooterText = req.body.ledgerFooterText;
+      }
+
+      if (req.body.auditMode !== undefined) {
+        if (req.body.auditMode) {
+          currentSettings.auditMode = true;
+          currentSettings.auditModeExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+        } else {
+          currentSettings.auditMode = false;
+          currentSettings.auditModeExpiresAt = null;
+        }
+      }
+
+      if (isUltimateAdmin && (req.body.systemWebsiteUrl !== undefined || req.body.systemBrandingName !== undefined)) {
+        const pc = loadPlatformControls();
+        if (req.body.systemWebsiteUrl !== undefined) {
+          pc.systemWebsiteUrl = String(req.body.systemWebsiteUrl).trim();
+        }
+        if (req.body.systemBrandingName !== undefined) {
+          pc.systemBrandingName = String(req.body.systemBrandingName).trim();
+        }
+        await savePlatformControlsAsync(pc);
+      }
+
+      if (req.body.defaultMode !== undefined) {
+        currentSettings.defaultMode = req.body.defaultMode;
+        currentSettings.isDarkMode = req.body.defaultMode === "dark";
+      } else if (req.body.isDarkMode !== undefined) {
+        currentSettings.isDarkMode = Boolean(req.body.isDarkMode);
+        currentSettings.defaultMode = req.body.isDarkMode ? "dark" : "light";
+      }
+
+      await saveSettingsAsync(currentSettings, messId);
+
+      if (req.body.isDarkMode !== undefined || req.body.defaultMode !== undefined) {
+        const app = loadMessAppearance(messId);
+        if (req.body.defaultMode !== undefined) {
+          app.defaultMode = req.body.defaultMode;
+          app.isDarkMode = req.body.defaultMode === "dark";
+        } else if (req.body.isDarkMode !== undefined) {
+          app.isDarkMode = Boolean(req.body.isDarkMode);
+          app.defaultMode = req.body.isDarkMode ? "dark" : "light";
+        }
+        await saveMessAppearanceAsync(messId, app);
+        await syncAppearanceToAllMembersAsync(messId, app);
+
+        try {
+          const io = getIO();
+          if (io) {
+            io.to(`mess:${messId}`).emit("appearance-updated", {
+              messId,
+              appearance: app,
+              isDarkMode: app.isDarkMode,
+              defaultMode: app.defaultMode,
+              siteColor: currentSettings.siteColor,
+              customColors: currentSettings.customColors,
+              typographySettings: currentSettings.typographySettings
+            });
+          }
+        } catch (e) {}
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to persist settings to PostgreSQL. Please try again." });
+    return;
   }
-  const savedSettings = loadSettings();
+
+  for (const a of pendingAudits) {
+    logAudit(req.user!.id, req.user!.nickname, a.action, a.oldVal, a.newVal, a.desc, a.meta);
+  }
+
+  const savedSettings = loadSettings(messId);
   const savedPc = loadPlatformControls();
   res.json({ 
     success: true, 
@@ -6935,7 +7187,7 @@ router.put("/settings", authMiddleware, (req: AuthenticatedRequest, res: Respons
   });
 });
 
-router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/settings/audit-mode", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const isUltimateAdmin = isPlatformOwner(user.email);
   const isAuthority = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER].includes(user.role) || isUltimateAdmin;
@@ -6946,33 +7198,31 @@ router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, 
   }
 
   const { enabled, messId: targetMessId } = req.body;
-  const targetId = targetMessId || getActiveMessId();
+  const targetId = (targetMessId || getActiveMessId() || "default").trim();
   
-  const file = targetId === "default"
-    ? path.join(DB_DIR, "settings.json")
-    : path.join(DB_DIR, `settings_${targetId}.json`);
-
-  let messSettings: any = {};
+  let resultAuditMode = false;
+  let resultAuditExpiresAt: string | null = null;
   try {
-    if (fs.existsSync(file)) {
-      messSettings = JSON.parse(fs.readFileSync(file, "utf-8"));
-    }
-  } catch (e) {
-    console.error("Error reading mess settings:", e);
-  }
+    await withMessSettingsLock(targetId, async () => {
+      await hydrateLatestSettingsIntoCache(targetId);
+      const messSettings = loadSettings(targetId);
 
-  if (enabled) {
-    messSettings.auditMode = true;
-    messSettings.auditModeExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-  } else {
-    messSettings.auditMode = false;
-    messSettings.auditModeExpiresAt = null;
-  }
+      if (enabled) {
+        messSettings.auditMode = true;
+        messSettings.auditModeExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+      } else {
+        messSettings.auditMode = false;
+        messSettings.auditModeExpiresAt = null;
+      }
 
-  const filename = targetId === "default" ? "settings.json" : `settings_${targetId}.json`;
-  writeAndPersistFile(filename, JSON.stringify(messSettings, null, 2));
-  settingsCache[targetId] = messSettings;
-  saveSettingsToPostgres(targetId, messSettings);
+      await saveSettingsAsync(messSettings, targetId);
+      resultAuditMode = messSettings.auditMode;
+      resultAuditExpiresAt = messSettings.auditModeExpiresAt;
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to persist audit mode setting." });
+    return;
+  }
 
   logAudit(
     user.id,
@@ -6991,8 +7241,8 @@ router.post("/settings/audit-mode", authMiddleware, (req: AuthenticatedRequest, 
   res.json({
     success: true,
     messId: targetId,
-    auditMode: messSettings.auditMode,
-    auditModeExpiresAt: messSettings.auditModeExpiresAt
+    auditMode: resultAuditMode,
+    auditModeExpiresAt: resultAuditExpiresAt
   });
 });
 
@@ -7037,16 +7287,16 @@ async function loadElections() {
   return defaultElections;
 }
 
+async function saveElectionsAsync(elections: any, overrideMessId?: string): Promise<void> {
+  const messId = (overrideMessId || getActiveMessId() || "default").trim();
+  const filename = messId === "default"
+    ? "elections.json"
+    : `elections_${messId}.json`;
+  await writeAndPersistFileAsync(filename, JSON.stringify(elections, null, 2));
+}
+
 function saveElections(elections: any) {
-  try {
-    const messId = getActiveMessId();
-    const filename = messId === "default"
-      ? "elections.json"
-      : `elections_${messId}.json`;
-    writeAndPersistFile(filename, JSON.stringify(elections, null, 2));
-  } catch (e) {
-    console.error(e);
-  }
+  saveElectionsAsync(elections).catch((e) => console.error(e));
 }
 
 router.get("/elections", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
@@ -7068,7 +7318,6 @@ router.post("/elections/configure", authMiddleware, async (req: AuthenticatedReq
   if (startDate !== undefined) elections.startDate = startDate;
   if (endDate !== undefined) elections.endDate = endDate;
   if (topic !== undefined) {
-    // If the topic has changed, let's assume it's a new election/poll, so we clear out existing votes!
     if (elections.topic !== topic) {
       elections.votes = {
         SUPERUSER: {},
@@ -7103,7 +7352,7 @@ router.post("/elections/configure", authMiddleware, async (req: AuthenticatedReq
     elections.isFinal = false;
   }
 
-  saveElections(elections);
+  await saveElectionsAsync(elections);
   
   logAudit(
     req.user!.id,
@@ -7170,7 +7419,7 @@ router.post("/elections/vote", authMiddleware, async (req: AuthenticatedRequest,
   }
 
   elections.votes[roleType as "SUPERUSER" | "ASSISTANT_SUPERUSER" | "CUSTOM"][voterId] = candidateId;
-  saveElections(elections);
+  await saveElectionsAsync(elections);
 
   logAudit(
     voterId,
@@ -7197,12 +7446,13 @@ router.post("/elections/resolve", authMiddleware, async (req: AuthenticatedReque
     return;
   }
 
+  const currentMessId = getActiveMessId() || "default";
   const elections = await loadElections();
 
   if (targetRole === "CUSTOM") {
     elections.isFinal = true;
     elections.enabled = false;
-    saveElections(elections);
+    await saveElectionsAsync(elections, currentMessId);
 
     logAudit(
       req.user!.id,
@@ -7217,7 +7467,7 @@ router.post("/elections/resolve", authMiddleware, async (req: AuthenticatedReque
     return;
   }
 
-  const db = loadDB();
+  const db = loadDB(currentMessId);
   const winner = db.members.find(m => m.id === winnerId);
   if (!winner) {
     res.status(404).json({ error: "Elected winner member not found." });
@@ -7225,14 +7475,19 @@ router.post("/elections/resolve", authMiddleware, async (req: AuthenticatedReque
   }
 
   const oldRole = winner.role;
-  winner.role = targetRole;
-  saveDB();
+  const winnerNickname = winner.nickname;
+  await commitMessDB(currentMessId, (draft) => {
+    const w = draft.members.find(m => m.id === winnerId);
+    if (w) {
+      w.role = targetRole;
+    }
+  });
 
   // Reset the votes for this role and mark finalized
   elections.votes[targetRole === UserRole.SUPERUSER ? "SUPERUSER" : "ASSISTANT_SUPERUSER"] = {};
   elections.isFinal = true;
   elections.enabled = false;
-  saveElections(elections);
+  await saveElectionsAsync(elections, currentMessId);
 
   logAudit(
     req.user!.id,
@@ -7240,18 +7495,19 @@ router.post("/elections/resolve", authMiddleware, async (req: AuthenticatedReque
     "RESOLVE_ELECTION",
     oldRole,
     targetRole,
-    `Democratically resolved election: Promoted ${winner.nickname} to ${targetRole}`
+    `Democratically resolved election: Promoted ${winnerNickname} to ${targetRole}`
   );
 
-  res.json({ success: true, elections, message: `Successfully promoted ${winner.nickname} to ${targetRole}!` });
+  res.json({ success: true, elections, message: `Successfully promoted ${winnerNickname} to ${targetRole}!` });
 });
 
 // ---------------------------------------------------------
 // SHIFT MANAGER & PARTIAL MANAGER ENDPOINT
 // ---------------------------------------------------------
-router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/members/shift-manager", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { targetMemberId, isPartial, shiftReason } = req.body;
-  const db = loadDB();
+  const currentMessId = getActiveMessId() || "default";
+  const db = loadDB(currentMessId);
 
   // Validate requester has authorization (Only MANAGER, PARTIAL_MANAGER, ADMIN, SUPERUSER, or ASSISTANT_SUPERUSER can shift managership)
   const allowedRoles = [UserRole.ADMIN, UserRole.SUPERUSER, UserRole.ASSISTANT_SUPERUSER, UserRole.MANAGER, UserRole.PARTIAL_MANAGER];
@@ -7272,10 +7528,12 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
   }
 
   if (isPartial) {
-    // Appoint partial manager (does not remove current manager)
     const oldRole = targetMember.role;
-    targetMember.role = UserRole.PARTIAL_MANAGER;
-    saveDB();
+    const targetNick = targetMember.nickname;
+    await commitMessDB(currentMessId, (draft) => {
+      const m = draft.members.find(item => item.id === targetMemberId);
+      if (m) m.role = UserRole.PARTIAL_MANAGER;
+    });
 
     logAudit(
       req.user!.id,
@@ -7283,30 +7541,39 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
       "APPOINT_PARTIAL_MANAGER",
       oldRole,
       UserRole.PARTIAL_MANAGER,
-      `Appointed ${targetMember.nickname} as Partial Manager. Reason: ${shiftReason}`
+      `Appointed ${targetNick} as Partial Manager. Reason: ${shiftReason}`
     );
 
-    res.json({ success: true, message: `Appointed ${targetMember.nickname} as Partial Manager successfully.` });
+    res.json({ success: true, message: `Appointed ${targetNick} as Partial Manager successfully.` });
     return;
   }
 
   // Full shift: Demote all other managers to standard MEMBER, and promote target to MANAGER
-  const oldManager = db.members.find(m => m.role === UserRole.MANAGER);
-  if (oldManager) {
-    oldManager.role = UserRole.MEMBER;
+  const oldTargetRole = targetMember.role;
+  const targetNick = targetMember.nickname;
+  let demotedNick = "";
+  await commitMessDB(currentMessId, (draft) => {
+    const oldManager = draft.members.find(m => m.role === UserRole.MANAGER);
+    if (oldManager) {
+      oldManager.role = UserRole.MEMBER;
+      demotedNick = oldManager.nickname;
+    }
+    const target = draft.members.find(m => m.id === targetMemberId);
+    if (target) {
+      target.role = UserRole.MANAGER;
+    }
+  });
+
+  if (demotedNick) {
     logAudit(
       req.user!.id,
       req.user!.nickname,
       "DEMOTE_PREVIOUS_MANAGER",
       UserRole.MANAGER,
       UserRole.MEMBER,
-      `Automatic demotion of previous manager ${oldManager.nickname} due to role shift.`
+      `Automatic demotion of previous manager ${demotedNick} due to role shift.`
     );
   }
-
-  const oldTargetRole = targetMember.role;
-  targetMember.role = UserRole.MANAGER;
-  saveDB();
 
   logAudit(
     req.user!.id,
@@ -7314,10 +7581,10 @@ router.post("/members/shift-manager", authMiddleware, (req: AuthenticatedRequest
     "SHIFT_MANAGER",
     oldTargetRole,
     UserRole.MANAGER,
-    `Shifted managership to ${targetMember.nickname}. Date: ${new Date().toISOString().split("T")[0]}. Reason: ${shiftReason}`
+    `Shifted managership to ${targetNick}. Date: ${new Date().toISOString().split("T")[0]}. Reason: ${shiftReason}`
   );
 
-  res.json({ success: true, message: `Successfully shifted active managership to ${targetMember.nickname}.` });
+  res.json({ success: true, message: `Successfully shifted active managership to ${targetNick}.` });
 });
 
 // ---------------------------------------------------------
@@ -7329,6 +7596,10 @@ export function loadAdminControls() {
 
 export function saveAdminControls(data: any) {
   dbSaveAdminControls(data);
+}
+
+export async function saveAdminControlsAsync(data: any): Promise<void> {
+  await dbSaveAdminControlsAsync(data);
 }
 
 function checkAdminPermission(req: AuthenticatedRequest, actionKey: string): boolean {
@@ -7414,7 +7685,7 @@ router.get("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: R
   });
 });
 
-router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/admin/controls", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!isPlatformOwner(req.user!.email) || req.user!.role !== UserRole.ADMIN) {
     res.status(403).json({ error: "Only the ultimate Admin can modify admin controlling panel." });
     return;
@@ -7450,7 +7721,7 @@ router.post("/admin/controls", authMiddleware, (req: AuthenticatedRequest, res: 
     data.controls[email.toLowerCase()] = config;
   }
   
-  saveAdminControls(data);
+  await saveAdminControlsAsync(data);
 
   logAudit(req.user!.id, req.user!.nickname, "CONFIGURE_ADMIN_PERMISSIONS", userId || email, "None", `Ultimate admin updated permissions for admin: ${email || userId}`);
   res.json({ success: true, controls: data.controls });
@@ -7701,9 +7972,8 @@ router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, r
   const data = loadMesses();
   const uniqueCode = generateUniqueMessCode(data.messes);
   data.messes.push({ id, name: name.trim(), messCode: uniqueCode });
-  saveMesses(data);
 
-  // Initialize clean, completely isolated database for this newly created mess
+  // Initialize clean, completely isolated database for this newly created mess (PG-first)
   const cleanData = getCleanMessData(id, {
     id: req.user!.id,
     name: req.user!.name,
@@ -7712,9 +7982,10 @@ router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, r
     phone: req.user!.phone,
     photo: req.user!.photo
   });
-  writeAndPersistFile(`database_backup_${id}.json`, JSON.stringify(cleanData, null, 2));
+  await importBackupToPostgres(cleanData, id);
+  await saveMessesAsync(data);
 
-  // Initialize initial settings file for the newly created mess
+  // Initialize settings in PG + persistent_files for the newly created mess
   const initialSettings = {
     messName: name.trim(),
     logoText: name.trim(),
@@ -7727,7 +7998,7 @@ router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, r
     allowFutureMealPlanner: true,
     allowPreviousMealPlanner: true
   };
-  writeAndPersistFile(`settings_${id}.json`, JSON.stringify(initialSettings, null, 2));
+  await saveSettingsAsync(initialSettings, id);
 
   // If created by a standalone tenant admin or delegated branch admin, auto-add to allowedMesses
   if (!isUltimateAdmin) {
@@ -7735,12 +8006,12 @@ router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, r
       if (userControls) {
         if (!userControls.allowedMesses) userControls.allowedMesses = [];
         if (!userControls.allowedMesses.includes(id)) userControls.allowedMesses.push(id);
-        saveAdminControls(adminControlsData);
+        await saveAdminControlsAsync(adminControlsData);
       }
       if (tenantAdminEntry) {
         if (!tenantAdminEntry.allowedMesses) tenantAdminEntry.allowedMesses = [];
         if (!tenantAdminEntry.allowedMesses.includes(id)) tenantAdminEntry.allowedMesses.push(id);
-        savePlatformControls(platformControls);
+        await savePlatformControlsAsync(platformControls);
       }
     } catch (e) {
       console.error("Failed to auto-assign new mess to admin:", e);
@@ -7753,7 +8024,7 @@ router.post("/admin/messes", authMiddleware, async (req: AuthenticatedRequest, r
   res.json({ success: true, messes: data.messes, newMessId: id, activeMessId: id });
 });
 
-router.put("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.put("/admin/messes/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { name } = req.body;
   if (!name || !name.trim()) {
@@ -7784,25 +8055,24 @@ router.put("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res:
 
   const oldName = mess.name;
   mess.name = name.trim();
-  saveMesses(data);
+  await saveMessesAsync(data);
 
   try {
-    const settingsFile = id === "default" ? "settings.json" : `settings_${id}.json`;
-    const fullPath = path.join(DB_DIR, settingsFile);
-    if (fs.existsSync(fullPath)) {
-      const s = JSON.parse(fs.readFileSync(fullPath, "utf-8"));
+    await withMessSettingsLock(id, async () => {
+      await hydrateLatestSettingsIntoCache(id);
+      const s = loadSettings(id);
       s.messName = name.trim();
-      writeAndPersistFile(settingsFile, JSON.stringify(s, null, 2));
-    }
+      await saveSettingsAsync(s, id);
+    });
   } catch (e) {
-    console.error("Failed to sync settings file with new mess name:", e);
+    console.error("Failed to sync settings with new mess name:", e);
   }
 
   logAudit(req.user!.id, req.user!.nickname, "UPDATE_MESS", oldName, name.trim(), `Renamed mess ID ${id} from "${oldName}" to "${name.trim()}"`);
   res.json({ success: true, messes: data.messes });
 });
 
-router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/admin/messes/active", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
     res.status(403).json({ error: "Only an authorized Admin or Superuser can shift active mess scopes." });
     return;
@@ -7837,12 +8107,15 @@ router.post("/admin/messes/active", authMiddleware, (req: AuthenticatedRequest, 
   if (isUltimateAdmin) {
     setActiveMessId(messId);
   }
-  preloadSettings(messId);
+  await Promise.all([
+    ensureSettingsLoaded(messId),
+    checkAndSyncDbCacheIfNeeded(messId)
+  ]);
   logAudit(req.user!.id, req.user!.nickname, "SWITCH_MESS_SCOPE", "Previous", messId, `Switched current ERP database scope to: ${found.name}`);
   res.json({ success: true, activeMessId: messId, name: found.name });
 });
 
-router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.delete("/admin/messes/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
     res.status(403).json({ error: "Only an authorized Admin can delete messes." });
     return;
@@ -7892,9 +8165,6 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
     return;
   }
 
-  // ACTIVE CYCLE DATA PROTECTION RULE:
-  // If this mess has active members and running cycle data (markets, meals, deposits in current running month),
-  // it cannot be deleted until the active month/cycle completes!
   const protection = checkMessActiveCycleProtection(id);
   if (protection.isProtected) {
     res.status(400).json({ 
@@ -7905,32 +8175,30 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
     return;
   }
 
+  // Remove from registry and reset active references FIRST so no concurrent request resolves this mess
   data.messes.splice(index, 1);
-  saveMesses(data);
+  await saveMessesAsync(data);
+  await resetDeletedMessReferencesAsync(id);
 
-  // If we are deleting the currently active mess, switch back to default
-  const activeMessId = getActiveMessId();
-  if (activeMessId === id) {
-    setActiveMessId("default");
-  }
-  const userActive = getUserActiveMessId(req.user!.id, req.user!.email);
-  if (userActive === id) {
-    setUserActiveMessId(req.user!.id, req.user!.email, "default");
-  }
-
-  // Delete associated files and database records
+  // Purge PostgreSQL SQL rows + persistent_files + RAM caches
   try {
-    deletePersistentFile(`database_backup_${id}.json`);
-    deletePersistentFile(`settings_${id}.json`);
-    deletePersistentFile(`elections_${id}.json`);
-    deletePersistentFile(`market_planner_${id}.json`);
-    deletePersistentFile(`duties_${id}.json`);
-    deletePersistentFile(`audit_logs_${id}.json`);
-    deletePersistentFile(`notifications_${id}.json`);
-    drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, id)).catch(() => {});
-    delete settingsCache[id];
+    await purgeMessFromPostgres(id);
+    await Promise.all([
+      deletePersistentFileAsync(`database_backup_${id}.json`),
+      deletePersistentFileAsync(`settings_${id}.json`),
+      deletePersistentFileAsync(`db_version_${id}.json`),
+      deletePersistentFileAsync(`mess_appearance_${id}.json`),
+      deletePersistentFileAsync(`elections_${id}.json`),
+      deletePersistentFileAsync(`market_planner_${id}.json`),
+      deletePersistentFileAsync(`duties_${id}.json`),
+      deletePersistentFileAsync(`audit_logs_${id}.json`),
+      deletePersistentFileAsync(`notifications_${id}.json`),
+      drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, id))
+    ]);
+    messAppearanceCache.delete(id);
+    invalidateSettingsCache(id);
   } catch (e) {
-    console.error("Failed to delete mess-specific data files:", e);
+    console.error("Failed to purge mess-specific database records:", e);
   }
 
   // Clean from allowedMesses in adminControls
@@ -7944,7 +8212,7 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
       }
     });
     if (adminControlsModified) {
-      saveAdminControls(adminControlsData);
+      await saveAdminControlsAsync(adminControlsData);
     }
   } catch (e) {
     console.error("Failed to clean deleted mess from adminControls:", e);
@@ -7960,24 +8228,24 @@ router.delete("/admin/messes/:id", authMiddleware, (req: AuthenticatedRequest, r
       }
     });
     if (platformModified) {
-      savePlatformControls(platformControls);
+      await savePlatformControlsAsync(platformControls);
     }
   } catch (e) {
     console.error("Failed to clean deleted mess from platformControls:", e);
   }
 
-  logAudit(req.user!.id, req.user!.nickname, "DELETE_MESS", deletedMess.name, "None", `Deleted mess: ${deletedMess.name} (ID: ${id})`);
+  logAudit(req.user!.id, req.user!.nickname, "DELETE_MESS", deletedMess.name, "None", `Deleted mess: ${deletedMess.name} (ID: ${id})`, { messId: "default" });
   res.json({ success: true, messes: data.messes, activeMessId: getActiveMessId() || "default", deletedId: id });
 });
 
-router.post("/admin/messes/cleanup-tests", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/admin/messes/cleanup-tests", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.SUPERUSER) {
     res.status(403).json({ error: "Only an authorized Admin can clean up test messes." });
     return;
   }
 
   const data = loadMesses();
-  const testPatterns = /^(Isolation-Test|Boundary-Mess|Omega Premier|Delta Elite|Test-Mess|Test\s|gg$|r$)/i;
+  const testPatterns = /^(Isolation-Test|Boundary-Mess|Omega Premier|Delta Elite|Conc-Test|Real-Populated-Mess|Brand-New-Empty-Mess|VerifyPG_|Test-Mess|Test\s|gg$|r$)/i;
   const toDelete = data.messes.filter((m: any) => m.id !== "default" && testPatterns.test(m.name));
 
   if (toDelete.length === 0) {
@@ -7985,30 +8253,32 @@ router.post("/admin/messes/cleanup-tests", authMiddleware, (req: AuthenticatedRe
     return;
   }
 
-  const deletedIds: string[] = [];
-  toDelete.forEach((m: any) => {
-    deletedIds.push(m.id);
-    try {
-      deletePersistentFile(`database_backup_${m.id}.json`);
-      deletePersistentFile(`settings_${m.id}.json`);
-      deletePersistentFile(`elections_${m.id}.json`);
-      deletePersistentFile(`market_planner_${m.id}.json`);
-      deletePersistentFile(`duties_${m.id}.json`);
-      deletePersistentFile(`audit_logs_${m.id}.json`);
-      deletePersistentFile(`notifications_${m.id}.json`);
-      drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, m.id)).catch(() => {});
-      delete settingsCache[m.id];
-    } catch (e) {}
-  });
-
+  const deletedIds: string[] = toDelete.map((m: any) => m.id);
   data.messes = data.messes.filter((m: any) => !deletedIds.includes(m.id));
-  saveMesses(data);
+  await saveMessesAsync(data);
 
-  if (deletedIds.includes(getActiveMessId())) {
-    setActiveMessId("default");
+  for (const m of toDelete) {
+    try {
+      await resetDeletedMessReferencesAsync(m.id);
+      await purgeMessFromPostgres(m.id);
+      await Promise.all([
+        deletePersistentFileAsync(`database_backup_${m.id}.json`),
+        deletePersistentFileAsync(`settings_${m.id}.json`),
+        deletePersistentFileAsync(`db_version_${m.id}.json`),
+        deletePersistentFileAsync(`mess_appearance_${m.id}.json`),
+        deletePersistentFileAsync(`elections_${m.id}.json`),
+        deletePersistentFileAsync(`market_planner_${m.id}.json`),
+        deletePersistentFileAsync(`duties_${m.id}.json`),
+        deletePersistentFileAsync(`audit_logs_${m.id}.json`),
+        deletePersistentFileAsync(`notifications_${m.id}.json`),
+        drizzleDb.delete(tenantSettings).where(eq(tenantSettings.messId, m.id))
+      ]);
+      messAppearanceCache.delete(m.id);
+      invalidateSettingsCache(m.id);
+    } catch (e) {}
   }
 
-  logAudit(req.user!.id, req.user!.nickname, "CLEANUP_TEST_MESSES", "None", `${deletedIds.length} messes`, `Cleaned up ${deletedIds.length} automated test messes`);
+  logAudit(req.user!.id, req.user!.nickname, "CLEANUP_TEST_MESSES", "None", `${deletedIds.length} messes`, `Cleaned up ${deletedIds.length} automated test messes`, { messId: "default" });
 
   res.json({
     success: true,
@@ -8130,7 +8400,7 @@ function performSmartMerge(currentDB: any, backupDB: any, backupExportDateStr?: 
   return { merged, cutoffDate };
 }
 
-router.get("/admin/backup/export", authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get("/admin/backup/export", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const isFounder = isPlatformOwnerEmail(req.user?.email);
   const isAdmin = req.user!.role === UserRole.ADMIN || isFounder;
   const isSuper = req.user!.role === UserRole.SUPERUSER;
@@ -8152,6 +8422,8 @@ router.get("/admin/backup/export", authMiddleware, (req: AuthenticatedRequest, r
     const messesList = loadMesses().messes;
     const messesData: Record<string, any> = {};
     for (const m of messesList) {
+      await checkAndSyncDbCacheIfNeeded(m.id, !hasMessCache(m.id), true);
+      await ensureSettingsLoaded(m.id);
       messesData[m.id] = {
         db: loadDB(m.id),
         settings: loadSettingsForMess(m.id)
@@ -8178,8 +8450,10 @@ router.get("/admin/backup/export", authMiddleware, (req: AuthenticatedRequest, r
 
   // 2. Single Mess Export (Admin & Super User for their authorized active mess)
   const messId = getActiveMessId();
+  await checkAndSyncDbCacheIfNeeded(messId, !hasMessCache(messId), true);
+  await ensureSettingsLoaded(messId);
   const db = loadDB(messId);
-  const settings = loadSettings();
+  const settings = loadSettings(messId);
   const safeName = (settings.messName || messId).replace(/[^a-zA-Z0-9_\u0980-\u09FF-]/g, "_");
   const exportedAt = new Date().toISOString();
   const dateStr = exportedAt.split("T")[0];
@@ -8396,29 +8670,23 @@ router.post("/admin/backup/daily/restore/:id", authMiddleware, async (req: Authe
       finalPayload.meals.forEach((m: any) => { (m as any).messId = activeMessId; });
     }
 
-    // 3. Update isolated file & in-memory cache for active mess
-    const backupFilename = activeMessId === "default"
-      ? "database_backup.json"
-      : `database_backup_${activeMessId}.json`;
-    writeAndPersistFile(backupFilename, JSON.stringify(finalPayload, null, 2));
-    setDbCacheForMess(activeMessId, finalPayload);
+    // 3. Direct PG-first sync for this mess (syncCacheToPostgresDirectly updates SQL, snapshot, RAM cache & db_version under lock)
+    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
 
     // 4. Update settings if provided
     if (settingsPayload) {
-      saveSettings(settingsPayload);
-      Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
+      await saveSettingsAsync(settingsPayload, activeMessId);
+      invalidateSettingsCache(activeMessId);
+      await ensureSettingsLoaded(activeMessId);
     }
-
-    // 5. Direct sync to PostgreSQL for this mess
-    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
 
     // 6. Audit Logging
     logAudit(
-      req.user!.id,
-      req.user!.nickname,
-      "RESTORE_STORED_BACKUP",
-      "None",
-      `Restored backup ${backupId} (${backup.backupDate}) for mess ${activeMessId}`,
+      req.user!.id, 
+      req.user!.nickname, 
+      "RESTORE_STORED_BACKUP", 
+      "None", 
+      `Restored backup ${backupId} (${backup.backupDate}) for mess ${activeMessId}`, 
       `Admin restored stored database backup (${backup.filename}). Pre-restore safety snapshot: ${safetyRecord.id}. Records: ${finalPayload.members?.length || 0} members, ${finalPayload.meals?.length || 0} meals, ${finalPayload.deposits?.length || 0} deposits.`
     );
 
@@ -8502,18 +8770,13 @@ router.post("/admin/backup/daily/undo", authMiddleware, async (req: Authenticate
       finalPayload.meals.forEach((m: any) => { (m as any).messId = activeMessId; });
     }
 
-    const backupFilename = activeMessId === "default"
-      ? "database_backup.json"
-      : `database_backup_${activeMessId}.json`;
-    writeAndPersistFile(backupFilename, JSON.stringify(finalPayload, null, 2));
-    setDbCacheForMess(activeMessId, finalPayload);
+    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
 
     if (settingsPayload) {
-      saveSettings(settingsPayload);
-      Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
+      await saveSettingsAsync(settingsPayload, activeMessId);
+      invalidateSettingsCache(activeMessId);
+      await ensureSettingsLoaded(activeMessId);
     }
-
-    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
 
     logAudit(
       req.user!.id,
@@ -8614,7 +8877,8 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
   }
   
   const activeMessId = getActiveMessId();
-  const currentSettings = loadSettings();
+  await ensureSettingsLoaded(activeMessId);
+  const currentSettings = loadSettings(activeMessId);
   const activeMessName = currentSettings.messName || activeMessId;
   
   console.log(`[Backup] Backup restore request received for mess: ${activeMessId}, mode: ${mode}`);
@@ -8638,13 +8902,11 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
           const snapshotFilename = `safety_snapshot_${targetMessId}_${Date.now()}.json`;
           const curDB = loadDB(targetMessId);
           const curSet = loadSettingsForMess(targetMessId);
-          writeAndPersistFile(snapshotFilename, JSON.stringify({ db: curDB, settings: curSet }, null, 2));
-
-          const bName = targetMessId === "default" ? "database_backup.json" : `database_backup_${targetMessId}.json`;
-          writeAndPersistFile(bName, JSON.stringify((pack as any).db, null, 2));
-          
-          setDbCacheForMess(targetMessId, (pack as any).db);
+          await writeAndPersistFileAsync(snapshotFilename, JSON.stringify({ db: curDB, settings: curSet }, null, 2));
           await syncCacheToPostgresDirectly((pack as any).db, targetMessId);
+          if ((pack as any).settings) {
+            await saveSettingsAsync((pack as any).settings, targetMessId);
+          }
         }
       }
       return res.json({ success: true, message: "সম্পূর্ণ সিস্টেমের সমস্ত মেস সফলভাবে রিস্টোর করা হয়েছে।" });
@@ -8658,7 +8920,6 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
   let settingsPayload = importedData.settings;
 
   if (!dbPayload && (importedData.members || importedData.months)) {
-    // Legacy format
     dbPayload = importedData;
   }
 
@@ -8701,20 +8962,18 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
     // 1. Automatic Pre-Restore Safety Snapshot (Rollback Guarantee)
     const currentDB = loadDB(activeMessId);
     const safetySnapshotFilename = `safety_snapshot_${activeMessId}_${Date.now()}.json`;
-    writeAndPersistFile(safetySnapshotFilename, JSON.stringify({ db: currentDB, settings: currentSettings }, null, 2));
+    await writeAndPersistFileAsync(safetySnapshotFilename, JSON.stringify({ db: currentDB, settings: currentSettings }, null, 2));
     console.log(`[Backup] Pre-restore safety snapshot created: ${safetySnapshotFilename}`);
 
     let finalPayload: any;
     let cutoffDateUsed = "";
 
     if (mode === "smart_merge") {
-      // Smart Merge: Preserve all new records created/dated after the backup date!
       const mergeResult = performSmartMerge(currentDB, dbPayload, importedData.exportedAt);
       finalPayload = mergeResult.merged;
       cutoffDateUsed = mergeResult.cutoffDate;
       console.log(`[Backup] Smart Merge applied with cutoff date: ${cutoffDateUsed}. Kept all entries dated > ${cutoffDateUsed}.`);
     } else {
-      // Full Replace: Overwrite state with backup
       finalPayload = dbPayload;
       console.log(`[Backup] Full Replace applied. Complete state restored to backup point.`);
     }
@@ -8727,28 +8986,20 @@ router.post("/admin/backup/import", authMiddleware, async (req: AuthenticatedReq
       finalPayload.meals.forEach((m: any) => { (m as any).messId = activeMessId; });
     }
 
-    // 3. Update isolated file and in-memory cache for this mess ONLY
-    const backupFilename = activeMessId === "default"
-      ? "database_backup.json"
-      : `database_backup_${activeMessId}.json`;
-    writeAndPersistFile(backupFilename, JSON.stringify(finalPayload, null, 2));
-
-    setDbCacheForMess(activeMessId, finalPayload);
+    // 3. Sync directly PG-first specifically for this mess (updates SQL, snapshot, RAM cache & db_version)
+    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
 
     // 4. Update settings if in full_replace or if current has no custom settings
     if (settingsPayload && (mode === "full_replace" || !currentSettings.messName)) {
-      saveSettings(settingsPayload);
+      await saveSettingsAsync(settingsPayload, activeMessId);
+      invalidateSettingsCache(activeMessId);
+      await ensureSettingsLoaded(activeMessId);
     }
 
-    // Clear settings cache
-    Object.keys(settingsCache).forEach(k => delete settingsCache[k]);
     try {
       const { invalidateFounderCache } = await import("./founder.js");
       if (invalidateFounderCache) invalidateFounderCache();
     } catch (e) {}
-
-    // 5. Sync to Postgres specifically for this mess (non-destructive to other messes)
-    await syncCacheToPostgresDirectly(finalPayload, activeMessId);
 
     logAudit(
       req.user!.id, 
@@ -9421,13 +9672,13 @@ router.post("/monetization/cosmetics/equip", authMiddleware, async (req: Authent
       return;
     }
 
-    await drizzleDb.update(members).set(updateObj).where(eq(members.id, userId));
-    const memDb = loadDB();
-    const memIdx = memDb.members.findIndex(m => m.id === userId);
-    if (memIdx !== -1) {
-      Object.assign(memDb.members[memIdx], updateObj);
-      saveDB();
-    }
+    const currentMessId = getActiveMessId() || "default";
+    await commitMessDB(currentMessId, (draft) => {
+      const memIdx = draft.members.findIndex(m => m.id === userId);
+      if (memIdx !== -1) {
+        Object.assign(draft.members[memIdx], updateObj);
+      }
+    });
     logAudit(userId, req.user!.nickname, "EQUIP_COSMETIC", "None", itemId || "none", `Equipped ${category}: ${itemId || "none"}`);
     res.json({ success: true, message: `Successfully equipped ${category}` });
   } catch (err: any) {
@@ -9442,8 +9693,12 @@ router.get("/monetization/unlocks/all", authMiddleware, async (req: Authenticate
     return;
   }
   try {
-    const unlocks = await drizzleDb.select().from(premiumUnlocks);
-    const allMembers = await drizzleDb.select().from(members);
+    const currentMessId = getActiveMessId() || "default";
+    const allMembers = await drizzleDb.select().from(members).where(eq(members.messId, currentMessId));
+    const memberIds = allMembers.map((m: any) => m.id).filter(Boolean);
+    const unlocks = memberIds.length > 0
+      ? await drizzleDb.select().from(premiumUnlocks).where(inArray(premiumUnlocks.memberId, memberIds))
+      : [];
     const globalSettings = getGlobalMonetizationSettings();
     const cosmetics = globalSettings.rewardCenterConfig?.shopCosmetics || [];
 
@@ -9462,7 +9717,7 @@ router.get("/monetization/unlocks/all", authMiddleware, async (req: Authenticate
         unlockMethod: cosmetic?.unlockMethod || "Reward Points",
         currentVersion: cosmetic?.version || "1.0",
         status: cosmetic?.releaseStatus || "Active",
-        messId: getActiveMessId()
+        messId: currentMessId
       };
     });
 
@@ -9562,7 +9817,7 @@ router.post("/monetization/manual-reward", authMiddleware, async (req: Authentic
       return;
     }
 
-    const currentMessId = getActiveMessId();
+    const currentMessId = getActiveMessId() || "default";
     const nowStr = new Date().toISOString();
 
     if (targetType === "member") {
@@ -9585,7 +9840,7 @@ router.post("/monetization/manual-reward", authMiddleware, async (req: Authentic
         });
       }
 
-      const targetRows = await drizzleDb.select().from(members).where(eq(members.id, targetId));
+      const targetRows = await drizzleDb.select().from(members).where(and(eq(members.id, targetId), eq(members.messId, currentMessId)));
       const targetName = targetRows.length > 0 ? targetRows[0].name : "Member";
 
       await drizzleDb.insert(rewardAuditLogs).values({
@@ -9618,7 +9873,7 @@ router.post("/monetization/manual-reward", authMiddleware, async (req: Authentic
           });
         }
 
-        const targetRows = await drizzleDb.select().from(members).where(eq(members.id, mId));
+        const targetRows = await drizzleDb.select().from(members).where(and(eq(members.id, mId), eq(members.messId, currentMessId)));
         const targetName = targetRows.length > 0 ? targetRows[0].name : "Member";
 
         await drizzleDb.insert(rewardAuditLogs).values({
@@ -9635,7 +9890,7 @@ router.post("/monetization/manual-reward", authMiddleware, async (req: Authentic
       }
     } else if (targetType === "mess") {
       const messId = targetId || currentMessId;
-      const allMembers = await drizzleDb.select().from(members);
+      const allMembers = await drizzleDb.select().from(members).where(eq(members.messId, messId));
       for (const m of allMembers) {
         const prevPoints = await getRewardPoints(m.id);
         const newPoints = Math.max(0, prevPoints + points);
@@ -9911,15 +10166,6 @@ router.post("/monetization/backup/import", authMiddleware, async (req: Authentic
   }
 });
 
-// Startup preloading of tenant settings to populate cache
-try {
-  const currentActiveMess = getActiveMessId();
-  preloadSettings("default");
-  if (currentActiveMess !== "default") {
-    preloadSettings(currentActiveMess);
-  }
-} catch (startupErr) {
-  console.error("Error during startup settings preloading:", startupErr);
-}
+// Settings are hydrated lazily after dotenv + PG initialization via ensureSettingsLoaded() and initializeDbCache()
 
 export { router };

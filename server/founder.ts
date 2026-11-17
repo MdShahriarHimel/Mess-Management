@@ -22,7 +22,7 @@ import {
   syncState,
   pendingSyncPromises
 } from "./db.js";
-import { authMiddleware } from "./middleware/authMiddleware.js";
+import { authMiddleware, findMemberAcrossAllMesses } from "./middleware/authMiddleware.js";
 import { loadMesses, loadAdminControls, saveAdminControls } from "./routes.js";
 import { getSecurityDashboardData } from "./securityService.js";
 import { 
@@ -133,8 +133,8 @@ export function loadPlatformControls() {
 }
 
 export async function savePlatformControlsAsync(controls: any): Promise<void> {
-  cachedPlatformControls = controls;
   await writeAndPersistFileAsync("platform_controls.json", JSON.stringify(controls, null, 2));
+  cachedPlatformControls = controls;
 }
 
 export function savePlatformControls(controls: any) {
@@ -241,10 +241,9 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
                   userEmail = payload.email.toLowerCase();
                 } else if (payload.user_id || payload.sub) {
                   const uid = payload.user_id || payload.sub;
-                  const db = loadDB();
-                  const found = db.members?.find((m: any) => m.id === uid);
-                  if (found?.email) {
-                    userEmail = found.email.toLowerCase();
+                  const found = findMemberAcrossAllMesses({ id: uid, previousId: uid });
+                  if (found?.member?.email) {
+                    userEmail = found.member.email.toLowerCase();
                   }
                 }
               }
@@ -254,10 +253,9 @@ export function maintenanceMiddleware(req: any, res: any, next: any) {
           } else {
             // 2. Custom session token: memberId:timestamp:signature
             const memberId = token.split(":")[0];
-            const db = loadDB();
-            const found = db.members?.find((m: any) => m.id === memberId);
-            if (found?.email) {
-              userEmail = found.email.toLowerCase();
+            const found = findMemberAcrossAllMesses({ id: memberId, previousId: memberId });
+            if (found?.member?.email) {
+              userEmail = found.member.email.toLowerCase();
             }
           }
         }
@@ -784,7 +782,7 @@ router.get("/tenant-admins", platformOwnerMiddleware, (req: AuthenticatedRequest
 });
 
 // Authorize new Tenant Admin
-router.post("/tenant-admins", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post("/tenant-admins", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { email, name, phone, maxMesses, notes, initialPassword } = req.body;
   if (!email || typeof email !== "string" || !email.includes("@")) {
     res.status(400).json({ error: "Valid email address is required" });
@@ -817,7 +815,7 @@ router.post("/tenant-admins", platformOwnerMiddleware, (req: AuthenticatedReques
   };
 
   controls.authorizedTenantAdmins.unshift(newAdmin);
-  savePlatformControls(controls);
+  await savePlatformControlsAsync(controls);
 
   // If initial password was supplied, store it into credentials.json
   if (initialPassword && typeof initialPassword === "string" && initialPassword.trim().length >= 6) {
@@ -865,7 +863,7 @@ router.post("/tenant-admins", platformOwnerMiddleware, (req: AuthenticatedReques
 });
 
 // Update Tenant Admin (quota, notes, status, details)
-router.put("/tenant-admins/:id", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.put("/tenant-admins/:id", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { name, phone, maxMesses, notes, status } = req.body;
   const controls = loadPlatformControls();
@@ -889,7 +887,7 @@ router.put("/tenant-admins/:id", platformOwnerMiddleware, (req: AuthenticatedReq
   if (status !== undefined && ["ACTIVE", "SUSPENDED"].includes(status)) target.status = status;
 
   controls.authorizedTenantAdmins[index] = target;
-  savePlatformControls(controls);
+  await savePlatformControlsAsync(controls);
 
   // Sync to admin_controls.json
   try {
@@ -919,7 +917,7 @@ router.put("/tenant-admins/:id", platformOwnerMiddleware, (req: AuthenticatedReq
 });
 
 // Revoke Tenant Admin authorization
-router.delete("/tenant-admins/:id", platformOwnerMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.delete("/tenant-admins/:id", platformOwnerMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const controls = loadPlatformControls();
   if (!controls.authorizedTenantAdmins) controls.authorizedTenantAdmins = [];
@@ -933,7 +931,7 @@ router.delete("/tenant-admins/:id", platformOwnerMiddleware, (req: Authenticated
   }
 
   const removed = controls.authorizedTenantAdmins.splice(index, 1)[0];
-  savePlatformControls(controls);
+  await savePlatformControlsAsync(controls);
 
   // Revoke from admin_controls.json
   try {

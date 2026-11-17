@@ -13,6 +13,7 @@ import firebaseConfig from "../../firebase-applet-config.json";
 import { 
   loadDB, 
   saveDB, 
+  commitMessDB,
   generateUUID, 
   getActiveMessId, 
   setActiveMessId, 
@@ -488,9 +489,13 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
             notes: "Primary Administrator for this mess workspace",
             photo: tokenPicture || memberRef?.photo || null,
           };
-          db.members.push(primaryAdmin);
-          saveDB(targetMessId);
-          member = primaryAdmin;
+          const committedDb = await commitMessDB(targetMessId, (draft) => {
+            const exists = draft.members.some(m => m.id === primaryAdmin.id || (userEmail && m.email?.toLowerCase() === userEmail));
+            if (!exists) {
+              draft.members.push(primaryAdmin);
+            }
+          });
+          member = committedDb.members.find(m => m.id === primaryAdmin.id || (userEmail && m.email?.toLowerCase() === userEmail)) || primaryAdmin;
         } else if (isUltimateAdmin || (allowedMesses && allowedMesses.includes(targetMessId))) {
           const targetStatus = (memberRef?.status && memberRef.status !== MemberStatus.NOT_MEMBER)
             ? memberRef.status 
@@ -516,44 +521,61 @@ export async function authMiddleware(req: AuthenticatedRequest, res: Response, n
             gender: memberRef?.gender || (isUltimateAdmin ? "Male" : null)
           };
 
-          db.members.push(newMember);
-          saveDB(targetMessId);
-          member = newMember;
+          const committedDb = await commitMessDB(targetMessId, (draft) => {
+            const exists = draft.members.some(m => m.id === newMember.id || (userEmail && m.email?.toLowerCase() === userEmail));
+            if (!exists) {
+              draft.members.push(newMember);
+            }
+          });
+          member = committedDb.members.find(m => m.id === newMember.id || (userEmail && m.email?.toLowerCase() === userEmail)) || newMember;
         } else {
           res.status(403).json({ error: "Your email has not been invited to this Mess. Please ask your Admin to invite you." });
           return;
         }
       } else if (tokenUid && member.id !== tokenUid && (token.startsWith("ey") || (member.email && userEmail && member.email.toLowerCase() === userEmail))) {
         const oldId = member.id;
-        if (!(member as any).previousIds) (member as any).previousIds = [];
-        if (!(member as any).previousIds.includes(oldId)) (member as any).previousIds.push(oldId);
-        member.id = tokenUid;
-        if (tokenPicture) member.photo = tokenPicture;
-        
+        const memberEmailLower = (member.email || "").toLowerCase();
+
         const creds = loadCredentials();
-        const existingPass = creds[oldId] || (tokenEmail ? creds[tokenEmail.toLowerCase()] : undefined) || (member.email ? creds[member.email.toLowerCase()] : undefined);
+        const existingPass = creds[oldId] || (tokenEmail ? creds[tokenEmail.toLowerCase()] : undefined) || (memberEmailLower ? creds[memberEmailLower] : undefined);
         if (existingPass) {
           creds[tokenUid] = existingPass;
           if (tokenEmail) creds[tokenEmail.toLowerCase()] = existingPass;
-          if (member.email) creds[member.email.toLowerCase()] = existingPass;
+          if (memberEmailLower) creds[memberEmailLower] = existingPass;
           saveCredentials();
         }
 
-        db.members = db.members.filter(m => m === member || (m.id !== oldId && m.email.toLowerCase() !== member.email.toLowerCase()));
-        saveDB(targetMessId);
+        // First migrate relational FK references strictly within targetMessId in PostgreSQL
+        try {
+          await pool.query("BEGIN");
+          await pool.query("UPDATE bills SET collector_id = $1 WHERE collector_id = $2 AND mess_id = $3", [tokenUid, oldId, targetMessId]);
+          await pool.query("UPDATE duties SET member_id = $1 WHERE member_id = $2 AND mess_id = $3", [tokenUid, oldId, targetMessId]);
+          await pool.query("UPDATE deposits SET member_id = $1 WHERE member_id = $2 AND mess_id = $3", [tokenUid, oldId, targetMessId]);
+          await pool.query("UPDATE market_entries SET member_id = $1 WHERE member_id = $2 AND mess_id = $3", [tokenUid, oldId, targetMessId]);
+          await pool.query("UPDATE meals SET member_id = $1 WHERE member_id = $2 AND mess_id = $3", [tokenUid, oldId, targetMessId]);
+          await pool.query("DELETE FROM members WHERE id = $1 AND mess_id = $2", [oldId, targetMessId]);
+          await pool.query("COMMIT");
+        } catch (e) {
+          await pool.query("ROLLBACK").catch(() => {});
+          console.error("[Link UID] Scoped PG cleanup error:", e);
+        }
 
-        (async () => {
-          try {
-            await pool.query("UPDATE bills SET collector_id = $1 WHERE collector_id = $2", [tokenUid, oldId]);
-            await pool.query("UPDATE duties SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
-            await pool.query("UPDATE deposits SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
-            await pool.query("UPDATE market_entries SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
-            await pool.query("UPDATE meals SET member_id = $1 WHERE member_id = $2", [tokenUid, oldId]);
-            await pool.query("DELETE FROM members WHERE id = $1", [oldId]);
-          } catch (e) {
-            console.error("[Link UID] DB cleanup error:", e);
-          }
-        })();
+        const linkedDb = await commitMessDB(targetMessId, (draft) => {
+          const targetIdx = draft.members.findIndex(m => m.id === oldId || (memberEmailLower && m.email?.toLowerCase() === memberEmailLower));
+          if (targetIdx === -1) return;
+          const targetMember = draft.members[targetIdx];
+          if (!(targetMember as any).previousIds) (targetMember as any).previousIds = [];
+          if (!(targetMember as any).previousIds.includes(oldId)) (targetMember as any).previousIds.push(oldId);
+          targetMember.id = tokenUid;
+          if (tokenPicture) targetMember.photo = tokenPicture;
+          draft.members = draft.members.filter((m, idx) => idx === targetIdx || (m.id !== oldId && (!memberEmailLower || m.email?.toLowerCase() !== memberEmailLower)));
+          draft.bills.forEach(b => { if (b.collectorId === oldId) b.collectorId = tokenUid; });
+          draft.duties.forEach(d => { if (d.memberId === oldId) d.memberId = tokenUid; });
+          draft.deposits.forEach(d => { if (d.memberId === oldId) d.memberId = tokenUid; });
+          draft.marketEntries.forEach(me => { if (me.memberId === oldId) me.memberId = tokenUid; });
+          draft.meals.forEach(ml => { if (ml.memberId === oldId) ml.memberId = tokenUid; });
+        });
+        member = linkedDb.members.find(m => m.id === tokenUid) || member;
       }
 
       const prevIds = (member as any).previousIds && Array.isArray((member as any).previousIds) ? (member as any).previousIds : [];

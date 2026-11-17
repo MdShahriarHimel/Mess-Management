@@ -3,15 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import "dotenv/config";
 import express from "express";
 import http from "http";
 import path from "path";
 import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { router as apiRouter } from "./server/routes.js";
+import { router as apiRouter, ensureSettingsLoaded } from "./server/routes.js";
 import { founderRouter, maintenanceMiddleware } from "./server/founder.js";
-import { initializeDbCache, pendingSyncPromises, checkAndSyncDbCacheIfNeeded, getActiveMessId } from "./server/db.js";
+import { initializeDbCache, pendingSyncPromises, checkAndSyncDbCacheIfNeeded, getActiveMessId, setDbReadyWaiter } from "./server/db.js";
 import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
 import { startDailyBackupCron } from "./server/backupCron.js";
@@ -24,6 +25,7 @@ dotenv.config();
 
 const app = express();
 const httpServer = http.createServer(app);
+setDbReadyWaiter(() => ensureDbInitialized());
 initSocketIO(httpServer);
 const PORT = 3000;
 
@@ -89,15 +91,17 @@ export async function ensureDbInitialized() {
   if (isDbInitialized) return;
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
-      console.log("[Database] Initializing DB Cache in parallel...");
+      console.log("[Database] Initializing DB Cache...");
       const startTime = Date.now();
-      await Promise.all([
-        initializeDbCache(),
-        seedMonetizationModule()
-      ]);
+      await initializeDbCache();
+      await seedMonetizationModule();
+      await ensureSettingsLoaded("default").catch(err => console.warn("[Settings Startup] Preload warning:", err));
       isDbInitialized = true;
       console.log(`[Database] DB Cache initialized successfully in ${Date.now() - startTime}ms.`);
-    })();
+    })().catch((err) => {
+      dbInitPromise = null;
+      throw err;
+    });
   }
   return dbInitPromise;
 }
@@ -158,7 +162,7 @@ app.use(async (req, res, next) => {
   try {
     await ensureDbInitialized();
     next();
-  } catch (err) {
+  } catch (err: any) {
     console.error("Failed to initialize database cache:", err);
     res.status(500).json({ error: "Internal Server Error: Database initialization failed" });
   }

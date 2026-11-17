@@ -73,7 +73,7 @@ export default function FinanceSettlement({
     [activeMessId]
   );
 
-  const [customBillOverrides, setCustomBillOverrides] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
+  const [customBillOverrides, setCustomBillOverrides] = useState<Record<string, Record<string, Record<string, any>>>>(() => {
     try {
       const key = `custom_bill_overrides_${activeMessId || localStorage.getItem("active_mess_id") || "default"}`;
       const saved = localStorage.getItem(key);
@@ -83,19 +83,96 @@ export default function FinanceSettlement({
     }
   });
 
+  const customBillOverridesRef = useRef<Record<string, Record<string, Record<string, any>>>>(customBillOverrides);
+  const pendingOverridePatchRef = useRef<Record<string, Record<string, Record<string, any>>>>({});
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    customBillOverridesRef.current = customBillOverrides;
+  }, [customBillOverrides]);
+
+  const deepMergeBillOverrides = (
+    base: Record<string, any> | undefined | null,
+    overlay: Record<string, any> | undefined | null
+  ): Record<string, Record<string, Record<string, any>>> => {
+    const result: Record<string, Record<string, Record<string, any>>> = {};
+    if (base && typeof base === "object") {
+      for (const [mId, mData] of Object.entries(base)) {
+        if (mData && typeof mData === "object") {
+          result[mId] = {};
+          for (const [memId, memData] of Object.entries(mData as Record<string, any>)) {
+            if (memData && typeof memData === "object") {
+              result[mId][memId] = { ...memData };
+            }
+          }
+        }
+      }
+    }
+    if (overlay && typeof overlay === "object") {
+      for (const [mId, mData] of Object.entries(overlay)) {
+        if (!mData || typeof mData !== "object") continue;
+        if (!result[mId]) result[mId] = {};
+        for (const [memId, memData] of Object.entries(mData as Record<string, any>)) {
+          if (!memData || typeof memData !== "object") continue;
+          const nextMap = { ...(result[mId][memId] || {}) };
+          for (const [k, v] of Object.entries(memData as Record<string, any>)) {
+            if (v === null || v === undefined || v === "") {
+              delete nextMap[k];
+            } else {
+              nextMap[k] = v;
+            }
+          }
+          if (Object.keys(nextMap).length > 0) {
+            result[mId][memId] = nextMap;
+          } else {
+            delete result[mId][memId];
+          }
+        }
+        if (Object.keys(result[mId]).length === 0) {
+          delete result[mId];
+        }
+      }
+    }
+    return result;
+  };
+
   // Re-sync overrides when mess scope switches
   useEffect(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    pendingOverridePatchRef.current = {};
     try {
       const saved = localStorage.getItem(messStorageKey);
-      if (saved) {
-        setCustomBillOverrides(JSON.parse(saved));
-      } else {
-        setCustomBillOverrides({});
-      }
+      const parsed = saved ? JSON.parse(saved) : {};
+      customBillOverridesRef.current = parsed;
+      setCustomBillOverrides(parsed);
     } catch (e) {
+      customBillOverridesRef.current = {};
       setCustomBillOverrides({});
     }
   }, [messStorageKey]);
+
+  // Flush any pending unsaved overrides on unmount so tab switches never drop edits
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      const pending = pendingOverridePatchRef.current;
+      if (pending && Object.keys(pending).length > 0) {
+        pendingOverridePatchRef.current = {};
+        fetch("/api/settings", {
+          method: "PUT",
+          keepalive: true,
+          headers: getAuthHeader(currentUser, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ customBillOverrides: pending })
+        }).catch(() => {});
+      }
+    };
+  }, [currentUser.id]);
 
   // Subtle 'flicker-on-update' animation state for finance overview balance
   const [isBalanceFlickering, setIsBalanceFlickering] = useState(false);
@@ -225,10 +302,13 @@ export default function FinanceSettlement({
             setRoomLabels(data.roomLabels);
           }
           if (data.customBillOverrides && typeof data.customBillOverrides === "object") {
-            setCustomBillOverrides(prev => ({
-              ...data.customBillOverrides,
-              ...prev
-            }));
+            // PostgreSQL customBillOverrides is the authoritative source of truth; overlay only unsaved in-progress edits
+            const merged = deepMergeBillOverrides(data.customBillOverrides, pendingOverridePatchRef.current);
+            customBillOverridesRef.current = merged;
+            setCustomBillOverrides(merged);
+            try {
+              localStorage.setItem(messStorageKey, JSON.stringify(merged));
+            } catch {}
           }
         }
       })
@@ -316,52 +396,125 @@ export default function FinanceSettlement({
     ];
   }, [reportSummary?.bills, activeMembers.length]);
 
-  const handleUpdateOverride = (memberId: string, category: string, value: string) => {
-    const numeric = value === "" ? undefined : Number(value);
-    
-    setCustomBillOverrides((prev) => {
-      const updated = { ...prev };
-      if (!updated[currentMonthId]) {
-        updated[currentMonthId] = {};
-      }
-      if (!updated[currentMonthId][memberId]) {
-        updated[currentMonthId][memberId] = {};
-      }
+  const flushPendingOverrides = async (showFeedback: boolean = false) => {
+    const patch = pendingOverridePatchRef.current;
+    if (!patch || Object.keys(patch).length === 0) return;
 
-      if (numeric === undefined) {
-        delete updated[currentMonthId][memberId][category];
-      } else {
-        updated[currentMonthId][memberId][category] = numeric;
-      }
+    const patchSnapshot = JSON.parse(JSON.stringify(patch));
+    pendingOverridePatchRef.current = {};
 
-      // Cleanup empty objects
-      if (Object.keys(updated[currentMonthId][memberId]).length === 0) {
-        delete updated[currentMonthId][memberId];
-      }
-      if (Object.keys(updated[currentMonthId]).length === 0) {
-        delete updated[currentMonthId];
-      }
-
-      localStorage.setItem(messStorageKey, JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const handleSaveOverrides = async () => {
-    setIsSavingOverrides(true);
-    setOverrideSaveStatus(null);
     try {
       const response = await fetch("/api/settings", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`
-        },
-        body: JSON.stringify({ customBillOverrides })
+        headers: getAuthHeader(currentUser, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ customBillOverrides: patchSnapshot })
       });
 
       if (response.ok) {
-        localStorage.setItem(messStorageKey, JSON.stringify(customBillOverrides));
+        const resData = await response.json().catch(() => null);
+        if (resData?.settings?.customBillOverrides) {
+          const synced = deepMergeBillOverrides(resData.settings.customBillOverrides, pendingOverridePatchRef.current);
+          customBillOverridesRef.current = synced;
+          setCustomBillOverrides(synced);
+          try {
+            localStorage.setItem(messStorageKey, JSON.stringify(synced));
+          } catch {}
+        }
+        if (showFeedback) {
+          setOverrideSaveStatus({ type: 'success', message: 'Individual member bill amounts saved to PostgreSQL!' });
+          setTimeout(() => setOverrideSaveStatus(null), 3000);
+        }
+      } else {
+        pendingOverridePatchRef.current = deepMergeBillOverrides(patchSnapshot, pendingOverridePatchRef.current);
+        const errorData = await response.json().catch(() => ({}));
+        setOverrideSaveStatus({ type: 'error', message: errorData.error || 'Failed to sync individual bill amounts to server.' });
+      }
+    } catch (e) {
+      pendingOverridePatchRef.current = deepMergeBillOverrides(patchSnapshot, pendingOverridePatchRef.current);
+      console.error("Error auto-saving custom bill overrides:", e);
+    }
+  };
+
+  const handleUpdateOverride = (memberId: string, category: string, value: string) => {
+    const trimmed = value.trim();
+    const numeric = trimmed === "" ? undefined : Number(trimmed);
+    if (numeric !== undefined && !Number.isFinite(numeric)) return;
+
+    const prev = customBillOverridesRef.current || {};
+    const updated: Record<string, Record<string, Record<string, any>>> = { ...prev };
+    updated[currentMonthId] = { ...(updated[currentMonthId] || {}) };
+    updated[currentMonthId][memberId] = { ...(updated[currentMonthId][memberId] || {}) };
+
+    if (numeric === undefined) {
+      delete updated[currentMonthId][memberId][category];
+    } else {
+      updated[currentMonthId][memberId][category] = numeric;
+    }
+
+    // Cleanup empty objects in local state
+    if (Object.keys(updated[currentMonthId][memberId]).length === 0) {
+      delete updated[currentMonthId][memberId];
+    }
+    if (Object.keys(updated[currentMonthId]).length === 0) {
+      delete updated[currentMonthId];
+    }
+
+    // Record dirty delta (explicitly use null on clear so PG removes that single key cleanly)
+    const pending = pendingOverridePatchRef.current;
+    if (!pending[currentMonthId]) pending[currentMonthId] = {};
+    if (!pending[currentMonthId][memberId]) pending[currentMonthId][memberId] = {};
+    pending[currentMonthId][memberId][category] = numeric === undefined ? null : numeric;
+
+    customBillOverridesRef.current = updated;
+    try {
+      localStorage.setItem(messStorageKey, JSON.stringify(updated));
+    } catch {}
+    setCustomBillOverrides(updated);
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      flushPendingOverrides(true);
+    }, 900);
+  };
+
+  const handleSaveOverrides = async () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    setIsSavingOverrides(true);
+    setOverrideSaveStatus(null);
+    try {
+      const monthSnapshot = JSON.parse(JSON.stringify(customBillOverridesRef.current[currentMonthId] || {}));
+      const pendingMonth = pendingOverridePatchRef.current[currentMonthId] || {};
+      for (const [memId, memData] of Object.entries(pendingMonth)) {
+        if (!monthSnapshot[memId]) monthSnapshot[memId] = {};
+        for (const [k, v] of Object.entries(memData as Record<string, any>)) {
+          monthSnapshot[memId][k] = v;
+        }
+      }
+      const payloadToSend = { [currentMonthId]: monthSnapshot };
+      delete pendingOverridePatchRef.current[currentMonthId];
+
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: getAuthHeader(currentUser, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ customBillOverrides: payloadToSend })
+      });
+
+      if (response.ok) {
+        const resData = await response.json().catch(() => null);
+        if (resData?.settings?.customBillOverrides) {
+          const synced = deepMergeBillOverrides(resData.settings.customBillOverrides, pendingOverridePatchRef.current);
+          customBillOverridesRef.current = synced;
+          setCustomBillOverrides(synced);
+          localStorage.setItem(messStorageKey, JSON.stringify(synced));
+        } else {
+          localStorage.setItem(messStorageKey, JSON.stringify(customBillOverridesRef.current));
+        }
         setOverrideSaveStatus({ type: 'success', message: 'Individual member bill amounts saved successfully!' });
         setTimeout(() => setOverrideSaveStatus(null), 4000);
       } else {
@@ -524,47 +677,50 @@ export default function FinanceSettlement({
   };
 
   const handleToggleMemberBillStatus = async (memberId: string, colId: string, newStatus: "PAID" | "UNPAID") => {
-    let nextOverrides: any = null;
-    setCustomBillOverrides((prev) => {
-      const updated = { ...prev };
-      if (!updated[currentMonthId]) {
-        updated[currentMonthId] = {};
-      }
-      if (!updated[currentMonthId][memberId]) {
-        updated[currentMonthId][memberId] = {};
-      }
-      const memberMap = { ...updated[currentMonthId][memberId] };
-      memberMap[`${colId}_status`] = newStatus;
+    // Compute synchronously outside React state updater so React 19 deferred updaters never leave payload null
+    const prev = customBillOverridesRef.current || {};
+    const updated: Record<string, Record<string, Record<string, any>>> = { ...prev };
+    updated[currentMonthId] = { ...(updated[currentMonthId] || {}) };
+    const memberMap: Record<string, any> = { ...(updated[currentMonthId][memberId] || {}) };
 
-      const targetCol = billColumns.find(c => c.id === colId);
-      if (targetCol && billColumns.filter(c => c.category === targetCol.category).length === 1) {
-        memberMap[`${targetCol.category}_status`] = newStatus;
-      }
+    const changedKeys: Record<string, any> = {
+      [`${colId}_status`]: newStatus
+    };
+    memberMap[`${colId}_status`] = newStatus;
 
-      updated[currentMonthId] = {
-        ...updated[currentMonthId],
-        [memberId]: memberMap
-      };
+    const targetCol = billColumns.find(c => c.id === colId);
+    if (targetCol && billColumns.filter(c => c.category === targetCol.category).length === 1) {
+      memberMap[`${targetCol.category}_status`] = newStatus;
+      changedKeys[`${targetCol.category}_status`] = newStatus;
+    }
 
-      nextOverrides = updated;
+    updated[currentMonthId][memberId] = memberMap;
+    customBillOverridesRef.current = updated;
+    try {
       localStorage.setItem(messStorageKey, JSON.stringify(updated));
-      return updated;
-    });
+    } catch {}
+    setCustomBillOverrides(updated);
 
-    // Automatically sync updated payment status to server in the background
-    if (nextOverrides) {
-      try {
-        await fetch("/api/settings", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ customBillOverrides: nextOverrides })
-        });
-      } catch (err) {
-        console.error("Error auto-syncing bill payment status:", err);
+    // Sync only the changed keys for this month/member so concurrent edits or other months are never overwritten
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: getAuthHeader(currentUser, { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          customBillOverrides: {
+            [currentMonthId]: {
+              [memberId]: changedKeys
+            }
+          }
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        setOverrideSaveStatus({ type: 'error', message: errorData.error || 'Failed to save payment status to server.' });
       }
+    } catch (err) {
+      console.error("Error auto-syncing bill payment status:", err);
+      setOverrideSaveStatus({ type: 'error', message: 'Network error while saving payment status.' });
     }
   };
 
@@ -3345,9 +3501,15 @@ export default function FinanceSettlement({
                   ) : (
                     reportSummary.bills.map((b: Bill) => {
                       const parsed = parseBillName(b.name);
-                      const collector = members.find(u => u.id === b.collectorId);
+                      const collector = members.find(u =>
+                        u.id === b.collectorId ||
+                        (Array.isArray((u as any).previousIds) && (u as any).previousIds.includes(b.collectorId))
+                      );
                       const isPaid = b.status === BillStatus.PAID;
-                      const canToggle = isManagerOrAdmin || b.collectorId === currentUser.id;
+                      const canToggle =
+                        isManagerOrAdmin ||
+                        b.collectorId === currentUser.id ||
+                        (Array.isArray((currentUser as any).previousIds) && (currentUser as any).previousIds.includes(b.collectorId));
 
                       return (
                         <tr key={b.id} className="hover:bg-cyan-500/5 transition-colors">
