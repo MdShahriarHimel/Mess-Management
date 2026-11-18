@@ -1474,43 +1474,68 @@ router.put("/members/:id", authMiddleware, async (req: AuthenticatedRequest, res
     }
   });
 
-  // If this is the Ultimate Admin or self-profile update, sync their name, nickname, phone, photo across all messes
+  // If this is the Ultimate Admin or self-profile update, sync their name, nickname, phone, photo across all messes ONLY when identity fields actually changed
   if (isSelf || isActorUltimateAdmin) {
-    try {
-      const messesList = loadMesses().messes || [];
-      for (const m of messesList) {
-        if (m.id === currentMessId) continue;
-        try {
-          const otherDb = loadDB(m.id);
-          const hasMatch = otherDb.members?.some(mem =>
-            mem.id === updatedMember.id ||
-            (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
-          );
-          if (hasMatch) {
-            await commitMessDB(m.id, (otherDraft) => {
-              const otherMem = otherDraft.members?.find(mem =>
-                mem.id === updatedMember.id ||
-                (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
-              );
-              if (otherMem) {
-                otherMem.name = updatedMember.name;
-                otherMem.nickname = updatedMember.nickname;
-                otherMem.phone = updatedMember.phone;
-                otherMem.whatsapp = updatedMember.whatsapp;
-                otherMem.photo = updatedMember.photo;
-                otherMem.occupation = updatedMember.occupation;
-                otherMem.bloodGroup = updatedMember.bloodGroup;
-                if (isActorUltimateAdmin && isPlatformOwner(otherMem.email)) {
-                  otherMem.status = MemberStatus.ACTIVE;
-                  otherMem.hideAdminRole = updatedMember.hideAdminRole;
+    const identityChanged =
+      updatedMember.name !== original.name ||
+      updatedMember.nickname !== original.nickname ||
+      updatedMember.phone !== original.phone ||
+      updatedMember.whatsapp !== original.whatsapp ||
+      updatedMember.photo !== original.photo ||
+      updatedMember.occupation !== original.occupation ||
+      updatedMember.bloodGroup !== original.bloodGroup ||
+      (isActorUltimateAdmin && updatedMember.hideAdminRole !== original.hideAdminRole);
+
+    if (identityChanged) {
+      try {
+        const messesList = loadMesses().messes || [];
+        for (const m of messesList) {
+          if (m.id === currentMessId) continue;
+          try {
+            const otherDb = loadDB(m.id);
+            const matchingMem = otherDb.members?.find(mem =>
+              mem.id === updatedMember.id ||
+              (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
+            );
+            const needsOtherMessSync = Boolean(matchingMem && (
+              matchingMem.name !== updatedMember.name ||
+              matchingMem.nickname !== updatedMember.nickname ||
+              matchingMem.phone !== updatedMember.phone ||
+              matchingMem.whatsapp !== updatedMember.whatsapp ||
+              matchingMem.photo !== updatedMember.photo ||
+              matchingMem.occupation !== updatedMember.occupation ||
+              matchingMem.bloodGroup !== updatedMember.bloodGroup ||
+              (isActorUltimateAdmin && isPlatformOwner(matchingMem.email) && (
+                matchingMem.status !== MemberStatus.ACTIVE ||
+                matchingMem.hideAdminRole !== updatedMember.hideAdminRole
+              ))
+            ));
+            if (needsOtherMessSync) {
+              await commitMessDB(m.id, (otherDraft) => {
+                const otherMem = otherDraft.members?.find(mem =>
+                  mem.id === updatedMember.id ||
+                  (mem.email && updatedMember.email && mem.email.toLowerCase() === updatedMember.email.toLowerCase())
+                );
+                if (otherMem) {
+                  otherMem.name = updatedMember.name;
+                  otherMem.nickname = updatedMember.nickname;
+                  otherMem.phone = updatedMember.phone;
+                  otherMem.whatsapp = updatedMember.whatsapp;
+                  otherMem.photo = updatedMember.photo;
+                  otherMem.occupation = updatedMember.occupation;
+                  otherMem.bloodGroup = updatedMember.bloodGroup;
+                  if (isActorUltimateAdmin && isPlatformOwner(otherMem.email)) {
+                    otherMem.status = MemberStatus.ACTIVE;
+                    otherMem.hideAdminRole = updatedMember.hideAdminRole;
+                  }
                 }
-              }
-            });
-          }
-        } catch (e) {}
+              });
+            }
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.error("Cross-mess profile sync error:", e);
       }
-    } catch (e) {
-      console.error("Cross-mess profile sync error:", e);
     }
   }
 
@@ -8655,6 +8680,16 @@ router.post("/admin/backup/daily/restore/:id", authMiddleware, async (req: Authe
       return;
     }
 
+    const isSnapshotEmpty = dbPayload.members.length <= 1 && (dbPayload.meals?.length || 0) === 0 && (dbPayload.deposits?.length || 0) === 0;
+    const liveDbCheck = loadDB(activeMessId);
+    const liveHasData = (liveDbCheck?.members?.length || 0) > 1 || (liveDbCheck?.meals?.length || 0) > 0 || (liveDbCheck?.deposits?.length || 0) > 0;
+    if (isSnapshotEmpty && liveHasData) {
+      res.status(400).json({
+        error: "সুরক্ষা ব্লক: নির্বাচিত ব্যাকআপ ফাইলটি খালি (১ মেম্বার, ০ মিল)। আপনার চলমান মেসের আসল ডাটা রক্ষার্থে এই রিস্টোর ব্লক করা হয়েছে।"
+      });
+      return;
+    }
+
     // 1. Automatic Pre-Restore Safety Snapshot (Rollback / Undo Guarantee)
     const safetyRecord = generateDailyBackupPayload(activeMessId, "PRE_RESTORE_SAFETY");
     safetyRecord.filename = `pre_restore_safety_${activeMessId}_${Date.now()}.json`;
@@ -8755,6 +8790,16 @@ router.post("/admin/backup/daily/undo", authMiddleware, async (req: Authenticate
       return;
     }
 
+    const isSnapshotEmpty = (dbPayload.members?.length || 0) <= 1 && (dbPayload.meals?.length || 0) === 0 && (dbPayload.deposits?.length || 0) === 0;
+    const liveDbCheck = loadDB(activeMessId);
+    const liveHasData = (liveDbCheck?.members?.length || 0) > 1 || (liveDbCheck?.meals?.length || 0) > 0 || (liveDbCheck?.deposits?.length || 0) > 0;
+    if (isSnapshotEmpty && liveHasData) {
+      res.status(400).json({
+        error: "সুরক্ষা ব্লক: এই সেফটি স্ন্যাপশটটি খালি (১ মেম্বার, ০ মিল)। এটি আনডু/রোলব্যাক করলে মেসের বর্তমান ডাটা মুছে যাবে তাই ব্লক করা হয়েছে।"
+      });
+      return;
+    }
+
     // Toggle: if undoing a PRE_RESTORE_SAFETY, save current state as PRE_UNDO_SAFETY so user can REDO
     const isUndoing = safetySnapshot.trigger_type === "PRE_RESTORE_SAFETY";
     const nextTriggerType = isUndoing ? "PRE_UNDO_SAFETY" : "PRE_RESTORE_SAFETY";
@@ -8835,6 +8880,17 @@ router.get("/admin/backup/daily/safety-status", authMiddleware, async (req: Auth
     }
 
     const row = resSnapshot.rows[0];
+    const parsedCounts = typeof row.counts === "string" ? JSON.parse(row.counts) : row.counts;
+    const isEmptySafetySnapshot =
+      Number(parsedCounts?.members ?? 0) <= 1 &&
+      Number(parsedCounts?.meals ?? 0) === 0 &&
+      Number(parsedCounts?.deposits ?? 0) === 0;
+
+    if (isEmptySafetySnapshot) {
+      res.json({ success: true, hasSafetySnapshot: false, latestSnapshot: null });
+      return;
+    }
+
     res.json({
       success: true,
       hasSafetySnapshot: true,
@@ -8846,7 +8902,7 @@ router.get("/admin/backup/daily/safety-status", authMiddleware, async (req: Auth
         createdAt: row.created_at,
         filename: row.filename,
         triggerType: row.trigger_type,
-        counts: typeof row.counts === "string" ? JSON.parse(row.counts) : row.counts,
+        counts: parsedCounts,
         fileSize: row.file_size
       }
     });

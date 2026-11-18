@@ -805,6 +805,7 @@ export async function refreshDbCache(targetMessId: string = "default") {
   };
 
   dbCaches.set(messId, refreshedCache);
+  seedSyncHashesFromCache(messId, refreshedCache);
   if (messId === "default") {
     dbCache = refreshedCache;
     masterPostgresCache = refreshedCache;
@@ -1235,6 +1236,7 @@ export async function initializeDbCache() {
         deletedMembers: parsedDefaultBackup?.deletedMembers || []
       };
       dbCaches.set("default", dbCache);
+      seedSyncHashesFromCache("default", dbCache);
       isPostgresInitialized = true;
       masterPostgresCache = dbCache;
       console.log("[TRACE E - initializeDbCache()] Loaded members from PostgreSQL. Total:", membersList.length, "Sample members:", membersList.slice(0, 3).map(m => ({ id: m.id, nickname: m.nickname, glow: m.glow, personalTheme: m.personalTheme, profileBackground: m.profileBackground })));
@@ -1281,6 +1283,238 @@ async function reconcileDeletedRowsTx(tx: any, table: any, messId: string, keepI
     await tx.delete(table).where(and(eq(table.messId, messId), inArray(table.id, chunk)));
   }
   clearTableSyncHashes(messId, tableName, toDelete);
+}
+
+const mapMemberForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  name: item.name,
+  nickname: item.nickname,
+  email: item.email,
+  phone: item.phone,
+  whatsapp: item.whatsapp,
+  bloodGroup: item.bloodGroup,
+  occupation: item.occupation,
+  joiningDate: item.joiningDate,
+  leavingDate: item.leavingDate || null,
+  role: item.role,
+  status: item.status,
+  notes: item.notes,
+  photo: item.photo || null,
+  assignedTask: item.assignedTask || null,
+  glow: item.glow || false,
+  glowStyle: item.glowStyle || null,
+  animation: item.animation || null,
+  splitProfile: item.splitProfile || false,
+  memberGlow: item.memberGlow || false,
+  memberGlowStyle: item.memberGlowStyle || null,
+  memberAnimation: item.memberAnimation || null,
+  gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
+  hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
+  glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
+  hideAdminRole: item.hideAdminRole ?? false,
+  hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
+  personalTheme: item.personalTheme || null,
+  personalFont: item.personalFont || null,
+  avatarFrame: item.avatarFrame || null,
+  badge: item.badge || null,
+  profileBackground: item.profileBackground || null,
+  dashboardLayout: item.dashboardLayout || null,
+  profileDecoration: item.profileDecoration || null,
+  dashboardStyle: item.dashboardStyle || null,
+  backgroundEffect: item.backgroundEffect || null,
+  institution: item.institution || null,
+  department: item.department || null,
+  educationType: item.educationType || null,
+  admissionSession: item.admissionSession || null,
+  seniorityYear: item.seniorityYear || null,
+  gender: item.gender || null,
+  manualTitle: item.manualTitle || null,
+  roomLabelId: item.roomLabelId || null,
+  roomLabel: item.roomLabel || null,
+  roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
+});
+
+const mapMonthForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  name: item.name,
+  startDate: item.startDate,
+  endDate: item.endDate,
+  isLocked: item.isLocked,
+  manuallyUnlocked: item.manuallyUnlocked ?? false,
+  gracePeriodEnabled: item.gracePeriodEnabled,
+});
+
+const mapFoodMenuForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  date: item.date,
+  lunchVegetable: item.lunchVegetable,
+  lunchMain: item.lunchMain,
+  dinnerVegetable: item.dinnerVegetable,
+  dinnerMain: item.dinnerMain,
+});
+
+const mapMealForPg = (item: any, messId: string, mId: string) => ({
+  id: mId,
+  messId,
+  monthId: item.monthId,
+  memberId: item.memberId,
+  date: item.date,
+  lunch: Number(item.lunch) || 0,
+  dinner: Number(item.dinner) || 0,
+  breakfast: Number(item.breakfast) || 0,
+});
+
+const mapMarketEntryForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  memberId: item.memberId,
+  date: item.date,
+  amount: item.amount,
+  receiptUrl: item.receiptUrl || null,
+  description: item.description,
+  isExtra: item.isExtra,
+  quantity: item.quantity || "",
+  coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
+});
+
+const mapDepositForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  memberId: item.memberId,
+  amount: item.amount,
+  date: item.date,
+  enteredBy: item.enteredBy,
+});
+
+const mapBillForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  name: item.name,
+  amount: item.amount,
+  collectorId: item.collectorId,
+  status: item.status,
+});
+
+const mapDutyForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  memberId: item.memberId,
+  name: item.name,
+  task: item.task,
+});
+
+const mapManagerHoldingForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  memberId: item.memberId,
+  amount: item.amount,
+  marketSpent: item.marketSpent || 0,
+  description: item.description || "",
+});
+
+const mapManagerRatingForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  rating: item.rating,
+  raterId: item.raterId,
+  date: item.date,
+});
+
+const mapNoticeForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  title: item.title,
+  content: item.content,
+  pinned: item.pinned,
+  archived: item.archived,
+  authorId: item.authorId,
+  authorName: item.authorName,
+  date: item.date,
+});
+
+const mapAuditLogForPg = (item: any, messId: string) => ({
+  id: item.id,
+  userId: item.userId,
+  userName: item.userName,
+  action: item.action,
+  oldValue: item.oldValue,
+  newValue: item.newValue,
+  timestamp: item.timestamp,
+  reason: item.reason,
+  date: item.date || null,
+  time: item.time || null,
+  userRole: item.userRole || null,
+  superUserId: item.superUserId || null,
+  messId,
+  module: item.module || null,
+  actionType: item.actionType || null,
+  description: item.description || null,
+  browser: item.browser || null,
+  ipAddress: item.ipAddress || null,
+});
+
+const mapMealRequestForPg = (item: any, messId: string) => ({
+  id: item.id,
+  messId,
+  monthId: item.monthId,
+  date: item.date,
+  requesterId: item.requesterId,
+  requesterName: item.requesterName,
+  mealsData: item.mealsData,
+  status: item.status,
+  timestamp: item.timestamp,
+});
+
+function seedSyncHashesFromCache(messId: string, cache: DatabaseSchema) {
+  for (const item of cache.members || []) {
+    if (item?.id) setItemHash(messId, 'members', item.id, mapMemberForPg(item, messId));
+  }
+  for (const item of cache.months || []) {
+    if (item?.id) setItemHash(messId, 'months', item.id, mapMonthForPg(item, messId));
+  }
+  for (const item of cache.foodMenus || []) {
+    if (item?.id) setItemHash(messId, 'foodMenus', item.id, mapFoodMenuForPg(item, messId));
+  }
+  for (const item of cache.meals || []) {
+    if (item?.id) setItemHash(messId, 'meals', item.id, mapMealForPg(item, messId, item.id));
+  }
+  for (const item of cache.marketEntries || []) {
+    if (item?.id) setItemHash(messId, 'marketEntries', item.id, mapMarketEntryForPg(item, messId));
+  }
+  for (const item of cache.deposits || []) {
+    if (item?.id) setItemHash(messId, 'deposits', item.id, mapDepositForPg(item, messId));
+  }
+  for (const item of cache.bills || []) {
+    if (item?.id) setItemHash(messId, 'bills', item.id, mapBillForPg(item, messId));
+  }
+  for (const item of cache.duties || []) {
+    if (item?.id) setItemHash(messId, 'duties', item.id, mapDutyForPg(item, messId));
+  }
+  for (const item of cache.managerHoldings || []) {
+    if (item?.id) setItemHash(messId, 'managerHoldings', item.id, mapManagerHoldingForPg(item, messId));
+  }
+  for (const item of cache.managerRatings || []) {
+    if (item?.id) setItemHash(messId, 'managerRatings', item.id, mapManagerRatingForPg(item, messId));
+  }
+  for (const item of cache.notices || []) {
+    if (item?.id) setItemHash(messId, 'notices', item.id, mapNoticeForPg(item, messId));
+  }
+  for (const item of cache.auditLogs || []) {
+    if (item?.id) setItemHash(messId, 'auditLogs', item.id, mapAuditLogForPg(item, messId));
+  }
+  for (const item of cache.mealRequests || []) {
+    if (item?.id) setItemHash(messId, 'mealRequests', item.id, mapMealRequestForPg(item, messId));
+  }
 }
 
 async function doActualSync(cache: DatabaseSchema, targetMessId: string = "default") {
@@ -1347,55 +1581,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.members) {
         if (!item?.id) continue;
         memberKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          name: item.name,
-          nickname: item.nickname,
-          email: item.email,
-          phone: item.phone,
-          whatsapp: item.whatsapp,
-          bloodGroup: item.bloodGroup,
-          occupation: item.occupation,
-          joiningDate: item.joiningDate,
-          leavingDate: item.leavingDate || null,
-          role: item.role,
-          status: item.status,
-          notes: item.notes,
-          photo: item.photo || null,
-          assignedTask: item.assignedTask || null,
-          glow: item.glow || false,
-          glowStyle: item.glowStyle || null,
-          animation: item.animation || null,
-          splitProfile: item.splitProfile || false,
-          memberGlow: item.memberGlow || false,
-          memberGlowStyle: item.memberGlowStyle || null,
-          memberAnimation: item.memberAnimation || null,
-          gifEnabledByAdmin: item.gifEnabledByAdmin !== false,
-          hideContactInfoByAdmin: item.hideContactInfoByAdmin ?? false,
-          glowEnabledByAdmin: item.glowEnabledByAdmin ?? false,
-          hideAdminRole: item.hideAdminRole ?? false,
-          hideCardFromDirectoryByAdmin: item.hideCardFromDirectoryByAdmin ?? false,
-          personalTheme: item.personalTheme || null,
-          personalFont: item.personalFont || null,
-          avatarFrame: item.avatarFrame || null,
-          badge: item.badge || null,
-          profileBackground: item.profileBackground || null,
-          dashboardLayout: item.dashboardLayout || null,
-          profileDecoration: item.profileDecoration || null,
-          dashboardStyle: item.dashboardStyle || null,
-          backgroundEffect: item.backgroundEffect || null,
-          institution: item.institution || null,
-          department: item.department || null,
-          educationType: item.educationType || null,
-          admissionSession: item.admissionSession || null,
-          seniorityYear: item.seniorityYear || null,
-          gender: item.gender || null,
-          manualTitle: item.manualTitle || null,
-          roomLabelId: item.roomLabelId || null,
-          roomLabel: item.roomLabel || null,
-          roomRent: item.roomRent !== undefined && item.roomRent !== null ? Number(item.roomRent) : null,
-        };
+        const mapped = mapMemberForPg(item, messId);
         if (isItemModified(messId, 'members', item.id, mapped)) {
           await tx.insert(membersTable).values(mapped).onConflictDoUpdate({
             target: [membersTable.messId, membersTable.id],
@@ -1411,16 +1597,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.months || []) {
         if (!item?.id) continue;
         monthKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          name: item.name,
-          startDate: item.startDate,
-          endDate: item.endDate,
-          isLocked: item.isLocked,
-          manuallyUnlocked: item.manuallyUnlocked ?? false,
-          gracePeriodEnabled: item.gracePeriodEnabled,
-        };
+        const mapped = mapMonthForPg(item, messId);
         if (isItemModified(messId, 'months', item.id, mapped)) {
           await tx.insert(monthsTable).values(mapped).onConflictDoUpdate({
             target: [monthsTable.messId, monthsTable.id],
@@ -1436,16 +1613,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.foodMenus || []) {
         if (!item?.id) continue;
         foodMenuKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          date: item.date,
-          lunchVegetable: item.lunchVegetable,
-          lunchMain: item.lunchMain,
-          dinnerVegetable: item.dinnerVegetable,
-          dinnerMain: item.dinnerMain,
-        };
+        const mapped = mapFoodMenuForPg(item, messId);
         if (isItemModified(messId, 'foodMenus', item.id, mapped)) {
           await tx.insert(foodMenusTable).values(mapped).onConflictDoUpdate({
             target: [foodMenusTable.messId, foodMenusTable.id],
@@ -1463,16 +1631,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
         const mId = item.id || generateUUID();
         item.id = mId;
         mealKeepIds.add(mId);
-        const mapped = {
-          id: mId,
-          messId,
-          monthId: item.monthId,
-          memberId: item.memberId,
-          date: item.date,
-          lunch: Number(item.lunch) || 0,
-          dinner: Number(item.dinner) || 0,
-          breakfast: Number(item.breakfast) || 0,
-        };
+        const mapped = mapMealForPg(item, messId, mId);
         if (isItemModified(messId, 'meals', mId, mapped)) {
           modifiedMeals.push(mapped);
           stagedHashes.push({ table: 'meals', id: mId, mapped });
@@ -1500,19 +1659,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.marketEntries) {
         if (!item?.id) continue;
         marketKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          memberId: item.memberId,
-          date: item.date,
-          amount: item.amount,
-          receiptUrl: item.receiptUrl || null,
-          description: item.description,
-          isExtra: item.isExtra,
-          quantity: item.quantity || "",
-          coveredDates: item.coveredDates ? JSON.stringify(item.coveredDates) : null,
-        };
+        const mapped = mapMarketEntryForPg(item, messId);
         if (isItemModified(messId, 'marketEntries', item.id, mapped)) {
           await tx.insert(marketEntriesTable).values(mapped).onConflictDoUpdate({
             target: [marketEntriesTable.messId, marketEntriesTable.id],
@@ -1528,15 +1675,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.deposits) {
         if (!item?.id) continue;
         depositKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          memberId: item.memberId,
-          amount: item.amount,
-          date: item.date,
-          enteredBy: item.enteredBy,
-        };
+        const mapped = mapDepositForPg(item, messId);
         if (isItemModified(messId, 'deposits', item.id, mapped)) {
           await tx.insert(depositsTable).values(mapped).onConflictDoUpdate({
             target: [depositsTable.messId, depositsTable.id],
@@ -1552,15 +1691,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.bills || []) {
         if (!item?.id) continue;
         billKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          name: item.name,
-          amount: item.amount,
-          collectorId: item.collectorId,
-          status: item.status,
-        };
+        const mapped = mapBillForPg(item, messId);
         if (isItemModified(messId, 'bills', item.id, mapped)) {
           await tx.insert(billsTable).values(mapped).onConflictDoUpdate({
             target: [billsTable.messId, billsTable.id],
@@ -1576,14 +1707,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.duties) {
         if (!item?.id) continue;
         dutyKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          memberId: item.memberId,
-          name: item.name,
-          task: item.task,
-        };
+        const mapped = mapDutyForPg(item, messId);
         if (isItemModified(messId, 'duties', item.id, mapped)) {
           await tx.insert(dutiesTable).values(mapped).onConflictDoUpdate({
             target: [dutiesTable.messId, dutiesTable.id],
@@ -1599,15 +1723,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.managerHoldings || []) {
         if (!item?.id) continue;
         holdingKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          memberId: item.memberId,
-          amount: item.amount,
-          marketSpent: item.marketSpent || 0,
-          description: item.description || "",
-        };
+        const mapped = mapManagerHoldingForPg(item, messId);
         if (isItemModified(messId, 'managerHoldings', item.id, mapped)) {
           await tx.insert(managerHoldingsTable).values(mapped).onConflictDoUpdate({
             target: [managerHoldingsTable.messId, managerHoldingsTable.id],
@@ -1623,14 +1739,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.managerRatings || []) {
         if (!item?.id) continue;
         ratingKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          rating: item.rating,
-          raterId: item.raterId,
-          date: item.date,
-        };
+        const mapped = mapManagerRatingForPg(item, messId);
         if (isItemModified(messId, 'managerRatings', item.id, mapped)) {
           await tx.insert(managerRatingsTable).values(mapped).onConflictDoUpdate({
             target: [managerRatingsTable.messId, managerRatingsTable.id],
@@ -1646,17 +1755,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.notices || []) {
         if (!item?.id) continue;
         noticeKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          title: item.title,
-          content: item.content,
-          pinned: item.pinned,
-          archived: item.archived,
-          authorId: item.authorId,
-          authorName: item.authorName,
-          date: item.date,
-        };
+        const mapped = mapNoticeForPg(item, messId);
         if (isItemModified(messId, 'notices', item.id, mapped)) {
           await tx.insert(noticesTable).values(mapped).onConflictDoUpdate({
             target: [noticesTable.messId, noticesTable.id],
@@ -1673,26 +1772,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.auditLogs || []) {
         if (!item?.id) continue;
         auditKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          userId: item.userId,
-          userName: item.userName,
-          action: item.action,
-          oldValue: item.oldValue,
-          newValue: item.newValue,
-          timestamp: item.timestamp,
-          reason: item.reason,
-          date: item.date || null,
-          time: item.time || null,
-          userRole: item.userRole || null,
-          superUserId: item.superUserId || null,
-          messId,
-          module: item.module || null,
-          actionType: item.actionType || null,
-          description: item.description || null,
-          browser: item.browser || null,
-          ipAddress: item.ipAddress || null,
-        };
+        const mapped = mapAuditLogForPg(item, messId);
         if (isItemModified(messId, 'auditLogs', item.id, mapped)) {
           modifiedAuditLogs.push(mapped);
           stagedHashes.push({ table: 'auditLogs', id: item.id, mapped });
@@ -1739,17 +1819,7 @@ async function doActualSync(cache: DatabaseSchema, targetMessId: string = "defau
       for (const item of cache.mealRequests || []) {
         if (!item?.id) continue;
         reqKeepIds.add(item.id);
-        const mapped = {
-          id: item.id,
-          messId,
-          monthId: item.monthId,
-          date: item.date,
-          requesterId: item.requesterId,
-          requesterName: item.requesterName,
-          mealsData: item.mealsData,
-          status: item.status,
-          timestamp: item.timestamp,
-        };
+        const mapped = mapMealRequestForPg(item, messId);
         if (isItemModified(messId, 'mealRequests', item.id, mapped)) {
           await tx.insert(mealRequestsTable).values(mapped).onConflictDoUpdate({
             target: [mealRequestsTable.messId, mealRequestsTable.id],

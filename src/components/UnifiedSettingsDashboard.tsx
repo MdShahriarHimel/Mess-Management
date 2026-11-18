@@ -421,6 +421,18 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   const isAdminUser = isUltimateAdmin || currentUser.role === "ADMIN";
 
+  const safeParseJson = async (res: Response): Promise<any | null> => {
+    try {
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.toLowerCase().includes("application/json")) {
+        return null;
+      }
+      return await res.json().catch(() => null);
+    } catch {
+      return null;
+    }
+  };
+
   const fetchDailyBackupData = async () => {
     if (!effectiveAuthToken) return;
     setLoadingDailyBackup(true);
@@ -438,27 +450,27 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       ]);
 
       if (todayRes.ok) {
-        const todayData = await todayRes.json();
-        if (todayData.success && todayData.backup) {
+        const todayData = await safeParseJson(todayRes);
+        if (todayData?.success && todayData.backup) {
           setTodayBackupInfo(todayData.backup);
         }
       }
 
       if (histRes.ok) {
-        const histData = await histRes.json();
-        if (histData.success && Array.isArray(histData.history)) {
+        const histData = await safeParseJson(histRes);
+        if (histData?.success && Array.isArray(histData.history)) {
           setDailyBackupHistory(histData.history);
         }
       }
 
       if (safetyRes.ok) {
-        const safetyData = await safetyRes.json();
-        if (safetyData.success) {
+        const safetyData = await safeParseJson(safetyRes);
+        if (safetyData?.success) {
           setSafetyStatus(safetyData);
         }
       }
     } catch (e) {
-      console.error("Failed to load daily backup info:", e);
+      console.warn("Could not load daily backup info:", e);
     } finally {
       setLoadingDailyBackup(false);
     }
@@ -476,9 +488,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         }
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (!res.ok) {
-        throw new Error(data.error || "রিস্টোর ব্যর্থ হয়েছে");
+        throw new Error(data?.error || "রিস্টোর ব্যর্থ হয়েছে");
       }
 
       showStatus("success", `সফলভাবে ${selectedBackupForRestore.backupDate} তারিখের ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর সম্পন্ন হয়েছে! (কোনো ভুল মনে হলে তাৎক্ষণিক আনডু করতে পারবেন)`);
@@ -497,8 +509,28 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
     }
   };
 
+  const isEmptyBackupCounts = (counts: any): boolean => {
+    if (!counts) return false;
+    const members = Number(counts.members ?? 0);
+    const meals = Number(counts.meals ?? 0);
+    const deposits = Number(counts.deposits ?? 0);
+    return members <= 1 && meals === 0 && deposits === 0;
+  };
+
   const handleTriggerUndoRollback = async () => {
     if (!effectiveAuthToken) return;
+    if (isEmptyBackupCounts(safetyStatus?.latestSnapshot?.counts)) {
+      showStatus("error", "সুরক্ষা ব্লক: এই স্ন্যাপশটটি খালি (১ মেম্বার, ০ মিল)। এটি রোলব্যাক করলে মেসের ডাটা মুছে যাবে তাই ব্লক করা হয়েছে।");
+      return;
+    }
+    const snapTime = safetyStatus?.latestSnapshot?.createdAt
+      ? new Date(safetyStatus.latestSnapshot.createdAt).toLocaleString()
+      : "পূর্বের অবস্থান";
+    const snapMembers = safetyStatus?.latestSnapshot?.counts?.members ?? "?";
+    const snapMeals = safetyStatus?.latestSnapshot?.counts?.meals ?? "?";
+    if (!window.confirm(`আপনি কি নিশ্চিতভাবে ${snapTime} সময়ের অবস্থায় রোলব্যাক করতে চান?\n(মেম্বার: ${snapMembers}, মিল: ${snapMeals})`)) {
+      return;
+    }
     setIsUndoingRollback(true);
     try {
       const res = await fetch("/api/admin/backup/daily/undo", {
@@ -509,9 +541,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         }
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (!res.ok) {
-        throw new Error(data.error || "আনডু/রোলব্যাক ব্যর্থ হয়েছে");
+        throw new Error(data?.error || "আনডু/রোলব্যাক ব্যর্থ হয়েছে");
       }
 
       showStatus("success", data.message || "সফলভাবে পূর্বের ডাটা ফিরিয়ে আনা হয়েছে!");
@@ -535,12 +567,29 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         headers: { Authorization: `Bearer ${effectiveAuthToken}` }
       });
 
+      const contentType = res.headers.get("content-type") || "";
+      const rawText = await res.text();
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "আজকের ব্যাকআপ ডাউনলোড করতে সমস্যা হয়েছে");
+        let errMsg = "আজকের ব্যাকআপ ডাউনলোড করতে সমস্যা হয়েছে";
+        try {
+          const err = JSON.parse(rawText);
+          if (err?.error) errMsg = err.error;
+        } catch {}
+        throw new Error(errMsg);
       }
 
-      const blob = await res.blob();
+      if (contentType.includes("text/html") || rawText.trim().startsWith("<")) {
+        throw new Error("সার্ভার রিস্টার্ট হচ্ছে বা ব্যাকআপ রেডি নয়। কয়েক সেকেন্ড পর আবার চেষ্টা করুন।");
+      }
+
+      try {
+        JSON.parse(rawText);
+      } catch {
+        throw new Error("ডাউনলোড করা ফাইলটি সঠিক JSON ব্যাকআপ নয়। অনুগ্রহ করে আবার চেষ্টা করুন।");
+      }
+
+      const blob = new Blob([rawText], { type: "application/json" });
       const contentDisposition = res.headers.get("Content-Disposition");
       let downloadFilename = `daily_backup_${activeMessId}_${new Date().toISOString().split("T")[0]}.json`;
       if (contentDisposition && contentDisposition.includes("filename=")) {
@@ -579,9 +628,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
           Authorization: `Bearer ${effectiveAuthToken}`
         }
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (!res.ok) {
-        throw new Error(data.error || "স্ন্যাপশট নিতে সমস্যা হয়েছে");
+        throw new Error(data?.error || "স্ন্যাপশট নিতে সমস্যা হয়েছে");
       }
       showStatus("success", "আজকের ফ্রেশ ডাটাবেজ ব্যাকআপ স্ন্যাপশট ক্লাউড ডেটাবেজে সংরক্ষিত হয়েছে!");
       fetchDailyBackupData();
@@ -598,12 +647,29 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       const res = await fetch(`/api/admin/backup/daily/download/${backupId}`, {
         headers: { Authorization: `Bearer ${effectiveAuthToken}` }
       });
+      const contentType = res.headers.get("content-type") || "";
+      const rawText = await res.text();
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "ব্যাকআপ ফাইল ডাউনলোড করতে সমস্যা হয়েছে");
+        let errMsg = "ব্যাকআপ ফাইল ডাউনলোড করতে সমস্যা হয়েছে";
+        try {
+          const err = JSON.parse(rawText);
+          if (err?.error) errMsg = err.error;
+        } catch {}
+        throw new Error(errMsg);
       }
 
-      const blob = await res.blob();
+      if (contentType.includes("text/html") || rawText.trim().startsWith("<")) {
+        throw new Error("সার্ভার রিস্টার্ট হচ্ছে। কয়েক সেকেন্ড পর আবার ডাউনলোড করুন।");
+      }
+
+      try {
+        JSON.parse(rawText);
+      } catch {
+        throw new Error("ডাউনলোড করা ফাইলটি সঠিক JSON ব্যাকআপ নয়।");
+      }
+
+      const blob = new Blob([rawText], { type: "application/json" });
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -904,14 +970,16 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         headers: { Authorization: `Bearer ${effectiveAuthToken}` }
       });
       if (res.ok) {
-        const s = await res.json();
-        if (s.messName) setLocalMessName(s.messName);
-        if (s.location !== undefined) setLocalMessLocation(s.location);
-        if (s.logoText) setLocalMessLogoText(s.logoText);
-        setLocalMessLogoIcon(s.logoIcon || "MyMessLogo");
-        if (s.welcomeMessage) setLocalMessWelcomeMessage(s.welcomeMessage);
-        else if (s.homeCustomization?.welcomeTitle) setLocalMessWelcomeMessage(s.homeCustomization.welcomeTitle);
-        if (s.announcement !== undefined) setLocalMessAnnouncement(s.announcement);
+        const s = await safeParseJson(res);
+        if (s && typeof s === "object") {
+          if (s.messName) setLocalMessName(s.messName);
+          if (s.location !== undefined) setLocalMessLocation(s.location);
+          if (s.logoText) setLocalMessLogoText(s.logoText);
+          setLocalMessLogoIcon(s.logoIcon || "MyMessLogo");
+          if (s.welcomeMessage) setLocalMessWelcomeMessage(s.welcomeMessage);
+          else if (s.homeCustomization?.welcomeTitle) setLocalMessWelcomeMessage(s.homeCustomization.welcomeTitle);
+          if (s.announcement !== undefined) setLocalMessAnnouncement(s.announcement);
+        }
       }
     } catch (e) {
       console.error("Failed to load active mess settings:", e);
@@ -5371,8 +5439,8 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 )}
               </div>
 
-              {/* SAFETY SNAPSHOT & UNDO / REDO BANNER */}
-              {safetyStatus?.hasSafetySnapshot && isAdminUser && (
+              {/* SAFETY SNAPSHOT & UNDO / REDO BANNER (Hidden if snapshot is an empty broken state) */}
+              {safetyStatus?.hasSafetySnapshot && isAdminUser && !isEmptyBackupCounts(safetyStatus?.latestSnapshot?.counts) && (
                 <div className="p-4 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/30 via-slate-900/60 to-rose-950/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
@@ -5498,6 +5566,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                       const isPreRestoreSafety = item.triggerType === "PRE_RESTORE_SAFETY";
                       const isPreUndoSafety = item.triggerType === "PRE_UNDO_SAFETY";
                       const isManual = item.triggerType === "MANUAL_SNAPSHOT";
+                      const isEmptySnapshot = isEmptyBackupCounts(item.counts);
 
                       return (
                         <div
@@ -5533,6 +5602,12 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                                 ) : (
                                   <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                                     দৈনিক সার্ভার ক্রন
+                                  </span>
+                                )}
+
+                                {isEmptySnapshot && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                    খালি স্ন্যাপশট (রিস্টোর সুরক্ষিত)
                                   </span>
                                 )}
 
@@ -5584,15 +5659,21 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             {isAdminUser && (
                               <button
                                 type="button"
+                                disabled={isEmptySnapshot}
                                 onClick={() => {
+                                  if (isEmptySnapshot) return;
                                   setSelectedBackupForRestore(item);
                                   setRestoreConfirmedCheck(false);
                                 }}
-                                className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-100 font-semibold text-[11px] rounded-lg border border-rose-500/30 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-rose-950/50"
-                                title="এই ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর করুন"
+                                className={`px-3 py-1.5 font-semibold text-[11px] rounded-lg border flex items-center gap-1.5 transition-all ${
+                                  isEmptySnapshot
+                                    ? "bg-slate-900/70 text-slate-500 border-slate-800 cursor-not-allowed opacity-60"
+                                    : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-100 border-rose-500/30 cursor-pointer shadow-sm shadow-rose-950/50"
+                                }`}
+                                title={isEmptySnapshot ? "খালি স্ন্যাপশট থেকে রিস্টোর সুরক্ষার জন্য নিষ্ক্রিয় করা আছে" : "এই ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর করুন"}
                               >
-                                <LucideIcons.RotateCcw size={12} className="text-rose-400" />
-                                <span>রিস্টোর করুন (Restore)</span>
+                                <LucideIcons.RotateCcw size={12} className={isEmptySnapshot ? "text-slate-500" : "text-rose-400"} />
+                                <span>{isEmptySnapshot ? "সুরক্ষার জন্য বন্ধ" : "রিস্টোর করুন (Restore)"}</span>
                               </button>
                             )}
                           </div>

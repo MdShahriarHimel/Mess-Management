@@ -129,6 +129,7 @@ export default function Members({
   const [showArchives, setShowArchives] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [originalRole, setOriginalRole] = useState<UserRole | null>(null);
+  const [originalAssignedTask, setOriginalAssignedTask] = useState<string>("");
   const [shiftReason, setShiftReason] = useState("");
   const [dutyTargetMonthId, setDutyTargetMonthId] = useState<string>(currentMonthId);
   const [roleAnimations, setRoleAnimations] = useState<any>(null);
@@ -471,8 +472,8 @@ export default function Members({
         throw new Error(data.error || "Failed to update member");
       }
 
-      // Sync duty assignment to the selected month's duty roster
-      if (editingMember.assignedTask !== undefined) {
+      // Sync duty assignment to the selected month's duty roster only if authorized and actually modified
+      if (isAuthorizedToEdit && (editingMember.assignedTask || "") !== originalAssignedTask) {
         try {
           await fetch("/api/duties/work-duty", {
             method: "POST",
@@ -494,7 +495,9 @@ export default function Members({
 
       setEditingMember(null);
       setOriginalRole(null);
+      setOriginalAssignedTask("");
       setShiftReason("");
+      setError(null);
       onRefresh();
     } catch (err: any) {
       setError(err.message || "Update failed");
@@ -871,8 +874,10 @@ export default function Members({
                   <button
                     onClick={(e) => { 
                       e.stopPropagation(); 
+                      setError(null);
                       setEditingMember(member); 
                       setOriginalRole(member.role);
+                      setOriginalAssignedTask(member.assignedTask || "");
                       setShiftReason("");
                     }}
                     className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
@@ -1216,8 +1221,10 @@ export default function Members({
                                 <button
                                   onClick={(e) => { 
                                     e.stopPropagation(); 
+                                    setError(null);
                                     setEditingMember(member); 
                                     setOriginalRole(member.role);
+                                    setOriginalAssignedTask(member.assignedTask || "");
                                     setShiftReason("");
                                   }}
                                   className={`p-1.5 rounded-lg border-2 cursor-pointer transition-all active:scale-95 ${
@@ -1620,10 +1627,16 @@ export default function Members({
                 <Edit2 size={18} className="text-cyan-400" />
                 Edit Profile settings
               </h3>
-              <button onClick={() => setEditingMember(null)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => { setEditingMember(null); setError(null); }} className="text-slate-400 hover:text-white cursor-pointer">
                 <X size={18} />
               </button>
             </div>
+
+            {error && (
+              <div className="mb-3 p-3 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs font-medium">
+                {error}
+              </div>
+            )}
 
             <form onSubmit={handleEditSubmit} className="space-y-4 max-h-[480px] overflow-y-auto pr-2">
               
@@ -2110,6 +2123,7 @@ export default function Members({
                     <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">Default Monthly Rent (৳)</label>
                     <input
                       type="number"
+                      step="any"
                       disabled={!canEditAcademicAndRespect}
                       value={editingMember.roomRent !== undefined && editingMember.roomRent !== null ? editingMember.roomRent : ""}
                       onChange={(e) => setEditingMember({ ...editingMember, roomRent: e.target.value ? parseFloat(e.target.value) : undefined })}
@@ -2236,7 +2250,7 @@ export default function Members({
                               <button
                                 type="button"
                                 onClick={() => setEditingMember({ ...editingMember, animation: "" })}
-                                className="text-[9px] font-bold text-rose-400 hover:text-rose-300"
+                                className="text-[9px] font-bold text-rose-400 hover:text-rose-300 cursor-pointer"
                               >
                                 Remove GIF
                               </button>
@@ -2712,16 +2726,18 @@ export default function Members({
               <div className="flex gap-3 pt-3 border-t border-cyan-500/10">
                 <button
                   type="button"
-                  onClick={() => setEditingMember(null)}
-                  className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer"
+                  onClick={() => { setEditingMember(null); setError(null); }}
+                  disabled={loading}
+                  className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-slate-300 cursor-pointer"
                 >
                   CANCEL
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold text-xs cursor-pointer"
+                  disabled={loading}
+                  className="flex-1 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 disabled:opacity-50 text-white font-bold text-xs cursor-pointer"
                 >
-                  SAVE CHANGES
+                  {loading ? "SAVING..." : "SAVE CHANGES"}
                 </button>
               </div>
 

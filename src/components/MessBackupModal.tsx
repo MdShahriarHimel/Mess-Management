@@ -68,12 +68,29 @@ export const MessBackupModal: React.FC<MessBackupModalProps> = ({
         headers: { Authorization: `Bearer ${effectiveAuthToken}` }
       });
 
+      const contentType = res.headers.get("content-type") || "";
+      const rawText = await res.text();
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "আজকের ব্যাকআপ ডাউনলোড করতে সমস্যা হয়েছে");
+        let errMsg = "আজকের ব্যাকআপ ডাউনলোড করতে সমস্যা হয়েছে";
+        try {
+          const err = JSON.parse(rawText);
+          if (err?.error) errMsg = err.error;
+        } catch {}
+        throw new Error(errMsg);
       }
 
-      const blob = await res.blob();
+      if (contentType.includes("text/html") || rawText.trim().startsWith("<")) {
+        throw new Error("সার্ভার রিস্টার্ট হচ্ছে বা ব্যাকআপ রেডি নয়। কয়েক সেকেন্ড পর আবার চেষ্টা করুন।");
+      }
+
+      try {
+        JSON.parse(rawText);
+      } catch {
+        throw new Error("ডাউনলোড করা ফাইলটি সঠিক JSON ব্যাকআপ নয়। অনুগ্রহ করে আবার চেষ্টা করুন।");
+      }
+
+      const blob = new Blob([rawText], { type: "application/json" });
       const contentDisposition = res.headers.get("Content-Disposition");
       let downloadFilename = `daily_backup_${activeMessId}_${new Date().toISOString().split("T")[0]}.json`;
       if (contentDisposition && contentDisposition.includes("filename=")) {
