@@ -1230,12 +1230,16 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
   const handleApplyThemeGlobally = async (themeToApply: any) => {
     try {
+      const mergedCustomColors = {
+        ...themeToApply.customColors,
+        aiContrastPalettes: customColors?.aiContrastPalettes || {}
+      };
       const payload = {
         siteColor: themeToApply.siteColor,
         fontStyle: themeToApply.fontStyle,
         isDarkMode: themeToApply.isDarkMode,
         defaultMode: themeToApply.isDarkMode ? "dark" : "light",
-        customColors: themeToApply.customColors,
+        customColors: mergedCustomColors,
         messAnimations: {
           ...messAnimations,
           backgroundTheme: themeToApply.backgroundTheme,
@@ -1253,7 +1257,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       setSiteColor(themeToApply.siteColor);
       setFontStyle(themeToApply.fontStyle);
       setIsDarkMode(themeToApply.isDarkMode);
-      setCustomColors(themeToApply.customColors);
+      setCustomColors(mergedCustomColors);
       setMessAnimations(payload.messAnimations);
       if (setTypographySettings) (setTypographySettings as any)(payload.typographySettings);
       setActivePreviewId(null);
@@ -1422,7 +1426,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  {renderIcon(tab.icon, 14, activeSubTab === tab.id ? "text-cyan-400" : (isDarkMode ? "text-slate-400" : "text-slate-500"))}
+                  {renderIcon(tab.icon, 14, activeSubTab === tab.id ? (isDarkMode ? "text-cyan-400" : "text-cyan-700") : (isDarkMode ? "text-slate-400" : "text-slate-600"))}
                   <span>{tab.label}</span>
                 </div>
                 {cannotAccess ? (
@@ -5292,7 +5296,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 <button
                   type="button"
                   onClick={() => setIsBackupModalOpen(true)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer"
+                  className={`px-4 py-2 text-xs font-semibold rounded-xl border flex items-center gap-2 transition-all cursor-pointer ${
+                    isDarkMode
+                      ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
+                      : "bg-white hover:bg-slate-100 text-slate-800 border-slate-300 shadow-xs"
+                  }`}
                 >
                   <LucideIcons.Upload size={14} />
                   ম্যানুয়াল এক্সপোর্ট ও রিস্টোর উইন্ডো
@@ -5300,24 +5308,36 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               </div>
 
               {/* DAILY AUTOMATED DATABASE BACKUP HERO CARD */}
-              <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-slate-900/80 to-blue-950/40 p-6 space-y-5 shadow-2xl">
+              <div className={`relative overflow-hidden rounded-2xl border p-6 space-y-5 ${
+                isDarkMode
+                  ? "border-cyan-500/30 bg-gradient-to-br from-cyan-950/40 via-slate-900/80 to-blue-950/40 shadow-2xl"
+                  : "border-cyan-300 bg-gradient-to-br from-cyan-50 via-white to-sky-50 shadow-sm"
+              }`}>
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                        isDarkMode
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          : "bg-emerald-50 text-emerald-800 border-emerald-300"
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full animate-pulse ${isDarkMode ? "bg-emerald-400" : "bg-emerald-600"}`} />
                         সার্ভার ক্রন শিডিউলার সক্রিয় (Server Cron 00:00 UTC)
                       </span>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
+                        isDarkMode
+                          ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/30"
+                          : "bg-cyan-50 text-cyan-800 border-cyan-300"
+                      }`}>
                         <LucideIcons.HardDrive size={12} />
                         PostgreSQL Cloud Database
                       </span>
                     </div>
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2 mt-2">
-                      <LucideIcons.DownloadCloud className="w-5 h-5 text-cyan-400" />
+                    <h3 className={`text-lg font-bold flex items-center gap-2 mt-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                      <LucideIcons.DownloadCloud className={`w-5 h-5 ${isDarkMode ? "text-cyan-400" : "text-cyan-700"}`} />
                       দৈনিক স্বয়ংক্রিয় ব্যাকআপ (Daily Automated Database Backup)
                     </h3>
-                    <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                    <p className={`text-xs max-w-2xl leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
                       প্রতিদিন রাত ১২:০০ টায় (00:00) স্বয়ংক্রিয় সার্ভার ক্রন জবের মাধ্যমে ক্লাউড ডেটাবেজে এই মেসের সকল মিল, বাজার খরচ, মেম্বার এবং ডিপোজিটের একটি সম্পূর্ণ JSON ডাম্প টাইমস্ট্যাম্প সহ সংরক্ষিত হয়।
                     </p>
                   </div>
@@ -5352,9 +5372,13 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                           setRestoreConfirmedCheck(false);
                         }}
                         title="আজকের ব্যাকআপ দিয়ে সম্পূর্ণ ডাটাবেজ রিস্টোর করুন"
-                        className="px-4 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-white font-semibold text-xs rounded-xl border border-rose-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        className={`px-4 py-3 font-semibold text-xs rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                          isDarkMode
+                            ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-white border-rose-500/30"
+                            : "bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300"
+                        }`}
                       >
-                        <LucideIcons.RotateCcw size={15} className="text-rose-400" />
+                        <LucideIcons.RotateCcw size={15} className={isDarkMode ? "text-rose-400" : "text-rose-700"} />
                         <span>রিস্টোর করুন (Restore)</span>
                       </button>
                     )}
@@ -5364,9 +5388,13 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                       onClick={handleTriggerManualSnapshot}
                       disabled={triggeringManualSnapshot}
                       title="এখনই এই মেসের ডাটাবেজ ব্যাকআপ তৈরি ও সংরক্ষণ করুন"
-                      className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs rounded-xl border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                      className={`px-4 py-3 font-medium text-xs rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 ${
+                        isDarkMode
+                          ? "bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border-slate-700"
+                          : "bg-white hover:bg-slate-100 text-slate-800 border-slate-300 shadow-xs"
+                      }`}
                     >
-                      <LucideIcons.Camera size={15} className={triggeringManualSnapshot ? "animate-spin text-cyan-400" : "text-slate-400"} />
+                      <LucideIcons.Camera size={15} className={triggeringManualSnapshot ? (isDarkMode ? "animate-spin text-cyan-400" : "animate-spin text-cyan-700") : (isDarkMode ? "text-slate-400" : "text-slate-600")} />
                       <span>{triggeringManualSnapshot ? "স্ন্যাপশট হচ্ছে..." : "এখনই স্ন্যাপশট নিন"}</span>
                     </button>
                   </div>
@@ -5418,21 +5446,21 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
                 {/* RECORD COUNTS SUMMARY CHIPS */}
                 {todayBackupInfo?.counts && (
-                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
-                    <span className="text-slate-500 font-medium">আজকের ব্যাকআপে অন্তর্ভুক্ত:</span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300 font-semibold border border-slate-700">
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                    <span className={`font-semibold ${isDarkMode ? "text-slate-400" : "text-slate-700"}`}>আজকের ব্যাকআপে অন্তর্ভুক্ত:</span>
+                    <span className={`px-2.5 py-0.5 rounded font-bold border ${isDarkMode ? "bg-slate-800/80 text-cyan-300 border-slate-700" : "bg-cyan-50 text-cyan-900 border-cyan-300"}`}>
                       মেম্বার: {todayBackupInfo.counts.members ?? 0}
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300 font-semibold border border-slate-700">
+                    <span className={`px-2.5 py-0.5 rounded font-bold border ${isDarkMode ? "bg-slate-800/80 text-cyan-300 border-slate-700" : "bg-sky-50 text-sky-900 border-sky-300"}`}>
                       মাস: {todayBackupInfo.counts.months ?? 0}
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-emerald-300 font-semibold border border-slate-700">
+                    <span className={`px-2.5 py-0.5 rounded font-bold border ${isDarkMode ? "bg-slate-800/80 text-emerald-300 border-slate-700" : "bg-emerald-50 text-emerald-900 border-emerald-300"}`}>
                       মিল: {todayBackupInfo.counts.meals ?? 0}
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-amber-300 font-semibold border border-slate-700">
+                    <span className={`px-2.5 py-0.5 rounded font-bold border ${isDarkMode ? "bg-slate-800/80 text-amber-300 border-slate-700" : "bg-amber-50 text-amber-900 border-amber-300"}`}>
                       বাজার খরচ: {todayBackupInfo.counts.marketEntries ?? 0}
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800/80 text-purple-300 font-semibold border border-slate-700">
+                    <span className={`px-2.5 py-0.5 rounded font-bold border ${isDarkMode ? "bg-slate-800/80 text-purple-300 border-slate-700" : "bg-purple-50 text-purple-900 border-purple-300"}`}>
                       ডিপোজিট: {todayBackupInfo.counts.deposits ?? 0}
                     </span>
                   </div>
@@ -5507,61 +5535,61 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               )}
 
               {/* DEDICATED ADMIN-ONLY STORED JSON DATABASE BACKUPS INTERFACE */}
-              <div className="p-5 rounded-2xl bg-slate-950/40 border border-slate-800 space-y-4 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-                  <div className="flex items-center gap-2.5 text-slate-200">
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+              <div className={`p-5 rounded-2xl border space-y-4 shadow-xl ${isDarkMode ? "bg-slate-950/40 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b ${isDarkMode ? "border-slate-800/80" : "border-slate-200"}`}>
+                  <div className={`flex items-center gap-2.5 ${isDarkMode ? "text-slate-200" : "text-slate-900"}`}>
+                    <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${isDarkMode ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" : "bg-cyan-50 border-cyan-200 text-cyan-700"}`}>
                       <LucideIcons.Database size={16} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <h3 className={`text-sm font-bold flex items-center gap-2 flex-wrap ${isDarkMode ? "text-white" : "text-slate-900"}`}>
                         <span>ক্লাউড ডেটাবেজে সংরক্ষিত ব্যাকআপ তালিকা (Stored JSON Backups)</span>
                         {isAdminUser && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-300 border border-rose-500/30">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${isDarkMode ? "bg-rose-500/10 text-rose-300 border-rose-500/30" : "bg-rose-50 text-rose-800 border-rose-300"}`}>
                             🔒 অ্যাডমিন রিস্টোর প্যানেল
                           </span>
                         )}
                       </h3>
-                      <p className="text-[11px] text-slate-400">
+                      <p className={`text-[11px] ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                         PostgreSQL ক্লাউড ডেটাবেজে সংরক্ষিত প্রতিটি ব্যাকআপ ফাইল থেকে যেকোনো সময় সম্পূর্ণ সিস্টেম রিস্টোর করতে পারবেন।
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400 font-medium">
-                      মোট সংরক্ষিত: <span className="font-bold text-white">{dailyBackupHistory.length}</span> টি
+                    <span className={`text-xs font-medium ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
+                      মোট সংরক্ষিত: <span className={`font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>{dailyBackupHistory.length}</span> টি
                     </span>
                     <button
                       type="button"
                       onClick={fetchDailyBackupData}
                       disabled={loadingDailyBackup}
                       title="তালিকা রিফ্রেশ করুন"
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer"
+                      className={`p-1.5 rounded-lg border transition-all cursor-pointer ${isDarkMode ? "bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700" : "bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border-slate-300"}`}
                     >
-                      <LucideIcons.RotateCw size={13} className={loadingDailyBackup ? "animate-spin text-cyan-400" : ""} />
+                      <LucideIcons.RotateCw size={13} className={loadingDailyBackup ? "animate-spin text-cyan-500" : ""} />
                     </button>
                   </div>
                 </div>
 
                 {loadingDailyBackup ? (
-                  <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2">
-                    <LucideIcons.RefreshCw size={20} className="animate-spin text-cyan-400" />
+                  <div className={`py-8 text-center text-xs flex flex-col items-center justify-center gap-2 ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
+                    <LucideIcons.RefreshCw size={20} className="animate-spin text-cyan-500" />
                     <span>ক্লাউড ডেটাবেজ থেকে ব্যাকআপ তালিকা লোড হচ্ছে...</span>
                   </div>
                 ) : dailyBackupHistory.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2 bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
-                    <LucideIcons.FolderArchive size={24} className="text-slate-600" />
+                  <div className={`py-8 text-center text-xs flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed ${isDarkMode ? "text-slate-400 bg-slate-900/40 border-slate-800" : "text-slate-600 bg-slate-50 border-slate-300"}`}>
+                    <LucideIcons.FolderArchive size={24} className="text-slate-500" />
                     <span>এখনো কোনো সংরক্ষিত ব্যাকআপ রেকর্ড পাওয়া যায়নি।</span>
                     <button
                       type="button"
                       onClick={handleTriggerManualSnapshot}
-                      className="mt-2 text-cyan-400 hover:underline text-xs"
+                      className="mt-2 text-cyan-600 dark:text-cyan-400 hover:underline text-xs font-semibold"
                     >
                       এখনই প্রথম ব্যাকআপ স্ন্যাপশট তৈরি করুন
                     </button>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-800/60 max-h-80 overflow-y-auto pr-1">
+                  <div className={`divide-y max-h-80 overflow-y-auto pr-1 ${isDarkMode ? "divide-slate-800/60" : "divide-slate-200"}`}>
                     {dailyBackupHistory.map((item, idx) => {
                       const isPreRestoreSafety = item.triggerType === "PRE_RESTORE_SAFETY";
                       const isPreUndoSafety = item.triggerType === "PRE_UNDO_SAFETY";
@@ -5571,10 +5599,20 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                       return (
                         <div
                           key={item.id || idx}
-                          className={`py-3 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs rounded-xl transition-colors hover:bg-slate-900/60 ${isPreRestoreSafety ? "bg-amber-500/5 border border-amber-500/10 mb-1" : ""}`}
+                          className={`py-3 px-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs rounded-xl transition-colors ${
+                            isDarkMode ? "hover:bg-slate-900/60" : "hover:bg-slate-100"
+                          } ${isPreRestoreSafety ? (isDarkMode ? "bg-amber-500/5 border border-amber-500/10 mb-1" : "bg-amber-50/70 border border-amber-200 mb-1") : ""}`}
                         >
                           <div className="flex items-start gap-3">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isPreRestoreSafety ? "bg-amber-500/20 text-amber-400" : isPreUndoSafety ? "bg-emerald-500/20 text-emerald-400" : isManual ? "bg-purple-500/20 text-purple-400" : "bg-cyan-500/10 text-cyan-400"}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                              isPreRestoreSafety
+                                ? (isDarkMode ? "bg-amber-500/20 text-amber-400" : "bg-amber-100 text-amber-800")
+                                : isPreUndoSafety
+                                  ? (isDarkMode ? "bg-emerald-500/20 text-emerald-400" : "bg-emerald-100 text-emerald-800")
+                                  : isManual
+                                    ? (isDarkMode ? "bg-purple-500/20 text-purple-400" : "bg-purple-100 text-purple-800")
+                                    : (isDarkMode ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-100 text-cyan-800")
+                            }`}>
                               {isPreRestoreSafety || isPreUndoSafety ? (
                                 <LucideIcons.ShieldAlert size={15} />
                               ) : (
@@ -5582,44 +5620,44 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                               )}
                             </div>
                             <div className="space-y-1">
-                              <div className="font-semibold text-slate-200 flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-bold text-white">{item.backupDate}</span>
+                              <div className="font-semibold flex flex-wrap items-center gap-2">
+                                <span className={`text-sm font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>{item.backupDate}</span>
                                 
                                 {isPreRestoreSafety ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${isDarkMode ? "bg-amber-500/20 text-amber-300 border-amber-500/30" : "bg-amber-100 text-amber-900 border-amber-300"}`}>
                                     <LucideIcons.Shield size={10} />
                                     পূর্বাবস্থা সুরক্ষা স্ন্যাপশট
                                   </span>
                                 ) : isPreUndoSafety ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${isDarkMode ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-emerald-100 text-emerald-900 border-emerald-300"}`}>
                                     <LucideIcons.Redo2 size={10} />
                                     রিডো স্ন্যাপশট
                                   </span>
                                 ) : isManual ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${isDarkMode ? "bg-purple-500/10 text-purple-300 border-purple-500/20" : "bg-purple-100 text-purple-900 border-purple-300"}`}>
                                     ম্যানুয়াল স্ন্যাপশট
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${isDarkMode ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" : "bg-cyan-50 text-cyan-900 border-cyan-300"}`}>
                                     দৈনিক সার্ভার ক্রন
                                   </span>
                                 )}
 
                                 {isEmptySnapshot && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${isDarkMode ? "bg-rose-500/20 text-rose-300 border-rose-500/30" : "bg-rose-100 text-rose-900 border-rose-300"}`}>
                                     খালি স্ন্যাপশট (রিস্টোর সুরক্ষিত)
                                   </span>
                                 )}
 
-                                <span className="text-[11px] text-slate-400 font-mono">
+                                <span className={`text-[11px] font-mono font-semibold ${isDarkMode ? "text-slate-400" : "text-slate-700"}`}>
                                   {(item.fileSize / 1024).toFixed(1)} KB
                                 </span>
                               </div>
 
-                              <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-2">
+                              <div className={`text-[11px] flex flex-wrap items-center gap-2 ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>
                                 <span>{item.createdAt ? new Date(item.createdAt).toLocaleString() : item.backupDate}</span>
-                                <span className="text-slate-600">•</span>
-                                <span className="font-mono text-[10px] text-slate-500 truncate max-w-xs" title={item.filename}>
+                                <span className="text-slate-400">•</span>
+                                <span className={`font-mono text-[10px] truncate max-w-xs ${isDarkMode ? "text-slate-500" : "text-slate-600"}`} title={item.filename}>
                                   {item.filename}
                                 </span>
                               </div>
@@ -5627,16 +5665,16 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                               {/* Counts Chips */}
                               {item.counts && (
                                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px]">
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${isDarkMode ? "bg-slate-800 text-slate-300 border-slate-700" : "bg-slate-100 text-slate-800 border-slate-300"}`}>
                                     মেম্বার: {item.counts.members ?? 0}
                                   </span>
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${isDarkMode ? "bg-slate-800 text-slate-300 border-slate-700" : "bg-slate-100 text-slate-800 border-slate-300"}`}>
                                     মিল: {item.counts.meals ?? 0}
                                   </span>
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${isDarkMode ? "bg-slate-800 text-slate-300 border-slate-700" : "bg-slate-100 text-slate-800 border-slate-300"}`}>
                                     বাজার খরচ: {item.counts.marketEntries ?? 0}
                                   </span>
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${isDarkMode ? "bg-slate-800 text-slate-300 border-slate-700" : "bg-slate-100 text-slate-800 border-slate-300"}`}>
                                     ডিপোজিট: {item.counts.deposits ?? 0}
                                   </span>
                                 </div>
@@ -5649,7 +5687,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                             <button
                               type="button"
                               onClick={() => handleDownloadHistoricalBackup(item.id, item.filename)}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 font-medium text-[11px] rounded-lg border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+                              className={`px-3 py-1.5 font-semibold text-[11px] rounded-lg border flex items-center gap-1.5 transition-all cursor-pointer ${
+                                isDarkMode
+                                  ? "bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 border-slate-700"
+                                  : "bg-cyan-50 hover:bg-cyan-100 text-cyan-900 border-cyan-300"
+                              }`}
                               title="ব্যাকআপ ফাইলটি ডাউনলোড করুন"
                             >
                               <LucideIcons.Download size={12} />
@@ -5665,14 +5707,18 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                                   setSelectedBackupForRestore(item);
                                   setRestoreConfirmedCheck(false);
                                 }}
-                                className={`px-3 py-1.5 font-semibold text-[11px] rounded-lg border flex items-center gap-1.5 transition-all ${
+                                className={`px-3 py-1.5 font-bold text-[11px] rounded-lg border flex items-center gap-1.5 transition-all ${
                                   isEmptySnapshot
-                                    ? "bg-slate-900/70 text-slate-500 border-slate-800 cursor-not-allowed opacity-60"
-                                    : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-100 border-rose-500/30 cursor-pointer shadow-sm shadow-rose-950/50"
+                                    ? isDarkMode
+                                      ? "bg-slate-900/70 text-slate-500 border-slate-800 cursor-not-allowed opacity-60"
+                                      : "bg-slate-100 text-slate-500 border-slate-300 cursor-not-allowed opacity-70"
+                                    : isDarkMode
+                                      ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-100 border-rose-500/30 cursor-pointer shadow-sm shadow-rose-950/50"
+                                      : "bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 cursor-pointer shadow-xs"
                                 }`}
                                 title={isEmptySnapshot ? "খালি স্ন্যাপশট থেকে রিস্টোর সুরক্ষার জন্য নিষ্ক্রিয় করা আছে" : "এই ব্যাকআপ দিয়ে ফুল সিস্টেম রিস্টোর করুন"}
                               >
-                                <LucideIcons.RotateCcw size={12} className={isEmptySnapshot ? "text-slate-500" : "text-rose-400"} />
+                                <LucideIcons.RotateCcw size={12} className={isEmptySnapshot ? "text-slate-500" : (isDarkMode ? "text-rose-400" : "text-rose-700")} />
                                 <span>{isEmptySnapshot ? "সুরক্ষার জন্য বন্ধ" : "রিস্টোর করুন (Restore)"}</span>
                               </button>
                             )}
@@ -5708,11 +5754,15 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-start gap-3">
-                <LucideIcons.AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className={`p-4 rounded-xl border text-xs flex items-start gap-3 ${
+                isDarkMode
+                  ? "bg-amber-500/10 border-amber-500/20 text-amber-200"
+                  : "bg-amber-50 border-amber-300 text-amber-950"
+              }`}>
+                <LucideIcons.AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${isDarkMode ? "text-amber-400" : "text-amber-700"}`} />
                 <div>
                   <p className="font-bold">স্বয়ংক্রিয় সেফটি স্ন্যাপশট ও ইনস্ট্যান্ট আনডু গ্যারান্টি (Safety Snapshot & Undo Guarantee)</p>
-                  <p className="text-[11px] text-amber-200/80 mt-0.5 leading-relaxed">
+                  <p className={`text-[11px] mt-0.5 leading-relaxed ${isDarkMode ? "text-amber-200/80" : "text-amber-900"}`}>
                     যেকোনো রিস্টোর অপারেশন সম্পন্ন করার ঠিক আগের মুহূর্তের যাবতীয় তথ্যের একটি স্ন্যাপশট স্বয়ংক্রিয়ভাবে সার্ভার ডেটাবেজে সংরক্ষিত হয়। ফলে কোনো কারণে ভুল ব্যাকআপ দিয়ে ফেললে আপনি তাৎক্ষণিক <strong>'Undo'</strong> বাটনে চাপ দিয়েই পূর্বের সমস্ত ডেটা অক্ষত অবস্থায় ফিরিয়ে আনতে পারবেন।
                   </p>
                 </div>
@@ -5730,6 +5780,7 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
         activeMessName={messName || activeMessId}
         currentUser={currentUser}
         isPlatformOwner={isPlatformOwner}
+        isDarkMode={isDarkMode}
         onRestoreSuccess={() => {
           showStatus("success", "ব্যাকআপ সফলভাবে রিস্টোর হয়েছে। সিস্টেম রিলোড হচ্ছে...");
           setTimeout(() => {
@@ -5741,20 +5792,30 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
       {/* FULL SYSTEM RESTORE CONFIRMATION MODAL */}
       {selectedBackupForRestore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="relative w-full max-w-xl bg-slate-900 border border-rose-500/40 rounded-2xl shadow-2xl overflow-hidden my-8">
+          <div className={`relative w-full max-w-xl border rounded-2xl shadow-2xl overflow-hidden my-8 ${
+            isDarkMode ? "bg-slate-900 border-rose-500/40" : "bg-white border-rose-300"
+          }`}>
             {/* Header with warning accent */}
-            <div className="p-6 bg-gradient-to-r from-rose-950/80 via-slate-900 to-amber-950/60 border-b border-rose-500/30 flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+            <div className={`p-6 border-b flex items-start gap-4 ${
+              isDarkMode
+                ? "bg-gradient-to-r from-rose-950/80 via-slate-900 to-amber-950/60 border-rose-500/30"
+                : "bg-gradient-to-r from-rose-50 via-white to-amber-50 border-rose-200"
+            }`}>
+              <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${
+                isDarkMode ? "bg-rose-500/20 border-rose-500/40 text-rose-400" : "bg-rose-100 border-rose-300 text-rose-700"
+              }`}>
                 <LucideIcons.AlertTriangle size={24} />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <h3 className={`text-base font-bold flex items-center gap-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
                   <span>ফুল সিস্টেম ব্যাকআপ রিস্টোর নিশ্চিতকরণ</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                    isDarkMode ? "bg-rose-500/20 text-rose-300 border-rose-500/40" : "bg-rose-100 text-rose-800 border-rose-300"
+                  }`}>
                     Full System Reset
                   </span>
                 </h3>
-                <p className="text-xs text-rose-200/90 leading-relaxed">
+                <p className={`text-xs leading-relaxed ${isDarkMode ? "text-rose-200/90" : "text-rose-800"}`}>
                   সতর্কতা: এটি মেসের বর্তমান যাবতীয় মিল, ডিপোজিট, বাজার খরচ ও মেম্বার ডাটাবেজ সম্পূর্ণভাবে প্রতিস্থাপিত করবে।
                 </p>
               </div>
@@ -5767,7 +5828,9 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   }
                 }}
                 disabled={isRestoringBackup}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors ml-auto cursor-pointer"
+                className={`p-1 rounded-lg transition-colors ml-auto cursor-pointer ${
+                  isDarkMode ? "text-slate-400 hover:text-white hover:bg-slate-800" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                }`}
               >
                 <LucideIcons.X size={18} />
               </button>
@@ -5776,22 +5839,26 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
             {/* Modal Body */}
             <div className="p-6 space-y-5">
               {/* Target Backup Metadata Box */}
-              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80">
-                  <span className="text-slate-400 font-medium">নির্বাচিত ব্যাকআপের বিবরণ:</span>
-                  <span className="font-mono text-cyan-300 font-semibold">{selectedBackupForRestore.backupDate}</span>
+              <div className={`p-4 rounded-xl border space-y-3 ${
+                isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-slate-50 border-slate-200"
+              }`}>
+                <div className={`flex items-center justify-between text-xs pb-2 border-b ${
+                  isDarkMode ? "border-slate-800/80" : "border-slate-200"
+                }`}>
+                  <span className={`font-medium ${isDarkMode ? "text-slate-400" : "text-slate-600"}`}>নির্বাচিত ব্যাকআপের বিবরণ:</span>
+                  <span className={`font-mono font-semibold ${isDarkMode ? "text-cyan-300" : "text-cyan-800"}`}>{selectedBackupForRestore.backupDate}</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <span className="text-slate-500 block text-[10px]">ফাইলের নাম:</span>
-                    <span className="font-mono text-[11px] text-slate-200 truncate block" title={selectedBackupForRestore.filename}>
+                    <span className={`block text-[10px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>ফাইলের নাম:</span>
+                    <span className={`font-mono text-[11px] truncate block ${isDarkMode ? "text-slate-200" : "text-slate-900"}`} title={selectedBackupForRestore.filename}>
                       {selectedBackupForRestore.filename}
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[10px]">সংরক্ষণের সময়:</span>
-                    <span className="text-[11px] text-slate-200">
+                    <span className={`block text-[10px] ${isDarkMode ? "text-slate-500" : "text-slate-600"}`}>সংরক্ষণের সময়:</span>
+                    <span className={`text-[11px] ${isDarkMode ? "text-slate-200" : "text-slate-900"}`}>
                       {selectedBackupForRestore.createdAt ? new Date(selectedBackupForRestore.createdAt).toLocaleString() : selectedBackupForRestore.backupDate}
                     </span>
                   </div>
@@ -5799,22 +5866,32 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
 
                 {/* Counts breakdown */}
                 {selectedBackupForRestore.counts && (
-                  <div className="pt-2 border-t border-slate-800/80">
-                    <span className="text-[11px] text-slate-400 block mb-1.5 font-medium">এই ব্যাকআপে যা অন্তর্ভুক্ত রয়েছে:</span>
+                  <div className={`pt-2 border-t ${isDarkMode ? "border-slate-800/80" : "border-slate-200"}`}>
+                    <span className={`text-[11px] block mb-1.5 font-medium ${isDarkMode ? "text-slate-400" : "text-slate-700"}`}>এই ব্যাকআপে যা অন্তর্ভুক্ত রয়েছে:</span>
                     <div className="flex flex-wrap gap-2 text-[11px]">
-                      <span className="px-2 py-1 rounded bg-slate-800 text-cyan-300 font-medium border border-slate-700">
+                      <span className={`px-2 py-1 rounded font-medium border ${
+                        isDarkMode ? "bg-slate-800 text-cyan-300 border-slate-700" : "bg-cyan-50 text-cyan-900 border-cyan-300"
+                      }`}>
                         মেম্বার: {selectedBackupForRestore.counts.members ?? 0} জন
                       </span>
-                      <span className="px-2 py-1 rounded bg-slate-800 text-cyan-300 font-medium border border-slate-700">
+                      <span className={`px-2 py-1 rounded font-medium border ${
+                        isDarkMode ? "bg-slate-800 text-cyan-300 border-slate-700" : "bg-sky-50 text-sky-900 border-sky-300"
+                      }`}>
                         মাস: {selectedBackupForRestore.counts.months ?? 0} টি
                       </span>
-                      <span className="px-2 py-1 rounded bg-slate-800 text-emerald-300 font-medium border border-slate-700">
+                      <span className={`px-2 py-1 rounded font-medium border ${
+                        isDarkMode ? "bg-slate-800 text-emerald-300 border-slate-700" : "bg-emerald-50 text-emerald-900 border-emerald-300"
+                      }`}>
                         মোট মিল: {selectedBackupForRestore.counts.meals ?? 0}
                       </span>
-                      <span className="px-2 py-1 rounded bg-slate-800 text-amber-300 font-medium border border-slate-700">
+                      <span className={`px-2 py-1 rounded font-medium border ${
+                        isDarkMode ? "bg-slate-800 text-amber-300 border-slate-700" : "bg-amber-50 text-amber-900 border-amber-300"
+                      }`}>
                         বাজার এন্ট্রি: {selectedBackupForRestore.counts.marketEntries ?? 0}
                       </span>
-                      <span className="px-2 py-1 rounded bg-slate-800 text-purple-300 font-medium border border-slate-700">
+                      <span className={`px-2 py-1 rounded font-medium border ${
+                        isDarkMode ? "bg-slate-800 text-purple-300 border-slate-700" : "bg-purple-50 text-purple-900 border-purple-300"
+                      }`}>
                         ডিপোজিট: {selectedBackupForRestore.counts.deposits ?? 0}
                       </span>
                     </div>
@@ -5823,18 +5900,22 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
               </div>
 
               {/* Safety & Undo Guarantee Banner */}
-              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-start gap-2.5">
-                <LucideIcons.ShieldCheck size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+              <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                isDarkMode ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" : "bg-emerald-50 border-emerald-300 text-emerald-900"
+              }`}>
+                <LucideIcons.ShieldCheck size={18} className={`shrink-0 mt-0.5 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`} />
                 <div className="space-y-1">
-                  <span className="font-bold text-white">ভুল হলে আনডু (Undo) করার শতভাগ নিশ্চয়তা:</span>
-                  <p className="text-[11px] text-emerald-200/80 leading-relaxed">
+                  <span className={`font-bold ${isDarkMode ? "text-white" : "text-emerald-950"}`}>ভুল হলে আনডু (Undo) করার শতভাগ নিশ্চয়তা:</span>
+                  <p className={`text-[11px] leading-relaxed ${isDarkMode ? "text-emerald-200/80" : "text-emerald-900"}`}>
                     রিস্টোর প্রক্রিয়া শুরু করার ঠিক পূর্বমুহূর্তে মেসের বর্তমান সমস্ত ডেটার একটি <strong>'Pre-Restore Safety Snapshot'</strong> স্বয়ংক্রিয়ভাবে সংরক্ষিত হবে। যদি ভুল ফাইল রিস্টোর হয়ে যায়, তবে আপনি সেটিংসের ব্যাকআপ ট্যাবে থাকা <strong>'Undo / পূর্বাবস্থায় ফেরত যান'</strong> বাটনে চাপ দিয়েই আগের সমস্ত ডেটা ফিরে পাবেন।
                   </p>
                 </div>
               </div>
 
               {/* Confirmation Checkbox */}
-              <label className="flex items-start gap-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 cursor-pointer select-none">
+              <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer select-none ${
+                isDarkMode ? "bg-rose-500/10 border-rose-500/20" : "bg-rose-50 border-rose-300"
+              }`}>
                 <input
                   type="checkbox"
                   id="confirm-full-restore-checkbox"
@@ -5843,14 +5924,16 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   disabled={isRestoringBackup}
                   className="w-4 h-4 rounded text-rose-500 focus:ring-rose-500 border-slate-700 mt-0.5 cursor-pointer"
                 />
-                <span className="text-xs text-rose-200 font-medium leading-relaxed">
+                <span className={`text-xs font-medium leading-relaxed ${isDarkMode ? "text-rose-200" : "text-rose-900"}`}>
                   আমি সম্পূর্ণ অবগত যে এই ব্যাকআপ ফাইল দিয়ে বর্তমান মেসের ডেটাবেজ ফুল রিসেট/রিস্টোর করা হবে। আমি এই রিস্টোর সম্পন্ন করতে সম্মত আছি।
                 </span>
               </label>
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-end gap-3">
+            <div className={`p-4 border-t flex items-center justify-end gap-3 ${
+              isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-slate-50 border-slate-200"
+            }`}>
               <button
                 type="button"
                 onClick={() => {
@@ -5858,7 +5941,11 @@ export const UnifiedSettingsDashboard: React.FC<UnifiedSettingsDashboardProps> =
                   setRestoreConfirmedCheck(false);
                 }}
                 disabled={isRestoringBackup}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                className={`px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer disabled:opacity-50 ${
+                  isDarkMode
+                    ? "bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700"
+                    : "bg-white hover:bg-slate-100 text-slate-800 border-slate-300"
+                }`}
               >
                 বাতিল করুন (Cancel)
               </button>

@@ -89,6 +89,47 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
   const [themeDescInput, setThemeDescInput] = useState("");
   const [jsonImportText, setJsonImportText] = useState("");
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isOptimizingAiContrast, setIsOptimizingAiContrast] = useState(false);
+
+  const syncAiContrastPaletteForTheme = async (
+    themeId: string,
+    themeName: string,
+    baseColors: any,
+    forceRegenerate = false
+  ) => {
+    setIsOptimizingAiContrast(true);
+    try {
+      const token = localStorage.getItem("mess_auth_token") || localStorage.getItem("token") || "";
+      const res = await fetch("/api/settings/theme-contrast-ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          themeId,
+          themeName,
+          customColors: baseColors,
+          forceRegenerate
+        })
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.customColors) {
+        setCustomColors((prev: any) => ({
+          ...prev,
+          ...baseColors,
+          aiContrastPalettes: data.customColors.aiContrastPalettes || prev?.aiContrastPalettes || {}
+        }));
+      }
+      return data;
+    } catch (err) {
+      console.warn("AI theme contrast sync warning:", err);
+      return null;
+    } finally {
+      setIsOptimizingAiContrast(false);
+    }
+  };
 
   // Load custom themes from localStorage
   useEffect(() => {
@@ -211,7 +252,9 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           syncToAllMembers: true
         });
       }
-      showStatus("success", "Appearance configuration successfully saved and applied for all members!");
+      const activeId = messAnimations?.themeTemplate || "default-erp";
+      await syncAiContrastPaletteForTheme(activeId, activeId, customColors, false);
+      showStatus("success", "Appearance configuration & contrast palette saved in PostgreSQL for all members!");
     } catch (err) {
       showStatus("error", "Failed to save configuration.");
     }
@@ -394,12 +437,16 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
   // Commit a specific theme or current preview as the global saved theme for everyone
   const handleApplyThemeForEveryone = async (themeToApply: ThemeTemplate) => {
     try {
+      const mergedThemeColors = {
+        ...themeToApply.customColors,
+        aiContrastPalettes: customColors?.aiContrastPalettes || {}
+      };
       const payload = {
         siteColor: themeToApply.siteColor,
         fontStyle: themeToApply.fontStyle,
         isDarkMode: themeToApply.isDarkMode,
         defaultMode: themeToApply.isDarkMode ? "dark" : "light",
-        customColors: themeToApply.customColors,
+        customColors: mergedThemeColors,
         messAnimations: {
           ...messAnimations,
           backgroundTheme: themeToApply.backgroundTheme,
@@ -417,7 +464,7 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
       setSiteColor(themeToApply.siteColor);
       setFontStyle(themeToApply.fontStyle);
       setIsDarkMode(themeToApply.isDarkMode);
-      setCustomColors(themeToApply.customColors);
+      setCustomColors(mergedThemeColors);
       setMessAnimations(payload.messAnimations);
       if (setTypographySettings) setTypographySettings(payload.typographySettings);
       setPreviewTemplateId(null);
@@ -432,7 +479,11 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
           syncToAllMembers: true
         });
       }
-      showStatus("success", `Successfully applied "${themeToApply.name}" for the entire mess! All members will see this layout.`);
+      const aiRes = await syncAiContrastPaletteForTheme(themeToApply.id, themeToApply.name, mergedThemeColors, false);
+      const cacheNote = aiRes?.cached
+        ? "PostgreSQL মেমোরি থেকে লোড হয়েছে (০ API কল)"
+        : "Gemini AI + WCAG কনট্রাস্ট PostgreSQL-এ সংরক্ষিত হয়েছে";
+      showStatus("success", `"${themeToApply.name}" থিম চালু হয়েছে (${cacheNote})!`);
     } catch (e) {
       console.error(e);
       showStatus("error", "Failed to apply theme for everyone.");
@@ -698,6 +749,79 @@ export const ThemeEnginePanel: React.FC<ThemeEnginePanelProps> = ({
             Dark Mode {isDarkMode && "✓ (Saved Default)"}
           </button>
         </div>
+      </div>
+
+      {/* Gemini AI + PostgreSQL Smart Contrast Memory Bar */}
+      <div className={`p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left ${
+        isDarkMode
+          ? "border-purple-500/25 bg-gradient-to-r from-purple-950/25 via-slate-900/50 to-cyan-950/25"
+          : "border-purple-200 bg-gradient-to-r from-purple-50 via-white to-cyan-50 shadow-xs"
+      }`}>
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`p-1.5 rounded-lg border ${
+              isDarkMode ? "bg-purple-500/15 text-purple-300 border-purple-500/30" : "bg-purple-100 text-purple-800 border-purple-300"
+            }`}>
+              <Sparkles size={14} />
+            </span>
+            <h4 className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+              AI Smart Contrast & PostgreSQL Memory ({currentTheme.name})
+            </h4>
+            {customColors?.aiContrastPalettes?.[currentThemeId] ? (
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
+                isDarkMode
+                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                  : "bg-emerald-100 text-emerald-900 border-emerald-300"
+              }`}>
+                ✓ PostgreSQL-এ সংরক্ষিত (০ API কল)
+              </span>
+            ) : (
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
+                isDarkMode
+                  ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                  : "bg-amber-100 text-amber-900 border-amber-300"
+              }`}>
+                WCAG অটো-কনট্রাস্ট সক্রিয়
+              </span>
+            )}
+          </div>
+          <p className={`text-[11px] max-w-2xl leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+            এই থিমের <strong>Light Mode</strong> ও <strong>Dark Mode</strong> উভয়ের জন্যই অপটিমাইজড কালার ও ইনপুট কনট্রাস্ট PostgreSQL ডাটাবেজে মুখস্থ থাকে—যাতে বারবার Gemini API কল বা ব্যান্ডউইথ খরচ না হয় এবং সব সংখ্যা স্পষ্ট দেখা যায়।
+          </p>
+        </div>
+
+        <button
+          type="button"
+          disabled={isOptimizingAiContrast}
+          onClick={async () => {
+            const res = await syncAiContrastPaletteForTheme(
+              currentThemeId,
+              currentTheme.name,
+              customColors,
+              Boolean(customColors?.aiContrastPalettes?.[currentThemeId])
+            );
+            if (res?.success) {
+              showStatus(
+                "success",
+                res.cached
+                  ? `"${currentTheme.name}" থিমের কনট্রাস্ট প্যালেট ইতিমধ্যেই PostgreSQL-এ সংরক্ষিত আছে (০ API কল)!`
+                  : `"${currentTheme.name}" থিমের Light ও Dark কনট্রাস্ট প্যালেট (${res.source === "GEMINI_AI" ? "Gemini AI" : "WCAG Engine"}) PostgreSQL-এ সেভ হয়েছে!`
+              );
+            } else {
+              showStatus("error", "কনট্রাস্ট অপটিমাইজ করা যায়নি।");
+            }
+          }}
+          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0 disabled:opacity-50"
+        >
+          <Sparkles size={13} className={isOptimizingAiContrast ? "animate-spin" : ""} />
+          <span>
+            {isOptimizingAiContrast
+              ? "অপটিমাইজ হচ্ছে..."
+              : customColors?.aiContrastPalettes?.[currentThemeId]
+                ? "পুনরায় AI কন্ট্রাস্ট রিফ্রেশ করুন"
+                : "AI কন্ট্রাস্ট মেমোরিতে সেভ করুন"}
+          </span>
+        </button>
       </div>
 
       {/* Navigation sub-tabs */}

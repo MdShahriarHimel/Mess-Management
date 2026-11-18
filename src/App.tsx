@@ -4215,29 +4215,48 @@ export default function App() {
     return "6, 182, 212";
   };
 
-  const lightenDarkenColor = (hex: string, percent: number) => {
-    let usePound = false;
-    if (!hex) return "#22d3ee";
-    if (hex[0] === "#") {
-      hex = hex.slice(1);
-      usePound = true;
+  const parseAnyColorToRgb = (colorStr: string, fallback = { r: 34, g: 211, b: 238 }) => {
+    if (!colorStr || typeof colorStr !== "string") return fallback;
+    const str = colorStr.trim();
+    if (str.startsWith("rgb")) {
+      const m = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+      if (m) {
+        return {
+          r: Math.min(255, Math.max(0, parseInt(m[1], 10))),
+          g: Math.min(255, Math.max(0, parseInt(m[2], 10))),
+          b: Math.min(255, Math.max(0, parseInt(m[3], 10))),
+        };
+      }
     }
-    if (hex.length === 3) {
-      hex = hex.split("").map(c => c + c).join("");
+    let clean = str.replace("#", "").trim();
+    if (clean.length === 3) {
+      clean = clean.split("").map(c => c + c).join("");
     }
-    if (hex.length > 6) {
-      hex = hex.slice(0, 6);
+    if (clean.length >= 6) {
+      const r = parseInt(clean.substring(0, 2), 16);
+      const g = parseInt(clean.substring(2, 4), 16);
+      const b = parseInt(clean.substring(4, 6), 16);
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        return { r, g, b };
+      }
     }
-    try {
-      const num = parseInt(hex, 16);
-      if (isNaN(num)) return (usePound ? "#" : "") + hex;
-      let r = Math.min(255, Math.max(0, (num >> 16) + percent));
-      let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00ff) + percent));
-      let b = Math.min(255, Math.max(0, (num & 0x0000ff) + percent));
-      return (usePound ? "#" : "") + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-    } catch (e) {
-      return (usePound ? "#" : "") + hex;
-    }
+    return fallback;
+  };
+
+  const lightenDarkenColor = (colorStr: string, percent: number) => {
+    const { r: r0, g: g0, b: b0 } = parseAnyColorToRgb(colorStr, { r: 15, g: 23, b: 42 });
+    const r = Math.min(255, Math.max(0, Math.round(r0 + percent)));
+    const g = Math.min(255, Math.max(0, Math.round(g0 + percent)));
+    const b = Math.min(255, Math.max(0, Math.round(b0 + percent)));
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  };
+
+  const mixColorToward = (colorStr: string, target: number, ratio: number) => {
+    const { r: r0, g: g0, b: b0 } = parseAnyColorToRgb(colorStr, { r: 34, g: 211, b: 238 });
+    const r = Math.min(255, Math.max(0, Math.round(r0 + (target - r0) * ratio)));
+    const g = Math.min(255, Math.max(0, Math.round(g0 + (target - g0) * ratio)));
+    const b = Math.min(255, Math.max(0, Math.round(b0 + (target - b0) * ratio)));
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   };
 
   const getThemeColorPalette = (hex: string) => {
@@ -4245,17 +4264,17 @@ export default function App() {
     const rgb = hexToRgb(safeHex);
     return {
       rgb,
-      c50: lightenDarkenColor(safeHex, 85),
-      c100: lightenDarkenColor(safeHex, 70),
-      c200: lightenDarkenColor(safeHex, 50),
-      c300: lightenDarkenColor(safeHex, 25),
-      c400: lightenDarkenColor(safeHex, 10),
+      c50: mixColorToward(safeHex, 255, 0.90),
+      c100: mixColorToward(safeHex, 255, 0.78),
+      c200: mixColorToward(safeHex, 255, 0.60),
+      c300: mixColorToward(safeHex, 255, 0.36),
+      c400: mixColorToward(safeHex, 255, 0.16),
       c500: safeHex,
-      c600: lightenDarkenColor(safeHex, -15),
-      c700: lightenDarkenColor(safeHex, -30),
-      c800: lightenDarkenColor(safeHex, -45),
-      c900: lightenDarkenColor(safeHex, -60),
-      c950: lightenDarkenColor(safeHex, -75),
+      c600: mixColorToward(safeHex, 0, 0.18),
+      c700: mixColorToward(safeHex, 0, 0.36),
+      c800: mixColorToward(safeHex, 0, 0.54),
+      c900: mixColorToward(safeHex, 0, 0.72),
+      c950: mixColorToward(safeHex, 0, 0.85),
     };
   };
 
@@ -4865,9 +4884,9 @@ export default function App() {
   // Instead of hardcoding background/text colors, ties them to a functional relationship
   // with the active theme background and active mode. In light themes, explicitly calculates
   // a higher-contrast border-color ensuring it remains at least WCAG 3:1 ratio against the card background.
-  const getDynamicInputStyles = (cardBg: string, isDark: boolean, accentHex: string) => {
+  const getDynamicInputStyles = (cardBg: string, isDark: boolean, accentHex: string, aiModePalette?: any) => {
     const cardLum = getLuminanceVal(cardBg);
-    const isLightBg = !isDark || cardLum >= 128;
+    const isLightBg = !isDark && cardLum >= 128;
 
     let inputBg: string;
     let inputBorder: string;
@@ -4876,25 +4895,24 @@ export default function App() {
     let optionBg: string;
 
     if (isLightBg) {
-      // In light themes: functionally tie input background & border to card background
-      // Explicitly calculate high-contrast border ensuring at least WCAG 3:1 ratio against card background
-      inputBg = "#ffffff";
-      inputBorder = calculateWcagInputBorder(cardBg, 3.0);
-      inputText = "#0f172a";
-      inputPlaceholder = "#64748b";
+      inputBg = aiModePalette?.inputBg && getLuminanceVal(aiModePalette.inputBg) >= 200 ? aiModePalette.inputBg : "#ffffff";
+      inputBorder = aiModePalette?.inputBorder || calculateWcagInputBorder(cardBg, 3.0);
+      inputText = aiModePalette?.inputText && getLuminanceVal(aiModePalette.inputText) <= 60 ? aiModePalette.inputText : "#0f172a";
+      inputPlaceholder = aiModePalette?.inputPlaceholder && getLuminanceVal(aiModePalette.inputPlaceholder) <= 95 ? aiModePalette.inputPlaceholder : "#334155";
       optionBg = "#ffffff";
     } else {
-      // In dark themes: functionally tie input background & border to dark surface
-      if (cardLum < 30) {
-        inputBg = "rgba(15, 23, 42, 0.88)";
-        inputBorder = "rgba(100, 116, 139, 0.6)";
+      const candidateAiInputBg = aiModePalette?.inputBg;
+      if (candidateAiInputBg && getLuminanceVal(candidateAiInputBg) <= 45) {
+        inputBg = candidateAiInputBg;
+      } else if (cardLum < 30) {
+        inputBg = "#0f172a";
       } else {
-        inputBg = lightenDarkenColor(cardBg, -10);
-        inputBorder = lightenDarkenColor(cardBg, 24);
+        inputBg = mixColorToward(cardBg, 10, 0.65);
       }
-      inputText = "#f8fafc";
-      inputPlaceholder = "#94a3b8";
-      optionBg = cardLum < 30 ? "#0f172a" : lightenDarkenColor(cardBg, 8);
+      inputBorder = aiModePalette?.inputBorder || lightenDarkenColor(cardBg, 38);
+      inputText = aiModePalette?.inputText && getLuminanceVal(aiModePalette.inputText) >= 185 ? aiModePalette.inputText : "#f8fafc";
+      inputPlaceholder = aiModePalette?.inputPlaceholder && getLuminanceVal(aiModePalette.inputPlaceholder) >= 150 ? aiModePalette.inputPlaceholder : "#cbd5e1";
+      optionBg = "#0f172a";
     }
 
     const focusBorder = accentHex || "#22d3ee";
@@ -5123,15 +5141,18 @@ export default function App() {
   const activeCustomColors = getReconciledThemeColors(currentTemplateId, rawCustomColors, activeIsDarkMode);
   const theme = previewTemplateId ? currentTemplate.backgroundTheme : (messAnimations?.backgroundTheme || "default");
 
+  // Retrieve memorized PostgreSQL AI + WCAG contrast palette for this theme and mode if cached
+  const cachedThemeEntry = customColors?.aiContrastPalettes?.[currentTemplateId];
+  const activeAiModePalette = cachedThemeEntry ? (activeIsDarkMode ? cachedThemeEntry.dark : cachedThemeEntry.light) : undefined;
+
   const activeTypography = getActiveTypographySettings(activeIsDarkMode, activeCustomColors);
 
   // Dynamically compute active theme's accent color and full shade palette
   const activeAccentHex = activeCustomColors?.accentColor || activeCustomColors?.siteAccentColorRgb || currentTemplate?.customColors?.accentColor || "#22d3ee";
   const themeShades = getThemeColorPalette(activeAccentHex);
 
-  // Dynamic Input Styling: Functionally tie text inputs and dropdowns to active theme background luminance
-  // In light themes, computes a slightly darker, high-contrast border and background for input boxes.
-  const dynamicInput = getDynamicInputStyles(activeCustomColors.cardBg, activeIsDarkMode, activeAccentHex);
+  // Dynamic Input Styling: Functionally tie text inputs and dropdowns to active theme background luminance & PostgreSQL AI cache
+  const dynamicInput = getDynamicInputStyles(activeCustomColors.cardBg, activeIsDarkMode, activeAccentHex, activeAiModePalette);
 
   const getScaleFactor = () => {
     const prefSize = userPreferencesState?.fontSize || fontSize || "normal";
@@ -5204,15 +5225,15 @@ export default function App() {
           --custom-input-placeholder: ${dynamicInput.inputPlaceholder};
 
           /* Dynamic Input & Dropdown Styling Variables */
-          --theme-input-bg: ${dynamicInput.inputBg} !important;
-          --theme-input-border: ${dynamicInput.inputBorder} !important;
-          --theme-input-border-focus: ${dynamicInput.focusBorder} !important;
-          --theme-input-focus-ring: ${dynamicInput.focusRing} !important;
-          --theme-input-text: ${dynamicInput.inputText} !important;
-          --theme-input-placeholder: ${dynamicInput.inputPlaceholder} !important;
-          --theme-select-bg: ${dynamicInput.inputBg} !important;
-          --theme-select-text: ${dynamicInput.inputText} !important;
-          --theme-select-option-bg: ${dynamicInput.optionBg} !important;
+          --theme-input-bg: ${dynamicInput.inputBg};
+          --theme-input-border: ${dynamicInput.inputBorder};
+          --theme-input-border-focus: ${dynamicInput.focusBorder};
+          --theme-input-focus-ring: ${dynamicInput.focusRing};
+          --theme-input-text: ${dynamicInput.inputText};
+          --theme-input-placeholder: ${dynamicInput.inputPlaceholder};
+          --theme-select-bg: ${dynamicInput.inputBg};
+          --theme-select-text: ${dynamicInput.inputText};
+          --theme-select-option-bg: ${dynamicInput.optionBg};
 
           --custom-cash-deposit-bg: ${activeCustomColors.cashDepositBg};
           --custom-cash-deposit-border: ${activeCustomColors.cashDepositBorder};
@@ -5575,39 +5596,66 @@ export default function App() {
           color: var(--custom-card-text);
         }
 
-        /* High specificity overrides for dark background helper utility classes in Light Mode */
+        /* High specificity overrides for dark background helper utility classes (including opacity variants) in Light Mode */
         .light-mode-root .bg-slate-950,
         .light-mode-root .bg-slate-900,
         .light-mode-root .bg-slate-850,
-        .light-mode-root .bg-slate-800 {
-          background-color: var(--custom-card-bg) !important;
-          border-color: var(--custom-input-border) !important;
+        .light-mode-root .bg-slate-800,
+        .light-mode-root [class*="bg-slate-950/"]:not(.fixed.inset-0):not([class*="hover:bg-slate-950"]),
+        .light-mode-root [class*="bg-slate-900/"]:not(.fixed.inset-0):not([class*="hover:bg-slate-900"]),
+        .light-mode-root [class*="bg-slate-850/"]:not(.fixed.inset-0):not([class*="hover:bg-slate-850"]),
+        .light-mode-root [class*="bg-slate-800/"]:not(.fixed.inset-0):not([class*="hover:bg-slate-800"]) {
+          background-color: var(--custom-card-bg, #ffffff) !important;
+          border-color: var(--custom-input-border, #cbd5e1) !important;
+        }
+        .light-mode-root [class*="hover:bg-slate-9"]:hover:not(button.bg-slate-900):not(.fixed.inset-0),
+        .light-mode-root [class*="hover:bg-slate-8"]:hover:not(button.bg-slate-800):not(.fixed.inset-0) {
+          background-color: #f1f5f9 !important;
         }
 
-        /* Crucial: Button text-white must ALWAYS remain white on buttons, badges, and alerts */
-        .light-mode-root button.text-white,
-        .light-mode-root button[class*="text-white"],
-        .light-mode-root [class*="bg-red-"] .text-white,
-        .light-mode-root [class*="bg-rose-"] .text-white,
-        .light-mode-root [class*="bg-emerald-"] .text-white,
-        .light-mode-root [class*="bg-green-"] .text-white,
-        .light-mode-root [class*="bg-cyan-"] .text-white,
-        .light-mode-root [class*="bg-blue-"] .text-white,
-        .light-mode-root [class*="bg-amber-"] .text-white,
-        .light-mode-root [class*="bg-orange-"] .text-white,
-        .light-mode-root [class*="bg-purple-"] .text-white,
-        .light-mode-root [class*="bg-indigo-"] .text-white,
-        .light-mode-root [class*="from-"] .text-white,
+        /* Crucial: Only SOLID dark/vivid filled buttons keep #ffffff text — NEVER translucent (/10, /20) or pastel (-50, -100) buttons! */
+        .light-mode-root button.bg-rose-600,
+        .light-mode-root button.bg-rose-600 *,
+        .light-mode-root button.bg-red-600,
+        .light-mode-root button.bg-red-600 *,
+        .light-mode-root button.bg-emerald-600,
+        .light-mode-root button.bg-emerald-600 *,
+        .light-mode-root button.bg-green-600,
+        .light-mode-root button.bg-green-600 *,
+        .light-mode-root button.bg-cyan-600,
+        .light-mode-root button.bg-cyan-600 *,
+        .light-mode-root button.bg-blue-600,
+        .light-mode-root button.bg-blue-600 *,
+        .light-mode-root button.bg-amber-600,
+        .light-mode-root button.bg-amber-600 *,
+        .light-mode-root button.bg-orange-600,
+        .light-mode-root button.bg-orange-600 *,
+        .light-mode-root button.bg-purple-600,
+        .light-mode-root button.bg-purple-600 *,
+        .light-mode-root button.bg-indigo-600,
+        .light-mode-root button.bg-indigo-600 *,
+        .light-mode-root button[class*="from-rose-"],
+        .light-mode-root button[class*="from-rose-"] *,
+        .light-mode-root button[class*="from-red-"],
+        .light-mode-root button[class*="from-red-"] *,
+        .light-mode-root button[class*="from-emerald-"],
+        .light-mode-root button[class*="from-emerald-"] *,
+        .light-mode-root button[class*="from-amber-"],
+        .light-mode-root button[class*="from-amber-"] *,
+        .light-mode-root button[class*="from-blue-"],
+        .light-mode-root button[class*="from-blue-"] *,
+        .light-mode-root button[class*="from-indigo-"],
+        .light-mode-root button[class*="from-indigo-"] *,
+        .light-mode-root button[class*="from-purple-"],
+        .light-mode-root button[class*="from-purple-"] *,
+        .light-mode-root button[class*="from-cyan-500"],
+        .light-mode-root button[class*="from-cyan-500"] *,
+        .light-mode-root button[class*="from-cyan-600"],
+        .light-mode-root button[class*="from-cyan-600"] *,
+        .light-mode-root button.text-white:not([class*="/10"]):not([class*="/15"]):not([class*="/20"]):not([class*="-50 "]):not([class$="-50"]):not([class*="-100 "]):not([class$="-100"]),
+        .light-mode-root button.text-white:not([class*="/10"]):not([class*="/15"]):not([class*="/20"]):not([class*="-50 "]):not([class$="-50"]):not([class*="-100 "]):not([class$="-100"]) *,
         .light-mode-root .btn-primary,
         .light-mode-root .badge {
-          color: #ffffff !important;
-        }
-        .light-mode-root button[class*="from-"] *,
-        .light-mode-root button[class*="bg-rose"] *,
-        .light-mode-root button[class*="bg-red"] *,
-        .light-mode-root button[class*="bg-cyan"] *,
-        .light-mode-root button[class*="bg-emerald"] *,
-        .light-mode-root button[class*="bg-indigo"] * {
           color: #ffffff !important;
         }
 
@@ -5625,8 +5673,9 @@ export default function App() {
         .light-mode-root .border-slate-800,
         .light-mode-root .border-slate-850,
         .light-mode-root .border-slate-900,
+        .light-mode-root .border-slate-700,
         .light-mode-root .border-slate-850\\/50 {
-          border-color: var(--custom-input-border) !important;
+          border-color: var(--custom-input-border, #cbd5e1) !important;
         }
 
         /* Sticky spreadsheet tables elements */
@@ -5660,29 +5709,29 @@ export default function App() {
         }
 
         /* Invert hardcoded light/white texts to high-contrast dark tones in light mode */
-        .light-mode-root .text-slate-100:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *):not([class*="bg-cyan-6"] *):not([class*="bg-indigo-6"] *):not([class*="bg-blue-6"] *),
-        .light-mode-root .text-slate-200:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *):not([class*="bg-cyan-6"] *):not([class*="bg-indigo-6"] *):not([class*="bg-blue-6"] *),
-        .light-mode-root .text-slate-300:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *):not([class*="bg-cyan-6"] *):not([class*="bg-indigo-6"] *):not([class*="bg-blue-6"] *),
-        .light-mode-root .text-gray-100:not(button *),
-        .light-mode-root .text-gray-200:not(button *),
-        .light-mode-root .text-gray-300:not(button *),
-        .light-mode-root .text-zinc-100:not(button *),
-        .light-mode-root .text-zinc-200:not(button *),
-        .light-mode-root .text-zinc-300:not(button *) {
+        .light-mode-root .text-slate-100:not(button.bg-rose-600 *):not(button.bg-emerald-600 *):not(button.bg-cyan-600 *):not(button.bg-indigo-600 *):not(button.bg-blue-600 *):not(button[class*="from-"] *),
+        .light-mode-root .text-slate-200:not(button.bg-rose-600 *):not(button.bg-emerald-600 *):not(button.bg-cyan-600 *):not(button.bg-indigo-600 *):not(button.bg-blue-600 *):not(button[class*="from-"] *),
+        .light-mode-root .text-slate-300:not(button.bg-rose-600 *):not(button.bg-emerald-600 *):not(button.bg-cyan-600 *):not(button.bg-indigo-600 *):not(button.bg-blue-600 *):not(button[class*="from-"] *),
+        .light-mode-root .text-gray-100:not(button[class*="-600"] *),
+        .light-mode-root .text-gray-200:not(button[class*="-600"] *),
+        .light-mode-root .text-gray-300:not(button[class*="-600"] *),
+        .light-mode-root .text-zinc-100:not(button[class*="-600"] *),
+        .light-mode-root .text-zinc-200:not(button[class*="-600"] *),
+        .light-mode-root .text-zinc-300:not(button[class*="-600"] *) {
           color: #0f172a !important;
         }
 
-        .light-mode-root .text-slate-400:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *),
-        .light-mode-root .text-slate-500:not(button *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *),
-        .light-mode-root .text-gray-400:not(button *),
-        .light-mode-root .text-gray-500:not(button *),
-        .light-mode-root .text-zinc-400:not(button *),
-        .light-mode-root .text-zinc-500:not(button *) {
-          color: #475569 !important;
+        .light-mode-root .text-slate-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-slate-500:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-gray-400:not(button[class*="-600"] *),
+        .light-mode-root .text-gray-500:not(button[class*="-600"] *),
+        .light-mode-root .text-zinc-400:not(button[class*="-600"] *),
+        .light-mode-root .text-zinc-500:not(button[class*="-600"] *) {
+          color: #334155 !important;
         }
 
-        /* Invert hardcoded text-white inside light containers */
-        .light-mode-root div[class*="border"]:not([class*="bg-rose-6"]):not([class*="bg-emerald-6"]):not([class*="bg-cyan-6"]):not([class*="bg-indigo-6"]):not([class*="bg-blue-6"]):not([class*="bg-gradient-"]) .text-white:not(button *):not(.special-action-btn *):not([class*="bg-rose-"] *):not([class*="bg-emerald-"] *) {
+        /* Invert hardcoded text-white inside light containers (keeping solid colored buttons white) */
+        .light-mode-root div[class*="border"]:not([class*="bg-rose-6"]):not([class*="bg-emerald-6"]):not([class*="bg-cyan-6"]):not([class*="bg-indigo-6"]):not([class*="bg-blue-6"]):not([class*="bg-gradient-"]) .text-white:not(button *):not(.special-action-btn *):not([class*="bg-rose-6"] *):not([class*="bg-emerald-6"] *) {
           color: #0f172a !important;
         }
 
@@ -5691,66 +5740,149 @@ export default function App() {
           font-weight: 800 !important;
         }
 
-        /* Status colors & soft light pills */
+        /* Rich, deep, high-contrast status colors & soft light pills in Light Mode */
         .light-mode-root .bg-cyan-950,
-        .light-mode-root .bg-cyan-950\\/20 {
-          background-color: rgba(${themeShades.rgb}, 0.12) !important;
-          color: ${themeShades.c800 || "#0c4a6e"} !important;
+        .light-mode-root [class*="bg-cyan-950/"] {
+          background-color: rgba(${themeShades.rgb}, 0.14) !important;
+          color: ${themeShades.c800 || "#155e75"} !important;
         }
         .light-mode-root .bg-amber-950,
-        .light-mode-root .bg-amber-950\\/50 {
-          background-color: rgba(245, 158, 11, 0.12) !important;
-          color: #713f12 !important;
+        .light-mode-root [class*="bg-amber-950/"] {
+          background-color: rgba(245, 158, 11, 0.14) !important;
+          color: #78350f !important;
         }
         .light-mode-root .bg-purple-950,
-        .light-mode-root .bg-purple-950\\/20,
+        .light-mode-root [class*="bg-purple-950/"],
         .light-mode-root .bg-violet-950,
-        .light-mode-root .bg-violet-950\\/20 {
-          background-color: rgba(147, 51, 234, 0.12) !important;
+        .light-mode-root [class*="bg-violet-950/"] {
+          background-color: rgba(147, 51, 234, 0.14) !important;
           color: #581c87 !important;
         }
-        .light-mode-root .text-cyan-400,
-        .light-mode-root .text-cyan-300 {
-          color: ${themeShades.c700 || "#0891b2"} !important;
+        .light-mode-root .bg-rose-950,
+        .light-mode-root [class*="bg-rose-950/"],
+        .light-mode-root .bg-red-950,
+        .light-mode-root [class*="bg-red-950/"] {
+          background-color: rgba(244, 63, 94, 0.12) !important;
+          color: #881337 !important;
         }
-        .light-mode-root .text-cyan-500 {
-          color: ${themeShades.c600 || "#0891b2"} !important;
+        .light-mode-root .text-cyan-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-cyan-300:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-cyan-200:not(button[class*="-600"] *):not(button[class*="from-"] *) {
+          color: ${themeShades.c800 || "#0e7490"} !important;
         }
-        .light-mode-root .text-amber-400,
-        .light-mode-root .text-amber-300 {
-          color: #b45309;
+        .light-mode-root .text-cyan-500:not(button[class*="-600"] *):not(button[class*="from-"] *) {
+          color: ${themeShades.c700 || "#0e7490"} !important;
         }
-        .light-mode-root .text-purple-400,
-        .light-mode-root .text-purple-300,
-        .light-mode-root .text-violet-400,
-        .light-mode-root .text-violet-300 {
-          color: #7e22ce;
+        .light-mode-root .text-amber-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-amber-300:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-amber-200:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-orange-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-orange-300:not(button[class*="-600"] *):not(button[class*="from-"] *) {
+          color: #b45309 !important;
         }
-        .light-mode-root .text-emerald-400,
-        .light-mode-root .text-emerald-500 {
-          color: #15803d;
+        .light-mode-root .text-purple-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-purple-300:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-violet-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-violet-300:not(button[class*="-600"] *):not(button[class*="from-"] *) {
+          color: #6b21a8 !important;
         }
-        .light-mode-root .bg-emerald-500\\/10 {
-          background-color: rgba(34, 197, 94, 0.12) !important;
-          color: #15803d !important;
+        .light-mode-root .text-emerald-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-emerald-300:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-emerald-500:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-green-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-green-300:not(button[class*="-600"] *):not(button[class*="from-"] *) {
+          color: #047857 !important;
         }
+        .light-mode-root .text-rose-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-rose-300:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-rose-200:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-red-400:not(button[class*="-600"] *):not(button[class*="from-"] *),
+        .light-mode-root .text-red-300:not(button[class*="-600"] *):not(button[class*="from-"] *) {
+          color: #be123c !important;
+        }
+        .light-mode-root .bg-emerald-500\\/10,
+        .light-mode-root .bg-emerald-500\\/20 {
+          background-color: rgba(16, 185, 129, 0.14) !important;
+          color: #065f46 !important;
+        }
+        .light-mode-root .bg-rose-500\\/10,
         .light-mode-root .bg-rose-500\\/20,
+        .light-mode-root .bg-red-500\\/10,
         .light-mode-root .bg-red-500\\/20 {
-          background-color: rgba(239, 68, 68, 0.12) !important;
-          color: #b91c1c !important;
+          background-color: rgba(244, 63, 94, 0.13) !important;
+          color: #9f1239 !important;
         }
 
         /* ------------------------------------------------------------------
            FINANCE MONTHLY SUMMARY (INDIVIDUAL MEMBER AMOUNT) HIGH CONTRAST
+           (BOTH DARK MODE & LIGHT MODE ACROSS ALL THEMES INCL. GLASSMORPHISM)
            ------------------------------------------------------------------ */
+        .dark-mode-root #finance-monthly-summary-card,
+        .dark-mode-root #finance-monthly-summary-card table {
+          color: #f8fafc !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table thead tr,
+        .dark-mode-root #finance-monthly-summary-card table thead th {
+          background-color: ${activeAiModePalette?.tableHeaderBg || "rgba(2, 6, 23, 0.85)"} !important;
+          color: ${activeAiModePalette?.tableHeaderText || "#f1f5f9"} !important;
+          font-weight: 800 !important;
+          border-color: rgba(148, 163, 184, 0.25) !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table td {
+          color: #f8fafc !important;
+          border-color: rgba(148, 163, 184, 0.16) !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table input {
+          background-color: ${activeAiModePalette?.inputBg || "rgba(15, 23, 42, 0.94)"} !important;
+          border: 1.5px solid rgba(${themeShades.rgb}, 0.55) !important;
+          color: #ffffff !important;
+          font-weight: 800 !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table input::placeholder {
+          color: ${activeAiModePalette?.inputPlaceholder || "#67e8f9"} !important;
+          font-weight: 800 !important;
+          opacity: 1 !important;
+        }
+        /* Individual Meals input column in Dark Mode */
+        .dark-mode-root #finance-monthly-summary-card table td:nth-last-child(3) input {
+          background-color: rgba(30, 20, 15, 0.92) !important;
+          border: 1.5px solid rgba(249, 115, 22, 0.65) !important;
+          color: #fed7aa !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table td:nth-last-child(3) input::placeholder {
+          color: #fdba74 !important;
+          opacity: 1 !important;
+        }
+        /* Unpaid & Paid buttons in Dark Mode */
+        .dark-mode-root #finance-monthly-summary-card table button:has(svg.lucide-x),
+        .dark-mode-root #finance-monthly-summary-card table span[class*="bg-rose-"] {
+          background-color: ${activeAiModePalette?.unpaidBadgeBg || "rgba(136, 19, 55, 0.55)"} !important;
+          border: 1px solid rgba(244, 63, 94, 0.65) !important;
+          color: ${activeAiModePalette?.unpaidBadgeText || "#fecdd3"} !important;
+          font-weight: 900 !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table button:has(svg.lucide-x) * {
+          color: ${activeAiModePalette?.unpaidBadgeText || "#fecdd3"} !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table button:has(svg.lucide-check),
+        .dark-mode-root #finance-monthly-summary-card table span[class*="bg-emerald-"] {
+          background-color: ${activeAiModePalette?.paidBadgeBg || "rgba(6, 78, 59, 0.6)"} !important;
+          border: 1px solid rgba(16, 185, 129, 0.65) !important;
+          color: ${activeAiModePalette?.paidBadgeText || "#a7f3d0"} !important;
+          font-weight: 900 !important;
+        }
+        .dark-mode-root #finance-monthly-summary-card table button:has(svg.lucide-check) * {
+          color: ${activeAiModePalette?.paidBadgeText || "#a7f3d0"} !important;
+        }
+
         .light-mode-root #finance-monthly-summary-card,
         .light-mode-root #finance-monthly-summary-card table {
           color: #0f172a !important;
         }
         .light-mode-root #finance-monthly-summary-card table thead tr,
         .light-mode-root #finance-monthly-summary-card table thead th {
-          background-color: #f1f5f9 !important;
-          color: #0f172a !important;
+          background-color: ${activeAiModePalette?.tableHeaderBg || "#f1f5f9"} !important;
+          color: ${activeAiModePalette?.tableHeaderText || "#0f172a"} !important;
           font-weight: 800 !important;
           border-color: #cbd5e1 !important;
         }
@@ -5779,24 +5911,24 @@ export default function App() {
         /* Unpaid status badges & buttons: high contrast deep crimson text on soft rose */
         .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-x),
         .light-mode-root #finance-monthly-summary-card table span[class*="bg-rose-"] {
-          background-color: #ffe4e6 !important;
+          background-color: ${activeAiModePalette?.unpaidBadgeBg || "#ffe4e6"} !important;
           border: 1px solid #f43f5e !important;
-          color: #9f1239 !important;
+          color: ${activeAiModePalette?.unpaidBadgeText || "#9f1239"} !important;
           font-weight: 900 !important;
         }
         .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-x) * {
-          color: #9f1239 !important;
+          color: ${activeAiModePalette?.unpaidBadgeText || "#9f1239"} !important;
         }
         /* Paid status badges & buttons: high contrast deep green text on soft emerald */
         .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-check),
         .light-mode-root #finance-monthly-summary-card table span[class*="bg-emerald-"] {
-          background-color: #d1fae5 !important;
+          background-color: ${activeAiModePalette?.paidBadgeBg || "#d1fae5"} !important;
           border: 1px solid #10b981 !important;
-          color: #065f46 !important;
+          color: ${activeAiModePalette?.paidBadgeText || "#065f46"} !important;
           font-weight: 900 !important;
         }
         .light-mode-root #finance-monthly-summary-card table button:has(svg.lucide-check) * {
-          color: #065f46 !important;
+          color: ${activeAiModePalette?.paidBadgeText || "#065f46"} !important;
         }
         /* Meal and Total columns in Light Mode */
         .light-mode-root #finance-monthly-summary-card table td span[class*="text-orange-"] {
@@ -6396,13 +6528,17 @@ export default function App() {
               <button
                 onClick={handleToggleSafeMode}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all ${
-                  safeMode 
-                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20" 
-                    : "bg-slate-500/5 border-slate-800 text-slate-500 hover:text-slate-400"
+                  safeMode
+                    ? activeIsDarkMode
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                      : "bg-emerald-50 border-emerald-400 text-emerald-900 hover:bg-emerald-100 shadow-xs"
+                    : activeIsDarkMode
+                      ? "bg-slate-500/5 border-slate-800 text-slate-500 hover:text-slate-400"
+                      : "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200"
                 }`}
                 title={safeMode ? "Safe Mode is active to prevent accidental changes." : "Safe Mode is off."}
               >
-                <Shield size={14} className={safeMode ? "text-emerald-400 animate-pulse" : "text-slate-500"} />
+                <Shield size={14} className={safeMode ? (activeIsDarkMode ? "text-emerald-400 animate-pulse" : "text-emerald-700 animate-pulse") : "text-slate-500"} />
                 <span>🛡️ Safe Mode: {safeMode ? "ON" : "OFF"}</span>
               </button>
             )}
@@ -6488,7 +6624,11 @@ export default function App() {
               {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERUSER) && (
                 <button
                   onClick={handleToggleSafeMode}
-                  className="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-400 font-extrabold text-[9px] rounded-md cursor-pointer uppercase tracking-wider transition-all shrink-0"
+                  className={`px-2.5 py-1 border font-extrabold text-[9px] rounded-md cursor-pointer uppercase tracking-wider transition-all shrink-0 ${
+                    activeIsDarkMode
+                      ? "bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border-emerald-500/25 text-emerald-400"
+                      : "bg-emerald-100 hover:bg-emerald-700 hover:text-white border-emerald-400 text-emerald-900"
+                  }`}
                 >
                   Turn Off
                 </button>

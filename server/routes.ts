@@ -56,6 +56,7 @@ import { loadDB, saveDB, saveDBAsync, commitMessDB, commitMessStateSnapshot, wit
 import { processMenuFoods, getFoodAnalytics, resolveCanonicalFood, splitMenuText, invalidateFoodCache } from "./foodKnowledge.js";
 import { getVoucherBreakdown } from "./marketParser.js";
 import { scanMealSheetWithAI } from "./aiMealScanner.js";
+import { generateOrResolveThemeContrast, computeThemeSignature } from "./themeContrastAi.js";
 import { 
   getTodayBackupForMess, 
   getDailyBackupHistory, 
@@ -7028,7 +7029,17 @@ router.put("/settings", authMiddleware, async (req: AuthenticatedRequest, res: R
       }
       if (roleAnimations !== undefined) currentSettings.roleAnimations = roleAnimations;
       if (currencySymbol !== undefined) currentSettings.currencySymbol = currencySymbol;
-      if (customColors !== undefined) currentSettings.customColors = { ...currentSettings.customColors, ...customColors };
+      if (customColors !== undefined) {
+        const preservedAiPalettes = {
+          ...(currentSettings.customColors?.aiContrastPalettes || {}),
+          ...(customColors?.aiContrastPalettes || {})
+        };
+        currentSettings.customColors = {
+          ...currentSettings.customColors,
+          ...customColors,
+          aiContrastPalettes: preservedAiPalettes
+        };
+      }
       if (messAnimations !== undefined) currentSettings.messAnimations = { ...currentSettings.messAnimations, ...messAnimations };
       if (dashboardVisibility !== undefined) currentSettings.dashboardVisibility = { ...currentSettings.dashboardVisibility, ...dashboardVisibility };
       if (dateRestrictions !== undefined) currentSettings.dateRestrictions = { ...currentSettings.dateRestrictions, ...dateRestrictions };
@@ -7210,6 +7221,77 @@ router.put("/settings", authMiddleware, async (req: AuthenticatedRequest, res: R
       systemBrandingName: savedPc.systemBrandingName || "My Mess (Mess ERP)"
     }
   });
+});
+
+router.post("/settings/theme-contrast-ai", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const messId = getActiveMessId() || "default";
+  await ensureSettingsLoaded(messId);
+
+  const role = req.user!.role;
+  const isUltimateAdmin = isPlatformOwner(req.user!.email);
+  const isAuthority = [
+    UserRole.ADMIN,
+    UserRole.SUPERUSER,
+    UserRole.ASSISTANT_SUPERUSER,
+    UserRole.MANAGER
+  ].includes(role) || isUltimateAdmin;
+
+  if (!isAuthority) {
+    res.status(403).json({ error: "Only authorized mess administrators can optimize and save theme contrast palettes." });
+    return;
+  }
+
+  const themeId = String(req.body?.themeId || "default-erp").trim();
+  const themeName = String(req.body?.themeName || themeId).trim();
+  const forceRegenerate = Boolean(req.body?.forceRegenerate);
+  const incomingColors = req.body?.customColors && typeof req.body.customColors === "object" ? req.body.customColors : {};
+
+  try {
+    let responsePayload: any = null;
+    await withMessSettingsLock(messId, async () => {
+      await hydrateLatestSettingsIntoCache(messId);
+      const currentSettings = loadSettings(messId);
+      if (!currentSettings.customColors) currentSettings.customColors = {};
+      if (!currentSettings.customColors.aiContrastPalettes) {
+        currentSettings.customColors.aiContrastPalettes = {};
+      }
+
+      const effectiveColors = {
+        ...currentSettings.customColors,
+        ...incomingColors
+      };
+      const expectedSig = computeThemeSignature(themeId, effectiveColors);
+      const existingEntry = currentSettings.customColors.aiContrastPalettes[themeId];
+
+      if (!forceRegenerate && existingEntry && existingEntry.signature === expectedSig && existingEntry.dark && existingEntry.light) {
+        responsePayload = {
+          success: true,
+          cached: true,
+          source: "POSTGRES_CACHE",
+          entry: existingEntry,
+          customColors: currentSettings.customColors
+        };
+        return;
+      }
+
+      const generatedEntry = await generateOrResolveThemeContrast(themeId, themeName, effectiveColors);
+      currentSettings.customColors.aiContrastPalettes[themeId] = generatedEntry;
+      await saveSettingsAsync(currentSettings, messId);
+
+      responsePayload = {
+        success: true,
+        cached: false,
+        source: generatedEntry.source,
+        entry: generatedEntry,
+        customColors: currentSettings.customColors
+      };
+    });
+
+    res.json(responsePayload);
+  } catch (err: any) {
+    console.error("[ThemeContrastAI] Failed to resolve/save theme contrast palette:", err);
+    res.status(500).json({ error: err?.message || "Failed to generate or persist theme contrast palette." });
+  }
 });
 
 router.post("/settings/audit-mode", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
