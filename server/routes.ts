@@ -64,6 +64,7 @@ import {
   saveDailyBackupToDatabase, 
   generateDailyBackupPayload 
 } from "./backupCron.js";
+import { getHistoricalImportStatus, applyHistoricalImport, ALL_HISTORICAL_TARGETS } from "./historicalImport.js";
 import { loadPlatformControls, savePlatformControls, savePlatformControlsAsync, isPlatformOwner } from "./founder.js";
 import { sanitizeMemberUpdatePayload } from "../src/schemas/apiValidationSchemas.js";
 import { db as drizzleDb, pool } from "../src/db/index.js";
@@ -8932,6 +8933,51 @@ router.post("/admin/backup/daily/undo", authMiddleware, async (req: Authenticate
   } catch (err: any) {
     console.error("[Daily Backup Undo] Error:", err);
     res.status(500).json({ error: err.message || "Failed to undo/rollback backup" });
+  }
+});
+
+// =========================================================================
+// HISTORICAL ARCHIVE IMPORT ROUTES (STRICTLY SCOPED TO ABABIL / default)
+// =========================================================================
+router.get("/admin/historical-import/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || isFounder;
+    if (!isAdmin) {
+      res.status(403).json({ error: "Forbidden: Admin access required." });
+      return;
+    }
+    const activeMessId = getActiveMessId();
+    const status = await getHistoricalImportStatus(activeMessId);
+    res.json({ success: true, ...status });
+  } catch (err: any) {
+    console.error("[Historical Import Status] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to fetch historical import status" });
+  }
+});
+
+router.post("/admin/historical-import/apply", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isFounder = isPlatformOwnerEmail(req.user?.email);
+    const isAdmin = req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.SUPERUSER || isFounder;
+    if (!isAdmin) {
+      res.status(403).json({ error: "অনুমতি অস্বীকৃত: শুধুমাত্র অ্যাডমিন হিস্টোরিক্যাল আর্কাইভ ইমপোর্ট করতে পারবেন।" });
+      return;
+    }
+    const activeMessId = getActiveMessId();
+    if (activeMessId !== "default") {
+      res.status(403).json({ error: "এই ঐতিহাসিক ডাটা শুধুমাত্র Ababil (default) মেসের জন্য নির্ধারিত।" });
+      return;
+    }
+    const targets = Array.isArray(req.body?.targets) ? req.body.targets : ALL_HISTORICAL_TARGETS;
+    const result = await applyHistoricalImport(activeMessId, targets, {
+      id: req.user!.id,
+      nickname: req.user!.nickname || req.user!.email || "Admin",
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error("[Historical Import Apply] Error:", err);
+    res.status(500).json({ error: err.message || "Failed to apply historical import" });
   }
 });
 

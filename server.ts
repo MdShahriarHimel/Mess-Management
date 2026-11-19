@@ -17,6 +17,7 @@ import { pool } from "./src/db/index.js";
 import { seedMonetizationModule } from "./server/monetization.js";
 import { startDailyBackupCron } from "./server/backupCron.js";
 import { startMarketReminderScheduler } from "./server/marketReminderService.js";
+import { ensureAbabilHistoricalArchiveImported } from "./server/historicalImport.js";
 import { initSocketIO } from "./server/socket.js";
 import { recordCronPing, cronStatus } from "./server/cronStatus.js";
 import { requestContext } from "./server/context.js";
@@ -253,7 +254,8 @@ const initPromise = (async () => {
   await configureApp();
   // Trigger eager DB cache initialization in background
   ensureDbInitialized()
-    .then(() => {
+    .then(async () => {
+      await ensureAbabilHistoricalArchiveImported();
       startDailyBackupCron();
       startMarketReminderScheduler();
     })
