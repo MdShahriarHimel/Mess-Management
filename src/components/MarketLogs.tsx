@@ -757,18 +757,48 @@ export default function MarketLogs({
   const [startDate, setStartDate] = useState(() => initialVoucherDraft?.startDate || new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(() => initialVoucherDraft?.endDate || new Date().toISOString().split("T")[0]);
 
-  // Helper to extract assigned market dates for the selected member
-  const memberDuties = duties.filter(d => 
-    d.memberId === memberId && 
-    (d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar"))
-  );
+  // Helper to extract assigned market dates for the selected member (deduplicated & sorted)
+  const assignedDates = useMemo(() => {
+    const memberDuties = duties.filter(d =>
+      d.memberId === memberId &&
+      (d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar"))
+    );
+    const extracted = memberDuties.map(d => {
+      const parts = d.name.split(": ");
+      if (parts[1]) return parts[1].trim();
+      const match = d.name.match(/(\d{4}-\d{2}-\d{2})/);
+      return match ? match[1] : "";
+    }).filter(Boolean);
+    return Array.from(new Set(extracted)).sort();
+  }, [duties, memberId]);
 
-  const assignedDates = memberDuties.map(d => {
-    const parts = d.name.split(": ");
-    if (parts[1]) return parts[1].trim();
-    const match = d.name.match(/(\d{4}-\d{2}-\d{2})/);
-    return match ? match[1] : "";
-  }).filter(Boolean).sort();
+  // Standard (non-extra) market dates already submitted by the selected member in this mess & cycle
+  const submittedStandardDatesForMember = useMemo(() => {
+    const activeTargetMonthId = viewMonthId || currentMonthId;
+    const submitted = new Set<string>();
+    markets.forEach(m => {
+      if (m.memberId !== memberId) return;
+      if (m.isExtra) return;
+      if (activeTargetMonthId && m.monthId && m.monthId !== activeTargetMonthId) return;
+      const hasCovered = Array.isArray(m.coveredDates) && m.coveredDates.length > 0;
+      if (hasCovered) {
+        m.coveredDates!.forEach(d => {
+          if (d) submitted.add(d.split("T")[0]);
+        });
+      } else if (m.date) {
+        submitted.add(m.date.split("T")[0]);
+      }
+    });
+    return submitted;
+  }, [markets, memberId, viewMonthId, currentMonthId]);
+
+  // Only show remaining assigned dates that have NOT yet been submitted by this member
+  const availableAssignedDates = useMemo(() => {
+    return assignedDates.filter(d => !submittedStandardDatesForMember.has(d));
+  }, [assignedDates, submittedStandardDatesForMember]);
+
+  const availableAssignedDatesKey = availableAssignedDates.join(",");
+  const submittedAssignedCount = assignedDates.length - availableAssignedDates.length;
 
   // Helper to check if an array of selected dates are consecutive
   const areDatesConsecutive = (datesList: string[]): boolean => {
@@ -899,15 +929,24 @@ export default function MarketLogs({
     }
   };
 
-  // Auto-select first assigned date on mount/member change
+  // Auto-select first remaining (unsubmitted) assigned date on mount, member change, modal open, or markets update
   useEffect(() => {
+    if (isExtra) return;
     if (assignedDates.length > 0) {
-      setCoveredDates([assignedDates[0]]);
-      setDate(assignedDates[0]);
+      setCoveredDates(prev => {
+        const validPrev = prev.filter(d => availableAssignedDates.includes(d));
+        if (validPrev.length > 0) {
+          return validPrev;
+        }
+        return availableAssignedDates.length > 0 ? [availableAssignedDates[0]] : [];
+      });
+      if (availableAssignedDates.length > 0) {
+        setDate(prev => (availableAssignedDates.includes(prev) ? prev : availableAssignedDates[0]));
+      }
     } else {
-      setCoveredDates([date]);
+      setCoveredDates(prev => (prev.length > 0 ? prev : [date]));
     }
-  }, [memberId, assignedDates.length]);
+  }, [memberId, isExtra, assignedDates.length, availableAssignedDatesKey, showAddModal]);
 
   // Handle start and end date updates for extra/manager custom dates range mapping
   useEffect(() => {
@@ -1220,7 +1259,17 @@ export default function MarketLogs({
       }
     }
 
-    // 2. Validate user assignment rules
+    // 2. Prevent re-submitting standard market vouchers for dates already submitted by this member
+    if (!isExtra) {
+      const duplicateDates = coveredDates.filter(d => submittedStandardDatesForMember.has(d.split("T")[0]));
+      if (duplicateDates.length > 0) {
+        setError(`Duplicate Date Blocked: Market voucher for ${duplicateDates.join(", ")} has already been submitted. Please select only remaining dates or check "এক্সট্রা বাজার (Extra)".`);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // 2b. Validate user assignment rules
     const isManagerOrAdmin = currentUser.role !== UserRole.MEMBER;
     
     // Normal members are strictly validated against their assigned schedule dates
@@ -1581,9 +1630,10 @@ export default function MarketLogs({
       });
 
       markets.filter(mkt => mkt.memberId === member.id).forEach(mkt => {
-        if (mkt.date) datesSet.add(mkt.date);
-        if (mkt.coveredDates && Array.isArray(mkt.coveredDates)) {
+        if (mkt.coveredDates && Array.isArray(mkt.coveredDates) && mkt.coveredDates.length > 0) {
           mkt.coveredDates.forEach(cd => datesSet.add(cd));
+        } else if (mkt.date) {
+          datesSet.add(mkt.date);
         }
       });
 
@@ -1593,10 +1643,10 @@ export default function MarketLogs({
       const pendingDates: string[] = [];
 
       assignedDates.forEach(dStr => {
-        const isCompleted = markets.some(mkt => 
-          mkt.date === dStr || 
-          (mkt.coveredDates && Array.isArray(mkt.coveredDates) && mkt.coveredDates.includes(dStr))
-        );
+        const isCompleted = markets.some(mkt => {
+          const hasCovered = Array.isArray(mkt.coveredDates) && mkt.coveredDates.length > 0;
+          return hasCovered ? mkt.coveredDates!.includes(dStr) : mkt.date === dStr;
+        });
         if (isCompleted) {
           completedDates.push(dStr);
         } else {
@@ -2547,16 +2597,44 @@ export default function MarketLogs({
                                       );
                                   }
 
-                                  const dayDuties = duties.filter(d => {
+                                  const rawDayDuties = duties.filter(d => {
                                     const isMarket = d.name.toLowerCase().includes("market") || d.name.toLowerCase().includes("bazar");
                                     return isMarket && d.name.includes(cell.dateStr);
                                   });
 
-                                  // Market entries logged/pushed for this specific day or covered by this day
-                                  const dayMarkets = markets.filter(m => 
-                                    m.date === cell.dateStr || 
-                                    (m.coveredDates && Array.isArray(m.coveredDates) && m.coveredDates.includes(cell.dateStr))
-                                  );
+                                  // Deduplicate duty holders per day by memberId so the same name never renders twice on one date
+                                  const dayDutiesMap = new Map<string, (typeof rawDayDuties)[number]>();
+                                  rawDayDuties.forEach(d => {
+                                    const k = d.memberId || d.id;
+                                    if (!dayDutiesMap.has(k)) dayDutiesMap.set(k, d);
+                                  });
+                                  const dayDuties = Array.from(dayDutiesMap.values());
+
+                                  // Market entries covering this day: prefer explicit coveredDates when present, fallback to m.date
+                                  const dayMarkets = markets.filter(m => {
+                                    const hasCovered = Array.isArray(m.coveredDates) && m.coveredDates.length > 0;
+                                    return hasCovered ? m.coveredDates!.includes(cell.dateStr) : m.date === cell.dateStr;
+                                  });
+
+                                  // Group dayMarkets by memberId so multiple entries by the same buyer on one day show a single badge
+                                  const buyerGroupMap = new Map<string, { key: string; memberId: string; totalAmount: number; entryCount: number }>();
+                                  dayMarkets.forEach(m => {
+                                    const key = m.memberId || m.id;
+                                    const existing = buyerGroupMap.get(key);
+                                    if (existing) {
+                                      existing.totalAmount += Number(m.amount) || 0;
+                                      existing.entryCount += 1;
+                                    } else {
+                                      buyerGroupMap.set(key, {
+                                        key,
+                                        memberId: m.memberId,
+                                        totalAmount: Number(m.amount) || 0,
+                                        entryCount: 1,
+                                      });
+                                    }
+                                  });
+                                  const uniqueDayMarketBuyers = Array.from(buyerGroupMap.values());
+
                                   const hasMarketPushed = dayMarkets.length > 0;
                                   const totalDaySpent = dayMarkets.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
@@ -2621,33 +2699,31 @@ export default function MarketLogs({
                                       {/* Assigned & Pushed Member Badges - Expanded for Full Visibility */}
                                       {cell.inCycle && (
                                         <div className="space-y-1 mt-1 w-full">
-                                          {/* If market was pushed, show buyer or duty holder with Green badge */}
+                                          {/* If market was pushed, show deduplicated buyers + any non-duplicate duty holders */}
                                           {hasMarketPushed ? (
                                             <>
-                                              {/* Show buyers who logged the market */}
-                                              {dayMarkets.map(m => {
-                                                const buyerMember = members.find(mem => mem.id === m.memberId);
+                                              {uniqueDayMarketBuyers.map(buyer => {
+                                                const buyerMember = members.find(mem => mem.id === buyer.memberId);
                                                 const buyerName = buyerMember?.nickname?.trim() || buyerMember?.name?.trim()?.split(" ")[0] || "Buyer";
                                                 return (
                                                   <div
-                                                    key={m.id}
+                                                    key={buyer.key}
                                                     className={`text-[9.5px] sm:text-[10.5px] md:text-xs font-black leading-tight px-1.5 py-0.5 rounded-md shadow-sm text-center break-words ${
                                                       isDarkMode 
                                                         ? "bg-emerald-950/80 text-emerald-200 border border-emerald-400/60" 
                                                         : "bg-emerald-100 text-emerald-950 border border-emerald-400"
                                                     }`}
-                                                    title={`Market done by: ${buyerMember?.name || buyerName} (৳${m.amount})`}
+                                                    title={`Market done by: ${buyerMember?.name || buyerName} (৳${buyer.totalAmount}${buyer.entryCount > 1 ? ` • ${buyer.entryCount} entries` : ""})`}
                                                   >
                                                     {buyerName}
                                                   </div>
                                                 );
                                               })}
-                                              {/* If duties assigned on this day, indicate duty fulfilled */}
+                                              {/* If duties assigned on this day, indicate duty fulfilled (skip if already shown) */}
                                               {dayDuties.length > 0 && dayDuties.map(d => {
                                                 const assignedMember = members.find(mem => mem.id === d.memberId);
                                                 const nickName = assignedMember?.nickname?.trim() || assignedMember?.name?.trim()?.split(" ")[0] || "Duty";
-                                                // Avoid duplicate display if buyer is already shown
-                                                const alreadyShown = dayMarkets.some(m => m.memberId === d.memberId);
+                                                const alreadyShown = uniqueDayMarketBuyers.some(b => b.memberId === d.memberId);
                                                 if (alreadyShown) return null;
                                                 return (
                                                   <div
@@ -3029,10 +3105,18 @@ export default function MarketLogs({
                         All days from {startDate} to {endDate} covered ({coveredDates.length} days).
                       </p>
                     </div>
+                  ) : availableAssignedDates.length === 0 ? (
+                    <div className={`p-2.5 rounded-lg border text-[11px] font-semibold leading-snug ${
+                      isDarkMode
+                        ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-200"
+                        : "bg-emerald-50 border-emerald-300 text-emerald-900"
+                    }`}>
+                      ✓ আপনার নির্ধারিত সব তারিখের বাজার ইতিমধ্যে ইনপুট দেওয়া হয়েছে। অতিরিক্ত বাজার যোগ করতে চাইলে উপরে <span className="font-black">"এক্সট্রা বাজার (Extra)"</span> টিক দিন।
+                    </div>
                   ) : (
                     <div className="space-y-1.5">
-                      <div className="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto p-1.5 rounded-lg border border-cyan-500/10 bg-cyan-500/5">
-                        {assignedDates.map(d => {
+                      <div className="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto p-1.5 rounded-lg border border-cyan-500/15 bg-cyan-500/5">
+                        {availableAssignedDates.map(d => {
                           const isSelected = coveredDates.includes(d);
                           return (
                             <button
@@ -3053,15 +3137,17 @@ export default function MarketLogs({
                               }}
                               className={`px-2.5 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                                 isSelected 
-                                  ? "bg-cyan-500/20 border-cyan-500 text-cyan-400" 
+                                  ? isDarkMode
+                                    ? "bg-cyan-500/20 border-cyan-400 text-cyan-200"
+                                    : "bg-cyan-100 border-cyan-500 text-cyan-900"
                                   : isDarkMode 
-                                    ? "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700" 
-                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                                    ? "bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500" 
+                                    : "bg-white border-slate-300 text-slate-700 hover:border-slate-400"
                               }`}
                             >
                               <span>{d.split("-")[2] || d}</span>
                               <span className={`w-3 h-3 rounded-full border flex items-center justify-center ${
-                                isSelected ? "border-cyan-500 bg-cyan-500 text-white" : "border-slate-600"
+                                isSelected ? "border-cyan-500 bg-cyan-500 text-white" : "border-slate-500"
                               }`}>
                                 {isSelected && <Check size={7} />}
                               </span>
@@ -3069,8 +3155,13 @@ export default function MarketLogs({
                           );
                         })}
                       </div>
+                      {submittedAssignedCount > 0 && (
+                        <p className={`text-[10px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
+                          ✓ পূর্বের জমা দেওয়া {submittedAssignedCount}টি তারিখ বাদ দিয়ে শুধু বাকি তারিখগুলো দেখানো হচ্ছে।
+                        </p>
+                      )}
                       {coveredDates.length === 0 && (
-                        <p className="text-[9px] text-rose-500 font-bold">⚠️ Please select at least one assigned date.</p>
+                        <p className="text-[9px] text-rose-500 font-bold">⚠️ Please select at least one remaining assigned date.</p>
                       )}
                       {coveredDates.length > 0 && !areDatesConsecutive(coveredDates) && (
                         <p className="text-[9px] text-rose-500 font-bold">⚠️ Selected dates must be consecutive.</p>

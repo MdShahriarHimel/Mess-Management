@@ -3339,6 +3339,35 @@ router.post("/markets", authMiddleware, async (req: AuthenticatedRequest, res: R
     }
   }
 
+  // Tenant- & cycle-scoped guard: block re-submitting standard (non-extra) market dates already logged by this member
+  if (!isExtra) {
+    const selectedDatesNormalized: string[] = coveredDates && Array.isArray(coveredDates) && coveredDates.length > 0
+      ? coveredDates.map((d: string) => String(d).split("T")[0]).filter(Boolean)
+      : [String(date).split("T")[0]];
+
+    const alreadySubmittedByMember = new Set<string>();
+    db.marketEntries.forEach(e => {
+      if (e.monthId !== monthId) return;
+      if (e.memberId !== memberId) return;
+      if (e.isExtra) return;
+      if (id && e.id === id) return; // Permit editing the same entry
+      const entryDates = Array.isArray(e.coveredDates) && e.coveredDates.length > 0
+        ? e.coveredDates
+        : (e.date ? [e.date] : []);
+      entryDates.forEach(d => {
+        if (d) alreadySubmittedByMember.add(String(d).split("T")[0]);
+      });
+    });
+
+    const conflictingDates = selectedDatesNormalized.filter(d => alreadySubmittedByMember.has(d));
+    if (conflictingDates.length > 0) {
+      res.status(409).json({
+        error: `Duplicate market date blocked: Market voucher for ${conflictingDates.join(", ")} has already been submitted by this member. Please select only remaining dates or mark as Extra (এক্সট্রা বাজার).`
+      });
+      return;
+    }
+  }
+
   // Deduplication guard against rapid double-clicks or repeated submissions
   if (!id) {
     const isDuplicate = db.marketEntries.find(e => 
